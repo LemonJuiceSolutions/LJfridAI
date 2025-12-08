@@ -8,6 +8,7 @@ import { BotMessageSquare, BrainCircuit, Loader2, ArrowLeft, Sparkles, Mic, MicO
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { processDescriptionAction } from '../actions';
 import { useToast } from '@/hooks/use-toast';
 import type { StoredTree } from '@/lib/types';
@@ -38,10 +39,18 @@ export default function CreatePage() {
   const [analysisResult, setAnalysisResult] = useState<StoredTree | null>(null);
   const [textDescription, setTextDescription] = useState('');
   const { toast } = useToast();
+  const [currentModel, setCurrentModel] = useState<string>('google/gemini-2.0-flash-001');
   
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeechSupported, setIsSpeechSupported] = useState(true);
   const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    const savedModel = localStorage.getItem('openrouter_model');
+    if (savedModel) {
+      setCurrentModel(savedModel);
+    }
+  }, []);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -132,6 +141,16 @@ export default function CreatePage() {
         throw new Error(result.error || 'Analisi fallita senza un errore specifico.');
       }
       
+      if ((result.data as any).debug) {
+        console.group("🔍 AI Debug Info");
+        console.log("Model:", (result.data as any).debug.model);
+        console.log("Extract Vars Input:", (result.data as any).debug.extractVarsInput);
+        console.log("Extract Vars Output:", (result.data as any).debug.extractVarsOutput);
+        console.log("Generate Tree Input:", (result.data as any).debug.generateTreeInput);
+        console.log("Generate Tree Output:", (result.data as any).debug.generateTreeOutput);
+        console.groupEnd();
+      }
+
       setAnalysisResult(result.data);
 
       toast({
@@ -191,6 +210,9 @@ export default function CreatePage() {
                   <CardTitle>Crea un Nuovo Albero</CardTitle>
                   <CardDescription>
                     Descrivi un processo per generare un albero decisionale.
+                    <span className="flex items-center gap-2 mt-2">
+                       Generato con: <Badge variant="secondary" className="font-mono text-xs">{currentModel}</Badge>
+                    </span>
                   </CardDescription>
                 </div>
                  <div className="flex items-center gap-2">

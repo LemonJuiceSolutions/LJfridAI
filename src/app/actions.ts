@@ -150,17 +150,31 @@ ${variablesTable}`;
         variables, // though not strictly needed by StoredTree directly, it's used for table gen
         naturalLanguageDecisionTree: treeResult.naturalLanguageDecisionTree,
         jsonDecisionTree: jsonDecisionTreeStr,
-        questionsScript: treeResult.questionsScript
+        questionsScript: treeResult.questionsScript,
+        debug: {
+            model: config.model,
+            extractVarsInput: {
+                system: extractVarsSystemPrompt,
+                user: textDescription
+            },
+            extractVarsOutput: varsResult,
+            generateTreeInput: {
+                system: generateTreeSystemPrompt,
+                user: treePrompt
+            },
+            generateTreeOutput: treeResult
+        }
     };
 }
 
 export async function processDescriptionAction(
     textDescription: string, 
     openRouterConfig?: { apiKey: string, model: string }
-): Promise<{ data: StoredTree | null; error: string | null; }> {
+): Promise<{ data: StoredTree & { debug?: any } | null; error: string | null; }> {
   try {
     let decisionTreeResult;
     let extractedVariables = [];
+    let debugInfo = null;
 
     if (openRouterConfig && openRouterConfig.apiKey) {
         const result = await processDescriptionWithOpenRouter(textDescription, openRouterConfig);
@@ -170,6 +184,22 @@ export async function processDescriptionAction(
             jsonDecisionTree: result.jsonDecisionTree,
             questionsScript: result.questionsScript
         };
+        debugInfo = result.debug;
+
+        console.log("--- DEBUG ACTION START ---");
+        console.log(`Model Used: ${debugInfo.model}`);
+        console.log("--- Extract Variables Input ---");
+        console.log("System:", debugInfo.extractVarsInput.system);
+        console.log("User:", debugInfo.extractVarsInput.user);
+        console.log("--- Extract Variables Output ---");
+        console.log(JSON.stringify(debugInfo.extractVarsOutput, null, 2));
+        console.log("--- Generate Tree Input ---");
+        console.log("System:", debugInfo.generateTreeInput.system);
+        console.log("User:", debugInfo.generateTreeInput.user);
+        console.log("--- Generate Tree Output ---");
+        console.log(JSON.stringify(debugInfo.generateTreeOutput, null, 2));
+        console.log("--- DEBUG ACTION END ---");
+
     } else {
         // Legacy flow (Google GenAI)
         const { variables } = await extractVariables(textDescription);
@@ -201,7 +231,7 @@ export async function processDescriptionAction(
     
     await setDoc(treeDocRef, newTree);
     
-    const data = { ...newTree, id: treeDocRef.id, createdAt: newTree.createdAt.toDate().toISOString() };
+    const data = { ...newTree, id: treeDocRef.id, createdAt: newTree.createdAt.toDate().toISOString(), debug: debugInfo };
 
     return { data, error: null };
 
