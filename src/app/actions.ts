@@ -31,15 +31,155 @@ function formatVariablesToTable(variables: Variable[]): string {
   return table;
 }
 
-export async function processDescriptionAction(textDescription: string): Promise<{ data: StoredTree | null; error: string | null; }> {
-  try {
-    const { variables } = await extractVariables(textDescription);
-    
-    const variablesTable = formatVariablesToTable(variables);
-    const decisionTreeResult = await generateDecisionTree({
-      textDescription,
-      variablesTable,
+// Helper for OpenRouter JSON calls
+async function callOpenRouterJSON(apiKey: string, model: string, prompt: string, systemPrompt: string): Promise<any> {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            model: model,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: prompt }
+            ],
+            response_format: { type: "json_object" }
+        })
     });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`OpenRouter Error: ${errorData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    try {
+        return JSON.parse(content);
+    } catch (e) {
+        // Fallback: try to extract JSON from markdown code block if present
+        const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/{[\s\S]*}/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[1] || jsonMatch[0]);
+        }
+        throw new Error("Failed to parse JSON response from AI");
+    }
+}
+
+async function processDescriptionWithOpenRouter(textDescription: string, config: { apiKey: string, model: string }) {
+    // Step 1: Extract Variables
+    const extractVarsSystemPrompt = `You are a highly intelligent entity tasked with parsing natural language descriptions of processes and extracting key variables. Your output MUST be in Italian.
+
+TASK:
+From the user's descriptive text provided below, identify all the distinct variables that influence the outcomes. For each variable, determine its type and list all its possible values mentioned in the text.
+
+Follow these rules strictly:
+1.  **Analyze the text**: Read the entire text to understand the logic and conditions.
+2.  **Identify Variables**: A variable is a factor that can change and affects the decision-making process (e.g., "warranty status", "error code presence", "pressure level"). An 'enumeration' type variable is typically a question followed by a clear list of choices or distinct branches in the text.
+3.  **Determine Type**:
+    *   'boolean': For variables with two opposite states (e.g., yes/no, true/false, on/off).
+    *   'enumeration': For variables with a specific, limited list of text-based options (e.g., "red", "green", "blue").
+    *   'numeric': For variables representing a number.
+    *   'text': For open-ended text inputs.
+4.  **Structure 'possibleValues'**: For each variable, you MUST create a structured object for each possible value.
+    *   'name': The name of the option (e.g., "In Garanzia").
+    *   'value': Assign a progressive integer, starting from 0 for each variable's options.
+    *   'abbreviation': Create a short, 3-letter abbreviation in uppercase (e.g., "GAR").
+    *   **DO NOT include an 'id' field.**
+5.  **CRITICAL RULE - Discard Irrelevant Variables**: You MUST ignore and discard any potential "variable" that is too generic, does not have clear, distinct options, or simply represents a final action or decision.
+6.  **CRITICAL RULE - Empty Array**: If no variables are found, return \`{"variables": []}\`.
+7.  **OUTPUT FORMAT**: Return ONLY a valid JSON object with the key "variables". Do not use markdown blocks.`;
+
+    const varsResult = await callOpenRouterJSON(config.apiKey, config.model, textDescription, extractVarsSystemPrompt);
+    
+    // Add IDs to variables (client-side logic replicated)
+    const variables = (varsResult.variables || []).map((v: any) => ({
+        ...v,
+        possibleValues: (v.possibleValues || []).map((opt: any) => ({ ...opt, id: nanoid(8) }))
+    }));
+
+    // Step 2: Generate Tree
+    const variablesTable = formatVariablesToTable(variables);
+    
+    const generateTreeSystemPrompt = `You are a Business Rules Engine with natural language interpretation capabilities.
+Your output, including all text in the natural language description, the JSON content (questions and decisions), and the question script, MUST be in Italian.
+
+Task:
+1. Use the variables and values from the variables table to construct a detailed and highly-branched decision tree.
+2. Each node must have a 'question' and 'options'. The 'options' should lead to another node or a final 'decision'.
+3. Each leaf of the tree must be a 'decision' string, or an object with a 'decision' key.
+4. Provide three outputs:
+   a) "naturalLanguageDecisionTree": A version in natural language.
+   b) "jsonDecisionTree": A structured JSON representation (stringified or object).
+   c) "questionsScript": A script of questions.
+
+**CRITICAL RULE FOR 'jsonDecisionTree'**:
+The value for the 'jsonDecisionTree' field MUST be a valid JSON structure (not a stringified JSON string inside JSON, but the actual object).
+
+Example of 'jsonDecisionTree' structure:
+{
+  "question": "Is the device under warranty?",
+  "options": {
+    "Yes": {
+      "question": "Is there accidental damage?",
+      "options": { ... }
+    },
+    "No": { "decision": "Charge for repair." }
+  }
+}
+
+**OUTPUT FORMAT**: Return ONLY a valid JSON object with keys: "naturalLanguageDecisionTree", "jsonDecisionTree", "questionsScript".`;
+
+    const treePrompt = `Input Text:
+${textDescription}
+
+Variables Table:
+${variablesTable}`;
+
+    const treeResult = await callOpenRouterJSON(config.apiKey, config.model, treePrompt, generateTreeSystemPrompt);
+
+    // Ensure jsonDecisionTree is a string for storage (as per StoredTree type)
+    let jsonDecisionTreeStr = treeResult.jsonDecisionTree;
+    if (typeof jsonDecisionTreeStr !== 'string') {
+        jsonDecisionTreeStr = JSON.stringify(jsonDecisionTreeStr);
+    }
+
+    return {
+        variables, // though not strictly needed by StoredTree directly, it's used for table gen
+        naturalLanguageDecisionTree: treeResult.naturalLanguageDecisionTree,
+        jsonDecisionTree: jsonDecisionTreeStr,
+        questionsScript: treeResult.questionsScript
+    };
+}
+
+export async function processDescriptionAction(
+    textDescription: string, 
+    openRouterConfig?: { apiKey: string, model: string }
+): Promise<{ data: StoredTree | null; error: string | null; }> {
+  try {
+    let decisionTreeResult;
+    let extractedVariables = [];
+
+    if (openRouterConfig && openRouterConfig.apiKey) {
+        const result = await processDescriptionWithOpenRouter(textDescription, openRouterConfig);
+        extractedVariables = result.variables;
+        decisionTreeResult = {
+            naturalLanguageDecisionTree: result.naturalLanguageDecisionTree,
+            jsonDecisionTree: result.jsonDecisionTree,
+            questionsScript: result.questionsScript
+        };
+    } else {
+        // Legacy flow (Google GenAI)
+        const { variables } = await extractVariables(textDescription);
+        extractedVariables = variables;
+        const variablesTable = formatVariablesToTable(variables);
+        decisionTreeResult = await generateDecisionTree({
+            textDescription,
+            variablesTable,
+        });
+    }
     
     try {
         JSON.parse(decisionTreeResult.jsonDecisionTree);

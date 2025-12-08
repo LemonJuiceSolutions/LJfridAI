@@ -123,7 +123,14 @@ export default function CreatePage() {
     setIsLoading(true);
     setAnalysisResult(null);
     try {
-      const result = await processDescriptionAction(textDescription);
+      const apiKey = localStorage.getItem('openrouter_api_key');
+      const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+
+      if (!apiKey) {
+        throw new Error('Chiave API OpenRouter mancante. Vai nelle Impostazioni per configurarla.');
+      }
+
+      const result = await processDescriptionAction(textDescription, { apiKey, model });
       if (result.error || !result.data) {
         throw new Error(result.error || 'Analisi fallita senza un errore specifico.');
       }
