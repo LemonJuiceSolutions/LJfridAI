@@ -107,7 +107,7 @@ export default function DetaiPage() {
                 // If there's a tool request, we need to make another call to the backend
                 // to execute the tool and get the response.
                  const nextHistory: DetaiInput['messages'] = [...history, { role: 'model', content: [{ toolRequest: aiResponse.toolRequest }] }];
-                 const toolResult = await detaiAction({ messages: nextHistory });
+                 const toolResult = await detaiAction({ messages: nextHistory }, openRouterConfig);
                  
                  if (toolResult.error || !toolResult.data?.toolResponse) {
                      throw new Error(toolResult.error || 'Esecuzione dello strumento fallita.');
@@ -122,7 +122,7 @@ export default function DetaiPage() {
                  
                  // Now we need to make one final call with the tool's response to get the final text answer
                  const finalHistory: DetaiInput['messages'] = [...nextHistory, { role: 'tool', content: [{ toolResponse: toolResult.data.toolResponse }] }];
-                 const finalResult = await detaiAction({ messages: finalHistory });
+                 const finalResult = await detaiAction({ messages: finalHistory }, openRouterConfig);
                  
                  if (finalResult.error || !finalResult.data?.text) {
                     throw new Error(finalResult.error || 'Risposta finale fallita dopo l\'esecuzione dello strumento.');
@@ -173,22 +173,41 @@ export default function DetaiPage() {
         handleSubmit(newMessages);
     }
     
-    const ToolRequestMessage = ({ request }: { request: any }) => (
-        <Badge variant="secondary" className="flex-shrink-0">
-            <Search className="h-3 w-3 mr-2"/>
-            Ricerca nel database: "{request.input.query}"...
-        </Badge>
-    );
+    const ToolRequestMessage = ({ request }: { request: any }) => {
+        let query = "Ricerca in corso...";
+        
+        if (request.input && request.input.query) {
+            query = request.input.query;
+        } else if (request.function && request.function.arguments) {
+            try {
+                const args = typeof request.function.arguments === 'string' 
+                    ? JSON.parse(request.function.arguments) 
+                    : request.function.arguments;
+                if (args && args.query) {
+                    query = args.query;
+                }
+            } catch (e) {
+                console.error("Failed to parse tool arguments", e);
+            }
+        }
+
+        return (
+            <Badge variant="secondary" className="flex-shrink-0">
+                <Search className="h-3 w-3 mr-2"/>
+                Ricerca nel database: "{query}"...
+            </Badge>
+        );
+    };
 
     const ToolResponseMessage = ({ response }: { response: any }) => {
         let content;
         try {
             // Attempt to parse and pretty-print if it's a JSON string
-            const parsed = JSON.parse(response);
+            const parsed = typeof response === 'string' ? JSON.parse(response) : response;
             content = JSON.stringify(parsed, null, 2);
         } catch (e) {
             // Otherwise, just display as is
-            content = response;
+            content = String(response);
         }
 
         return (
