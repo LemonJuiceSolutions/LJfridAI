@@ -212,10 +212,24 @@ export async function processDescriptionAction(
   }
 }
 
-export async function rephraseQuestionAction(question: string, context: string): Promise<{ data: string | null, error: string | null }> {
+export async function rephraseQuestionAction(question: string, context: string, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: string | null, error: string | null }> {
     try {
-        const result = await rephraseQuestion({ question, context });
-        return { data: result.rephrasedQuestion, error: null };
+        if (openRouterConfig && openRouterConfig.apiKey) {
+            const systemPrompt = `You are an AI assistant designed to rephrase questions for clarity or suggest related options.
+  You MUST respond in Italian.
+  
+  Please provide a rephrased question that is easier to understand or suggest a few related options that the user can choose from.
+  Ensure the rephrased question or suggested options are clear and concise.
+  Output should be a single string in a JSON object with key "rephrasedQuestion".`;
+            
+            const prompt = `Original Question: ${question}\nContext: ${context}`;
+            
+            const result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, prompt, systemPrompt);
+            return { data: result.rephrasedQuestion, error: null };
+        } else {
+             const result = await rephraseQuestion({ question, context });
+             return { data: result.rephrasedQuestion, error: null };
+        }
     } catch (e) {
         const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto durante la riformulazione.';
         console.error('Error in rephraseQuestionAction:', e);
@@ -361,7 +375,7 @@ export async function updateTreeNodeAction({
   }
 }
 
-export async function diagnoseProblemAction(input: Omit<DiagnoseProblemInput, 'decisionTree'>): Promise<{ data: DiagnoseProblemOutput | null; error: string | null; }> {
+export async function diagnoseProblemAction(input: Omit<DiagnoseProblemInput, 'decisionTree'>, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: DiagnoseProblemOutput | null; error: string | null; }> {
     try {
       const allTreesResult = await getTreesAction();
       if (allTreesResult.error || !allTreesResult.data) {
@@ -374,10 +388,58 @@ export async function diagnoseProblemAction(input: Omit<DiagnoseProblemInput, 'd
         json: t.jsonDecisionTree 
       }));
 
-      const result = await diagnoseProblem({
-        ...input,
-        decisionTree: JSON.stringify(simplifiedTrees),
-      });
+      let result;
+      
+      if (openRouterConfig && openRouterConfig.apiKey) {
+           const decisionTreeStr = JSON.stringify(simplifiedTrees);
+           const prompt = `Here is the context for your task:
+- The user's initial problem description is "${input.userProblem}"
+- The complete library of available decision trees (with name, description, and full JSON content) is: ${decisionTreeStr}
+- The conversation history so far is: ${input.history || 'No history yet.'}
+- The user's most recent answer is: ${input.currentAnswer || 'This is the first interaction.'}`;
+
+           const systemPrompt = `You are an expert diagnostic AI chatbot. Your primary goal is to help a user identify the correct troubleshooting guide (a specific decision tree from a provided library) and then walk them through it, question by question.
+You MUST respond in Italian.
+
+Follow these steps with absolute rigor:
+
+1.  **Phase 1: IDENTIFY THE CORRECT TREE.**
+    *   Your FIRST task is to analyze the user's problem description and the conversation history. Compare this information against the 'name', 'description', and the actual questions and decisions inside the 'json' of EVERY decision tree in the library to find the most relevant one.
+    *   **If you are 100% confident** which tree to use, based on all the available information, proceed to Phase 2.
+    *   **If you are NOT 100% confident, you MUST conduct a thorough investigation.** You must ask at least 4 clarifying questions to be sure.
+        *   a. Identify the most probable decision tree.
+        *   b. **Ask the ROOT QUESTION from that specific tree's JSON as a clarifying question.** This is how you test your hypothesis. For example, if you think the problem is about hydraulics, ask the first question from the hydraulics tree.
+        *   c. Analyze the user's answer ('currentAnswer'). If it logically fits as a response to the question you asked, your hypothesis is gaining strength. Continue asking questions from this tree to gather more context.
+        *   d. If the user's answer is nonsensical or clearly indicates the question was wrong, your hypothesis is incorrect. Apologize briefly, discard that tree, and pick the *next* most likely tree to test. Repeat the process by asking the root question of this new hypothesized tree.
+        *   e. Only after you have gathered enough information from this multi-step clarification process (at least 4 interactions) and you are confident, you may proceed to Phase 2.
+    *   **Crucially, do NOT invent your own generic clarifying questions.** Use the actual questions from the trees to probe the user and confirm the context. Do not ask the user to pick a tree by its name.
+
+2.  **Phase 2: NAVIGATE THE IDENTIFIED TREE (INTERACTIVE GUIDE).**
+    *   Once a tree is identified with high confidence, your job is to guide the user through its JSON structure, step-by-step.
+    *   **If you are just starting the navigation (i.e., you have just identified the tree)**, your response MUST be the root question of that tree's JSON. Provide the corresponding options from the JSON. (Note: If you confirmed the tree via hypothesis testing, you've already asked the first question, so use the 'currentAnswer' to find the *next* step).
+    *   **If you already have a user's answer ('currentAnswer') to a previous question from the tree**, use that answer to find the next node in the JSON (question or decision).
+    *   Continue asking questions from the tree until you reach a leaf node (a final 'decision').
+
+3.  **Formulate Output**:
+    *   If you are asking a question (either to test a hypothesis, or from within a tree), set 'isFinalDecision' to 'false', provide the question text in the 'question' field, and list the available choices in the 'options' array.
+    *   If you reach a leaf node (a final 'decision'), set 'isFinalDecision' to 'true', set the 'question' field to the final decision text, and leave the 'options' array empty. Set 'treeName' to the name of the tree you just navigated.
+    
+    OUTPUT JSON FORMAT:
+    {
+        "question": "string",
+        "options": ["string", "string"],
+        "isFinalDecision": boolean,
+        "treeName": "string (optional)"
+    }`;
+
+           result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, prompt, systemPrompt);
+
+      } else {
+          result = await diagnoseProblem({
+            ...input,
+            decisionTree: JSON.stringify(simplifiedTrees),
+          });
+      }
 
       if (result.isFinalDecision && result.treeName) {
         const foundTree = allTreesResult.data.find(t => t.name === result.treeName);
@@ -748,16 +810,164 @@ function recursiveTreeUpdate(
   return { node: newNode, updated };
 }
 
-export async function detaiAction(input: DetaiInput): Promise<{ data: any | null; error: string | null; }> {
-    try {
-        const result = await detaiFlow(input);
-        
-        const lastMessage = input.messages[input.messages.length - 1];
-        if (lastMessage?.role === 'tool') {
-             return { data: { toolResponse: result }, error: null };
+// Helper for OpenRouter Tool calls
+async function callOpenRouterWithTools(apiKey: string, model: string, messages: any[], tools: any[]): Promise<any> {
+    const openRouterTools = tools.map(tool => ({
+        type: "function",
+        function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema // Assuming inputSchema is a JSON schema object
         }
+    }));
 
-        return { data: { text: result }, error: null };
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            model: model,
+            messages: messages,
+            tools: openRouterTools,
+            tool_choice: "auto"
+        })
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`OpenRouter Error: ${errorData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message;
+}
+
+export async function detaiAction(input: DetaiInput, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: any | null; error: string | null; }> {
+    try {
+        if (openRouterConfig && openRouterConfig.apiKey) {
+            // Check if the last message is a tool request that needs execution
+            const lastInputMsg = input.messages[input.messages.length - 1];
+            if (lastInputMsg?.role === 'model' && lastInputMsg.content[0].toolRequest) {
+                 const toolReq = lastInputMsg.content[0].toolRequest;
+                 if (toolReq.function.name === 'searchDecisionTrees') {
+                     let args;
+                     try {
+                        args = JSON.parse(toolReq.function.arguments);
+                     } catch (e) {
+                        return { data: { toolResponse: { id: toolReq.id, result: "Error parsing arguments" } }, error: null };
+                     }
+                     
+                     const searchResult = await searchTreesAction(args.query, openRouterConfig);
+                     
+                     return {
+                         data: {
+                             toolResponse: {
+                                 id: toolReq.id,
+                                 result: searchResult
+                             }
+                         },
+                         error: null
+                     };
+                 }
+            }
+
+            const systemMessage = {
+                role: 'system',
+                content: `Sei detAI, un assistente IA esperto e proattivo. Il tuo compito è rispondere in modo utile e, soprattutto, basare le tue risposte sulla conoscenza contenuta in un database di alberi decisionali.
+
+REGOLE FONDAMENTALI E OBBLIGATORIE:
+
+1.  **PROATTIVITÀ OBBLIGATORIA (REGOLA PIÙ IMPORTANTE)**:
+    *   Se la domanda o L'AFFERMAZIONE dell'utente contiene un termine specifico, una procedura, una regola o un concetto (es. "acquisizione commessa", "articolo 14", "procedura di reso", "garanzia"), la tua PRIMA AZIONE DEVE ESSERE usare lo strumento \`searchDecisionTrees\`.
+    *   NON DEVI MAI rispondere "Mi dispiace, non ho le competenze..." o frasi simili se non hai PRIMA cercato nel database. La tua competenza risiede nella tua capacità di cercare. Se la ricerca non produce risultati, solo allora puoi dire di non aver trovato informazioni.
+    *   NON chiedere mai all'utente di spiegarti un termine se puoi cercarlo. Usa lo strumento.
+
+2.  **CONTRADDICI E CORREGGI**: Se l'utente fa un'affermazione che è in contrasto con le informazioni che trovi nel database, il tuo compito è contraddirlo gentilmente e correggerlo, usando i dati trovati. Esempio: "In realtà, secondo la procedura standard, per l'articolo 14 non è necessario avvertire Mattarelli, ma bisogna **compilare il modulo Z-7**."
+
+3.  **ONESTÀ SUI LIMITI**: Se non conosci la risposta E non trovi nulla con lo strumento di ricerca, o se la domanda riguarda informazioni in tempo reale (come la data di oggi, il meteo, o notizie recenti), DEVI dire onestamente che non hai accesso a quel tipo di informazione. Non inventare mai risposte.
+
+4.  **REGOLA CRITICA DI ATTRIBUZIONE DELLA FONTE**: Quando la tua risposta si basa sulle informazioni trovate tramite lo strumento di ricerca, DEVI OBBLIGATORIAMENTE formattare la tua risposta per includere l'attribuzione della fonte. Per ogni pezzo di informazione che proviene da un albero decisionale specifico, DEVI racchiuderlo in un tag speciale che indica il suo \`sourceId\`. Il formato esatto è \`[Fonte: ID_DELLA_FONTE] Testo dell'informazione... [Fine Fonte]\`.
+    *   Esempio: Se hai trovato due procedure pertinenti, la tua risposta DOVREBBE assomigliare a questo:
+        \`\`\`
+        Ho trovato diverse procedure per l'acquisizione di una commessa.
+
+        [Fonte: id_albero_123] Per iniziare, è necessario raccogliere i requisiti del cliente e farli approvare dall'ufficio tecnico. Successivamente, si crea un ordine di vendita nel gestionale. [Fine Fonte]
+
+        [Fonte: id_albero_456] Inoltre, per il processo specifico "SpeedHub", quando si riceve una mail da Tiziano, si apre una commessa e si avvisa Marco. Se Marco non risponde, la mail va inoltrata a Romina. [Fine Fonte]
+        \`\`\`
+    *   Devi usare questo formato per ogni blocco di informazioni distinto che proviene da una fonte diversa per consentire all'interfaccia utente di visualizzare le fonti.
+
+5.  **REGOLA DI FORMATTAZIONE (GRASSETTO)**: Quando includi informazioni che hai letto dai risultati della ricerca nella tua risposta, DEVI OBBLIGATORIAMENTE racchiudere quelle informazioni esatte tra doppi asterischi per renderle in grassetto, oltre ad usare i tag di attribuzione. Esempio: "[Fonte: id_albero_789] Secondo la procedura, devi **controllare il livello del liquido di raffreddamento**. [Fine Fonte]"`
+            };
+
+            // Map messages for OpenRouter
+            const messages = [
+                systemMessage,
+                ...input.messages.map(m => {
+                    if (m.role === 'tool') {
+                         return {
+                            role: 'tool',
+                            tool_call_id: m.content[0].toolResponse.id, // We need to store tool call ID in history
+                            content: JSON.stringify(m.content[0].toolResponse.result)
+                        };
+                    }
+                    if (m.content[0].toolRequest) {
+                        return {
+                            role: 'assistant',
+                            content: null,
+                            tool_calls: [m.content[0].toolRequest]
+                        };
+                    }
+                    return { role: m.role === 'model' ? 'assistant' : m.role, content: m.content[0].text };
+                })
+            ];
+
+            const tools = [{
+                name: 'searchDecisionTrees',
+                description: "Cerca nel database degli alberi decisionali per trovare informazioni o procedure pertinenti alla domanda o affermazione dell'utente.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        query: { type: "string", description: "La query di ricerca basata sulla domanda o sui termini chiave nell'affermazione dell'utente." }
+                    },
+                    required: ["query"]
+                }
+            }];
+
+            const responseMessage = await callOpenRouterWithTools(openRouterConfig.apiKey, openRouterConfig.model, messages, tools);
+
+            if (responseMessage.tool_calls) {
+                // Handle tool call
+                const toolCall = responseMessage.tool_calls[0];
+                if (toolCall.function.name === 'searchDecisionTrees') {
+                    // Return the tool request so client can loop back with the result
+                    return { 
+                        data: { 
+                            toolRequest: {
+                                id: toolCall.id,
+                                type: 'function',
+                                function: toolCall.function
+                            } 
+                        }, 
+                        error: null 
+                    };
+                }
+            }
+            
+            return { data: { text: responseMessage.content }, error: null };
+
+        } else {
+            const result = await detaiFlow(input);
+            
+            const lastMessage = input.messages[input.messages.length - 1];
+            if (lastMessage?.role === 'tool') {
+                 return { data: { toolResponse: result }, error: null };
+            }
+    
+            return { data: { text: result }, error: null };
+        }
     } catch (e) {
         const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
         console.error('Error in detaiAction:', e);
@@ -766,7 +976,7 @@ export async function detaiAction(input: DetaiInput): Promise<{ data: any | null
 }
 
 
-export async function searchTreesAction(query: string): Promise<string> {
+export async function searchTreesAction(query: string, openRouterConfig?: { apiKey: string, model: string }): Promise<string> {
   const treesResult = await getTreesAction();
   if (treesResult.error || !treesResult.data) {
     return 'Errore: Impossibile accedere al database degli alberi decisionali.';
@@ -778,6 +988,42 @@ export async function searchTreesAction(query: string): Promise<string> {
     description: t.description,
     content: t.naturalLanguageDecisionTree,
   }));
+
+  if (openRouterConfig && openRouterConfig.apiKey) {
+      const systemPrompt = `Sei un assistente di ricerca intelligente.
+Analizza la lista di alberi decisionali fornita e restituisci solo quelli che sono altamente pertinenti alla query dell'utente.
+Per ogni albero pertinente, devi fornire un breve riassunto della procedura.
+
+FORMATO OUTPUT (JSON):
+{
+  "relevantTrees": [
+    {
+      "name": "Nome dell'albero",
+      "sourceId": "ID univoco dell'albero (campo 'id')",
+      "reason": "Motivo della selezione",
+      "summary": "Breve riassunto della procedura"
+    }
+  ]
+}
+
+Se nessun albero è pertinente, restituisci: { "relevantTrees": [] }`;
+
+      const userPrompt = `Query utente: "${query}"
+
+Alberi disponibili:
+${JSON.stringify(searchableTrees, null, 2)}`;
+
+      try {
+          const result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, userPrompt, systemPrompt);
+          if (!result || !result.relevantTrees || result.relevantTrees.length === 0) {
+              return 'Nessun risultato trovato.';
+          }
+          return JSON.stringify(result.relevantTrees, null, 2);
+      } catch (e) {
+          console.error("OpenRouter Search Error:", e);
+          return 'Errore durante la ricerca con OpenRouter.';
+      }
+  }
 
   const SearchResultSchema = z.object({
     relevantTrees: z.array(z.object({

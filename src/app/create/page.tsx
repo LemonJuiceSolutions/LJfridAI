@@ -44,7 +44,7 @@ export default function CreatePage() {
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setIsSpeechSupported(false);
       return;
@@ -55,7 +55,7 @@ export default function CreatePage() {
     recognition.interimResults = true;
     recognition.lang = 'it-IT';
 
-    recognition.onresult = (event) => {
+    recognition.onresult = (event: any) => {
       let interimTranscript = '';
       let finalTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -68,7 +68,7 @@ export default function CreatePage() {
       setTextDescription(prev => prev + finalTranscript);
     };
 
-    recognition.onerror = (event) => {
+    recognition.onerror = (event: any) => {
         if (event.error !== 'aborted') {
              toast({
                 variant: 'destructive',
@@ -125,12 +125,9 @@ export default function CreatePage() {
     try {
       const apiKey = localStorage.getItem('openrouter_api_key');
       const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+      const openRouterConfig = apiKey ? { apiKey, model } : undefined;
 
-      if (!apiKey) {
-        throw new Error('Chiave API OpenRouter mancante. Vai nelle Impostazioni per configurarla.');
-      }
-
-      const result = await processDescriptionAction(textDescription, { apiKey, model });
+      const result = await processDescriptionAction(textDescription, openRouterConfig);
       if (result.error || !result.data) {
         throw new Error(result.error || 'Analisi fallita senza un errore specifico.');
       }

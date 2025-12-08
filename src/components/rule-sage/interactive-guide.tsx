@@ -199,11 +199,16 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
 
 
   const handleRephrase = async () => {
-    if (typeof currentNode === 'object' && 'question' in currentNode && currentNode.question) {
+    if (currentNode && typeof currentNode === 'object' && 'question' in currentNode && currentNode.question) {
         setRephrasing(true);
         setRephrasedQuestion(null);
         const context = `L'utente si trova in un processo decisionale. I passaggi precedenti sono: ${nodeHistory.map(h => typeof h === 'object' && 'question' in h && h.question ? h.question : '').join(' -> ')}`;
-        const result = await rephraseQuestionAction(currentNode.question, context);
+        
+        const apiKey = localStorage.getItem('openrouter_api_key');
+        const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+        const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+        
+        const result = await rephraseQuestionAction(currentNode.question, context, openRouterConfig);
         if(result.error) {
             toast({
                 variant: 'destructive',

@@ -72,24 +72,30 @@ export default function ChatbotPage() {
                 setInitialProblem(problem);
             }
 
+            const apiKey = localStorage.getItem('openrouter_api_key');
+            const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+            const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+
             const result = await diagnoseProblemAction({
                 userProblem: problem,
                 currentAnswer: isOptionClick ? userMessageText : undefined,
                 history,
-            });
+            }, openRouterConfig);
 
             if (result.error || !result.data) {
                 throw new Error(result.error || 'La diagnosi è fallita senza un errore specifico.');
             }
             
+            const diagnosisData = result.data;
+
             const assistantMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                text: result.data.question,
-                options: result.data.isFinalDecision ? undefined : result.data.options,
-                isFinalDecision: result.data.isFinalDecision,
-                treeId: result.data.isFinalDecision ? result.data.treeName : undefined,
-                treeDisplayName: result.data.isFinalDecision ? currentMessages.find(m => m.text === result.data.treeName)?.text || result.data.treeName : undefined
+                text: diagnosisData.question,
+                options: diagnosisData.isFinalDecision ? undefined : diagnosisData.options,
+                isFinalDecision: diagnosisData.isFinalDecision,
+                treeId: diagnosisData.isFinalDecision ? diagnosisData.treeName : undefined,
+                treeDisplayName: diagnosisData.isFinalDecision ? currentMessages.find(m => m.text === diagnosisData.treeName)?.text || diagnosisData.treeName : undefined
             };
             
             setMessages(prev => [...prev, assistantMessage]);

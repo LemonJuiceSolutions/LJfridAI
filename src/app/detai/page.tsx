@@ -64,6 +64,10 @@ export default function DetaiPage() {
         setIsLoading(true);
 
         try {
+            const apiKey = localStorage.getItem('openrouter_api_key');
+            const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+            const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+
             // Map local message state to the format expected by the AI flow
             const history: DetaiInput['messages'] = currentMessages
                 .filter(m => m.id !== 'initial-message') 
@@ -76,7 +80,7 @@ export default function DetaiPage() {
                       : [{ toolRequest: m.toolRequest }]
                 }));
             
-            const result = await detaiAction({ messages: history });
+            const result = await detaiAction({ messages: history }, openRouterConfig);
             
             if (result.error || !result.data) {
                 throw new Error(result.error || 'La risposta è fallita senza un errore specifico.');
