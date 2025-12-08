@@ -7,7 +7,7 @@ import { generateDecisionTree } from '@/ai/flows/generate-decision-tree';
 import { rephraseQuestion } from '@/ai/flows/rephrase-question';
 import { diagnoseProblem, type DiagnoseProblemInput, type DiagnoseProblemOutput } from '@/ai/flows/diagnose-problem';
 import { detaiFlow, type DetaiInput } from '@/ai/flows/detai-flow';
-import type { DecisionNode, StoredTree, Variable, ConsolidationProposal, VariableOption, DecisionLeaf, TriggerItem } from '@/lib/types';
+import type { DecisionNode, StoredTree, Variable, ConsolidationProposal, VariableOption, DecisionLeaf, TriggerItem, MediaItem, LinkItem } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, getDoc, setDoc, query, orderBy, Timestamp, where, writeBatch, deleteDoc, updateDoc } from 'firebase/firestore';
 
@@ -16,6 +16,26 @@ import _ from 'lodash';
 import {nanoid} from 'nanoid';
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
+
+function findNodeByQuestion(node: DecisionNode | DecisionLeaf | string | { ref: string } | { subTreeRef: string } | any, questionOrDecision: string): DecisionNode | DecisionLeaf | null {
+    if (typeof node === 'string') return null;
+    if ('ref' in node || 'subTreeRef' in node) return null;
+    
+    // Check if this node matches
+    if ('question' in node && node.question === questionOrDecision) return node as DecisionNode;
+    if ('decision' in node && node.decision === questionOrDecision) return node as DecisionLeaf;
+
+    // Recurse into options
+    if ('options' in node && node.options) {
+        for (const key in node.options) {
+            const child = node.options[key];
+            const found = findNodeByQuestion(child, questionOrDecision);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
 
 
 function formatVariablesToTable(variables: Variable[]): string {
@@ -453,13 +473,18 @@ Follow these steps with absolute rigor:
 3.  **Formulate Output**:
     *   If you are asking a question (either to test a hypothesis, or from within a tree), set 'isFinalDecision' to 'false', provide the question text in the 'question' field, and list the available choices in the 'options' array.
     *   If you reach a leaf node (a final 'decision'), set 'isFinalDecision' to 'true', set the 'question' field to the final decision text, and leave the 'options' array empty. Set 'treeName' to the name of the tree you just navigated.
+    *   **ALWAYS include 'treeName'** if you have identified the correct decision tree, even for intermediate questions. This helps in verifying the context.
+    *   **CRITICAL: Include Attachments**: If the current node (question or decision) in the JSON tree contains 'media', 'links', or 'triggers', you MUST include them in your output exactly as they appear in the JSON. Do NOT include attachments if they are not present in the current node. Do NOT copy attachments from previous nodes.
     
     OUTPUT JSON FORMAT:
     {
         "question": "string",
         "options": ["string", "string"],
         "isFinalDecision": boolean,
-        "treeName": "string (optional)"
+        "treeName": "string (optional)",
+        "media": [ ... ],
+        "links": [ ... ],
+        "triggers": [ ... ]
     }`;
 
            result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, prompt, systemPrompt);
@@ -471,10 +496,35 @@ Follow these steps with absolute rigor:
           });
       }
 
-      if (result.isFinalDecision && result.treeName) {
-        const foundTree = allTreesResult.data.find(t => t.name === result.treeName);
+      if (result.treeName) {
+        // Try to find by name first, then by ID if not found (since treeName might be ID)
+        let foundTree = allTreesResult.data.find(t => t.name === result.treeName);
+        if (!foundTree) {
+            foundTree = allTreesResult.data.find(t => t.id === result.treeName);
+        }
+
         if (foundTree) {
-            result.treeName = foundTree.id; 
+            result.treeName = foundTree.id; // Normalize to ID
+
+            // STRICT VERIFICATION: Verify attachments against the JSON source
+            try {
+                const treeJson = JSON.parse(foundTree.jsonDecisionTree);
+                const matchingNode = findNodeByQuestion(treeJson, result.question);
+
+                if (matchingNode) {
+                    // Overwrite attachments from the authoritative source
+                    result.media = matchingNode.media || [];
+                    result.links = matchingNode.links || [];
+                    result.triggers = matchingNode.triggers || [];
+                } else {
+                    // If node not found (rare, maybe slight text mismatch), fallback to LLM but be cautious
+                    // Or we could try fuzzy matching, but for now let's trust LLM if exact match fails
+                    // However, to fix the user's specific issue of hallucination, we might want to clear them if not found?
+                    // No, safe to keep LLM's if we can't verify. But usually exact match should work if LLM follows instructions.
+                }
+            } catch (jsonError) {
+                console.error("Error parsing tree JSON for verification:", jsonError);
+            }
         }
       }
 

@@ -79,6 +79,9 @@ export type DiagnoseProblemOutput = {
     options?: string[];
     isFinalDecision: boolean;
     treeName?: string;
+    media?: MediaItem[];
+    links?: LinkItem[];
+    triggers?: TriggerItem[];
 };
 
 export type ConsolidationProposal = {

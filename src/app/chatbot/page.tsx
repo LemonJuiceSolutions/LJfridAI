@@ -1,8 +1,7 @@
-
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Bot, BrainCircuit, Loader2, Send, User } from 'lucide-react';
+import { ArrowLeft, Bot, BrainCircuit, Loader2, Send, User, Image as ImageIcon, Video, Link as LinkIcon, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,6 +10,9 @@ import { diagnoseProblemAction } from '../actions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import Image from 'next/image';
+import type { MediaItem, LinkItem, TriggerItem } from '@/lib/types';
 
 
 type Message = {
@@ -21,6 +23,9 @@ type Message = {
     isFinalDecision?: boolean;
     treeId?: string;
     treeDisplayName?: string;
+    media?: MediaItem[];
+    links?: LinkItem[];
+    triggers?: TriggerItem[];
 };
 
 const initialAssistantMessage: Message = {
@@ -36,12 +41,80 @@ export default function ChatbotPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [initialProblem, setInitialProblem] = useState('');
     const scrollAreaRef = useRef<HTMLDivElement>(null);
+    const [previewingMedia, setPreviewingMedia] = useState<MediaItem | null>(null);
 
     useEffect(() => {
         if (scrollAreaRef.current) {
             scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
         }
     }, [messages]);
+
+    const renderAttachments = (message: Message) => {
+        const allAttachments = [
+            ...(message.media || []).map(item => ({ type: 'media' as const, item })),
+            ...(message.links || []).map(item => ({ type: 'link' as const, item })),
+            ...(message.triggers || []).map(item => ({ type: 'trigger' as const, item }))
+        ];
+
+        if (allAttachments.length === 0) return null;
+
+        return (
+            <div className="mt-2 space-y-1">
+                {allAttachments.map((attachment, index) => {
+                    let icon, name, actionWrapper;
+                    const { item, type } = attachment;
+
+                    switch (type) {
+                        case 'media':
+                            icon = item.type === 'image' 
+                                ? <ImageIcon className="h-4 w-4 text-purple-600" /> 
+                                : <Video className="h-4 w-4 text-purple-600" />;
+                            name = item.name || item.originalFilename || 'Media';
+                            actionWrapper = (children: React.ReactNode) => (
+                                <div onClick={() => setPreviewingMedia(item)} className="cursor-pointer flex items-center gap-2 w-full">
+                                    {children}
+                                </div>
+                            );
+                            break;
+                        case 'link':
+                            icon = <LinkIcon className="h-4 w-4 text-purple-600" />;
+                            name = item.name || item.url;
+                            actionWrapper = (children: React.ReactNode) => (
+                                <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 w-full">
+                                    {children}
+                                </a>
+                            );
+                            break;
+                        case 'trigger':
+                            icon = <Zap className="h-4 w-4 text-purple-600" />;
+                            name = item.name;
+                            actionWrapper = (children: React.ReactNode) => <div className="flex items-center gap-2 w-full">{children}</div>;
+                            break;
+                    }
+
+                    return (
+                        <div key={index} className="flex items-center p-1.5 rounded-md bg-background/50 hover:bg-background/80 transition-colors border text-xs">
+                            {actionWrapper(
+                                <>
+                                    {icon}
+                                    <span className="truncate flex-1">{name}</span>
+                                    {type === 'media' && (
+                                        <div className="w-4 h-4 rounded bg-muted flex-shrink-0 overflow-hidden relative flex items-center justify-center">
+                                            {item.type === 'image' ? (
+                                                <Image src={item.url} alt={name} fill className="object-cover" sizes="16px" />
+                                            ) : (
+                                                <Video className="h-3 w-3 text-purple-600" />
+                                            )}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )
+                })}
+            </div>
+        );
+    };
 
      const handleSubmit = async (value: string, isOptionClick = false) => {
         const userMessageText = value;
@@ -95,7 +168,10 @@ export default function ChatbotPage() {
                 options: diagnosisData.isFinalDecision ? undefined : diagnosisData.options,
                 isFinalDecision: diagnosisData.isFinalDecision,
                 treeId: diagnosisData.isFinalDecision ? diagnosisData.treeName : undefined,
-                treeDisplayName: diagnosisData.isFinalDecision ? currentMessages.find(m => m.text === diagnosisData.treeName)?.text || diagnosisData.treeName : undefined
+                treeDisplayName: diagnosisData.isFinalDecision ? currentMessages.find(m => m.text === diagnosisData.treeName)?.text || diagnosisData.treeName : undefined,
+                media: diagnosisData.media,
+                links: diagnosisData.links,
+                triggers: diagnosisData.triggers
             };
             
             setMessages(prev => [...prev, assistantMessage]);
@@ -176,6 +252,7 @@ export default function ChatbotPage() {
                                                         : 'bg-muted'
                                                 )}>
                                                     <p>{m.text}</p>
+                                                    {renderAttachments(m)}
                                                     {m.isFinalDecision && m.treeId && (
                                                          <Button asChild className="mt-3">
                                                             <Link href={`/view/${m.treeId}`}>
@@ -236,6 +313,29 @@ export default function ChatbotPage() {
                     </Card>
                 </div>
             </main>
+
+            {/* Media Preview Dialog */}
+            <Dialog open={!!previewingMedia} onOpenChange={(open) => !open && setPreviewingMedia(null)}>
+                <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black/90 border-none">
+                    {previewingMedia?.type === 'image' && (
+                        <div className="relative w-full h-[80vh]">
+                            <Image 
+                                src={previewingMedia.url} 
+                                alt={previewingMedia.name || 'Preview'} 
+                                fill 
+                                className="object-contain" 
+                            />
+                        </div>
+                    )}
+                    {previewingMedia?.type === 'video' && (
+                        <div className="w-full h-full flex items-center justify-center p-4">
+                            <video controls className="max-w-full max-h-[80vh]" src={previewingMedia.url}>
+                                Il tuo browser non supporta il tag video.
+                            </video>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

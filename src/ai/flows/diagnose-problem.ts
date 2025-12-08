@@ -19,11 +19,31 @@ const DiagnoseProblemInputSchema = z.object({
 });
 export type DiagnoseProblemInput = z.infer<typeof DiagnoseProblemInputSchema>;
 
+const MediaItemSchema = z.object({
+    name: z.string(),
+    type: z.enum(['image', 'video']),
+    url: z.string(),
+    originalFilename: z.string().optional(),
+});
+
+const LinkItemSchema = z.object({
+    name: z.string(),
+    url: z.string(),
+});
+
+const TriggerItemSchema = z.object({
+    name: z.string(),
+    path: z.string(),
+});
+
 const DiagnoseProblemOutputSchema = z.object({
     question: z.string().describe("The next question to ask the user, or the final decision."),
     options: z.array(z.string()).optional().describe("The possible options for the user to choose from. This is empty if a final decision is reached."),
     isFinalDecision: z.boolean().describe("True if the 'question' field contains the final decision, false otherwise."),
     treeName: z.string().optional().describe("The name of the decision tree that has been identified as the correct one. This is only present when a tree is successfully identified."),
+    media: z.array(MediaItemSchema).optional().describe("Media items attached to the current node."),
+    links: z.array(LinkItemSchema).optional().describe("Links attached to the current node."),
+    triggers: z.array(TriggerItemSchema).optional().describe("Triggers attached to the current node."),
 });
 export type DiagnoseProblemOutput = z.infer<typeof DiagnoseProblemOutputSchema>;
 
@@ -69,7 +89,8 @@ Follow these steps with absolute rigor:
 
 3.  **Formulate Output**:
     *   If you are asking a question (either to test a hypothesis, or from within a tree), set 'isFinalDecision' to 'false', provide the question text in the 'question' field, and list the available choices in the 'options' array.
-    *   If you reach a leaf node (a final 'decision'), set 'isFinalDecision' to 'true', set the 'question' field to the final decision text, and leave the 'options' array empty. Set 'treeName' to the name of the tree you just navigated.`;
+    *   If you reach a leaf node (a final 'decision'), set 'isFinalDecision' to 'true', set the 'question' field to the final decision text, and leave the 'options' array empty. Set 'treeName' to the name of the tree you just navigated.
+    *   **CRITICAL: Include Attachments**: If the current node (question or decision) in the JSON tree contains 'media', 'links', or 'triggers', you MUST include them in your output exactly as they appear in the JSON.`;
     
     const { output } = await ai.generate({
       model: 'googleai/gemini-1.5-flash',
