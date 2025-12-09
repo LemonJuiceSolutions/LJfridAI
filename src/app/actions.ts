@@ -51,6 +51,56 @@ function formatVariablesToTable(variables: Variable[]): string {
   return table;
 }
 
+// Helper function to extract first valid JSON from string
+function extractFirstJSON(str: string): any {
+    const firstOpen = str.indexOf('{');
+    const firstArrayOpen = str.indexOf('[');
+    
+    if (firstOpen === -1 && firstArrayOpen === -1) return null;
+    
+    let startIndex = -1;
+    if (firstOpen !== -1 && (firstArrayOpen === -1 || firstOpen < firstArrayOpen)) {
+        startIndex = firstOpen;
+    } else {
+        startIndex = firstArrayOpen;
+    }
+
+    let braceCount = 0;
+    let inString = false;
+    let escaped = false;
+    
+    for (let i = startIndex; i < str.length; i++) {
+        const char = str[i];
+        
+        if (inString) {
+            if (char === '\\' && !escaped) {
+                escaped = true;
+            } else if (char === '"' && !escaped) {
+                inString = false;
+            } else {
+                escaped = false;
+            }
+        } else {
+            if (char === '"') {
+                inString = true;
+            } else if (char === '{' || char === '[') {
+                braceCount++;
+            } else if (char === '}' || char === ']') {
+                braceCount--;
+                if (braceCount === 0) {
+                    const potentialJson = str.substring(startIndex, i + 1);
+                    try {
+                        return JSON.parse(potentialJson);
+                    } catch (e) {
+                        return null; 
+                    }
+                }
+            }
+        }
+    }
+    return null;
+}
+
 // Helper for OpenRouter JSON calls
 async function callOpenRouterJSON(apiKey: string, model: string, prompt: string, systemPrompt: string): Promise<any> {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -80,11 +130,35 @@ async function callOpenRouterJSON(apiKey: string, model: string, prompt: string,
         return JSON.parse(content);
     } catch (e) {
         // Fallback: try to extract JSON from markdown code block if present
-        const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/{[\s\S]*}/);
+        const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
         if (jsonMatch) {
-            return JSON.parse(jsonMatch[1] || jsonMatch[0]);
+            try {
+                return JSON.parse(jsonMatch[1]);
+            } catch (e2) {
+                 // Try robust extraction on the match content
+                 const extracted = extractFirstJSON(jsonMatch[1]);
+                 if (extracted) return extracted;
+            }
         }
-        throw new Error("Failed to parse JSON response from AI");
+        
+        // Try robust extraction on the whole content
+        const extracted = extractFirstJSON(content);
+        if (extracted) return extracted;
+
+        // Last resort: simple regex match (greedy) - kept for backward compatibility but risky
+        const simpleMatch = content.match(/{[\s\S]*}/);
+        if (simpleMatch) {
+             try {
+                return JSON.parse(simpleMatch[0]);
+             } catch (e3) {
+                 // If simple match fails, it might be due to trailing garbage caught by greedy match
+                 // Try to extract from the matched string using robust method
+                 const extractedFromMatch = extractFirstJSON(simpleMatch[0]);
+                 if (extractedFromMatch) return extractedFromMatch;
+             }
+        }
+
+        throw new Error(`Failed to parse JSON response from AI: ${e instanceof Error ? e.message : String(e)}`);
     }
 }
 
@@ -433,6 +507,7 @@ export async function diagnoseProblemAction(input: Omit<DiagnoseProblemInput, 'd
       }
       
       const simplifiedTrees = allTreesResult.data.map(t => ({ 
+        id: t.id,
         name: t.name, 
         description: t.description, 
         json: t.jsonDecisionTree 
@@ -468,6 +543,12 @@ Follow these steps with absolute rigor:
     *   Once a tree is identified with high confidence, your job is to guide the user through its JSON structure, step-by-step.
     *   **If you are just starting the navigation (i.e., you have just identified the tree)**, your response MUST be the root question of that tree's JSON. Provide the corresponding options from the JSON. (Note: If you confirmed the tree via hypothesis testing, you've already asked the first question, so use the 'currentAnswer' to find the *next* step).
     *   **If you already have a user's answer ('currentAnswer') to a previous question from the tree**, use that answer to find the next node in the JSON (question or decision).
+    *   **SUB-TREE HANDLING**: When you follow a user's answer to a new node, check if that node has a 'subTreeRef' property.
+        *   If it does, this is a link to another tree. 
+        *   You MUST find the referenced tree in your library (using the ID in 'subTreeRef').
+        *   Your output MUST be the **root question** of that NEW tree.
+        *   Update 'treeName' in your output to match the NEW tree (use its ID).
+        *   Continue navigating the new tree.
     *   Continue asking questions from the tree until you reach a leaf node (a final 'decision').
 
 3.  **Formulate Output**:

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Bot, BrainCircuit, Loader2, Send, User, Image as ImageIcon, Video, Link as LinkIcon, Zap } from 'lucide-react';
+import { ArrowLeft, Bot, BrainCircuit, Loader2, Send, User, Image as ImageIcon, Video, Link as LinkIcon, Zap, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -206,6 +206,8 @@ export default function ChatbotPage() {
 
     const isConversationOver = messages.length > 0 && messages[messages.length-1].isFinalDecision;
 
+    const currentTreeId = messages.reduceRight((acc: string | undefined, m) => acc || m.treeId, undefined);
+
     return (
         <div className="flex flex-col h-screen bg-background">
             <header className="sticky top-0 z-10 w-full border-b bg-background/80 backdrop-blur-sm">
@@ -229,7 +231,16 @@ export default function ChatbotPage() {
                 <div className="container mx-auto h-full p-4 md:p-6">
                     <Card className="h-full flex flex-col">
                         <CardHeader>
-                            <CardTitle>Chatbot Diagnostico</CardTitle>
+                            <div className="flex items-center justify-between">
+                                <CardTitle>Chatbot Diagnostico</CardTitle>
+                                {currentTreeId && (
+                                    <Button variant="outline" size="icon" asChild title="Vai all'albero decisionale">
+                                        <Link href={`/view/${currentTreeId}`}>
+                                            <GitBranch className="h-4 w-4" />
+                                        </Link>
+                                    </Button>
+                                )}
+                            </div>
                             <CardDescription>
                                 Descrivi il tuo problema e ti aiuterò a trovare la guida giusta.
                             </CardDescription>
