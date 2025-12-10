@@ -649,7 +649,8 @@ Follow these steps with absolute rigor:
         *   Aggregate all 'media', 'links', and 'triggers' from all involved nodes into the respective output arrays.
     *   **INTERNAL LINK HANDLING (ref)**: When you encounter a node with a 'ref' property, it means a jump to another node in the SAME tree.
         *   Find the node with the matching 'id' in the current tree's JSON.
-        *   Treat the target node as the current node (or part of the current set of nodes if in an array).
+        *   **CRITICAL EXCEPTION**: If the target node is a 'decision' node (it has a 'decision' property) and it is being accessed via a 'ref' (connector), **DO NOT** include its text in the 'question' field and **DO NOT** include its 'id' in the 'nodeIds' array.
+        *   Otherwise (if it's a question node), treat it as the current node (or part of the current set of nodes if in an array).
         *   If it's part of an array, combine its content as described in 'MULTIPLE NODES HANDLING'.
     *   **SUB-TREE HANDLING**: When you follow a user's answer to a new node, check if that node has a 'subTreeRef' property.
         *   If it does, this is a link to another tree. 
@@ -796,6 +797,7 @@ Follow these steps with absolute rigor:
                         const nodesList: DiagnosticNode[] = [];
                         const subTreeInfo: { treeId: string; rootQuestion: string; options: string[]; priority: number }[] = [];
                         const nodeIds: string[] = [];
+                        const collectedOptions = new Set<string>();
 
                         for (const item of items) {
                             if (typeof item === 'string') {
@@ -810,9 +812,13 @@ Follow these steps with absolute rigor:
                                         if ('ref' in subItem) {
                                             const target = findNodeById(treeJson, (subItem as any).ref);
                                             if (target) {
+                                                // Skip decision nodes from connectors as per user request
+                                                if (target.decision) continue;
+
                                                 if (target.media) aggregatedMedia.push(...(target.media || []));
                                                 if (target.links) aggregatedLinks.push(...(target.links || []));
                                                 if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                                if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
                                                 nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
                                                 if (target.id) nodeIds.push(target.id);
                                             }
@@ -835,6 +841,7 @@ Follow these steps with absolute rigor:
                                             if (target.media) aggregatedMedia.push(...(target.media || []));
                                             if (target.links) aggregatedLinks.push(...(target.links || []));
                                             if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                            if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
                                             nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
                                             if (target.id) nodeIds.push(target.id);
                                         }
@@ -847,9 +854,13 @@ Follow these steps with absolute rigor:
                                 if ('ref' in item) {
                                     const target = findNodeById(treeJson, (item as any).ref);
                                     if (target) {
+                                        // Skip decision nodes from connectors as per user request
+                                        if (target.decision) continue;
+
                                         if (target.media) aggregatedMedia.push(...(target.media || []));
                                         if (target.links) aggregatedLinks.push(...(target.links || []));
                                         if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                        if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
                                         nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
                                         if (target.id) nodeIds.push(target.id);
                                     }
@@ -872,6 +883,7 @@ Follow these steps with absolute rigor:
                                     if (target.media) aggregatedMedia.push(...(target.media || []));
                                     if (target.links) aggregatedLinks.push(...(target.links || []));
                                     if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                    if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
                                     nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
                                     if (target.id) nodeIds.push(target.id);
                                 }
@@ -884,6 +896,7 @@ Follow these steps with absolute rigor:
                         result.triggers = aggregatedTriggers;
                         result.nodes = nodesList;
                         if (nodeIds.length > 0) result.nodeIds = nodeIds;
+                        if (collectedOptions.size > 0) result.options = Array.from(collectedOptions);
 
                         if (subTreeInfo.length > 0) {
                             const next = subTreeInfo[0];

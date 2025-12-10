@@ -86,6 +86,10 @@ Follow these steps with absolute rigor:
     *   Once a tree is identified with high confidence, your job is to guide the user through its JSON structure, step-by-step.
     *   **If you are just starting the navigation (i.e., you have just identified the tree)**, your response MUST be the root question of that tree's JSON. Provide the corresponding options from the JSON. (Note: If you confirmed the tree via hypothesis testing, you've already asked the first question, so use the 'currentAnswer' to find the *next* step).
     *   **If you already have a user's answer ('currentAnswer') to a previous question from the tree**, use that answer to find the next node in the JSON (question or decision).
+    *   **INTERNAL LINK HANDLING (ref)**: When you encounter a node with a 'ref' property, it means a jump to another node in the SAME tree.
+        *   Find the node with the matching 'id' in the current tree's JSON.
+        *   **CRITICAL EXCEPTION**: If the target node is a 'decision' node (it has a 'decision' property) and it is being accessed via a 'ref' (connector), **DO NOT** include its text in the 'question' field and **DO NOT** include its 'id' in the 'nodeIds' array.
+        *   Otherwise (if it's a question node), treat it as the current node (or part of the current set of nodes if in an array).
     *   **MULTIPLE NODES HANDLING**: If the next step involves multiple nodes (e.g., an array of decisions), you MUST:
         *   Combine their texts into the 'question' field, separated by two newlines ('\n\n').
         *   Include the 'id' of ALL involved nodes in the 'nodeIds' array.
