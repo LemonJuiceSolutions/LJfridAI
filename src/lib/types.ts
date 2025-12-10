@@ -48,7 +48,9 @@ export interface DecisionLeaf {
   triggers?: TriggerItem[];
 }
 
-export type DecisionOptionChild = DecisionNode | DecisionLeaf | string | { ref: string, id?: string } | { subTreeRef: string, id?: string };
+export type SingleDecisionOptionChild = DecisionNode | DecisionLeaf | string | { ref: string, id?: string } | { subTreeRef: string, id?: string };
+
+export type DecisionOptionChild = SingleDecisionOptionChild | SingleDecisionOptionChild[];
 
 
 export interface DecisionNode {
@@ -74,6 +76,14 @@ export interface StoredTree extends AnalysisResult {
     createdAt?: any; 
 }
 
+export interface DiagnosticNode {
+    text: string;
+    media?: MediaItem[];
+    links?: LinkItem[];
+    triggers?: TriggerItem[];
+    id?: string;
+}
+
 export type DiagnoseProblemOutput = {
     question: string;
     options?: string[];
@@ -82,6 +92,8 @@ export type DiagnoseProblemOutput = {
     media?: MediaItem[];
     links?: LinkItem[];
     triggers?: TriggerItem[];
+    nodeIds?: string[];
+    nodes?: DiagnosticNode[];
 };
 
 export type ConsolidationProposal = {

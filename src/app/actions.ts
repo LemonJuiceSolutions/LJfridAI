@@ -7,7 +7,7 @@ import { generateDecisionTree } from '@/ai/flows/generate-decision-tree';
 import { rephraseQuestion } from '@/ai/flows/rephrase-question';
 import { diagnoseProblem, type DiagnoseProblemInput, type DiagnoseProblemOutput } from '@/ai/flows/diagnose-problem';
 import { detaiFlow, type DetaiInput } from '@/ai/flows/detai-flow';
-import type { DecisionNode, StoredTree, Variable, ConsolidationProposal, VariableOption, DecisionLeaf, TriggerItem, MediaItem, LinkItem } from '@/lib/types';
+import type { DecisionNode, StoredTree, Variable, ConsolidationProposal, VariableOption, DecisionLeaf, TriggerItem, MediaItem, LinkItem, DiagnosticNode } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, getDoc, setDoc, query, orderBy, Timestamp, where, writeBatch, deleteDoc, updateDoc } from 'firebase/firestore';
 
@@ -18,7 +18,18 @@ import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 
 function findNodeByQuestion(node: DecisionNode | DecisionLeaf | string | { ref: string } | { subTreeRef: string } | any, questionOrDecision: string): DecisionNode | DecisionLeaf | null {
+    if (!node) return null;
     if (typeof node === 'string') return null;
+    
+    // Handle array nodes
+    if (Array.isArray(node)) {
+        for (const item of node) {
+             const found = findNodeByQuestion(item, questionOrDecision);
+             if (found) return found;
+        }
+        return null;
+    }
+
     if ('ref' in node || 'subTreeRef' in node) return null;
     
     // Check if this node matches
@@ -30,6 +41,43 @@ function findNodeByQuestion(node: DecisionNode | DecisionLeaf | string | { ref: 
         for (const key in node.options) {
             const child = node.options[key];
             const found = findNodeByQuestion(child, questionOrDecision);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+function getLastAssistantQuestion(history: string | undefined): string | null {
+    if (!history) return null;
+    const lines = history.split('\n').map(s => s.trim());
+    for (let i = lines.length - 1; i >= 0; i--) {
+        if (lines[i].toLowerCase().startsWith('assistant:')) {
+            return lines[i].slice('assistant:'.length).trim();
+        }
+    }
+    return null;
+}
+
+function findNodeById(node: any, id: string): any | null {
+    if (!node) return null;
+    if (typeof node === 'string') return null;
+    
+    if (Array.isArray(node)) {
+         for (const item of node) {
+             const found = findNodeById(item, id);
+             if (found) return found;
+        }
+        return null;
+    }
+    
+    if ('ref' in node || 'subTreeRef' in node) return null;
+
+    if (node.id === id) return node;
+
+    if ('options' in node && node.options) {
+        for (const key in node.options) {
+            const child = node.options[key];
+            const found = findNodeById(child, id);
             if (found) return found;
         }
     }
@@ -49,6 +97,52 @@ function formatVariablesToTable(variables: Variable[]): string {
     table += `${v.name} | ${v.type} | ${valuesString}\n`;
   });
   return table;
+}
+
+// Helper to sanitize JSON string by escaping control characters inside strings
+function sanitizeJSONString(str: string): string {
+    let result = '';
+    let inString = false;
+    let escaped = false;
+    
+    for (let i = 0; i < str.length; i++) {
+        const char = str[i];
+        
+        if (inString) {
+            if (char === '\\' && !escaped) {
+                escaped = true;
+                result += char;
+            } else if (char === '"' && !escaped) {
+                inString = false;
+                result += char;
+            } else {
+                if (escaped) {
+                    escaped = false;
+                    result += char;
+                } else {
+                    // Check for control characters
+                    const code = char.charCodeAt(0);
+                    if (code <= 0x1F) {
+                        if (char === '\n') result += '\\n';
+                        else if (char === '\r') result += '\\r';
+                        else if (char === '\t') result += '\\t';
+                        else {
+                            // Replace other control characters with space to avoid errors
+                            result += ' ';
+                        }
+                    } else {
+                        result += char;
+                    }
+                }
+            }
+        } else {
+            if (char === '"') {
+                inString = true;
+            }
+            result += char;
+        }
+    }
+    return result;
 }
 
 // Helper function to extract first valid JSON from string
@@ -92,7 +186,13 @@ function extractFirstJSON(str: string): any {
                     try {
                         return JSON.parse(potentialJson);
                     } catch (e) {
-                        return null; 
+                        // Try to sanitize and parse again
+                        try {
+                            const sanitized = sanitizeJSONString(potentialJson);
+                            return JSON.parse(sanitized);
+                        } catch (e2) {
+                            return null;
+                        }
                     }
                 }
             }
@@ -543,18 +643,25 @@ Follow these steps with absolute rigor:
     *   Once a tree is identified with high confidence, your job is to guide the user through its JSON structure, step-by-step.
     *   **If you are just starting the navigation (i.e., you have just identified the tree)**, your response MUST be the root question of that tree's JSON. Provide the corresponding options from the JSON. (Note: If you confirmed the tree via hypothesis testing, you've already asked the first question, so use the 'currentAnswer' to find the *next* step).
     *   **If you already have a user's answer ('currentAnswer') to a previous question from the tree**, use that answer to find the next node in the JSON (question or decision).
+    *   **MULTIPLE NODES HANDLING**: If the next step involves multiple nodes (e.g., an array of decisions), you MUST:
+        *   Combine their texts into the 'question' field, separated by two newlines ('\n\n').
+        *   Include the 'id' of ALL involved nodes in the 'nodeIds' array.
+        *   Aggregate all 'media', 'links', and 'triggers' from all involved nodes into the respective output arrays.
+    *   **INTERNAL LINK HANDLING (ref)**: When you encounter a node with a 'ref' property, it means a jump to another node in the SAME tree.
+        *   Find the node with the matching 'id' in the current tree's JSON.
+        *   Treat the target node as the current node (or part of the current set of nodes if in an array).
+        *   If it's part of an array, combine its content as described in 'MULTIPLE NODES HANDLING'.
     *   **SUB-TREE HANDLING**: When you follow a user's answer to a new node, check if that node has a 'subTreeRef' property.
         *   If it does, this is a link to another tree. 
-        *   You MUST find the referenced tree in your library (using the ID in 'subTreeRef').
-        *   Your output MUST be the **root question** of that NEW tree.
-        *   Update 'treeName' in your output to match the NEW tree (use its ID).
-        *   Continue navigating the new tree.
+        *   **SINGLE PATH**: If this is the ONLY next step, you MUST find the referenced tree in your library (using the ID in 'subTreeRef'), output the **root question** of that NEW tree, update 'treeName', and continue navigating the new tree.
+        *   **MULTIPLE PATHS (Aggregation)**: If a 'subTreeRef' appears together with other nodes, aggregate all nodes as results, then choose ONE sub-tree to navigate first based on priority. Set 'question' and 'options' to the chosen sub-tree's root question and options, and set 'treeName' to that sub-tree. After reaching a final decision in that sub-tree, proceed to the next sub-tree in priority order until all are handled.
     *   Continue asking questions from the tree until you reach a leaf node (a final 'decision').
 
 3.  **Formulate Output**:
     *   If you are asking a question (either to test a hypothesis, or from within a tree), set 'isFinalDecision' to 'false', provide the question text in the 'question' field, and list the available choices in the 'options' array.
     *   If you reach a leaf node (a final 'decision'), set 'isFinalDecision' to 'true', set the 'question' field to the final decision text, and leave the 'options' array empty. Set 'treeName' to the name of the tree you just navigated.
     *   **ALWAYS include 'treeName'** if you have identified the correct decision tree, even for intermediate questions. This helps in verifying the context.
+    *   **ALWAYS include 'nodeIds'**: The 'nodeIds' array MUST contain the 'id' of the current node(s) as found in the JSON.
     *   **CRITICAL: Include Attachments**: If the current node (question or decision) in the JSON tree contains 'media', 'links', or 'triggers', you MUST include them in your output exactly as they appear in the JSON. Do NOT include attachments if they are not present in the current node. Do NOT copy attachments from previous nodes.
     
     OUTPUT JSON FORMAT:
@@ -563,6 +670,7 @@ Follow these steps with absolute rigor:
         "options": ["string", "string"],
         "isFinalDecision": boolean,
         "treeName": "string (optional)",
+        "nodeIds": ["string"],
         "media": [ ... ],
         "links": [ ... ],
         "triggers": [ ... ]
@@ -590,18 +698,215 @@ Follow these steps with absolute rigor:
             // STRICT VERIFICATION: Verify attachments against the JSON source
             try {
                 const treeJson = JSON.parse(foundTree.jsonDecisionTree);
-                const matchingNode = findNodeByQuestion(treeJson, result.question);
+                
+                if (result.nodeIds && Array.isArray(result.nodeIds) && result.nodeIds.length > 0) {
+                     const aggregatedMedia: MediaItem[] = [];
+                     const aggregatedLinks: LinkItem[] = [];
+                     const aggregatedTriggers: TriggerItem[] = [];
+                     const nodesList: DiagnosticNode[] = [];
+                     
+                    const regularNodes: DiagnosticNode[] = [];
+                    const subTreeNodes: (DiagnosticNode & { priority: number })[] = [];
+                    const subTreeInfo: { treeId: string; rootQuestion: string; options: string[]; priority: number }[] = [];
+                     
+                     for (const id of result.nodeIds) {
+                         const matchingNode = findNodeById(treeJson, id);
+                         if (matchingNode) {
+                             if (matchingNode.media) aggregatedMedia.push(...matchingNode.media);
+                             if (matchingNode.links) aggregatedLinks.push(...matchingNode.links);
+                             if (matchingNode.triggers) aggregatedTriggers.push(...matchingNode.triggers);
+                             
+                            if (matchingNode.subTreeRef) {
+                                const targetTree = allTreesResult.data.find(t => t.id === matchingNode.subTreeRef);
+                                if (targetTree) {
+                                    let targetText = `Collegamento a: ${targetTree.name}`;
+                                    try {
+                                        const targetJson = JSON.parse(targetTree.jsonDecisionTree);
+                                        const rootText = targetJson.question || targetJson.decision;
+                                        if (rootText) {
+                                            targetText += ` - ${rootText}`;
+                                        }
+                                        const opts = targetJson.options ? Object.keys(targetJson.options) : [];
+                                        const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
+                                        subTreeInfo.push({ treeId: targetTree.id, rootQuestion: rootText || targetText, options: opts, priority: prio });
+                                    } catch (e) {
+                                        const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
+                                        subTreeInfo.push({ treeId: targetTree.id, rootQuestion: targetText, options: [], priority: prio });
+                                    }
 
-                if (matchingNode) {
-                    // Overwrite attachments from the authoritative source
-                    result.media = matchingNode.media || [];
-                    result.links = matchingNode.links || [];
-                    result.triggers = matchingNode.triggers || [];
+                                    const priority = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
+                                    
+                                    subTreeNodes.push({
+                                        text: targetText,
+                                        media: matchingNode.media,
+                                        links: matchingNode.links,
+                                        triggers: matchingNode.triggers,
+                                        id: matchingNode.id,
+                                        priority
+                                    });
+                                }
+                            } else {
+                                regularNodes.push({
+                                    text: matchingNode.question || matchingNode.decision || '...',
+                                    media: matchingNode.media,
+                                    links: matchingNode.links,
+                                    triggers: matchingNode.triggers,
+                                    id: matchingNode.id
+                                });
+                            }
+                         }
+                     }
+                     
+                    subTreeNodes.sort((a, b) => b.priority - a.priority);
+                    subTreeInfo.sort((a, b) => b.priority - a.priority);
+                    
+                    nodesList.push(...regularNodes);
+                    nodesList.push(...subTreeNodes.map(({ priority, ...node }) => node));
+                    
+                    result.media = aggregatedMedia;
+                    result.links = aggregatedLinks;
+                    result.triggers = aggregatedTriggers;
+                    result.nodes = nodesList;
+
+                    if (subTreeInfo.length > 0) {
+                        const next = subTreeInfo[0];
+                        result.question = next.rootQuestion || result.question;
+                        result.options = next.options;
+                        result.treeName = next.treeId;
+                        result.isFinalDecision = false;
+                    }
+
                 } else {
-                    // If node not found (rare, maybe slight text mismatch), fallback to LLM but be cautious
-                    // Or we could try fuzzy matching, but for now let's trust LLM if exact match fails
-                    // However, to fix the user's specific issue of hallucination, we might want to clear them if not found?
-                    // No, safe to keep LLM's if we can't verify. But usually exact match should work if LLM follows instructions.
+                    const prevQuestion = getLastAssistantQuestion(input.history);
+                    let sourceNode = prevQuestion ? findNodeByQuestion(treeJson, prevQuestion) : null;
+                    if (!sourceNode) {
+                        sourceNode = findNodeByQuestion(treeJson, result.question);
+                    }
+
+                    if (sourceNode && 'options' in sourceNode && sourceNode.options && input.currentAnswer) {
+                        const keys = Object.keys(sourceNode.options);
+                        const normalized = input.currentAnswer.trim().toLowerCase();
+                        const matchKey = keys.find(k => k.trim().toLowerCase() === normalized) || input.currentAnswer;
+                        const child = (sourceNode.options as any)[matchKey];
+                        const items = Array.isArray(child) ? child : [child];
+
+                        const aggregatedMedia: MediaItem[] = [];
+                        const aggregatedLinks: LinkItem[] = [];
+                        const aggregatedTriggers: TriggerItem[] = [];
+                        const nodesList: DiagnosticNode[] = [];
+                        const subTreeInfo: { treeId: string; rootQuestion: string; options: string[]; priority: number }[] = [];
+                        const nodeIds: string[] = [];
+
+                        for (const item of items) {
+                            if (typeof item === 'string') {
+                                nodesList.push({ text: item });
+                                continue;
+                            }
+                            if (Array.isArray(item)) {
+                                for (const subItem of item) {
+                                    if (typeof subItem === 'string') {
+                                        nodesList.push({ text: subItem });
+                                    } else if (subItem && typeof subItem === 'object') {
+                                        if ('ref' in subItem) {
+                                            const target = findNodeById(treeJson, (subItem as any).ref);
+                                            if (target) {
+                                                if (target.media) aggregatedMedia.push(...(target.media || []));
+                                                if (target.links) aggregatedLinks.push(...(target.links || []));
+                                                if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                                nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
+                                                if (target.id) nodeIds.push(target.id);
+                                            }
+                                        } else if ('subTreeRef' in subItem) {
+                                            const targetTree = allTreesResult.data.find(t => t.id === (subItem as any).subTreeRef);
+                                            if (targetTree) {
+                                                let rootQuestion = `Collegamento a: ${targetTree.name}`;
+                                                let opts: string[] = [];
+                                                try {
+                                                    const targetJson = JSON.parse(targetTree.jsonDecisionTree);
+                                                    rootQuestion = (targetJson.question || targetJson.decision) || rootQuestion;
+                                                    opts = targetJson.options ? Object.keys(targetJson.options) : [];
+                                                } catch {}
+                                                const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
+                                                subTreeInfo.push({ treeId: targetTree.id, rootQuestion, options: opts, priority: prio });
+                                                nodesList.push({ text: `Collegamento a: ${targetTree.name}${rootQuestion ? ` - ${rootQuestion}` : ''}` });
+                                            }
+                                        } else {
+                                            const target = subItem as any;
+                                            if (target.media) aggregatedMedia.push(...(target.media || []));
+                                            if (target.links) aggregatedLinks.push(...(target.links || []));
+                                            if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                            nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
+                                            if (target.id) nodeIds.push(target.id);
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
+
+                            if (item && typeof item === 'object') {
+                                if ('ref' in item) {
+                                    const target = findNodeById(treeJson, (item as any).ref);
+                                    if (target) {
+                                        if (target.media) aggregatedMedia.push(...(target.media || []));
+                                        if (target.links) aggregatedLinks.push(...(target.links || []));
+                                        if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                        nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
+                                        if (target.id) nodeIds.push(target.id);
+                                    }
+                                } else if ('subTreeRef' in item) {
+                                    const targetTree = allTreesResult.data.find(t => t.id === (item as any).subTreeRef);
+                                    if (targetTree) {
+                                        let rootQuestion = `Collegamento a: ${targetTree.name}`;
+                                        let opts: string[] = [];
+                                        try {
+                                            const targetJson = JSON.parse(targetTree.jsonDecisionTree);
+                                            rootQuestion = (targetJson.question || targetJson.decision) || rootQuestion;
+                                            opts = targetJson.options ? Object.keys(targetJson.options) : [];
+                                        } catch {}
+                                        const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
+                                        subTreeInfo.push({ treeId: targetTree.id, rootQuestion, options: opts, priority: prio });
+                                        nodesList.push({ text: `Collegamento a: ${targetTree.name}${rootQuestion ? ` - ${rootQuestion}` : ''}` });
+                                    }
+                                } else {
+                                    const target = item as any;
+                                    if (target.media) aggregatedMedia.push(...(target.media || []));
+                                    if (target.links) aggregatedLinks.push(...(target.links || []));
+                                    if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                    nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
+                                    if (target.id) nodeIds.push(target.id);
+                                }
+                            }
+                        }
+
+                        subTreeInfo.sort((a, b) => b.priority - a.priority);
+                        result.media = aggregatedMedia;
+                        result.links = aggregatedLinks;
+                        result.triggers = aggregatedTriggers;
+                        result.nodes = nodesList;
+                        if (nodeIds.length > 0) result.nodeIds = nodeIds;
+
+                        if (subTreeInfo.length > 0) {
+                            const next = subTreeInfo[0];
+                            result.question = next.rootQuestion || result.question;
+                            result.options = next.options;
+                            result.treeName = next.treeId;
+                            result.isFinalDecision = false;
+                        }
+                    } else {
+                        const matchingNode = findNodeByQuestion(treeJson, result.question);
+                        if (matchingNode) {
+                            result.media = matchingNode.media || [];
+                            result.links = matchingNode.links || [];
+                            result.triggers = matchingNode.triggers || [];
+                            result.nodes = [{
+                                text: ('question' in matchingNode ? matchingNode.question : matchingNode.decision) || result.question,
+                                media: matchingNode.media,
+                                links: matchingNode.links,
+                                triggers: matchingNode.triggers,
+                                id: matchingNode.id
+                            }];
+                        }
+                    }
                 }
             } catch (jsonError) {
                 console.error("Error parsing tree JSON for verification:", jsonError);

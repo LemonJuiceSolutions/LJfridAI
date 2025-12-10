@@ -41,6 +41,7 @@ const DiagnoseProblemOutputSchema = z.object({
     options: z.array(z.string()).optional().describe("The possible options for the user to choose from. This is empty if a final decision is reached."),
     isFinalDecision: z.boolean().describe("True if the 'question' field contains the final decision, false otherwise."),
     treeName: z.string().optional().describe("The name of the decision tree that has been identified as the correct one. This is only present when a tree is successfully identified."),
+    nodeIds: z.array(z.string()).optional().describe("The IDs of the current nodes in the JSON tree. Used for verification."),
     media: z.array(MediaItemSchema).optional().describe("Media items attached to the current node."),
     links: z.array(LinkItemSchema).optional().describe("Links attached to the current node."),
     triggers: z.array(TriggerItemSchema).optional().describe("Triggers attached to the current node."),
@@ -85,11 +86,16 @@ Follow these steps with absolute rigor:
     *   Once a tree is identified with high confidence, your job is to guide the user through its JSON structure, step-by-step.
     *   **If you are just starting the navigation (i.e., you have just identified the tree)**, your response MUST be the root question of that tree's JSON. Provide the corresponding options from the JSON. (Note: If you confirmed the tree via hypothesis testing, you've already asked the first question, so use the 'currentAnswer' to find the *next* step).
     *   **If you already have a user's answer ('currentAnswer') to a previous question from the tree**, use that answer to find the next node in the JSON (question or decision).
+    *   **MULTIPLE NODES HANDLING**: If the next step involves multiple nodes (e.g., an array of decisions), you MUST:
+        *   Combine their texts into the 'question' field, separated by two newlines ('\n\n').
+        *   Include the 'id' of ALL involved nodes in the 'nodeIds' array.
+        *   Aggregate all 'media', 'links', and 'triggers' from all involved nodes into the respective output arrays.
     *   Continue asking questions from the tree until you reach a leaf node (a final 'decision').
 
 3.  **Formulate Output**:
     *   If you are asking a question (either to test a hypothesis, or from within a tree), set 'isFinalDecision' to 'false', provide the question text in the 'question' field, and list the available choices in the 'options' array.
     *   If you reach a leaf node (a final 'decision'), set 'isFinalDecision' to 'true', set the 'question' field to the final decision text, and leave the 'options' array empty. Set 'treeName' to the name of the tree you just navigated.
+    *   **ALWAYS include 'nodeIds'**: The 'nodeIds' array MUST contain the 'id' of the current node(s) as found in the JSON.
     *   **CRITICAL: Include Attachments**: If the current node (question or decision) in the JSON tree contains 'media', 'links', or 'triggers', you MUST include them in your output exactly as they appear in the JSON.`;
     
     const { output } = await ai.generate({

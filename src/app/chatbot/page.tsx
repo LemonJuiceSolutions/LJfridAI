@@ -12,7 +12,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import Image from 'next/image';
-import type { MediaItem, LinkItem, TriggerItem } from '@/lib/types';
+import type { MediaItem, LinkItem, TriggerItem, DiagnosticNode } from '@/lib/types';
 
 
 type Message = {
@@ -26,6 +26,7 @@ type Message = {
     media?: MediaItem[];
     links?: LinkItem[];
     triggers?: TriggerItem[];
+    nodes?: DiagnosticNode[];
 };
 
 const initialAssistantMessage: Message = {
@@ -171,7 +172,8 @@ export default function ChatbotPage() {
                 treeDisplayName: diagnosisData.isFinalDecision ? currentMessages.find(m => m.text === diagnosisData.treeName)?.text || diagnosisData.treeName : undefined,
                 media: diagnosisData.media,
                 links: diagnosisData.links,
-                triggers: diagnosisData.triggers
+                triggers: diagnosisData.triggers,
+                nodes: diagnosisData.nodes
             };
             
             setMessages(prev => [...prev, assistantMessage]);
@@ -256,22 +258,47 @@ export default function ChatbotPage() {
                                                 </Avatar>
                                             )}
                                             <div className={cn("max-w-[75%] space-y-2")}>
-                                               <div className={cn(
-                                                    'rounded-lg p-3 text-sm',
-                                                    m.role === 'user'
-                                                        ? 'bg-primary text-primary-foreground'
-                                                        : 'bg-muted'
-                                                )}>
-                                                    <p>{m.text}</p>
-                                                    {renderAttachments(m)}
-                                                    {m.isFinalDecision && m.treeId && (
-                                                         <Button asChild className="mt-3">
-                                                            <Link href={`/view/${m.treeId}`}>
-                                                                Visualizza l'albero
-                                                            </Link>
-                                                        </Button>
-                                                    )}
-                                                </div>
+                                                {m.nodes && m.nodes.length > 0 ? (
+                                                    <div className="space-y-2">
+                                                        {m.nodes.map((node, idx) => (
+                                                            <div key={idx} className={cn(
+                                                                'rounded-lg p-3 text-sm',
+                                                                m.role === 'user'
+                                                                    ? 'bg-primary text-primary-foreground'
+                                                                    : 'bg-muted'
+                                                            )}>
+                                                                <div className="whitespace-pre-wrap">{node.text}</div>
+                                                                {renderAttachments({ ...m, media: node.media, links: node.links, triggers: node.triggers })}
+                                                            </div>
+                                                        ))}
+                                                        {m.isFinalDecision && m.treeId && (
+                                                            <div className={cn('rounded-lg p-3 text-sm bg-muted')}>
+                                                                <Button asChild className="w-full">
+                                                                    <Link href={`/view/${m.treeId}`}>
+                                                                        Visualizza l'albero
+                                                                    </Link>
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                   <div className={cn(
+                                                        'rounded-lg p-3 text-sm',
+                                                        m.role === 'user'
+                                                            ? 'bg-primary text-primary-foreground'
+                                                            : 'bg-muted'
+                                                    )}>
+                                                        <div className="whitespace-pre-wrap">{m.text}</div>
+                                                        {renderAttachments(m)}
+                                                        {m.isFinalDecision && m.treeId && (
+                                                             <Button asChild className="mt-3">
+                                                                <Link href={`/view/${m.treeId}`}>
+                                                                    Visualizza l'albero
+                                                                </Link>
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                )}
                                                  {m.options && m.options.length > 0 && !m.isFinalDecision &&(
                                                     <div className="flex flex-wrap gap-2">
                                                         {m.options.map(option => (
