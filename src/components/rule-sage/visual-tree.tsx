@@ -31,11 +31,11 @@ interface VisualTreeProps {
 }
 
 // --- Layout Constants ---
-const NODE_WIDTH = 220;
+const NODE_WIDTH = 180;
 const NODE_HEIGHT = 100;
 const OPTION_NODE_WIDTH = 150;
 const OPTION_NODE_HEIGHT = 50;
-const H_SPACING = 40;
+const H_SPACING = 16;
 const V_SPACING = 80;
 
 
@@ -106,14 +106,19 @@ const calculateLayout = (root: DecisionNode) => {
             if (isLink) type = 'link';
             if (isSubTreeLink) type = 'sub-tree-link';
 
+            // Links (not sub-trees) are invisible nodes that just draw connectors.
+            // They should not take up space in the layout to avoid gaps.
+            const effectiveWidth = (type === 'link') ? 0 : NODE_WIDTH;
+            const effectiveHeight = (type === 'link') ? 0 : NODE_HEIGHT;
+
             let nodeWithLayout: TreeNodeWithLayout = {
                 node, path, id, x, y,
-                width: NODE_WIDTH, height: NODE_HEIGHT,
+                width: effectiveWidth, height: effectiveHeight,
                 type,
                 parent: parentNode
             };
             layout.set(path, nodeWithLayout);
-            return { width: NODE_WIDTH, height: NODE_HEIGHT, layoutNode: nodeWithLayout };
+            return { width: effectiveWidth, height: effectiveHeight, layoutNode: nodeWithLayout };
         }
 
         const questionNodeLayout: TreeNodeWithLayout = {
@@ -131,31 +136,27 @@ const calculateLayout = (root: DecisionNode) => {
             const startY = y + NODE_HEIGHT + V_SPACING + OPTION_NODE_HEIGHT;
 
             if (Array.isArray(childNode)) {
-                // Stack array items vertically
-                let currentY = startY;
-                let maxWidth = 0;
-                let totalHeight = 0;
+                // Arrange array items horizontally side-by-side
+                let totalWidth = 0;
+                let maxItemHeight = 0;
                 const subDims: { width: number, height: number }[] = [];
 
                 childNode.forEach((c, idx) => {
-                    // Pass dummy X, we only care about dimensions here
-                    const { width, height, layoutNode } = calculateNodePositions(c, `${optionPath}[${idx}]`, 0, currentY, undefined);
-
-                    // Keep using dimensions, ignore layoutNode for this pass
+                    // Pass dummy coordinates, we only care about dimensions here
+                    const { width, height } = calculateNodePositions(c, `${optionPath}[${idx}]`, 0, 0, undefined);
                     const dims = { width, height };
 
                     subDims.push(dims);
-                    maxWidth = Math.max(maxWidth, dims.width);
-
-                    const itemHeight = dims.height + V_SPACING;
-                    totalHeight += itemHeight;
-                    currentY += itemHeight;
+                    totalWidth += dims.width;
+                    maxItemHeight = Math.max(maxItemHeight, dims.height);
                 });
 
-                // Remove last V_SPACING from totalHeight if items exist
-                if (childNode.length > 0) totalHeight -= V_SPACING;
+                // Add horizontal spacing between items
+                if (childNode.length > 0) {
+                    totalWidth += (childNode.length - 1) * H_SPACING;
+                }
 
-                return { width: Math.max(OPTION_NODE_WIDTH, maxWidth), height: totalHeight, subDims, isArray: true };
+                return { width: Math.max(OPTION_NODE_WIDTH, totalWidth), height: maxItemHeight, subDims, isArray: true };
             } else {
                 const { width, height, layoutNode } = calculateNodePositions(childNode, optionPath, 0, startY, undefined);
                 const dims = { width, height };
@@ -198,36 +199,18 @@ const calculateLayout = (root: DecisionNode) => {
             let childStartY = y + NODE_HEIGHT + (V_SPACING / 2) + OPTION_NODE_HEIGHT + 30;
 
             if (Array.isArray(childNode)) {
-                let currentItemY = childStartY;
+                const totalContentWidth = branchInfo.subDims.reduce((sum, d) => sum + d.width, 0) + (Math.max(0, childNode.length - 1) * H_SPACING);
+                let currentItemX = currentX + (branchWidth - totalContentWidth) / 2;
 
-                let lastVisibleLayout = optionNodeLayout;
+                // All siblings connect directly to the option (parallel/fan-out)
+                const itemParent = optionNodeLayout;
 
                 childNode.forEach((c, idx) => {
-                    // Center the item in the branch width
-                    const itemWidth = branchInfo.subDims[idx].width;
-                    const itemX = currentX + (branchWidth - itemWidth) / 2;
+                    const itemDims = branchInfo.subDims[idx];
 
-                    // Determine parent
-                    // All nodes connect to the last VISIBLE node in the stack.
-                    // Visible nodes (Decisions) will update this anchor.
-                    // Invisible nodes (Links) will use it but not update it, so multiple links all sprout from the same decision.
-                    const itemParent = lastVisibleLayout;
+                    calculateNodePositions(c, `${optionPath}[${idx}]`, currentItemX, childStartY, itemParent);
 
-                    const currentPath = `${optionPath}[${idx}]`;
-                    const { layoutNode } = calculateNodePositions(c, currentPath, itemX, currentItemY, itemParent);
-
-                    // Check if this node is visible.
-                    // SubTreeLinks ARE visible. Standard Links (ref) are NOT visible.
-                    // We only want to anchor to visible nodes.
-                    // Safely cast or check properties
-                    const nodeObj = c as any;
-                    const isInvisibleLink = nodeObj && typeof nodeObj === 'object' && 'ref' in nodeObj && !nodeObj.subTreeRef && !nodeObj.decision && !nodeObj.question && !nodeObj.option; // Simple ref node
-
-                    if (!isInvisibleLink) {
-                        lastVisibleLayout = layoutNode;
-                    }
-
-                    currentItemY += branchInfo.subDims[idx].height + V_SPACING;
+                    currentItemX += itemDims.width + H_SPACING;
                 });
             } else {
                 const childWidth = branchInfo.subDims[0].width;
