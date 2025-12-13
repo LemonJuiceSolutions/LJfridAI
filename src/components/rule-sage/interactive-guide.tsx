@@ -64,6 +64,8 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
     const [isExecutingTrigger, setIsExecutingTrigger] = useState(false);
     const [isLoadingTree, setIsLoadingTree] = useState(false);
     const [currentTreeId, setCurrentTreeId] = useState(treeId);
+    const [loadedSubTrees, setLoadedSubTrees] = useState<Map<string, { tree: DecisionNode, name: string }>>(new Map());
+    const [loadingSubTreeIds, setLoadingSubTreeIds] = useState<Set<string>>(new Set());
 
     const initialTree = useMemo(() => {
         if (!jsonTree) return null;
@@ -122,6 +124,36 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
         }
     }, [currentNode, handleExecuteTriggers]);
 
+    // Auto-load sub-trees when they appear in results
+    useEffect(() => {
+        if (!Array.isArray(currentNode)) return;
+
+        const subTreeRefs = currentNode
+            .filter(node => typeof node === 'object' && node !== null && 'subTreeRef' in node)
+            .map(node => (node as any).subTreeRef as string);
+
+        subTreeRefs.forEach(async (ref) => {
+            if (!loadedSubTrees.has(ref) && !loadingSubTreeIds.has(ref)) {
+                setLoadingSubTreeIds(prev => new Set(prev).add(ref));
+                try {
+                    const result = await getTreeAction(ref);
+                    if (result.data && result.data.jsonDecisionTree) {
+                        const tree = JSON.parse(result.data.jsonDecisionTree) as DecisionNode;
+                        setLoadedSubTrees(prev => new Map(prev).set(ref, { tree, name: result.data!.name }));
+                    }
+                } catch (e) {
+                    console.error('Failed to load sub-tree:', ref, e);
+                } finally {
+                    setLoadingSubTreeIds(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(ref);
+                        return newSet;
+                    });
+                }
+            }
+        });
+    }, [currentNode, loadedSubTrees, loadingSubTreeIds]);
+
     const handleOptionClick = async (nextNode: HistoryItem) => {
         if (currentNode) {
             setNodeHistory([...nodeHistory, currentNode]);
@@ -157,6 +189,42 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
         }
     };
 
+    const handleSubTreeOptionClick = async (nextNode: HistoryItem, subTreeId: string, originalIndex: number) => {
+        // Navigate within a sub-tree that's embedded in the results view
+        // Keep everything in the same view, just replace the sub-tree section
+
+        if (!Array.isArray(currentNode)) return;
+
+        // Prepare nodes to insert (handling single node or array of nodes)
+        let nodesToInsert: any[] = [];
+
+        if (Array.isArray(nextNode)) {
+            nodesToInsert = nextNode.map(n => {
+                if (typeof n === 'string') return { decision: n, _subTreeSource: subTreeId };
+                return { ...n, _subTreeSource: subTreeId };
+            });
+        } else {
+            let wrappedNode: any;
+            if (typeof nextNode === 'string') {
+                // String decision - wrap it in an object
+                wrappedNode = { decision: nextNode, _subTreeSource: subTreeId };
+            } else if (typeof nextNode === 'object' && nextNode !== null) {
+                // Object - add the source property
+                wrappedNode = { ...nextNode, _subTreeSource: subTreeId };
+            } else {
+                wrappedNode = nextNode;
+            }
+            nodesToInsert = [wrappedNode];
+        }
+
+        // Create new array and replace the item at originalIndex
+        const newArray = [...currentNode];
+        newArray.splice(originalIndex, 1, ...nodesToInsert);
+
+        // Force it to stay as an array by ensuring it's always treated as such
+        setCurrentNode(newArray as any);
+    };
+
     const handleRestart = () => {
         if (initialTree) {
             startTree(initialTree, treeId);
@@ -181,6 +249,61 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
             setCurrentNode(parentFrame.path[parentFrame.path.length - 1]);
             setRephrasedQuestion(null);
         }
+    };
+
+    const completeSubTree = (resultNode: DecisionLeaf | string) => {
+        if (treeStack.length === 0) return;
+
+        const parentFrame = treeStack[treeStack.length - 1];
+
+        // Clone the parent's current node (which should be an array of results)
+        // We know from returnToParentTree logic that the history state we want is actually
+        // NOT the last node in path (which is the question), but the State AFTER answering it.
+        // Wait, 'path' in history stores the sequence of nodes visited.
+        // The last item in 'path' IS the node we were at BEFORE entering the sub-tree.
+        // If we entered from a result list, that list IS the current node?
+        // No, typically 'currentNode' is the result list.
+        // When we push to stack: path: [...nodeHistory, currentNode]
+        // So the last item in 'path' IS the node that triggered the sub-tree (the result list).
+
+        const parentCurrentNode = parentFrame.path[parentFrame.path.length - 1];
+
+        if (!Array.isArray(parentCurrentNode)) {
+            // Unexpected state: parent node is not an array (so it wasn't a multiple result scenario?)
+            // If it wasn't an array, how did we click a sub-tree link? 
+            // Maybe a single result was a sub-tree link?
+            // In that case, we just Replace the single node.
+            setTreeStack(treeStack.slice(0, -1));
+            setCurrentTree(parentFrame.tree);
+            setCurrentTreeId(parentFrame.treeId);
+            setNodeHistory(parentFrame.path.slice(0, -1));
+            setRephrasedQuestion(null);
+
+            // Replace the whole node with the result
+            setCurrentNode(resultNode);
+            toast({ title: "Sotto-albero completato", description: "Risultato acquisito nell'albero principale." });
+            return;
+        }
+
+        // It is an array. We need to find the link to THIS sub-tree and replace it.
+        const newArray = parentCurrentNode.map(item => {
+            if (typeof item === 'object' && item !== null && 'subTreeRef' in item && item.subTreeRef === currentTreeId) {
+                // Found the link! Replace with result.
+                // We need to ensure the result is in a format that renderLeafNode accepts in the array map
+                // If resultNode is string, it's fine. If object, ensure it works.
+                // The resultNode passed in is standard DecisionLeaf format.
+                return resultNode;
+            }
+            return item;
+        });
+
+        setTreeStack(treeStack.slice(0, -1));
+        setCurrentTree(parentFrame.tree);
+        setCurrentTreeId(parentFrame.treeId);
+        setNodeHistory(parentFrame.path.slice(0, -1)); // We go back to state where currentNode was the array
+        setRephrasedQuestion(null);
+        setCurrentNode(newArray); // Set the modified array as current
+        toast({ title: "Sotto-albero completato", description: "Risultato integrato nell'albero principale." });
     };
 
     const returnToParentTree = () => {
@@ -347,6 +470,13 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                 <p className="text-lg font-semibold text-muted-foreground">Decisione Finale:</p>
                 <p className="text-2xl font-bold mt-2">{decisionText}</p>
                 {isLeafObject && renderAttachments(node)}
+
+                {treeStack.length > 0 && (
+                    <Button onClick={() => completeSubTree(node as any)} className="mt-4 w-full sm:w-auto" variant="secondary">
+                        <ArrowLeft className="mr-2 h-4 w-4" />
+                        Usa questo risultato
+                    </Button>
+                )}
             </div>
         );
     };
@@ -373,24 +503,131 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                     ) : Array.isArray(currentNode) ? (
                         <div className="text-center p-4 w-full space-y-8">
                             {currentNode.map((node, index) => {
+                                // Check if this node came from a sub-tree
+                                const subTreeSource = (node as any)._subTreeSource || (node as any).subTreeRef;
+                                const subTreeData = subTreeSource ? loadedSubTrees.get(subTreeSource) : null;
+
                                 // Direct decision node (string or object with 'decision')
-                                if (typeof node === 'string' || (typeof node === 'object' && node !== null && 'decision' in node && !('ref' in node))) {
-                                    return renderLeafNode(node as DecisionLeaf | string, index);
+                                if (typeof node === 'string' || (typeof node === 'object' && node !== null && 'decision' in node && !('ref' in node) && !('question' in node) && !('subTreeRef' in node))) {
+                                    return (
+                                        <div key={index} className={cn("w-full", index !== undefined && "border-b last:border-0")}>
+                                            {subTreeData && (
+                                                <div className="flex items-center gap-2 text-xs text-primary mb-2 px-4 pt-4">
+                                                    <GitBranch className="h-3 w-3" />
+                                                    <span className="font-medium">Da: {subTreeData.name}</span>
+                                                </div>
+                                            )}
+                                            {renderLeafNode(node as DecisionLeaf | string, index)}
+                                        </div>
+                                    );
+                                }
+
+                                // Question node from sub-tree
+                                if (typeof node === 'object' && node !== null && 'question' in node && 'options' in node) {
+                                    return (
+                                        <div key={index} className={cn("p-4 w-full border-t border-primary/20", index !== undefined && "border-b last:border-0")}>
+                                            {subTreeData && (
+                                                <div className="flex items-center gap-2 text-sm text-primary mb-4">
+                                                    <GitBranch className="h-4 w-4" />
+                                                    <span className="font-medium">Sotto-processo: {subTreeData.name}</span>
+                                                </div>
+                                            )}
+                                            <p className="text-lg font-medium text-center mb-4">{(node as DecisionNode).question}</p>
+                                            {renderAttachments(node as DecisionNode)}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                                                {Object.entries((node as DecisionNode).options!).map(([key, value]) => (
+                                                    <Button
+                                                        key={key}
+                                                        onClick={() => handleSubTreeOptionClick(value, subTreeSource, index)}
+                                                        variant="outline"
+                                                        size="lg"
+                                                        className="h-auto py-3"
+                                                    >
+                                                        {key}
+                                                    </Button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
                                 }
 
                                 // Linked decision node (object with 'ref')
-                                if (typeof node === 'object' && node !== null && 'ref' in node && currentTree) {
+                                if (typeof node === 'object' && node !== null && 'ref' in node) {
                                     const targetId = (node as any).ref;
-                                    const targetNode = findNodeById(currentTree, targetId);
+                                    // Resolve in the correct tree (sub-tree or main tree)
+                                    const lookupTree = subTreeData ? subTreeData.tree : currentTree;
+                                    const targetNode = findNodeById(lookupTree, targetId);
 
                                     if (targetNode) {
                                         // If target is a decision, render it
                                         if (typeof targetNode === 'string' || 'decision' in targetNode) {
-                                            return renderLeafNode(targetNode as DecisionLeaf | string, index);
+                                            return (
+                                                <div key={index} className={cn("w-full", index !== undefined && "border-b last:border-0")}>
+                                                    {subTreeData && (
+                                                        <div className="flex items-center gap-2 text-xs text-primary mb-2 px-4 pt-4">
+                                                            <GitBranch className="h-3 w-3" />
+                                                            <span className="font-medium">Da: {subTreeData.name}</span>
+                                                        </div>
+                                                    )}
+                                                    {renderLeafNode(targetNode as DecisionLeaf | string, index)}
+                                                </div>
+                                            );
                                         }
-                                        // If target is a question, we might want to handle it differently, 
-                                        // but for now let's assume links in result arrays point to decisions.
                                     }
+                                }
+
+                                // Sub-Tree link node
+                                if (typeof node === 'object' && node !== null && 'subTreeRef' in node) {
+                                    const subTreeRef = (node as any).subTreeRef;
+                                    const subTreeData = loadedSubTrees.get(subTreeRef);
+                                    const isLoading = loadingSubTreeIds.has(subTreeRef);
+
+                                    if (isLoading) {
+                                        return (
+                                            <div key={index} className={cn("text-center p-4 w-full", index !== undefined && "border-b last:border-0")}>
+                                                <Loader2 className="mx-auto h-8 w-8 text-primary animate-spin mb-2" />
+                                                <p className="text-sm text-muted-foreground">Caricamento sotto-processo...</p>
+                                            </div>
+                                        );
+                                    }
+
+                                    if (!subTreeData) {
+                                        return null;
+                                    }
+
+                                    const subTree = subTreeData.tree;
+
+                                    return (
+                                        <div key={index} className={cn("p-4 w-full border-t border-primary/20", index !== undefined && "border-b last:border-0")}>
+                                            <div className="flex items-center gap-2 text-sm text-primary mb-4">
+                                                <GitBranch className="h-4 w-4" />
+                                                <span className="font-medium">Sotto-processo: {subTreeData.name}</span>
+                                            </div>
+
+                                            {/* Render sub-tree's root question inline */}
+                                            {typeof subTree === 'object' && 'question' in subTree && subTree.options ? (
+                                                <>
+                                                    <p className="text-lg font-medium text-center mb-4">{subTree.question}</p>
+                                                    {renderAttachments(subTree)}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                                                        {Object.entries(subTree.options).map(([key, value]) => (
+                                                            <Button
+                                                                key={key}
+                                                                onClick={() => handleSubTreeOptionClick(value, subTreeRef, index)}
+                                                                variant="outline"
+                                                                size="lg"
+                                                                className="h-auto py-3"
+                                                            >
+                                                                {key}
+                                                            </Button>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <p className="text-muted-foreground text-center">Il sotto-albero non contiene domande valide.</p>
+                                            )}
+                                        </div>
+                                    );
                                 }
 
                                 return null;
