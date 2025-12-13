@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import type { DecisionNode, DecisionLeaf, MediaItem, LinkItem, TriggerItem, StoredTree } from '@/lib/types';
+import type { DecisionNode, DecisionLeaf, MediaItem, LinkItem, TriggerItem, StoredTree, DecisionOptionChild } from '@/lib/types';
 import { ArrowLeft, Brain, Eye, GitBranch, Lightbulb, Link as LinkIcon, Loader2, RotateCcw, Sparkles, Zap, Image as ImageIcon, Video } from 'lucide-react';
 import { executeTriggerAction, getTreeAction, rephraseQuestionAction } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
@@ -27,7 +27,7 @@ type HistoryFrame = {
     treeName?: string;
 };
 
-type HistoryItem = DecisionNode | DecisionLeaf | string | { ref: string, id?: string } | { subTreeRef: string, id?: string };
+type HistoryItem = DecisionOptionChild;
 
 export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideProps) {
   const { toast } = useToast();
@@ -241,13 +241,12 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
   const nodeAsLeaf = isDecision ? (currentNode as DecisionLeaf) : null;
   const decisionText = isDecision ? (typeof currentNode === 'string' ? currentNode : nodeAsLeaf?.decision) : null;
   
-  // Unified extraction for media, links, and triggers
-  const mediaItems: MediaItem[] = currentNode && typeof currentNode === 'object' && 'media' in currentNode && Array.isArray(currentNode.media) ? currentNode.media : [];
-  const linkItems: LinkItem[] = currentNode && typeof currentNode === 'object' && 'links' in currentNode && Array.isArray(currentNode.links) ? currentNode.links : [];
-  const triggerItems: TriggerItem[] = currentNode && typeof currentNode === 'object' && 'triggers' in currentNode && Array.isArray(currentNode.triggers) ? currentNode.triggers : [];
+  const renderAttachments = (node: DecisionNode | DecisionLeaf) => {
+    // Unified extraction for media, links, and triggers
+    const mediaItems: MediaItem[] = node && typeof node === 'object' && 'media' in node && Array.isArray(node.media) ? node.media : [];
+    const linkItems: LinkItem[] = node && typeof node === 'object' && 'links' in node && Array.isArray(node.links) ? node.links : [];
+    const triggerItems: TriggerItem[] = node && typeof node === 'object' && 'triggers' in node && Array.isArray(node.triggers) ? node.triggers : [];
 
-
-  const renderAttachments = () => {
     const allAttachments = [
         ...mediaItems.map(item => ({ type: 'media' as const, item })),
         ...linkItems.map(item => ({ type: 'link' as const, item })),
@@ -313,6 +312,24 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
     );
 };
 
+const renderLeafNode = (node: DecisionLeaf | string, index?: number) => {
+    const decisionText = typeof node === 'string' ? node : node.decision;
+    const isLeafObject = typeof node === 'object' && node !== null;
+    
+    return (
+        <div key={index} className={cn("text-center p-4 w-full", index !== undefined && "border-b last:border-0")}>
+             {isExecutingTrigger ? (
+                <Loader2 className="mx-auto h-12 w-12 text-primary animate-spin mb-4" />
+            ) : (
+                <Sparkles className="mx-auto h-12 w-12 text-accent mb-4" />
+            )}
+            <p className="text-lg font-semibold text-muted-foreground">Decisione Finale:</p>
+            <p className="text-2xl font-bold mt-2">{decisionText}</p>
+            {isLeafObject && renderAttachments(node)}
+        </div>
+    );
+};
+
   return (
     <>
         <Card className="min-h-[400px] flex flex-col">
@@ -332,23 +349,35 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                     <Loader2 className="mx-auto h-12 w-12 text-primary animate-spin mb-4" />
                     <p className="text-lg text-muted-foreground">Caricamento sotto-albero...</p>
                 </div>
+            ) : Array.isArray(currentNode) ? (
+                 <div className="text-center p-4 w-full space-y-8">
+                     {currentNode.map((node, index) => {
+                         // We assume array nodes are leaves for now. 
+                         // If we encounter a question in an array, we might need different handling, but usually it's multiple results.
+                         if (typeof node === 'string' || (typeof node === 'object' && node !== null && 'decision' in node)) {
+                             return renderLeafNode(node as DecisionLeaf | string, index);
+                         }
+                         return null; // Skip non-leaf nodes in array for now or handle them if needed
+                     })}
+                     
+                     {treeStack.length > 0 && (
+                        <Button onClick={returnToParentTree} className="mt-6">
+                            <ArrowLeft className="mr-2 h-4 w-4" />
+                            Torna all'Albero Precedente
+                        </Button>
+                    )}
+                 </div>
             ) : isDecision && nodeAsLeaf ? (
-            <div className="text-center p-4 w-full">
-                 {isExecutingTrigger ? (
-                    <Loader2 className="mx-auto h-12 w-12 text-primary animate-spin mb-4" />
-                ) : (
-                    <Sparkles className="mx-auto h-12 w-12 text-accent mb-4" />
-                )}
-                <p className="text-lg font-semibold text-muted-foreground">Decisione Finale:</p>
-                <p className="text-2xl font-bold mt-2">{decisionText}</p>
-                {renderAttachments()}
-
-                {treeStack.length > 0 && (
-                    <Button onClick={returnToParentTree} className="mt-6">
-                        <ArrowLeft className="mr-2 h-4 w-4" />
-                        Torna all'Albero Precedente
-                    </Button>
-                )}
+            <div className="w-full">
+                {renderLeafNode(nodeAsLeaf)}
+                <div className="text-center">
+                     {treeStack.length > 0 && (
+                        <Button onClick={returnToParentTree} className="mt-6">
+                            <ArrowLeft className="mr-2 h-4 w-4" />
+                            Torna all'Albero Precedente
+                        </Button>
+                    )}
+                </div>
             </div>
             ) : isQuestion && 'options' in currentNode && currentNode.options ? (
             <div className="w-full">
@@ -363,7 +392,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                     </Alert>
                 )}
                 
-                {renderAttachments()}
+                {renderAttachments(currentNode as DecisionNode)}
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
                 {Object.entries((currentNode as DecisionNode).options!).map(([key, value]) => (

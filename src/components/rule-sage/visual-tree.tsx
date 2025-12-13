@@ -25,9 +25,9 @@ import { storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 interface VisualTreeProps {
-  treeData: StoredTree;
-  onDataRefresh?: () => void;
-  isSaving: boolean;
+    treeData: StoredTree;
+    onDataRefresh?: () => void;
+    isSaving: boolean;
 }
 
 // --- Layout Constants ---
@@ -42,28 +42,28 @@ const V_SPACING = 80;
 // --- Helper to ensure all nodes have an ID ---
 const ensureNodeIds = (node: any): any => {
     if (typeof node !== 'object' || node === null) {
-      return node;
+        return node;
     }
-  
+
     const newNode = _.cloneDeep(node);
-  
+
     const traverse = (n: any): any => {
-      if (Array.isArray(n)) {
-        return n.map(item => traverse(item));
-      }
-      if (typeof n === 'object' && n !== null && !('ref' in n) && !('subTreeRef' in n) && !n.id) {
-        n.id = nanoid(8);
-      }
-      if (typeof n === 'object' && n !== null && 'options' in n && n.options) {
-        Object.keys(n.options).forEach(key => {
-          n.options[key] = traverse(n.options[key]);
-        });
-      }
-      return n;
+        if (Array.isArray(n)) {
+            return n.map(item => traverse(item));
+        }
+        if (typeof n === 'object' && n !== null && !('ref' in n) && !('subTreeRef' in n) && !n.id) {
+            n.id = nanoid(8);
+        }
+        if (typeof n === 'object' && n !== null && 'options' in n && n.options) {
+            Object.keys(n.options).forEach(key => {
+                n.options[key] = traverse(n.options[key]);
+            });
+        }
+        return n;
     };
-  
+
     return traverse(newNode);
-  };
+};
 
 
 // --- Type definitions for layout calculation ---
@@ -93,9 +93,9 @@ const calculateLayout = (root: DecisionNode) => {
         x = 0,
         y = 0,
         parentNode?: TreeNodeWithLayout
-    ): { width: number, height: number } {
+    ): { width: number, height: number, layoutNode: TreeNodeWithLayout } {
         const id = (typeof node === 'object' && node.id) ? node.id : path;
-        
+
         if (y > maxY) maxY = y;
 
         const isLink = typeof node === 'object' && 'ref' in node;
@@ -106,16 +106,16 @@ const calculateLayout = (root: DecisionNode) => {
             if (isLink) type = 'link';
             if (isSubTreeLink) type = 'sub-tree-link';
 
-            let nodeWithLayout: TreeNodeWithLayout = { 
-                node, path, id, x, y, 
-                width: NODE_WIDTH, height: NODE_HEIGHT, 
-                type, 
-                parent: parentNode 
+            let nodeWithLayout: TreeNodeWithLayout = {
+                node, path, id, x, y,
+                width: NODE_WIDTH, height: NODE_HEIGHT,
+                type,
+                parent: parentNode
             };
             layout.set(path, nodeWithLayout);
-            return { width: NODE_WIDTH, height: NODE_HEIGHT };
+            return { width: NODE_WIDTH, height: NODE_HEIGHT, layoutNode: nodeWithLayout };
         }
-        
+
         const questionNodeLayout: TreeNodeWithLayout = {
             node, path, id, x, y,
             width: NODE_WIDTH, height: NODE_HEIGHT,
@@ -124,43 +124,48 @@ const calculateLayout = (root: DecisionNode) => {
         };
 
         const children = Object.entries(node.options);
-        
+
         // First pass: calculate dimensions
         const childrenDims = children.map(([option, childNode]) => {
             const optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
             const startY = y + NODE_HEIGHT + V_SPACING + OPTION_NODE_HEIGHT;
-            
+
             if (Array.isArray(childNode)) {
-                 // Stack array items vertically
-                 let currentY = startY;
-                 let maxWidth = 0;
-                 let totalHeight = 0;
-                 const subDims: { width: number, height: number }[] = [];
+                // Stack array items vertically
+                let currentY = startY;
+                let maxWidth = 0;
+                let totalHeight = 0;
+                const subDims: { width: number, height: number }[] = [];
 
-                 childNode.forEach((c, idx) => {
-                     // Pass dummy X, we only care about dimensions here
-                     const dims = calculateNodePositions(c, `${optionPath}[${idx}]`, 0, currentY, undefined);
-                     subDims.push(dims);
-                     maxWidth = Math.max(maxWidth, dims.width);
-                     
-                     const itemHeight = dims.height + V_SPACING;
-                     totalHeight += itemHeight;
-                     currentY += itemHeight;
-                 });
-                 
-                 // Remove last V_SPACING from totalHeight if items exist
-                 if (childNode.length > 0) totalHeight -= V_SPACING;
+                childNode.forEach((c, idx) => {
+                    // Pass dummy X, we only care about dimensions here
+                    const { width, height, layoutNode } = calculateNodePositions(c, `${optionPath}[${idx}]`, 0, currentY, undefined);
 
-                 return { width: Math.max(OPTION_NODE_WIDTH, maxWidth), height: totalHeight, subDims, isArray: true };
+                    // Keep using dimensions, ignore layoutNode for this pass
+                    const dims = { width, height };
+
+                    subDims.push(dims);
+                    maxWidth = Math.max(maxWidth, dims.width);
+
+                    const itemHeight = dims.height + V_SPACING;
+                    totalHeight += itemHeight;
+                    currentY += itemHeight;
+                });
+
+                // Remove last V_SPACING from totalHeight if items exist
+                if (childNode.length > 0) totalHeight -= V_SPACING;
+
+                return { width: Math.max(OPTION_NODE_WIDTH, maxWidth), height: totalHeight, subDims, isArray: true };
             } else {
-                 const dims = calculateNodePositions(childNode, optionPath, 0, startY, undefined);
-                 return { width: Math.max(OPTION_NODE_WIDTH, dims.width), height: dims.height, subDims: [dims], isArray: false };
+                const { width, height, layoutNode } = calculateNodePositions(childNode, optionPath, 0, startY, undefined);
+                const dims = { width, height };
+                return { width: Math.max(OPTION_NODE_WIDTH, dims.width), height: dims.height, subDims: [dims], isArray: false };
             }
         });
 
         const totalChildrenWidth = childrenDims.reduce((acc, { width }) => acc + width, 0) + (Math.max(0, children.length - 1) * H_SPACING);
         const questionNodeWidth = Math.max(NODE_WIDTH, totalChildrenWidth);
-        
+
         // Center the question node over its children
         questionNodeLayout.x = x + (questionNodeWidth - NODE_WIDTH) / 2;
         layout.set(path, questionNodeLayout);
@@ -172,11 +177,11 @@ const calculateLayout = (root: DecisionNode) => {
             const branchInfo = childrenDims[i];
             const branchWidth = branchInfo.width;
             const optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
-            
+
             const optionId = `${id}-${option}`;
             const variableId = node.variableId;
             const optionData = variableId && node.possibleValues ? node.possibleValues.find((v: VariableOption) => v.name === option) : null;
-            
+
             const optionNodeLayout: TreeNodeWithLayout = {
                 node: { option: option, id: optionId, variableId: variableId, optionId: optionData?.id },
                 path: optionPath,
@@ -195,22 +200,40 @@ const calculateLayout = (root: DecisionNode) => {
             if (Array.isArray(childNode)) {
                 let currentItemY = childStartY;
 
+                let lastVisibleLayout = optionNodeLayout;
+
                 childNode.forEach((c, idx) => {
                     // Center the item in the branch width
                     const itemWidth = branchInfo.subDims[idx].width;
                     const itemX = currentX + (branchWidth - itemWidth) / 2;
-                    
-                    // Always use optionNodeLayout as parent for all children in the array
-                    // This ensures all connectors start from the option node
-                    calculateNodePositions(c, `${optionPath}[${idx}]`, itemX, currentItemY, optionNodeLayout);
-                    
+
+                    // Determine parent
+                    // All nodes connect to the last VISIBLE node in the stack.
+                    // Visible nodes (Decisions) will update this anchor.
+                    // Invisible nodes (Links) will use it but not update it, so multiple links all sprout from the same decision.
+                    const itemParent = lastVisibleLayout;
+
+                    const currentPath = `${optionPath}[${idx}]`;
+                    const { layoutNode } = calculateNodePositions(c, currentPath, itemX, currentItemY, itemParent);
+
+                    // Check if this node is visible.
+                    // SubTreeLinks ARE visible. Standard Links (ref) are NOT visible.
+                    // We only want to anchor to visible nodes.
+                    // Safely cast or check properties
+                    const nodeObj = c as any;
+                    const isInvisibleLink = nodeObj && typeof nodeObj === 'object' && 'ref' in nodeObj && !nodeObj.subTreeRef && !nodeObj.decision && !nodeObj.question && !nodeObj.option; // Simple ref node
+
+                    if (!isInvisibleLink) {
+                        lastVisibleLayout = layoutNode;
+                    }
+
                     currentItemY += branchInfo.subDims[idx].height + V_SPACING;
                 });
             } else {
-                 const childWidth = branchInfo.subDims[0].width;
-                 calculateNodePositions(childNode, optionPath, currentX + (branchWidth - childWidth) / 2, childStartY, optionNodeLayout);
+                const childWidth = branchInfo.subDims[0].width;
+                calculateNodePositions(childNode, optionPath, currentX + (branchWidth - childWidth) / 2, childStartY, optionNodeLayout);
             }
-            
+
             currentX += branchWidth + H_SPACING;
         });
 
@@ -218,7 +241,7 @@ const calculateLayout = (root: DecisionNode) => {
         const maxBranchHeight = Math.max(0, ...childrenDims.map(d => d.height));
         const totalHeight = NODE_HEIGHT + (V_SPACING / 2) + OPTION_NODE_HEIGHT + 30 + maxBranchHeight;
 
-        return { width: questionNodeWidth, height: totalHeight };
+        return { width: questionNodeWidth, height: totalHeight, layoutNode: questionNodeLayout };
     }
 
     if (root) {
@@ -227,14 +250,14 @@ const calculateLayout = (root: DecisionNode) => {
 
     const positionedNodes = Array.from(layout.values());
     const minX = positionedNodes.length > 0 ? Math.min(...positionedNodes.map(n => n.x)) : 0;
-    
+
     positionedNodes.forEach(n => {
         n.x -= minX;
     });
 
     const contentWidth = positionedNodes.length > 0 ? Math.max(...positionedNodes.map(n => n.x + n.width)) : NODE_WIDTH;
     const contentHeight = maxY + NODE_HEIGHT + V_SPACING;
-    
+
     return { positionedNodes, contentWidth, contentHeight };
 };
 
@@ -252,7 +275,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     const [tree, setTree] = useState<DecisionNode | null>(null);
     const [dbVariables, setDbVariables] = useState<Variable[]>([]);
     const [allTrees, setAllTrees] = useState<StoredTree[]>([]);
-    
+
     const [internalSaving, setInternalSaving] = useState(false);
     const isSaving = parentIsSaving || internalSaving;
 
@@ -264,7 +287,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         if (varsResult.data) {
             setDbVariables(varsResult.data);
         }
-         if (treesResult.data) {
+        if (treesResult.data) {
             // Exclude current tree from the list of linkable trees
             setAllTrees(treesResult.data.filter(t => t.id !== treeData.id));
         }
@@ -308,19 +331,19 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         } else {
             text = "Invalid Node";
         }
-        
-        if(!list.some(n => n.id === id)) {
+
+        if (!list.some(n => n.id === id)) {
             list.push({ id, text, path });
         }
 
         if (typeof node === 'object' && 'options' in node && node.options) {
             Object.entries(node.options).forEach(([option, childNode]) => {
-                 const optPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
-                 if (Array.isArray(childNode)) {
-                     childNode.forEach((c, idx) => flattenTree(c, `${optPath}[${idx}]`, list));
-                 } else {
-                     flattenTree(childNode, optPath, list);
-                 }
+                const optPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
+                if (Array.isArray(childNode)) {
+                    childNode.forEach((c, idx) => flattenTree(c, `${optPath}[${idx}]`, list));
+                } else {
+                    flattenTree(childNode, optPath, list);
+                }
             });
         }
     }, []);
@@ -329,16 +352,16 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         if (!tree) return [];
         const list: any[] = [];
         flattenTree(tree, 'root', list);
-        
+
         list.forEach(item => {
             if (item.text.startsWith('Link:')) {
                 const refId = item.text.replace('Link: ', '');
                 const linkedNode = list.find(n => n.id === refId);
-                 if(linkedNode) {
-                     item.text = `Link: ${linkedNode.text.replace(/^Decision: |^Question: /, '')}`;
-                 } else {
+                if (linkedNode) {
+                    item.text = `Link: ${linkedNode.text.replace(/^Decision: |^Question: /, '')}`;
+                } else {
                     item.text = `Link to: ${refId}`;
-                 }
+                }
             }
             if (item.text.startsWith('Sub-Tree:')) {
                 const subTreeId = item.text.replace('Sub-Tree: ', '');
@@ -355,6 +378,29 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             if (treeData?.jsonDecisionTree) {
                 let parsedTree = JSON.parse(treeData.jsonDecisionTree);
                 const treeWithIds = ensureNodeIds(parsedTree);
+
+                // Check if IDs were added (structure changed)
+                // We compare stringified versions to detect if ensureNodeIds added any 'id' fields
+                if (JSON.stringify(parsedTree) !== JSON.stringify(treeWithIds)) {
+                    console.log("Detected nodes without IDs. Auto-saving corrected tree...");
+                    // IDs were added, so we must persist this change to the DB immediately
+                    // to prevent link breakage on reload.
+                    updateTreeNodeAction({
+                        treeId: treeData.id,
+                        nodePath: 'root',
+                        nodeData: JSON.stringify(treeWithIds)
+                    }).then((result) => {
+                        if (result.success) {
+                            console.log("Tree IDs persisted successfully.");
+                            // We don't necessarily need to trigger onDataRefresh here if we setTree below,
+                            // but it keeps strictly in sync.
+                            if (onDataRefresh) onDataRefresh();
+                        } else {
+                            console.error("Failed to persist tree IDs:", result.error);
+                        }
+                    });
+                }
+
                 setTree(treeWithIds as DecisionNode);
                 fetchExternalData();
             }
@@ -362,9 +408,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             console.error("Failed to parse tree JSON:", e);
             setTree(null);
         }
-    }, [treeData, fetchExternalData]);
+    }, [treeData, fetchExternalData, onDataRefresh]);
 
-    const [editingNodeInfo, setEditingNodeInfo] = useState<{ path: string; node: DecisionLeaf | {question: string} | { option: string }; type: 'question' | 'decision' } | null>(null);
+    const [editingNodeInfo, setEditingNodeInfo] = useState<{ path: string; node: DecisionLeaf | { question: string } | { option: string }; type: 'question' | 'decision' } | null>(null);
     const [editingOptionInfo, setEditingOptionInfo] = useState<{ path: string; option: VariableOption; varId: string; } | null>(null);
     const [addingNodeInfo, setAddingNodeInfo] = useState<{ path: string; type: 'add', varId?: string } | null>(null);
     const [addingChildNodeInfo, setAddingChildNodeInfo] = useState<{ path: string; } | null>(null);
@@ -376,7 +422,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     const handleNodeUpdateAction = async (treeId: string, nodePath: string, nodeData: string) => {
         if (!onDataRefresh) return;
         setInternalSaving(true);
-         try {
+        try {
             const result = await updateTreeNodeAction({
                 treeId: treeId,
                 nodePath: nodePath,
@@ -402,11 +448,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
         const node = getNodeFromPath(tree, path);
         if (node === undefined) {
-             console.error("Could not find node at path:", path);
-             toast({ variant: 'destructive', title: "Errore", description: "Impossibile trovare il nodo da modificare."});
-             return;
+            console.error("Could not find node at path:", path);
+            toast({ variant: 'destructive', title: "Errore", description: "Impossibile trovare il nodo da modificare." });
+            return;
         }
-        
+
         const parentPath = path.substring(0, path.lastIndexOf(".options"));
         const parentNode = getNodeFromPath(tree, parentPath);
         const varId = parentNode?.variableId;
@@ -422,7 +468,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 if (optionData) {
                     setEditingOptionInfo({ path, option: optionData, varId });
                 } else {
-                     toast({ variant: 'destructive', title: "Errore", description: "Impossibile trovare i dati dell'opzione standard nel database."});
+                    toast({ variant: 'destructive', title: "Errore", description: "Impossibile trovare i dati dell'opzione standard nel database." });
                 }
             } else if (optionName) {
                 // Local variable, open the simple name editor
@@ -430,9 +476,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
             return;
         }
-        
+
         if (typeof node === 'object' && 'question' in node) {
-             setEditingNodeInfo({ path, node: node, type: 'question' });
+            setEditingNodeInfo({ path, node: node, type: 'question' });
         } else if (typeof node === 'object' && 'decision' in node) {
             setEditingNodeInfo({ path, node: node, type: 'decision' });
         } else if (typeof node === 'string') {
@@ -446,13 +492,13 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             return;
         }
     };
-    
+
     const handleNodeUpdate = async (path: string, newNodeData: any) => {
         if (!onDataRefresh) return;
-        
+
         setInternalSaving(true);
         setEditingNodeInfo(null);
-    
+
         try {
             const result = await updateTreeNodeAction({
                 treeId: treeData.id,
@@ -462,10 +508,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             if (!result.success) {
                 throw new Error(result.error || "Salvataggio fallito");
             }
-    
+
             toast({ title: "Albero aggiornato con successo!" });
             onDataRefresh();
-    
+
         } catch (e) {
             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
             toast({ variant: 'destructive', title: "Errore durante l'aggiornamento del nodo", description: error });
@@ -473,21 +519,21 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             setInternalSaving(false);
         }
     };
-    
+
     const handleSaveOptionEdit = async (newOption: VariableOption) => {
         if (!editingOptionInfo || !onDataRefresh) return;
-        
+
         const { varId, option: oldOption } = editingOptionInfo;
         setEditingOptionInfo(null);
         setInternalSaving(true);
-        
+
         const dbVar = dbVariables.find(v => v.id === varId);
         if (!dbVar) {
             setInternalSaving(false);
             return;
         }
 
-        const newPossibleValues = (dbVar.possibleValues || []).map(opt => 
+        const newPossibleValues = (dbVar.possibleValues || []).map(opt =>
             opt.id === oldOption.id ? newOption : opt
         );
 
@@ -500,8 +546,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             } else {
                 throw new Error(result.error || "Aggiornamento della variabile fallito");
             }
-        } catch(e) {
-            toast({variant: 'destructive', title: "Errore di Propagazione", description: e instanceof Error ? e.message : 'Errore Sconosciuto'});
+        } catch (e) {
+            toast({ variant: 'destructive', title: "Errore di Propagazione", description: e instanceof Error ? e.message : 'Errore Sconosciuto' });
         } finally {
             setInternalSaving(false);
         }
@@ -513,7 +559,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
         setInternalSaving(true);
         setAddingNodeInfo(null);
-        
+
         const parentNode = getNodeFromPath(tree, path);
 
         if (typeof parentNode === 'string' || (typeof parentNode === 'object' && parentNode !== null && 'decision' in parentNode && !('question' in parentNode))) {
@@ -533,7 +579,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         }
 
         try {
-             // If adding to a standard variable, update the central variable first
+            // If adding to a standard variable, update the central variable first
             if (parentNode?.variableId) {
                 const dbVar = dbVariables.find(v => v.id === parentNode.variableId);
                 if (dbVar) {
@@ -588,8 +634,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         } else if (currentNode && typeof currentNode === 'object' && (currentNode.question || currentNode.decision || currentNode.ref || currentNode.subTreeRef)) {
             updatedNodeData = [currentNode, newNode];
         } else {
-             // If the current node is null, undefined, or an empty object, we replace it with the new node
-             updatedNodeData = newNode;
+            // If the current node is null, undefined, or an empty object, we replace it with the new node
+            updatedNodeData = newNode;
         }
 
         try {
@@ -613,25 +659,25 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             setInternalSaving(false);
         }
     };
-    
+
     const handleSaveLink = useCallback(async (path: string, option: string, targetNodeId: string) => {
         if (!tree || !onDataRefresh) return;
-        
+
         setLinkingNodeInfo(null);
         setInternalSaving(true);
-        
+
         const newNode = { ref: targetNodeId, id: nanoid(8) };
         const currentNode = getNodeFromPath(tree, path);
         let updatedNodeData;
 
         if (Array.isArray(currentNode)) {
-             updatedNodeData = [...currentNode, newNode];
+            updatedNodeData = [...currentNode, newNode];
         } else if (currentNode && typeof currentNode === 'object' && (currentNode.question || currentNode.decision || currentNode.ref || currentNode.subTreeRef)) {
-             updatedNodeData = [currentNode, newNode];
+            updatedNodeData = [currentNode, newNode];
         } else {
-             updatedNodeData = newNode;
+            updatedNodeData = newNode;
         }
-        
+
         try {
             const result = await updateTreeNodeAction({
                 treeId: treeData.id,
@@ -649,9 +695,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         } finally {
             setInternalSaving(false);
         }
-        
+
     }, [onDataRefresh, toast, treeData.id, tree]);
-    
+
     const handleSaveSubTreeLink = useCallback(async (path: string, option: string, targetTreeId: string) => {
         if (!tree || !onDataRefresh) return;
 
@@ -663,11 +709,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         let updatedNodeData;
 
         if (Array.isArray(currentNode)) {
-             updatedNodeData = [...currentNode, newNode];
+            updatedNodeData = [...currentNode, newNode];
         } else if (currentNode && typeof currentNode === 'object' && (currentNode.question || currentNode.decision || currentNode.ref || currentNode.subTreeRef)) {
-             updatedNodeData = [currentNode, newNode];
+            updatedNodeData = [currentNode, newNode];
         } else {
-             updatedNodeData = newNode;
+            updatedNodeData = newNode;
         }
 
         try {
@@ -682,7 +728,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             toast({ title: "Collegamento a sotto-albero creato!" });
             onDataRefresh();
         } catch (e) {
-             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
+            const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
             toast({ variant: 'destructive', title: "Errore durante la creazione del link", description: error });
         } finally {
             setInternalSaving(false);
@@ -710,7 +756,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             toast({ title: "Collegamento rimosso!" });
             onDataRefresh();
         } catch (e) {
-             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
+            const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
             toast({ variant: 'destructive', title: "Errore durante la rimozione del link", description: error });
         } finally {
             setInternalSaving(false);
@@ -720,15 +766,15 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
     const handleDeleteNode = (path: string) => {
         if (!tree) return;
-    
+
         if (path === 'root') {
             toast({ variant: "destructive", title: "Operazione non consentita", description: "Non è possibile eliminare il nodo radice." });
             return;
         }
-    
+
         const lastDotIndex = path.lastIndexOf('.options');
         const parentPath = path.substring(0, lastDotIndex);
-        
+
         if (!parentPath) {
             toast({ variant: "destructive", title: "Errore", description: "Impossibile determinare il nodo genitore da eliminare." });
             return;
@@ -744,7 +790,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             if (typeof node === 'string') {
                 nodesToDelete.push(`Decision: ${node}`);
             } else if (node.decision) {
-                 nodesToDelete.push(`Decision: ${node.decision}`);
+                nodesToDelete.push(`Decision: ${node.decision}`);
             } else if (node.question) {
                 nodesToDelete.push(`Question: ${node.question}`);
                 if (node.options) {
@@ -765,14 +811,14 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
         });
     };
-    
+
     const handleConfirmDelete = async () => {
         if (!tree || !deletingNodeInfo || !onDataRefresh) return;
-        
+
         const { path } = deletingNodeInfo;
-        
+
         setInternalSaving(true);
-    
+
         try {
             // Check for array index pattern: ...[index]
             const arrayIndexMatch = path.match(/\[(\d+)\]$/);
@@ -784,14 +830,14 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 const parentArray = getNodeFromPath(tree, parentArrayPath);
 
                 if (!Array.isArray(parentArray)) {
-                     // Fallback for weird edge cases where path looks like array but node isn't
-                     // e.g. if key name is numbers? Unlikely with ['...'] format for keys
-                     throw new Error("Struttura dati imprevista: atteso array.");
+                    // Fallback for weird edge cases where path looks like array but node isn't
+                    // e.g. if key name is numbers? Unlikely with ['...'] format for keys
+                    throw new Error("Struttura dati imprevista: atteso array.");
                 }
 
                 const newArray = [...parentArray];
                 newArray.splice(index, 1);
-                
+
                 // If the array becomes empty or has only 1 item, we might want to simplify?
                 // For now, let's keep it as an array to maintain structure stability.
                 // If it becomes empty, it's an empty option path.
@@ -805,7 +851,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 if (!result.success) {
                     throw new Error(result.error || "Eliminazione del nodo fallita");
                 }
-                toast({title: "Successo!", description: "Il nodo è stato eliminato."});
+                toast({ title: "Successo!", description: "Il nodo è stato eliminato." });
 
             } else {
                 // Standard single node deletion logic
@@ -813,21 +859,21 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 const parentPath = path.substring(0, lastDotIndex);
                 const optionKeyMatch = path.match(/\['(.*?)'\]$/);
                 const optionKey = optionKeyMatch ? optionKeyMatch[1].replace(/\\'/g, "'") : null;
-            
+
                 if (!parentPath || !optionKey) {
                     throw new Error('Impossibile determinare il percorso del nodo da eliminare.');
                 }
-            
+
                 const parentNode = getNodeFromPath(tree, parentPath);
                 const varId = parentNode?.variableId;
-            
+
                 if (varId) {
                     const dbVar = dbVariables.find(v => v.id === varId);
                     if (!dbVar) throw new Error("Variabile standard non trovata nel database.");
                     const newOptions = (dbVar.possibleValues || []).filter(opt => opt.name !== optionKey);
                     const result = await updateVariableAction(treeData.id, varId, { possibleValues: newOptions });
                     if (result.success) {
-                        toast({title: "Successo!", description: "Opzione eliminata e propagata a tutti gli alberi collegati."});
+                        toast({ title: "Successo!", description: "Opzione eliminata e propagata a tutti gli alberi collegati." });
                     } else {
                         throw new Error(result.error || "Aggiornamento della variabile fallito");
                     }
@@ -837,77 +883,95 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                         nodePath: path,
                         nodeData: JSON.stringify(null)
                     });
-                     if (!result.success) {
+                    if (!result.success) {
                         throw new Error(result.error || "Eliminazione del nodo fallita");
                     }
-                    toast({title: "Successo!", description: "Il nodo è stato eliminato."});
+                    toast({ title: "Successo!", description: "Il nodo è stato eliminato." });
                 }
             }
 
             onDataRefresh();
             fetchExternalData();
-        } catch(e) {
-            toast({variant: 'destructive', title: "Errore di Eliminazione", description: e instanceof Error ? e.message : 'Errore Sconosciuto'});
+        } catch (e) {
+            toast({ variant: 'destructive', title: "Errore di Eliminazione", description: e instanceof Error ? e.message : 'Errore Sconosciuto' });
         } finally {
             setInternalSaving(false);
             setDeletingNodeInfo(null);
         }
     };
-    
+
     const downloadJson = () => {
         if (!tree) return;
         try {
-          const jsonString = JSON.stringify(tree, null, 2);
-          const blob = new Blob([jsonString], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${treeData.name || 'albero'}.json`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          toast({ title: 'Download del file JSON avviato.' });
+            const jsonString = JSON.stringify(tree, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${treeData.name || 'albero'}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            toast({ title: 'Download del file JSON avviato.' });
         } catch (err) {
-          toast({
-              variant: 'destructive',
-              title: 'Download fallito',
-              description: 'Impossibile preparare il file JSON per il download.',
+            toast({
+                variant: 'destructive',
+                title: 'Download fallito',
+                description: 'Impossibile preparare il file JSON per il download.',
             });
         }
-      };
+    };
 
 
     const connectorData = useMemo(() => {
         return layout.positionedNodes.map(node => {
             if (!node.parent) return null;
-            
+
             const parent = node.parent;
             let startX = parent.x + parent.width / 2;
             let startY = parent.y + parent.height;
-            
+
             let endX = node.x + node.width / 2;
             let endY = node.y;
 
             const isLink = typeof node.node === 'object' && 'ref' in node.node;
             const isSubTreeLink = typeof node.node === 'object' && 'subTreeRef' in node.node;
-            
+
             let targetName = "Unknown";
+            let isBroken = false;
 
             if (isLink) {
-                const refId = (node.node as {ref: string}).ref;
-                const targetNode = layout.positionedNodes.find(n => n.id === refId);
+                const refId = (node.node as { ref: string }).ref;
+                // Try to find the target node - use multiple search strategies
+                let targetNode = layout.positionedNodes.find(n => n.id === refId);
+
+                // If not found by layout ID, try searching by the node's own ID property
+                if (!targetNode) {
+                    targetNode = layout.positionedNodes.find(n => {
+                        const nodeObj = n.node as any;
+                        return nodeObj && typeof nodeObj === 'object' && nodeObj.id === refId;
+                    });
+                }
+
                 if (targetNode) {
                     endX = targetNode.x + targetNode.width / 2;
                     endY = targetNode.y;
-                    
+
                     // Get target name for label
                     const tNode = (typeof targetNode.node === 'object' && 'node' in targetNode.node) ? (targetNode.node as any).node : targetNode.node;
                     if (typeof tNode === 'string') targetName = tNode;
                     else if ('decision' in tNode) targetName = (tNode as any).decision;
                     else if ('question' in tNode) targetName = (tNode as any).question || "Question";
                 } else {
-                    return null; // Don't draw if target isn't found
+                    // Target not found! Calculate endpoint as if there was a real child node
+                    // Use the same spacing that would be used for a normal parent-child connection
+                    targetName = `Link Interrotto: ${refId}`;
+                    endX = startX; // Keep centered below parent
+                    // Position as if there was a child node at the standard distance
+                    // V_SPACING is the vertical gap, NODE_HEIGHT is added to reach the top of where the child would be
+                    endY = startY + 80 + 100; // V_SPACING (80) + NODE_HEIGHT (100) = 180
+                    isBroken = true;
                 }
             }
 
@@ -924,11 +988,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
 
             const pathD = `M ${startX} ${startY} C ${c1X} ${c1Y}, ${c2X} ${c2Y}, ${endX} ${endY}`;
-            
+
             // Calculate midpoint
             const midX = 0.125 * startX + 0.375 * c1X + 0.375 * c2X + 0.125 * endX;
             const midY = 0.125 * startY + 0.375 * c1Y + 0.375 * c2Y + 0.125 * endY;
-            
+
             return {
                 id: `${node.id}-${parent.id}-connector`,
                 pathD,
@@ -936,6 +1000,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 isLink,
                 isSubTreeLink,
                 targetName,
+                isBroken,
                 node
             };
         }).filter((n): n is NonNullable<typeof n> => n !== null);
@@ -943,12 +1008,12 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
     if (!tree) {
         return (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><AlertCircle className="text-destructive"/> Albero Non Valido</CardTitle>
-              <CardDescription>Il JSON per l'albero decisionale è malformato e non può essere visualizzato.</CardDescription>
-            </CardHeader>
-          </Card>
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><AlertCircle className="text-destructive" /> Albero Non Valido</CardTitle>
+                    <CardDescription>Il JSON per l'albero decisionale è malformato e non può essere visualizzato.</CardDescription>
+                </CardHeader>
+            </Card>
         );
     }
 
@@ -960,11 +1025,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                         <CardTitle>Albero Decisionale Visuale</CardTitle>
                         <CardDescription>Trascina per spostare e usa la rotellina per lo zoom. Le modifiche sono sempre attive.</CardDescription>
                     </div>
-                     <TooltipProvider>
+                    <TooltipProvider>
                         <div className='flex items-center gap-4'>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                     <Button variant="outline" size="sm" onClick={() => setZoomReset(prev => prev + 1)} disabled={isSaving}>
+                                    <Button variant="outline" size="sm" onClick={() => setZoomReset(prev => prev + 1)} disabled={isSaving}>
                                         <Expand className="h-4 w-4" />
                                     </Button>
                                 </TooltipTrigger>
@@ -984,8 +1049,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             </CardHeader>
             <CardContent className="flex-grow p-0 relative overflow-hidden">
                 <TooltipProvider>
-                    <PanZoomContainer 
-                        contentWidth={layout.contentWidth} 
+                    <PanZoomContainer
+                        contentWidth={layout.contentWidth}
                         contentHeight={layout.contentHeight}
                         reset={zoomReset}
                     >
@@ -993,10 +1058,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                             <svg className="connector-svg">
                                 {connectorData.map(c => (
                                     <g key={c.id} onClick={(e) => { e.stopPropagation(); setSelectedLinkId(c.id); }} className="cursor-pointer" style={{ pointerEvents: 'auto' }}>
-                                        <path 
-                                            d={c.pathD} 
-                                            className={cn('connector-path', {'is-link': c.isLink || c.isSubTreeLink })} 
-                                            style={selectedLinkId === c.id ? { stroke: '#6366f1', strokeWidth: 2, filter: 'drop-shadow(0 0 2px rgba(99, 102, 241, 0.5))' } : undefined}
+                                        <path
+                                            d={c.pathD}
+                                            className={cn('connector-path', { 'is-link': c.isLink || c.isSubTreeLink, 'is-broken': c.isBroken })}
+                                            style={selectedLinkId === c.id ? { stroke: '#6366f1', strokeWidth: 2, filter: 'drop-shadow(0 0 2px rgba(99, 102, 241, 0.5))' } : (c.isBroken ? { stroke: '#ef4444', strokeDasharray: '8 4', strokeWidth: 3, opacity: 0.8 } : undefined)}
                                         />
                                         <path d={c.pathD} stroke="transparent" strokeWidth="30" fill="none" />
                                     </g>
@@ -1005,10 +1070,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
                             {layout.positionedNodes.map(item => {
                                 const { node, path, x, y, width, height, type } = item;
-                                
+
                                 // Hide link nodes as they are rendered as connectors with labels
                                 if (type === 'link') return null;
-                                
+
                                 const actualNode = (typeof node === 'object' && node !== null && 'node' in node) ? (node as any).node : node;
 
                                 let text: string;
@@ -1027,26 +1092,26 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                     case 'option':
                                         text = nodeAsOption.option;
                                         break;
-                                     case 'sub-tree-link':
-                                        const subTreeId = (actualNode as {subTreeRef: string}).subTreeRef;
+                                    case 'sub-tree-link':
+                                        const subTreeId = (actualNode as { subTreeRef: string }).subTreeRef;
                                         const subTreeInfo = allTrees.find(t => t.id === subTreeId);
                                         text = `Sotto-Albero: ${subTreeInfo?.name || subTreeId}`;
                                         break;
                                     default:
                                         text = 'Nodo non valido';
                                 }
-                                
+
                                 const isUndefinedPath = type === 'decision' && text === 'Percorso non definito';
                                 const variableId = type === 'question' ? nodeAsQuestion.variableId : (type === 'option' ? nodeAsOption.variableId : undefined);
                                 const mediaItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && 'media' in actualNode ? actualNode.media : [];
                                 const linkItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && 'links' in actualNode ? actualNode.links : [];
                                 const triggerItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && 'triggers' in actualNode ? actualNode.triggers : [];
-                                
+
                                 const isInternalLink = type === 'decision' && typeof actualNode === 'object' && 'ref' in actualNode;
                                 const isSubTree = type === 'sub-tree-link';
 
                                 return (
-                                    <div 
+                                    <div
                                         key={`${item.id}-${path}`}
                                         className={cn(`tree-node-wrapper group is-${type}`, { 'is-undefined-path': isUndefinedPath, 'is-link': isInternalLink || isSubTree })}
                                         style={{ left: x, top: y, width: width, height: height }}
@@ -1075,8 +1140,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
                                                         <Button asChild variant="link" size="icon" className="absolute -top-3 -right-3 h-6 w-6 cursor-pointer">
-                                                            <Link href={ type === 'option' && nodeAsOption.optionId ? `/variables?varId=${variableId}#${nodeAsOption.optionId}` : `/variables?varId=${variableId}`} target="_blank">
-                                                                <Database className="h-4 w-4 text-primary"/>
+                                                            <Link href={type === 'option' && nodeAsOption.optionId ? `/variables?varId=${variableId}#${nodeAsOption.optionId}` : `/variables?varId=${variableId}`} target="_blank">
+                                                                <Database className="h-4 w-4 text-primary" />
                                                             </Link>
                                                         </Button>
                                                     </TooltipTrigger>
@@ -1091,54 +1156,54 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                             )}
                                         </div>
                                         <div className="edit-controls">
-                                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                                                    if (item.type === 'question' || item.type === 'decision' || item.type === 'option') {
-                                                        handleEdit(path, item.type);
-                                                    }
-                                                }} title="Modifica" disabled={isSaving || (item.type !== 'question' && item.type !== 'decision' && item.type !== 'option')}>
-                                                    <Pencil className="h-4 w-4" />
-                                                </Button>
-                                                
-                                                {item.type === 'question' && (
-                                                    <>
-                                                        <div className="h-5 w-px bg-border" />
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                                                            setAddingNodeInfo({path, type: 'add', varId: variableId});
-                                                        }} title="Aggiungi Nuova Opzione" disabled={isSaving}>
-                                                            <Plus className="h-4 w-4" />
-                                                        </Button>
-                                                    </>
-                                                )}
+                                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                                if (item.type === 'question' || item.type === 'decision' || item.type === 'option') {
+                                                    handleEdit(path, item.type);
+                                                }
+                                            }} title="Modifica" disabled={isSaving || (item.type !== 'question' && item.type !== 'decision' && item.type !== 'option')}>
+                                                <Pencil className="h-4 w-4" />
+                                            </Button>
 
-                                                {item.type === 'option' && (
-                                                    <>
-                                                        <div className="h-5 w-px bg-border" />
-                                                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                                                            const parentNode = item.parent ? getNodeFromPath(tree, item.parent.path) : null;
-                                                            const optionName = (item.node as any).option;
-                                                            const currentNode = parentNode && parentNode.options ? parentNode.options[optionName] : {};
-                                                            setLinkingNodeInfo({path, currentNode: currentNode });
-                                                        }} title="Collega a Nodo Esistente" disabled={isSaving}>
-                                                            <Link2 className="h-4 w-4" />
-                                                        </Button>
-                                                        <div className="h-5 w-px bg-border" />
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                                                            setAddingChildNodeInfo({ path: path });
-                                                        }} title="Aggiungi Nodo" disabled={isSaving}>
-                                                            <Plus className="h-4 w-4" />
-                                                        </Button>
-                                                    </>
-                                                )}
-                                                
-                                                {path !== 'root' && (
-                                                    <>
-                                                        <div className="h-5 w-px bg-border" />
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDeleteNode(path)} title="Elimina" disabled={isSaving}>
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </Button>
-                                                    </>
-                                                )}
-                                            </div>
+                                            {item.type === 'question' && (
+                                                <>
+                                                    <div className="h-5 w-px bg-border" />
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                                        setAddingNodeInfo({ path, type: 'add', varId: variableId });
+                                                    }} title="Aggiungi Nuova Opzione" disabled={isSaving}>
+                                                        <Plus className="h-4 w-4" />
+                                                    </Button>
+                                                </>
+                                            )}
+
+                                            {item.type === 'option' && (
+                                                <>
+                                                    <div className="h-5 w-px bg-border" />
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                                        const parentNode = item.parent ? getNodeFromPath(tree, item.parent.path) : null;
+                                                        const optionName = (item.node as any).option;
+                                                        const currentNode = parentNode && parentNode.options ? parentNode.options[optionName] : {};
+                                                        setLinkingNodeInfo({ path, currentNode: currentNode });
+                                                    }} title="Collega a Nodo Esistente" disabled={isSaving}>
+                                                        <Link2 className="h-4 w-4" />
+                                                    </Button>
+                                                    <div className="h-5 w-px bg-border" />
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                                        setAddingChildNodeInfo({ path: path });
+                                                    }} title="Aggiungi Nodo" disabled={isSaving}>
+                                                        <Plus className="h-4 w-4" />
+                                                    </Button>
+                                                </>
+                                            )}
+
+                                            {path !== 'root' && (
+                                                <>
+                                                    <div className="h-5 w-px bg-border" />
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDeleteNode(path)} title="Elimina" disabled={isSaving}>
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 )
                             })}
@@ -1148,7 +1213,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 return (
                                     <div key={`${c.id}-overlay`} className="absolute z-50 flex items-center justify-center gap-1 bg-white dark:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 rounded-full shadow-lg px-2 py-1 text-xs text-muted-foreground" style={{ left: c.midX - 60, top: c.midY - 15, width: 120, height: 30 }}>
                                         <span className="max-w-[60px] truncate" title={c.targetName}>Link: {c.targetName}</span>
-                                        <button 
+                                        <button
                                             className="h-4 w-4 flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 rounded-full transition-colors"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -1181,7 +1246,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             )}
 
             {editingOptionInfo && (
-                 <EditOptionDialog
+                <EditOptionDialog
                     isOpen={!!editingOptionInfo}
                     onClose={() => setEditingOptionInfo(null)}
                     onSave={handleSaveOptionEdit}
@@ -1189,7 +1254,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     isSaving={isSaving}
                 />
             )}
-            
+
             {addingNodeInfo?.type === 'add' && addingNodeInfo.path !== null && (
                 <AddNodeDialog
                     isOpen={addingNodeInfo.type === 'add'}
@@ -1210,7 +1275,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     availableNodes={flatTree.filter(n => !n.text.startsWith("Link:"))}
                 />
             )}
-             {linkingNodeInfo && (
+            {linkingNodeInfo && (
                 <LinkNodeDialog
                     isOpen={!!linkingNodeInfo}
                     onClose={() => setLinkingNodeInfo(null)}
@@ -1224,7 +1289,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     currentNode={linkingNodeInfo.currentNode}
                 />
             )}
-             {deletingNodeInfo !== null && (
+            {deletingNodeInfo !== null && (
                 <DeleteNodeDialog
                     isOpen={deletingNodeInfo !== null}
                     onClose={() => setDeletingNodeInfo(null)}
@@ -1238,15 +1303,6 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 }
 
 
-    
-
-
-
-    
-
-    
-
-    
 
 
 
@@ -1262,4 +1318,12 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
 
 
-    
+
+
+
+
+
+
+
+
+
