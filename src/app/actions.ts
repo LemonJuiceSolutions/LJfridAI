@@ -5,33 +5,33 @@
 import { extractVariables } from '@/ai/flows/extract-variables';
 import { generateDecisionTree } from '@/ai/flows/generate-decision-tree';
 import { rephraseQuestion } from '@/ai/flows/rephrase-question';
-import { diagnoseProblem, type DiagnoseProblemInput, type DiagnoseProblemOutput } from '@/ai/flows/diagnose-problem';
+import { diagnoseProblem, type DiagnoseProblemInput, type DiagnoseProblemOutput as FlowOutput } from '@/ai/flows/diagnose-problem';
 import { detaiFlow, type DetaiInput } from '@/ai/flows/detai-flow';
-import type { DecisionNode, StoredTree, Variable, ConsolidationProposal, VariableOption, DecisionLeaf, TriggerItem, MediaItem, LinkItem, DiagnosticNode } from '@/lib/types';
+import type { DecisionNode, StoredTree, Variable, ConsolidationProposal, VariableOption, DecisionLeaf, TriggerItem, MediaItem, LinkItem, DiagnosticNode, DiagnoseProblemOutput } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, getDoc, setDoc, query, orderBy, Timestamp, where, writeBatch, deleteDoc, updateDoc } from 'firebase/firestore';
 
 
 import _ from 'lodash';
-import {nanoid} from 'nanoid';
+import { nanoid } from 'nanoid';
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 
 function findNodeByQuestion(node: DecisionNode | DecisionLeaf | string | { ref: string } | { subTreeRef: string } | any, questionOrDecision: string): DecisionNode | DecisionLeaf | null {
     if (!node) return null;
     if (typeof node === 'string') return null;
-    
+
     // Handle array nodes
     if (Array.isArray(node)) {
         for (const item of node) {
-             const found = findNodeByQuestion(item, questionOrDecision);
-             if (found) return found;
+            const found = findNodeByQuestion(item, questionOrDecision);
+            if (found) return found;
         }
         return null;
     }
 
     if ('ref' in node || 'subTreeRef' in node) return null;
-    
+
     // Check if this node matches
     if ('question' in node && node.question === questionOrDecision) return node as DecisionNode;
     if ('decision' in node && node.decision === questionOrDecision) return node as DecisionLeaf;
@@ -61,15 +61,15 @@ function getLastAssistantQuestion(history: string | undefined): string | null {
 function findNodeById(node: any, id: string): any | null {
     if (!node) return null;
     if (typeof node === 'string') return null;
-    
+
     if (Array.isArray(node)) {
-         for (const item of node) {
-             const found = findNodeById(item, id);
-             if (found) return found;
+        for (const item of node) {
+            const found = findNodeById(item, id);
+            if (found) return found;
         }
         return null;
     }
-    
+
     if ('ref' in node || 'subTreeRef' in node) return null;
 
     if (node.id === id) return node;
@@ -87,16 +87,16 @@ function findNodeById(node: any, id: string): any | null {
 
 
 function formatVariablesToTable(variables: Variable[]): string {
-  if (!variables || variables.length === 0) {
-    return 'Nessuna variabile estratta.';
-  }
-  let table = 'Nome Variabile | Tipo | Valori Possibili\n';
-  table += '--- | --- | ---\n';
-  variables.forEach((v) => {
-    const valuesString = (v.possibleValues || []).map(opt => `${opt.name} (${opt.abbreviation}, ${opt.value})`).join('; ');
-    table += `${v.name} | ${v.type} | ${valuesString}\n`;
-  });
-  return table;
+    if (!variables || variables.length === 0) {
+        return 'Nessuna variabile estratta.';
+    }
+    let table = 'Nome Variabile | Tipo | Valori Possibili\n';
+    table += '--- | --- | ---\n';
+    variables.forEach((v) => {
+        const valuesString = (v.possibleValues || []).map(opt => `${opt.name} (${opt.abbreviation}, ${opt.value})`).join('; ');
+        table += `${v.name} | ${v.type} | ${valuesString}\n`;
+    });
+    return table;
 }
 
 // Helper to sanitize JSON string by escaping control characters inside strings
@@ -104,10 +104,10 @@ function sanitizeJSONString(str: string): string {
     let result = '';
     let inString = false;
     let escaped = false;
-    
+
     for (let i = 0; i < str.length; i++) {
         const char = str[i];
-        
+
         if (inString) {
             if (char === '\\' && !escaped) {
                 escaped = true;
@@ -149,9 +149,9 @@ function sanitizeJSONString(str: string): string {
 function extractFirstJSON(str: string): any {
     const firstOpen = str.indexOf('{');
     const firstArrayOpen = str.indexOf('[');
-    
+
     if (firstOpen === -1 && firstArrayOpen === -1) return null;
-    
+
     let startIndex = -1;
     if (firstOpen !== -1 && (firstArrayOpen === -1 || firstOpen < firstArrayOpen)) {
         startIndex = firstOpen;
@@ -162,10 +162,10 @@ function extractFirstJSON(str: string): any {
     let braceCount = 0;
     let inString = false;
     let escaped = false;
-    
+
     for (let i = startIndex; i < str.length; i++) {
         const char = str[i];
-        
+
         if (inString) {
             if (char === '\\' && !escaped) {
                 escaped = true;
@@ -235,12 +235,12 @@ async function callOpenRouterJSON(apiKey: string, model: string, prompt: string,
             try {
                 return JSON.parse(jsonMatch[1]);
             } catch (e2) {
-                 // Try robust extraction on the match content
-                 const extracted = extractFirstJSON(jsonMatch[1]);
-                 if (extracted) return extracted;
+                // Try robust extraction on the match content
+                const extracted = extractFirstJSON(jsonMatch[1]);
+                if (extracted) return extracted;
             }
         }
-        
+
         // Try robust extraction on the whole content
         const extracted = extractFirstJSON(content);
         if (extracted) return extracted;
@@ -248,14 +248,14 @@ async function callOpenRouterJSON(apiKey: string, model: string, prompt: string,
         // Last resort: simple regex match (greedy) - kept for backward compatibility but risky
         const simpleMatch = content.match(/{[\s\S]*}/);
         if (simpleMatch) {
-             try {
+            try {
                 return JSON.parse(simpleMatch[0]);
-             } catch (e3) {
-                 // If simple match fails, it might be due to trailing garbage caught by greedy match
-                 // Try to extract from the matched string using robust method
-                 const extractedFromMatch = extractFirstJSON(simpleMatch[0]);
-                 if (extractedFromMatch) return extractedFromMatch;
-             }
+            } catch (e3) {
+                // If simple match fails, it might be due to trailing garbage caught by greedy match
+                // Try to extract from the matched string using robust method
+                const extractedFromMatch = extractFirstJSON(simpleMatch[0]);
+                if (extractedFromMatch) return extractedFromMatch;
+            }
         }
 
         throw new Error(`Failed to parse JSON response from AI: ${e instanceof Error ? e.message : String(e)}`);
@@ -287,7 +287,7 @@ Follow these rules strictly:
 7.  **OUTPUT FORMAT**: Return ONLY a valid JSON object with the key "variables". Do not use markdown blocks.`;
 
     const varsResult = await callOpenRouterJSON(config.apiKey, config.model, textDescription, extractVarsSystemPrompt);
-    
+
     // Add IDs to variables (client-side logic replicated)
     const variables = (varsResult.variables || []).map((v: any) => ({
         ...v,
@@ -296,7 +296,7 @@ Follow these rules strictly:
 
     // Step 2: Generate Tree
     const variablesTable = formatVariablesToTable(variables);
-    
+
     const generateTreeSystemPrompt = `You are a Business Rules Engine with natural language interpretation capabilities.
 Your output, including all text in the natural language description, the JSON content (questions and decisions), and the question script, MUST be in Italian.
 
@@ -362,78 +362,78 @@ ${variablesTable}`;
 }
 
 export async function processDescriptionAction(
-    textDescription: string, 
+    textDescription: string,
     openRouterConfig?: { apiKey: string, model: string }
 ): Promise<{ data: StoredTree & { debug?: any } | null; error: string | null; }> {
-  try {
-    let decisionTreeResult;
-    let extractedVariables = [];
-    let debugInfo = null;
-
-    if (openRouterConfig && openRouterConfig.apiKey) {
-        const result = await processDescriptionWithOpenRouter(textDescription, openRouterConfig);
-        extractedVariables = result.variables;
-        decisionTreeResult = {
-            naturalLanguageDecisionTree: result.naturalLanguageDecisionTree,
-            jsonDecisionTree: result.jsonDecisionTree,
-            questionsScript: result.questionsScript
-        };
-        debugInfo = result.debug;
-
-        console.log("--- DEBUG ACTION START ---");
-        console.log(`Model Used: ${debugInfo.model}`);
-        console.log("--- Extract Variables Input ---");
-        console.log("System:", debugInfo.extractVarsInput.system);
-        console.log("User:", debugInfo.extractVarsInput.user);
-        console.log("--- Extract Variables Output ---");
-        console.log(JSON.stringify(debugInfo.extractVarsOutput, null, 2));
-        console.log("--- Generate Tree Input ---");
-        console.log("System:", debugInfo.generateTreeInput.system);
-        console.log("User:", debugInfo.generateTreeInput.user);
-        console.log("--- Generate Tree Output ---");
-        console.log(JSON.stringify(debugInfo.generateTreeOutput, null, 2));
-        console.log("--- DEBUG ACTION END ---");
-
-    } else {
-        // Legacy flow (Google GenAI)
-        const { variables } = await extractVariables(textDescription);
-        extractedVariables = variables;
-        const variablesTable = formatVariablesToTable(variables);
-        decisionTreeResult = await generateDecisionTree({
-            textDescription,
-            variablesTable,
-        });
-    }
-    
     try {
-        JSON.parse(decisionTreeResult.jsonDecisionTree);
+        let decisionTreeResult;
+        let extractedVariables = [];
+        let debugInfo = null;
+
+        if (openRouterConfig && openRouterConfig.apiKey) {
+            const result = await processDescriptionWithOpenRouter(textDescription, openRouterConfig);
+            extractedVariables = result.variables;
+            decisionTreeResult = {
+                naturalLanguageDecisionTree: result.naturalLanguageDecisionTree,
+                jsonDecisionTree: result.jsonDecisionTree,
+                questionsScript: result.questionsScript
+            };
+            debugInfo = result.debug;
+
+            console.log("--- DEBUG ACTION START ---");
+            console.log(`Model Used: ${debugInfo.model}`);
+            console.log("--- Extract Variables Input ---");
+            console.log("System:", debugInfo.extractVarsInput.system);
+            console.log("User:", debugInfo.extractVarsInput.user);
+            console.log("--- Extract Variables Output ---");
+            console.log(JSON.stringify(debugInfo.extractVarsOutput, null, 2));
+            console.log("--- Generate Tree Input ---");
+            console.log("System:", debugInfo.generateTreeInput.system);
+            console.log("User:", debugInfo.generateTreeInput.user);
+            console.log("--- Generate Tree Output ---");
+            console.log(JSON.stringify(debugInfo.generateTreeOutput, null, 2));
+            console.log("--- DEBUG ACTION END ---");
+
+        } else {
+            // Legacy flow (Google GenAI)
+            const { variables } = await extractVariables(textDescription);
+            extractedVariables = variables;
+            const variablesTable = formatVariablesToTable(variables);
+            decisionTreeResult = await generateDecisionTree({
+                textDescription,
+                variablesTable,
+            });
+        }
+
+        try {
+            JSON.parse(decisionTreeResult.jsonDecisionTree);
+        } catch (e) {
+            console.error("JSON non valido ricevuto dall'IA (controllo finale):", decisionTreeResult.jsonDecisionTree);
+            return { data: null, error: "L'IA ha generato un albero decisionale JSON non valido. Prova a riformulare la tua input o a riprovare." };
+        }
+
+        const name = `Albero-${Date.now().toString().slice(-6)}`;
+
+        const newTree: Omit<StoredTree, 'id' | 'variables'> = {
+            name,
+            description: textDescription,
+            ...decisionTreeResult,
+            createdAt: Timestamp.now(),
+        }
+
+        const treeDocRef = doc(collection(db, 'trees'));
+
+        await setDoc(treeDocRef, newTree);
+
+        const data = { ...newTree, id: treeDocRef.id, createdAt: newTree.createdAt.toDate().toISOString(), debug: debugInfo };
+
+        return { data, error: null };
+
     } catch (e) {
-        console.error("JSON non valido ricevuto dall'IA (controllo finale):", decisionTreeResult.jsonDecisionTree);
-        return { data: null, error: "L'IA ha generato un albero decisionale JSON non valido. Prova a riformulare la tua input o a riprovare." };
+        const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto durante l\'analisi.';
+        console.error('Error in processDescriptionAction:', e);
+        return { data: null, error };
     }
-
-    const name = `Albero-${Date.now().toString().slice(-6)}`;
-    
-    const newTree: Omit<StoredTree, 'id' | 'variables'> = {
-        name,
-        description: textDescription,
-        ...decisionTreeResult,
-        createdAt: Timestamp.now(),
-    }
-    
-    const treeDocRef = doc(collection(db, 'trees'));
-    
-    await setDoc(treeDocRef, newTree);
-    
-    const data = { ...newTree, id: treeDocRef.id, createdAt: newTree.createdAt.toDate().toISOString(), debug: debugInfo };
-
-    return { data, error: null };
-
-  } catch (e) {
-    const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto durante l\'analisi.';
-    console.error('Error in processDescriptionAction:', e);
-    return { data: null, error };
-  }
 }
 
 export async function rephraseQuestionAction(question: string, context: string, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: string | null, error: string | null }> {
@@ -445,14 +445,14 @@ export async function rephraseQuestionAction(question: string, context: string, 
   Please provide a rephrased question that is easier to understand or suggest a few related options that the user can choose from.
   Ensure the rephrased question or suggested options are clear and concise.
   Output should be a single string in a JSON object with key "rephrasedQuestion".`;
-            
+
             const prompt = `Original Question: ${question}\nContext: ${context}`;
-            
+
             const result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, prompt, systemPrompt);
             return { data: result.rephrasedQuestion, error: null };
         } else {
-             const result = await rephraseQuestion({ question, context });
-             return { data: result.rephrasedQuestion, error: null };
+            const result = await rephraseQuestion({ question, context });
+            return { data: result.rephrasedQuestion, error: null };
         }
     } catch (e) {
         const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto durante la riformulazione.';
@@ -489,7 +489,7 @@ export async function getTreesAction(ids?: string[]): Promise<{ data: StoredTree
                 const querySnapshot = await getDocs(q);
                 processSnapshot(querySnapshot);
             }
-            if(trees[0]?.createdAt) {
+            if (trees[0]?.createdAt) {
                 trees.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             }
         } else {
@@ -517,7 +517,7 @@ export async function getTreeAction(id: string): Promise<{ data: StoredTree | nu
         if (!docSnap.exists()) {
             return { data: null, error: 'Albero decisionale non trovato.' };
         }
-        
+
         const data = docSnap.data();
         const createdAt = data.createdAt;
 
@@ -528,7 +528,7 @@ export async function getTreeAction(id: string): Promise<{ data: StoredTree | nu
             naturalLanguageDecisionTree: data.naturalLanguageDecisionTree,
             jsonDecisionTree: data.jsonDecisionTree,
             questionsScript: data.questionsScript,
-            createdAt: createdAt?.toDate ? createdAt.toDate().toISOString() : (typeof createdAt === 'string' ? createdAt : null), 
+            createdAt: createdAt?.toDate ? createdAt.toDate().toISOString() : (typeof createdAt === 'string' ? createdAt : null),
         };
 
         return { data: tree, error: null };
@@ -541,89 +541,274 @@ export async function getTreeAction(id: string): Promise<{ data: StoredTree | nu
 
 
 export async function updateTreeNodeAction({
-  treeId,
-  nodePath,
-  nodeData,
+    treeId,
+    nodePath,
+    nodeData,
 }: {
-  treeId: string;
-  nodePath: string;
-  nodeData: string;
+    treeId: string;
+    nodePath: string;
+    nodeData: string;
 }): Promise<{ success: boolean; error: string | null }> {
-  try {
-    if (!treeId || !nodePath) {
-      throw new Error("Dati mancanti per l'aggiornamento del nodo.");
-    }
-    
-    const treeDocRef = doc(db, 'trees', treeId);
-    const treeDoc = await getDoc(treeDocRef);
-    if (!treeDoc.exists()) {
-      throw new Error("Albero non trovato.");
-    }
-
-    const treeToUpdate = treeDoc.data() as StoredTree;
-    let jsonTree = JSON.parse(treeToUpdate.jsonDecisionTree);
-    
-    const lodashPath = nodePath.replace(/^root\.?/, '');
-
-    let parsedNodeData: any;
     try {
-      parsedNodeData = nodeData ? JSON.parse(nodeData) : null;
-    } catch (e) {
-      throw new Error("I dati del nodo forniti non sono un JSON valido.");
-    }
+        if (!treeId || !nodePath) {
+            throw new Error("Dati mancanti per l'aggiornamento del nodo.");
+        }
 
-    if (nodePath === 'root') {
-      if (parsedNodeData && typeof parsedNodeData === 'object' && !Array.isArray(parsedNodeData) && 'name' in parsedNodeData) {
-        await updateDoc(treeDocRef, { name: parsedNodeData.name });
+        const treeDocRef = doc(db, 'trees', treeId);
+        const treeDoc = await getDoc(treeDocRef);
+        if (!treeDoc.exists()) {
+            throw new Error("Albero non trovato.");
+        }
+
+        const treeToUpdate = treeDoc.data() as StoredTree;
+        let jsonTree = JSON.parse(treeToUpdate.jsonDecisionTree);
+
+        const lodashPath = nodePath.replace(/^root\.?/, '');
+
+        let parsedNodeData: any;
+        try {
+            parsedNodeData = nodeData ? JSON.parse(nodeData) : null;
+        } catch (e) {
+            throw new Error("I dati del nodo forniti non sono un JSON valido.");
+        }
+
+        if (nodePath === 'root') {
+            if (parsedNodeData && typeof parsedNodeData === 'object' && !Array.isArray(parsedNodeData) && 'name' in parsedNodeData) {
+                await updateDoc(treeDocRef, { name: parsedNodeData.name });
+                return { success: true, error: null };
+            }
+            jsonTree = { ...jsonTree, ...parsedNodeData };
+        } else {
+            if (parsedNodeData === null) { // Deletion case
+                _.unset(jsonTree, lodashPath);
+            } else {
+                _.set(jsonTree, lodashPath, parsedNodeData);
+            }
+        }
+
+        await updateDoc(treeDocRef, {
+            jsonDecisionTree: JSON.stringify(jsonTree, null, 2),
+        });
+
         return { success: true, error: null };
-      }
-      jsonTree = { ...jsonTree, ...parsedNodeData };
-    } else {
-      if (parsedNodeData === null) { // Deletion case
-        _.unset(jsonTree, lodashPath);
-      } else {
-        _.set(jsonTree, lodashPath, parsedNodeData);
-      }
+
+    } catch (e) {
+        const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante l'aggiornamento.";
+        console.error("Error in updateTreeNodeAction: ", e);
+        return { success: false, error: error.toString() };
     }
-    
-    await updateDoc(treeDocRef, {
-      jsonDecisionTree: JSON.stringify(jsonTree, null, 2),
-    });
-
-    return { success: true, error: null };
-
-  } catch (e) {
-    const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante l'aggiornamento.";
-    console.error("Error in updateTreeNodeAction: ", e);
-    return { success: false, error: error.toString() };
-  }
 }
 
-export async function diagnoseProblemAction(input: Omit<DiagnoseProblemInput, 'decisionTree'>, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: DiagnoseProblemOutput | null; error: string | null; }> {
+export async function diagnoseProblemAction(input: Omit<DiagnoseProblemInput, 'decisionTree'> & { specificTreeId?: string; previousNodeId?: string }, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: DiagnoseProblemOutput | null; error: string | null; }> {
     try {
-      const allTreesResult = await getTreesAction();
-      if (allTreesResult.error || !allTreesResult.data) {
-        throw new Error(allTreesResult.error || 'Nessun albero decisionale disponibile per la diagnosi.');
-      }
-      
-      const simplifiedTrees = allTreesResult.data.map(t => ({ 
-        id: t.id,
-        name: t.name, 
-        description: t.description, 
-        json: t.jsonDecisionTree 
-      }));
+        const allTreesResult = await getTreesAction();
+        if (allTreesResult.error || !allTreesResult.data) {
+            throw new Error(allTreesResult.error || 'Nessun albero decisionale disponibile per la diagnosi.');
+        }
 
-      let result;
-      
-      if (openRouterConfig && openRouterConfig.apiKey) {
-           const decisionTreeStr = JSON.stringify(simplifiedTrees);
-           const prompt = `Here is the context for your task:
+        const simplifiedTrees = allTreesResult.data.map(t => ({
+            id: t.id,
+            name: t.name,
+            description: t.description,
+            json: t.jsonDecisionTree
+        }));
+
+        // Filter trees if specific ID is provided
+        let targetTrees = simplifiedTrees;
+        if (input.specificTreeId) {
+            targetTrees = simplifiedTrees.filter(t => t.id === input.specificTreeId);
+            if (targetTrees.length === 0) {
+                return { data: null, error: 'Albero specificato non trovato.' };
+            }
+        }
+        // Deterministic Navigation Logic - BYPASS AI
+        if (input.specificTreeId && targetTrees.length > 0) {
+            try {
+                const treeJson = JSON.parse(targetTrees[0].json);
+                let nextNode: any | null = null;
+
+                // 1. Start of the tree (No previous node or no current answer)
+                if (!input.previousNodeId || !input.currentAnswer) {
+                    // Find root (usually the top level object)
+                    nextNode = treeJson;
+                    // If tree starts with an array (unusual, but handling it)
+                    if (Array.isArray(nextNode)) nextNode = nextNode[0];
+                }
+                // 2. Continuing from a previous node
+                else {
+                    const items = Array.isArray(treeJson) ? treeJson : [treeJson];
+                    // Helper to find node by ID in the tree
+                    const findNode = (nodes: any[], id: string): any => {
+                        for (const node of nodes) {
+                            if (node.id === id) return node;
+                            if (node.options) {
+                                for (const key in node.options) {
+                                    const child = node.options[key];
+                                    if (Array.isArray(child)) {
+                                        const found = findNode(child, id);
+                                        if (found) return found;
+                                    } else if (typeof child === 'object') {
+                                        const found = findNode([child], id);
+                                        if (found) return found;
+                                    }
+                                }
+                            }
+                        }
+                        return null;
+                    };
+
+                    const prevNode = findNode(items, input.previousNodeId);
+                    if (prevNode && prevNode.options) {
+                        // Normalize answer
+                        const answer = input.currentAnswer.trim().toLowerCase();
+
+                        // Find matching option key
+                        let matchKey = Object.keys(prevNode.options).find(k => k.trim().toLowerCase() === answer);
+                        // If no direct key match, maybe the answer IS the key (from button click)
+                        if (!matchKey) {
+                            // Try finding if the answer matches one of the option values (if they are just strings)
+                            // But usually UI sends the option Label.
+                            // Let's assume strict match first.
+                        }
+
+                        if (matchKey) {
+                            const child = prevNode.options[matchKey];
+                            // If child is just reference or subtree ref, resolve it
+                            if (Array.isArray(child)) {
+                                // Multiple nodes? Return the first one or wrapper
+                                // For now, let's take the first significant node
+                                nextNode = child[0];
+                                // TODO: Handle array of nodes properly if needed (usually for displaying multiple text blocks)
+                            } else {
+                                nextNode = child;
+                            }
+                        }
+                    }
+                }
+
+                // Resolve Reference if nextNode is a 'ref' or 'subTreeRef'
+                if (nextNode) {
+                    if (typeof nextNode === 'object' && nextNode !== null) { // Safe object check
+                        if ('ref' in nextNode) {
+                            // Find target node
+                            const items = Array.isArray(treeJson) ? treeJson : [treeJson];
+                            const targetId = nextNode.ref;
+
+                            // Helper to count ID occurrences for debugging
+                            const countNodesById = (nodes: any[], id: string): number => {
+                                let count = 0;
+                                for (const node of nodes) {
+                                    if (typeof node === 'object' && node !== null) {
+                                        if (node.id === id) count++;
+                                        if (node.options) {
+                                            for (const key in node.options) {
+                                                const child = node.options[key];
+                                                if (Array.isArray(child)) {
+                                                    count += countNodesById(child, id);
+                                                } else if (typeof child === 'object') {
+                                                    count += countNodesById([child], id);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                return count;
+                            };
+
+                            const duplicateCount = countNodesById(items, targetId);
+                            if (duplicateCount > 1) {
+                                console.error(`Duplicate ID found in tree: ${targetId} (Count: ${duplicateCount})`);
+                                return { data: null, error: `Errore critico: L'albero contiene ID duplicati (ID: ${targetId}). Questo causa comportamenti imprevisti. Per favore correggi l'albero nell'editor.` };
+                            }
+
+                            // Re-use findNode logic (need to lift it up or duplicate)
+                            const findNodeRef = (nodes: any[], id: string): any => {
+                                for (const node of nodes) {
+                                    if (typeof node === 'object' && node !== null) { // Safe check
+                                        if (node.id === id) return node;
+                                        if (node.options) {
+                                            for (const key in node.options) {
+                                                const child = node.options[key];
+                                                if (Array.isArray(child)) {
+                                                    const found = findNodeRef(child, id);
+                                                    if (found) return found;
+                                                } else if (typeof child === 'object') {
+                                                    const found = findNodeRef([child], id);
+                                                    if (found) return found;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                return null;
+                            };
+                            nextNode = findNodeRef(items, targetId);
+                        }
+                        // TODO: Handle subTreeRef if needed
+                    }
+                }
+
+                if (nextNode) {
+                    // Construct Output
+                    let isLeaf = false;
+                    let text = '...';
+                    let options: string[] = [];
+                    let media: any[] | undefined = undefined;
+                    let links: any[] | undefined = undefined;
+                    let triggers: any[] | undefined = undefined;
+                    let nodeIds: string[] = [];
+
+                    if (typeof nextNode === 'string') {
+                        isLeaf = true;
+                        text = nextNode;
+                    } else if (typeof nextNode === 'object' && nextNode !== null) {
+                        isLeaf = Boolean(nextNode.decision);
+                        text = nextNode.question || nextNode.decision || '...';
+                        options = nextNode.options ? Object.keys(nextNode.options) : [];
+                        media = nextNode.media;
+                        links = nextNode.links;
+                        triggers = nextNode.triggers;
+                        if (nextNode.id) nodeIds.push(nextNode.id);
+                    }
+
+                    return {
+                        data: {
+                            question: text,
+                            options: isLeaf ? undefined : options,
+                            isFinalDecision: isLeaf,
+                            treeName: targetTrees[0].name,
+                            nodeIds: nodeIds,
+                            media: media,
+                            links: links,
+                            triggers: triggers
+                        },
+                        error: null
+                    };
+                } else {
+                    // STRICT MODE: If we are in a specific tree, we MUST NOT fall back to AI.
+                    // If we couldn't find the node, it's an error in the tree structure or logic.
+                    console.error("Diagnostic Node Not Found. Previous:", input.previousNodeId, "Answer:", input.currentAnswer);
+                    return { data: null, error: `Errore nella guida: impossibile trovare il passaggio successivo. (Prev: ${input.previousNodeId})` };
+                }
+
+            } catch (e) {
+                console.error("Deterministic navigation failed", e);
+                return { data: null, error: `Errore tecnico nella navigazione dell'albero: ${(e as Error).message}` };
+            }
+        }
+        let result;
+
+        if (openRouterConfig && openRouterConfig.apiKey) {
+            const decisionTreeStr = JSON.stringify(targetTrees);
+            const prompt = `Here is the context for your task:
 - The user's initial problem description is "${input.userProblem}"
 - The complete library of available decision trees (with name, description, and full JSON content) is: ${decisionTreeStr}
 - The conversation history so far is: ${input.history || 'No history yet.'}
 - The user's most recent answer is: ${input.currentAnswer || 'This is the first interaction.'}`;
 
-           const systemPrompt = `You are an expert diagnostic AI chatbot. Your primary goal is to help a user identify the correct troubleshooting guide (a specific decision tree from a provided library) and then walk them through it, question by question.
+
+
+            let systemPrompt = `You are an expert diagnostic AI chatbot. Your primary goal is to help a user identify the correct troubleshooting guide (a specific decision tree from a provided library) and then walk them through it, question by question.
 You MUST respond in Italian.
 
 Follow these steps with absolute rigor:
@@ -637,9 +822,45 @@ Follow these steps with absolute rigor:
         *   c. Analyze the user's answer ('currentAnswer'). If it logically fits as a response to the question you asked, your hypothesis is gaining strength. Continue asking questions from this tree to gather more context.
         *   d. If the user's answer is nonsensical or clearly indicates the question was wrong, your hypothesis is incorrect. Apologize briefly, discard that tree, and pick the *next* most likely tree to test. Repeat the process by asking the root question of this new hypothesized tree.
         *   e. Only after you have gathered enough information from this multi-step clarification process (at least 4 interactions) and you are confident, you may proceed to Phase 2.
-    *   **Crucially, do NOT invent your own generic clarifying questions.** Use the actual questions from the trees to probe the user and confirm the context. Do not ask the user to pick a tree by its name.
+    *   **Crucially, do NOT invent your own generic clarifying questions.** Use the actual questions from the trees to probe the user and confirm the context. Do not ask the user to pick a tree by its name.`;
+
+            if (input.specificTreeId) {
+                let rootNodeText = "";
+                let rootNodeId = "";
+                try {
+                    const treeJson = JSON.parse(targetTrees[0].json);
+                    // Heuristic to find root: usually top level question/decision.
+                    // If it's an array?
+                    if (Array.isArray(treeJson)) {
+                        // Unlikely for root, but possible
+                    } else {
+                        rootNodeText = treeJson.question || treeJson.decision || "";
+                        rootNodeId = treeJson.id || "";
+                    }
+                } catch (e) {
+                    console.error("Error parsing tree JSON for root extraction", e);
+                }
+
+                systemPrompt = `You are an expert diagnostic AI chatbot. You are guiding the user through a specific troubleshooting guide (decision tree).
+You MUST respond in Italian.
+
+The user has explicitly selected the tree: "${targetTrees[0].name}".
+The ROOT NODE of this tree has ID: "${rootNodeId}" and Text: "${rootNodeText}".
+
+Your task is to NAVIGATE THIS TREE (INTERACTIVE GUIDE).
+
+Follow these steps with absolute rigor:
+
+1.  **Phase 1: SKIP IDENTIFICATION.**
+    *   The tree is already selected. Proceed directly to navigation.
 
 2.  **Phase 2: NAVIGATE THE IDENTIFIED TREE (INTERACTIVE GUIDE).**
+    *   **STARTING POINT**: You MUST start with the ROOT NODE provided above (ID: "${rootNodeId}"). Output this ID in the 'nodeIds' array and its exact text in the 'question' field.
+    *   **Subsequent Steps**: Use the user's answer ('currentAnswer') to find the next node in the JSON.`;
+            }
+
+            systemPrompt += `
+    *   Once a tree is identified with high confidence (or selected by user), your job is to guide the user through its JSON structure, step-by-step.
     *   Once a tree is identified with high confidence, your job is to guide the user through its JSON structure, step-by-step.
     *   **If you are just starting the navigation (i.e., you have just identified the tree)**, your response MUST be the root question of that tree's JSON. Provide the corresponding options from the JSON. (Note: If you confirmed the tree via hypothesis testing, you've already asked the first question, so use the 'currentAnswer' to find the *next* step).
     *   **If you already have a user's answer ('currentAnswer') to a previous question from the tree**, use that answer to find the next node in the JSON (question or decision).
@@ -677,226 +898,97 @@ Follow these steps with absolute rigor:
         "triggers": [ ... ]
     }`;
 
-           result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, prompt, systemPrompt);
+            result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, prompt, systemPrompt);
 
-      } else {
-          result = await diagnoseProblem({
-            ...input,
-            decisionTree: JSON.stringify(simplifiedTrees),
-          });
-      }
-
-      if (result.treeName) {
-        // Try to find by name first, then by ID if not found (since treeName might be ID)
-        let foundTree = allTreesResult.data.find(t => t.name === result.treeName);
-        if (!foundTree) {
-            foundTree = allTreesResult.data.find(t => t.id === result.treeName);
+        } else {
+            result = await diagnoseProblem({
+                ...input,
+                decisionTree: JSON.stringify(simplifiedTrees),
+            });
         }
 
-        if (foundTree) {
-            result.treeName = foundTree.id; // Normalize to ID
+        if (result.treeName) {
+            // Try to find by name first, then by ID if not found (since treeName might be ID)
+            let foundTree = allTreesResult.data.find(t => t.name === result.treeName);
+            if (!foundTree) {
+                foundTree = allTreesResult.data.find(t => t.id === result.treeName);
+            }
 
-            // STRICT VERIFICATION: Verify attachments against the JSON source
-            try {
-                const treeJson = JSON.parse(foundTree.jsonDecisionTree);
-                
-                if (result.nodeIds && Array.isArray(result.nodeIds) && result.nodeIds.length > 0) {
-                     const aggregatedMedia: MediaItem[] = [];
-                     const aggregatedLinks: LinkItem[] = [];
-                     const aggregatedTriggers: TriggerItem[] = [];
-                     const nodesList: DiagnosticNode[] = [];
-                     
-                    const regularNodes: DiagnosticNode[] = [];
-                    const subTreeNodes: (DiagnosticNode & { priority: number })[] = [];
-                    const subTreeInfo: { treeId: string; rootQuestion: string; options: string[]; priority: number }[] = [];
-                     
-                     for (const id of result.nodeIds) {
-                         const matchingNode = findNodeById(treeJson, id);
-                         if (matchingNode) {
-                             if (matchingNode.media) aggregatedMedia.push(...matchingNode.media);
-                             if (matchingNode.links) aggregatedLinks.push(...matchingNode.links);
-                             if (matchingNode.triggers) aggregatedTriggers.push(...matchingNode.triggers);
-                             
-                            if (matchingNode.subTreeRef) {
-                                const targetTree = allTreesResult.data.find(t => t.id === matchingNode.subTreeRef);
-                                if (targetTree) {
-                                    let targetText = `Collegamento a: ${targetTree.name}`;
-                                    try {
-                                        const targetJson = JSON.parse(targetTree.jsonDecisionTree);
-                                        const rootText = targetJson.question || targetJson.decision;
-                                        if (rootText) {
-                                            targetText += ` - ${rootText}`;
-                                        }
-                                        const opts = targetJson.options ? Object.keys(targetJson.options) : [];
-                                        const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
-                                        subTreeInfo.push({ treeId: targetTree.id, rootQuestion: rootText || targetText, options: opts, priority: prio });
-                                    } catch (e) {
-                                        const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
-                                        subTreeInfo.push({ treeId: targetTree.id, rootQuestion: targetText, options: [], priority: prio });
-                                    }
+            if (foundTree) {
+                result.treeName = foundTree.id; // Normalize to ID
 
-                                    const priority = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
-                                    
-                                    subTreeNodes.push({
-                                        text: targetText,
-                                        media: matchingNode.media,
-                                        links: matchingNode.links,
-                                        triggers: matchingNode.triggers,
-                                        id: matchingNode.id,
-                                        priority
-                                    });
-                                }
-                            } else {
-                                regularNodes.push({
-                                    text: matchingNode.question || matchingNode.decision || '...',
-                                    media: matchingNode.media,
-                                    links: matchingNode.links,
-                                    triggers: matchingNode.triggers,
-                                    id: matchingNode.id
-                                });
-                            }
-                         }
-                     }
-                     
-                    subTreeNodes.sort((a, b) => b.priority - a.priority);
-                    subTreeInfo.sort((a, b) => b.priority - a.priority);
-                    
-                    nodesList.push(...regularNodes);
-                    nodesList.push(...subTreeNodes.map(({ priority, ...node }) => node));
-                    
-                    result.media = aggregatedMedia;
-                    result.links = aggregatedLinks;
-                    result.triggers = aggregatedTriggers;
-                    result.nodes = nodesList;
+                // STRICT VERIFICATION: Verify attachments against the JSON source
+                try {
+                    const treeJson = JSON.parse(foundTree.jsonDecisionTree);
 
-                    if (subTreeInfo.length > 0) {
-                        const next = subTreeInfo[0];
-                        result.question = next.rootQuestion || result.question;
-                        result.options = next.options;
-                        result.treeName = next.treeId;
-                        result.isFinalDecision = false;
-                    }
-
-                } else {
-                    const prevQuestion = getLastAssistantQuestion(input.history);
-                    let sourceNode = prevQuestion ? findNodeByQuestion(treeJson, prevQuestion) : null;
-                    if (!sourceNode) {
-                        sourceNode = findNodeByQuestion(treeJson, result.question);
-                    }
-
-                    if (sourceNode && 'options' in sourceNode && sourceNode.options && input.currentAnswer) {
-                        const keys = Object.keys(sourceNode.options);
-                        const normalized = input.currentAnswer.trim().toLowerCase();
-                        const matchKey = keys.find(k => k.trim().toLowerCase() === normalized) || input.currentAnswer;
-                        const child = (sourceNode.options as any)[matchKey];
-                        const items = Array.isArray(child) ? child : [child];
-
+                    if (result.nodeIds && Array.isArray(result.nodeIds) && result.nodeIds.length > 0) {
                         const aggregatedMedia: MediaItem[] = [];
                         const aggregatedLinks: LinkItem[] = [];
                         const aggregatedTriggers: TriggerItem[] = [];
                         const nodesList: DiagnosticNode[] = [];
+
+                        const regularNodes: DiagnosticNode[] = [];
+                        const subTreeNodes: (DiagnosticNode & { priority: number })[] = [];
                         const subTreeInfo: { treeId: string; rootQuestion: string; options: string[]; priority: number }[] = [];
-                        const nodeIds: string[] = [];
-                        const collectedOptions = new Set<string>();
 
-                        for (const item of items) {
-                            if (typeof item === 'string') {
-                                nodesList.push({ text: item });
-                                continue;
-                            }
-                            if (Array.isArray(item)) {
-                                for (const subItem of item) {
-                                    if (typeof subItem === 'string') {
-                                        nodesList.push({ text: subItem });
-                                    } else if (subItem && typeof subItem === 'object') {
-                                        if ('ref' in subItem) {
-                                            const target = findNodeById(treeJson, (subItem as any).ref);
-                                            if (target) {
-                                                // Skip decision nodes from connectors as per user request
-                                                if (target.decision) continue;
+                        for (const id of result.nodeIds) {
+                            const matchingNode = findNodeById(treeJson, id);
+                            if (matchingNode) {
+                                if (matchingNode.media) aggregatedMedia.push(...matchingNode.media);
+                                if (matchingNode.links) aggregatedLinks.push(...matchingNode.links);
+                                if (matchingNode.triggers) aggregatedTriggers.push(...matchingNode.triggers);
 
-                                                if (target.media) aggregatedMedia.push(...(target.media || []));
-                                                if (target.links) aggregatedLinks.push(...(target.links || []));
-                                                if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
-                                                if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
-                                                nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
-                                                if (target.id) nodeIds.push(target.id);
-                                            }
-                                        } else if ('subTreeRef' in subItem) {
-                                            const targetTree = allTreesResult.data.find(t => t.id === (subItem as any).subTreeRef);
-                                            if (targetTree) {
-                                                let rootQuestion = `Collegamento a: ${targetTree.name}`;
-                                                let opts: string[] = [];
-                                                try {
-                                                    const targetJson = JSON.parse(targetTree.jsonDecisionTree);
-                                                    rootQuestion = (targetJson.question || targetJson.decision) || rootQuestion;
-                                                    opts = targetJson.options ? Object.keys(targetJson.options) : [];
-                                                } catch {}
-                                                const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
-                                                subTreeInfo.push({ treeId: targetTree.id, rootQuestion, options: opts, priority: prio });
-                                                nodesList.push({ text: `Collegamento a: ${targetTree.name}${rootQuestion ? ` - ${rootQuestion}` : ''}` });
-                                            }
-                                        } else {
-                                            const target = subItem as any;
-                                            if (target.media) aggregatedMedia.push(...(target.media || []));
-                                            if (target.links) aggregatedLinks.push(...(target.links || []));
-                                            if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
-                                            if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
-                                            nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
-                                            if (target.id) nodeIds.push(target.id);
-                                        }
-                                    }
-                                }
-                                continue;
-                            }
-
-                            if (item && typeof item === 'object') {
-                                if ('ref' in item) {
-                                    const target = findNodeById(treeJson, (item as any).ref);
-                                    if (target) {
-                                        // Skip decision nodes from connectors as per user request
-                                        if (target.decision) continue;
-
-                                        if (target.media) aggregatedMedia.push(...(target.media || []));
-                                        if (target.links) aggregatedLinks.push(...(target.links || []));
-                                        if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
-                                        if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
-                                        nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
-                                        if (target.id) nodeIds.push(target.id);
-                                    }
-                                } else if ('subTreeRef' in item) {
-                                    const targetTree = allTreesResult.data.find(t => t.id === (item as any).subTreeRef);
+                                if (matchingNode.subTreeRef) {
+                                    const targetTree = allTreesResult.data.find(t => t.id === matchingNode.subTreeRef);
                                     if (targetTree) {
-                                        let rootQuestion = `Collegamento a: ${targetTree.name}`;
-                                        let opts: string[] = [];
+                                        let targetText = `Collegamento a: ${targetTree.name}`;
                                         try {
                                             const targetJson = JSON.parse(targetTree.jsonDecisionTree);
-                                            rootQuestion = (targetJson.question || targetJson.decision) || rootQuestion;
-                                            opts = targetJson.options ? Object.keys(targetJson.options) : [];
-                                        } catch {}
-                                        const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
-                                        subTreeInfo.push({ treeId: targetTree.id, rootQuestion, options: opts, priority: prio });
-                                        nodesList.push({ text: `Collegamento a: ${targetTree.name}${rootQuestion ? ` - ${rootQuestion}` : ''}` });
+                                            const rootText = targetJson.question || targetJson.decision;
+                                            if (rootText) {
+                                                targetText += ` - ${rootText}`;
+                                            }
+                                            const opts = targetJson.options ? Object.keys(targetJson.options) : [];
+                                            const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
+                                            subTreeInfo.push({ treeId: targetTree.id, rootQuestion: rootText || targetText, options: opts, priority: prio });
+                                        } catch (e) {
+                                            const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
+                                            subTreeInfo.push({ treeId: targetTree.id, rootQuestion: targetText, options: [], priority: prio });
+                                        }
+
+                                        const priority = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
+
+                                        subTreeNodes.push({
+                                            text: targetText,
+                                            media: matchingNode.media,
+                                            links: matchingNode.links,
+                                            triggers: matchingNode.triggers,
+                                            id: matchingNode.id,
+                                            priority
+                                        });
                                     }
                                 } else {
-                                    const target = item as any;
-                                    if (target.media) aggregatedMedia.push(...(target.media || []));
-                                    if (target.links) aggregatedLinks.push(...(target.links || []));
-                                    if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
-                                    if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
-                                    nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
-                                    if (target.id) nodeIds.push(target.id);
+                                    regularNodes.push({
+                                        text: matchingNode.question || matchingNode.decision || '...',
+                                        media: matchingNode.media,
+                                        links: matchingNode.links,
+                                        triggers: matchingNode.triggers,
+                                        id: matchingNode.id
+                                    });
                                 }
                             }
                         }
 
+                        subTreeNodes.sort((a, b) => b.priority - a.priority);
                         subTreeInfo.sort((a, b) => b.priority - a.priority);
+
+                        nodesList.push(...regularNodes);
+                        nodesList.push(...subTreeNodes.map(({ priority, ...node }) => node));
+
                         result.media = aggregatedMedia;
                         result.links = aggregatedLinks;
                         result.triggers = aggregatedTriggers;
                         result.nodes = nodesList;
-                        if (nodeIds.length > 0) result.nodeIds = nodeIds;
-                        if (collectedOptions.size > 0) result.options = Array.from(collectedOptions);
 
                         if (subTreeInfo.length > 0) {
                             const next = subTreeInfo[0];
@@ -905,29 +997,164 @@ Follow these steps with absolute rigor:
                             result.treeName = next.treeId;
                             result.isFinalDecision = false;
                         }
+
                     } else {
-                        const matchingNode = findNodeByQuestion(treeJson, result.question);
-                        if (matchingNode) {
-                            result.media = matchingNode.media || [];
-                            result.links = matchingNode.links || [];
-                            result.triggers = matchingNode.triggers || [];
-                            result.nodes = [{
-                                text: ('question' in matchingNode ? matchingNode.question : matchingNode.decision) || result.question,
-                                media: matchingNode.media,
-                                links: matchingNode.links,
-                                triggers: matchingNode.triggers,
-                                id: matchingNode.id
-                            }];
+                        const prevQuestion = getLastAssistantQuestion(input.history);
+                        let sourceNode = prevQuestion ? findNodeByQuestion(treeJson, prevQuestion) : null;
+                        if (!sourceNode) {
+                            sourceNode = findNodeByQuestion(treeJson, result.question);
+                        }
+
+                        if (sourceNode && 'options' in sourceNode && sourceNode.options && input.currentAnswer) {
+                            const keys = Object.keys(sourceNode.options);
+                            const normalized = input.currentAnswer.trim().toLowerCase();
+                            const matchKey = keys.find(k => k.trim().toLowerCase() === normalized) || input.currentAnswer;
+                            const child = (sourceNode.options as any)[matchKey];
+                            const items = Array.isArray(child) ? child : [child];
+
+                            const aggregatedMedia: MediaItem[] = [];
+                            const aggregatedLinks: LinkItem[] = [];
+                            const aggregatedTriggers: TriggerItem[] = [];
+                            const nodesList: DiagnosticNode[] = [];
+                            const subTreeInfo: { treeId: string; rootQuestion: string; options: string[]; priority: number }[] = [];
+                            const nodeIds: string[] = [];
+                            const collectedOptions = new Set<string>();
+
+                            // FALLBACK: If we are at the start (no current answer) and no source node found, 
+                            // AND we have a specific tree, force using the root node.
+                            if (!sourceNode && !input.currentAnswer && input.specificTreeId) {
+                                sourceNode = treeJson; // Assume root is the top object
+                            }
+
+                            for (const item of items) {
+                                if (typeof item === 'string') {
+                                    nodesList.push({ text: item });
+                                    continue;
+                                }
+                                if (Array.isArray(item)) {
+                                    for (const subItem of item) {
+                                        if (typeof subItem === 'string') {
+                                            nodesList.push({ text: subItem });
+                                        } else if (subItem && typeof subItem === 'object') {
+                                            if ('ref' in subItem) {
+                                                const target = findNodeById(treeJson, (subItem as any).ref);
+                                                if (target) {
+                                                    // Skip decision nodes from connectors as per user request
+                                                    if (target.decision) continue;
+
+                                                    if (target.media) aggregatedMedia.push(...(target.media || []));
+                                                    if (target.links) aggregatedLinks.push(...(target.links || []));
+                                                    if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                                    if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
+                                                    nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
+                                                    if (target.id) nodeIds.push(target.id);
+                                                }
+                                            } else if ('subTreeRef' in subItem) {
+                                                const targetTree = allTreesResult.data.find(t => t.id === (subItem as any).subTreeRef);
+                                                if (targetTree) {
+                                                    let rootQuestion = `Collegamento a: ${targetTree.name}`;
+                                                    let opts: string[] = [];
+                                                    try {
+                                                        const targetJson = JSON.parse(targetTree.jsonDecisionTree);
+                                                        rootQuestion = (targetJson.question || targetJson.decision) || rootQuestion;
+                                                        opts = targetJson.options ? Object.keys(targetJson.options) : [];
+                                                    } catch { }
+                                                    const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
+                                                    subTreeInfo.push({ treeId: targetTree.id, rootQuestion, options: opts, priority: prio });
+                                                    nodesList.push({ text: `Collegamento a: ${targetTree.name}${rootQuestion ? ` - ${rootQuestion}` : ''}` });
+                                                }
+                                            } else {
+                                                const target = subItem as any;
+                                                if (target.media) aggregatedMedia.push(...(target.media || []));
+                                                if (target.links) aggregatedLinks.push(...(target.links || []));
+                                                if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                                if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
+                                                nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
+                                                if (target.id) nodeIds.push(target.id);
+                                            }
+                                        }
+                                    }
+                                    continue;
+                                }
+
+                                if (item && typeof item === 'object') {
+                                    if ('ref' in item) {
+                                        const target = findNodeById(treeJson, (item as any).ref);
+                                        if (target) {
+                                            // Skip decision nodes from connectors as per user request
+                                            if (target.decision) continue;
+
+                                            if (target.media) aggregatedMedia.push(...(target.media || []));
+                                            if (target.links) aggregatedLinks.push(...(target.links || []));
+                                            if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                            if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
+                                            nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
+                                            if (target.id) nodeIds.push(target.id);
+                                        }
+                                    } else if ('subTreeRef' in item) {
+                                        const targetTree = allTreesResult.data.find(t => t.id === (item as any).subTreeRef);
+                                        if (targetTree) {
+                                            let rootQuestion = `Collegamento a: ${targetTree.name}`;
+                                            let opts: string[] = [];
+                                            try {
+                                                const targetJson = JSON.parse(targetTree.jsonDecisionTree);
+                                                rootQuestion = (targetJson.question || targetJson.decision) || rootQuestion;
+                                                opts = targetJson.options ? Object.keys(targetJson.options) : [];
+                                            } catch { }
+                                            const prio = targetTree.createdAt ? new Date(targetTree.createdAt).getTime() : 0;
+                                            subTreeInfo.push({ treeId: targetTree.id, rootQuestion, options: opts, priority: prio });
+                                            nodesList.push({ text: `Collegamento a: ${targetTree.name}${rootQuestion ? ` - ${rootQuestion}` : ''}` });
+                                        }
+                                    } else {
+                                        const target = item as any;
+                                        if (target.media) aggregatedMedia.push(...(target.media || []));
+                                        if (target.links) aggregatedLinks.push(...(target.links || []));
+                                        if (target.triggers) aggregatedTriggers.push(...(target.triggers || []));
+                                        if (target.options) Object.keys(target.options).forEach(o => collectedOptions.add(o));
+                                        nodesList.push({ text: target.question || target.decision || '...', media: target.media, links: target.links, triggers: target.triggers, id: target.id });
+                                        if (target.id) nodeIds.push(target.id);
+                                    }
+                                }
+                            }
+
+                            subTreeInfo.sort((a, b) => b.priority - a.priority);
+                            result.media = aggregatedMedia;
+                            result.links = aggregatedLinks;
+                            result.triggers = aggregatedTriggers;
+                            result.nodes = nodesList;
+                            if (nodeIds.length > 0) result.nodeIds = nodeIds;
+                            if (collectedOptions.size > 0) result.options = Array.from(collectedOptions);
+
+                            if (subTreeInfo.length > 0) {
+                                const next = subTreeInfo[0];
+                                result.question = next.rootQuestion || result.question;
+                                result.options = next.options;
+                                result.treeName = next.treeId;
+                                result.isFinalDecision = false;
+                            }
+                        } else {
+                            const matchingNode = findNodeByQuestion(treeJson, result.question);
+                            if (matchingNode) {
+                                result.media = matchingNode.media || [];
+                                result.links = matchingNode.links || [];
+                                result.triggers = matchingNode.triggers || [];
+                                result.nodes = [{
+                                    text: ('question' in matchingNode ? matchingNode.question : matchingNode.decision) || result.question,
+                                    media: matchingNode.media,
+                                    links: matchingNode.links,
+                                    triggers: matchingNode.triggers,
+                                    id: matchingNode.id
+                                }];
+                            }
                         }
                     }
+                } catch (jsonError) {
+                    console.error("Error parsing tree JSON for verification:", jsonError);
                 }
-            } catch (jsonError) {
-                console.error("Error parsing tree JSON for verification:", jsonError);
             }
         }
-      }
 
-      return { data: result, error: null };
+        return { data: result, error: null };
     } catch (e) {
         let errorMessage = 'Si è verificato un errore imprevisto durante la diagnosi.';
         if (e instanceof Error) {
@@ -975,12 +1202,12 @@ export async function getVariablesAction(): Promise<{ data: Variable[] | null; e
 
             const findVarIds = (node: any) => {
                 if (typeof node !== 'object' || node === null) return;
-                
+
                 if (node.variableId) {
                     const dbVar = variableMapById.get(node.variableId);
                     if (dbVar && !dbVar.usedIn?.some(t => t.id === treeId)) {
                         if (!dbVar.usedIn) {
-                           dbVar.usedIn = [];
+                            dbVar.usedIn = [];
                         }
                         dbVar.usedIn.push({ id: treeId, name: treeName });
                     }
@@ -992,13 +1219,13 @@ export async function getVariablesAction(): Promise<{ data: Variable[] | null; e
                     }
                 }
             };
-            
+
             try {
                 if (treeData.jsonDecisionTree) {
                     const jsonTree = JSON.parse(treeData.jsonDecisionTree);
                     findVarIds(jsonTree);
                 }
-            } catch(e) {
+            } catch (e) {
                 console.warn(`Malformed JSON in tree ${treeId}, skipping variable usage check for it.`);
             }
         }
@@ -1103,7 +1330,7 @@ export async function deleteAllVariablesAction(): Promise<{ success: boolean, er
     try {
         const variablesRef = collection(db, 'variables');
         const querySnapshot = await getDocs(variablesRef);
-        
+
         if (querySnapshot.empty) {
             return { success: true, error: null }; // Nothing to delete
         }
@@ -1123,7 +1350,7 @@ export async function deleteAllVariablesAction(): Promise<{ success: boolean, er
 }
 
 
-export async function getStandardizationDataAction(treeId: string): Promise<{ data: { tree: StoredTree, dbVariables: Variable[] } | null, error: string | null}> {
+export async function getStandardizationDataAction(treeId: string): Promise<{ data: { tree: StoredTree, dbVariables: Variable[] } | null, error: string | null }> {
     try {
         const treeResult = await getTreeAction(treeId);
         if (treeResult.error || !treeResult.data) {
@@ -1134,16 +1361,16 @@ export async function getStandardizationDataAction(treeId: string): Promise<{ da
         if (dbVariablesResult.error) {
             throw new Error(dbVariablesResult.error);
         }
-        
-        return { 
+
+        return {
             data: {
                 tree: treeResult.data,
                 dbVariables: dbVariablesResult.data || [],
-            }, 
-            error: null 
+            },
+            error: null
         };
 
-    } catch(e) {
+    } catch (e) {
         const error = e instanceof Error ? e.message : 'Errore sconosciuto durante il recupero dei dati per la standardizzazione.';
         console.error("Error in getStandardizationDataAction:", e);
         return { data: null, error };
@@ -1168,33 +1395,33 @@ export async function executeConsolidationAction(
     try {
         const batch = writeBatch(db);
         const variablesRef = collection(db, "variables");
-        
+
         const treeResult = await getTreeAction(treeId);
         if (treeResult.error || !treeResult.data) {
             throw new Error(treeResult.error || 'Impossibile caricare l\'albero.');
         }
         const treeToUpdate = treeResult.data;
         let jsonTree = JSON.parse(treeToUpdate.jsonDecisionTree);
-        
+
         for (const action of approvedActions) {
             const varToSaveId = action.type === 'merge' && action.dbVarId ? action.dbVarId : nanoid();
             const varToSaveRef = doc(variablesRef, varToSaveId);
-            
+
             const cleanFinalOptions = _.uniqBy(
-                (action.finalOptions || []).map(opt => ({...opt, id: opt.id || nanoid(8)}))
+                (action.finalOptions || []).map(opt => ({ ...opt, id: opt.id || nanoid(8) }))
                     .filter(v => v && v.name && v.name.trim() !== ''),
                 'name'
             );
-            
+
             const varData: Omit<Variable, 'id' | 'usedIn' | 'createdAt'> = {
                 name: action.finalName,
-                type: 'enumeration', 
+                type: 'enumeration',
                 possibleValues: cleanFinalOptions,
             };
-            
+
             const varDocSnap = await getDoc(varToSaveRef);
             const existingCreatedAt = varDocSnap.exists() ? varDocSnap.data().createdAt : Timestamp.now();
-            
+
             batch.set(varToSaveRef, { ...varData, createdAt: existingCreatedAt }, { merge: true });
 
             const { node: updatedJsonTree, updated } = recursiveTreeUpdate(
@@ -1204,23 +1431,23 @@ export async function executeConsolidationAction(
                 cleanFinalOptions,
                 varToSaveId
             );
-            
+
             if (updated) {
                 jsonTree = updatedJsonTree;
             }
         }
-        
+
         const treeDocRef = doc(db, 'trees', treeId);
-        
+
         batch.update(treeDocRef, {
             jsonDecisionTree: JSON.stringify(jsonTree, null, 2),
         });
 
 
         await batch.commit();
-        
+
         const finalTreeResult = await getTreeAction(treeId);
-       
+
         return { success: true, data: finalTreeResult.data, error: null };
 
     } catch (e) {
@@ -1235,58 +1462,58 @@ export async function executeConsolidationAction(
  * and updates its name, its options, and its variableId.
  */
 function recursiveTreeUpdate(
-  node: any,
-  oldQuestionName: string,
-  newQuestionName: string,
-  newPossibleValues: VariableOption[],
-  newVariableId?: string,
+    node: any,
+    oldQuestionName: string,
+    newQuestionName: string,
+    newPossibleValues: VariableOption[],
+    newVariableId?: string,
 ): { node: any, updated: boolean } {
-  let updated = false;
+    let updated = false;
 
-  if (typeof node !== "object" || node === null) {
-    return { node, updated };
-  }
-
-  const newNode = _.cloneDeep(node);
-
-  if (newNode.question === oldQuestionName) {
-    
-    if (newQuestionName !== oldQuestionName) {
-      newNode.question = newQuestionName;
-      updated = true;
-    }
-    
-    if (newVariableId && newNode.variableId !== newVariableId) {
-      newNode.variableId = newVariableId;
-      updated = true;
+    if (typeof node !== "object" || node === null) {
+        return { node, updated };
     }
 
-    if (newPossibleValues && newNode.options) {
-      const currentOptions = newNode.options;
-      const newOptions: { [key: string]: any } = {};
+    const newNode = _.cloneDeep(node);
 
-      newPossibleValues.forEach(opt => {
-          newOptions[opt.name] = currentOptions[opt.name] || { decision: 'Percorso non definito', id: nanoid(8) };
-      });
-      
-      if (!_.isEqual(newNode.options, newOptions)) {
-          newNode.options = newOptions;
-          updated = true;
-      }
+    if (newNode.question === oldQuestionName) {
+
+        if (newQuestionName !== oldQuestionName) {
+            newNode.question = newQuestionName;
+            updated = true;
+        }
+
+        if (newVariableId && newNode.variableId !== newVariableId) {
+            newNode.variableId = newVariableId;
+            updated = true;
+        }
+
+        if (newPossibleValues && newNode.options) {
+            const currentOptions = newNode.options;
+            const newOptions: { [key: string]: any } = {};
+
+            newPossibleValues.forEach(opt => {
+                newOptions[opt.name] = currentOptions[opt.name] || { decision: 'Percorso non definito', id: nanoid(8) };
+            });
+
+            if (!_.isEqual(newNode.options, newOptions)) {
+                newNode.options = newOptions;
+                updated = true;
+            }
+        }
     }
-  }
 
-  if (newNode.options) {
-    for (const key in newNode.options) {
-      const result = recursiveTreeUpdate(newNode.options[key], oldQuestionName, newQuestionName, newPossibleValues, newVariableId);
-      if (result.updated) {
-        newNode.options[key] = result.node;
-        updated = true;
-      }
+    if (newNode.options) {
+        for (const key in newNode.options) {
+            const result = recursiveTreeUpdate(newNode.options[key], oldQuestionName, newQuestionName, newPossibleValues, newVariableId);
+            if (result.updated) {
+                newNode.options[key] = result.node;
+                updated = true;
+            }
+        }
     }
-  }
 
-  return { node: newNode, updated };
+    return { node: newNode, updated };
 }
 
 // Helper for OpenRouter Tool calls
@@ -1329,27 +1556,27 @@ export async function detaiAction(input: DetaiInput, openRouterConfig?: { apiKey
             // Check if the last message is a tool request that needs execution
             const lastInputMsg = input.messages[input.messages.length - 1];
             if (lastInputMsg?.role === 'model' && lastInputMsg.content[0].toolRequest) {
-                 const toolReq = lastInputMsg.content[0].toolRequest;
-                 if (toolReq.function.name === 'searchDecisionTrees') {
-                     let args;
-                     try {
+                const toolReq = lastInputMsg.content[0].toolRequest;
+                if (toolReq.function.name === 'searchDecisionTrees') {
+                    let args;
+                    try {
                         args = JSON.parse(toolReq.function.arguments);
-                     } catch (e) {
+                    } catch (e) {
                         return { data: { toolResponse: { id: toolReq.id, result: "Error parsing arguments" } }, error: null };
-                     }
-                     
-                     const searchResult = await searchTreesAction(args.query, openRouterConfig);
-                     
-                     return {
-                         data: {
-                             toolResponse: {
-                                 id: toolReq.id,
-                                 result: searchResult
-                             }
-                         },
-                         error: null
-                     };
-                 }
+                    }
+
+                    const searchResult = await searchTreesAction(args.query, openRouterConfig);
+
+                    return {
+                        data: {
+                            toolResponse: {
+                                id: toolReq.id,
+                                result: searchResult
+                            }
+                        },
+                        error: null
+                    };
+                }
             }
 
             const systemMessage = {
@@ -1386,7 +1613,7 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
                 systemMessage,
                 ...input.messages.map(m => {
                     if (m.role === 'tool') {
-                         return {
+                        return {
                             role: 'tool',
                             tool_call_id: m.content[0].toolResponse.id, // We need to store tool call ID in history
                             content: JSON.stringify(m.content[0].toolResponse.result)
@@ -1422,29 +1649,29 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
                 const toolCall = responseMessage.tool_calls[0];
                 if (toolCall.function.name === 'searchDecisionTrees') {
                     // Return the tool request so client can loop back with the result
-                    return { 
-                        data: { 
+                    return {
+                        data: {
                             toolRequest: {
                                 id: toolCall.id,
                                 type: 'function',
                                 function: toolCall.function
-                            } 
-                        }, 
-                        error: null 
+                            }
+                        },
+                        error: null
                     };
                 }
             }
-            
+
             return { data: { text: responseMessage.content }, error: null };
 
         } else {
             const result = await detaiFlow(input);
-            
+
             const lastMessage = input.messages[input.messages.length - 1];
             if (lastMessage?.role === 'tool') {
-                 return { data: { toolResponse: result }, error: null };
+                return { data: { toolResponse: result }, error: null };
             }
-    
+
             return { data: { text: result }, error: null };
         }
     } catch (e) {
@@ -1456,20 +1683,20 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
 
 
 export async function searchTreesAction(query: string, openRouterConfig?: { apiKey: string, model: string }): Promise<string> {
-  const treesResult = await getTreesAction();
-  if (treesResult.error || !treesResult.data) {
-    return 'Errore: Impossibile accedere al database degli alberi decisionali.';
-  }
+    const treesResult = await getTreesAction();
+    if (treesResult.error || !treesResult.data) {
+        return 'Errore: Impossibile accedere al database degli alberi decisionali.';
+    }
 
-  const searchableTrees = treesResult.data.map(t => ({
-    id: t.id,
-    name: t.name,
-    description: t.description,
-    content: t.naturalLanguageDecisionTree,
-  }));
+    const searchableTrees = treesResult.data.map(t => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        content: t.naturalLanguageDecisionTree,
+    }));
 
-  if (openRouterConfig && openRouterConfig.apiKey) {
-      const systemPrompt = `Sei un assistente di ricerca intelligente.
+    if (openRouterConfig && openRouterConfig.apiKey) {
+        const systemPrompt = `Sei un assistente di ricerca intelligente.
 Analizza la lista di alberi decisionali fornita e restituisci solo quelli che sono altamente pertinenti alla query dell'utente.
 Per ogni albero pertinente, devi fornire un breve riassunto della procedura.
 
@@ -1487,35 +1714,35 @@ FORMATO OUTPUT (JSON):
 
 Se nessun albero è pertinente, restituisci: { "relevantTrees": [] }`;
 
-      const userPrompt = `Query utente: "${query}"
+        const userPrompt = `Query utente: "${query}"
 
 Alberi disponibili:
 ${JSON.stringify(searchableTrees, null, 2)}`;
 
-      try {
-          const result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, userPrompt, systemPrompt);
-          if (!result || !result.relevantTrees || result.relevantTrees.length === 0) {
-              return 'Nessun risultato trovato.';
-          }
-          return JSON.stringify(result.relevantTrees, null, 2);
-      } catch (e) {
-          console.error("OpenRouter Search Error:", e);
-          return 'Errore durante la ricerca con OpenRouter.';
-      }
-  }
+        try {
+            const result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, userPrompt, systemPrompt);
+            if (!result || !result.relevantTrees || result.relevantTrees.length === 0) {
+                return 'Nessun risultato trovato.';
+            }
+            return JSON.stringify(result.relevantTrees, null, 2);
+        } catch (e) {
+            console.error("OpenRouter Search Error:", e);
+            return 'Errore durante la ricerca con OpenRouter.';
+        }
+    }
 
-  const SearchResultSchema = z.object({
-    relevantTrees: z.array(z.object({
-      name: z.string().describe("Il nome dell'albero decisionale."),
-      sourceId: z.string().describe("L'ID univoco dell'albero decisionale di origine."),
-      reason: z.string().describe("Motivo per cui questo albero è stato selezionato."),
-      summary: z.string().describe("Un breve riassunto della procedura descritta nell'albero."),
-    }))
-  });
+    const SearchResultSchema = z.object({
+        relevantTrees: z.array(z.object({
+            name: z.string().describe("Il nome dell'albero decisionale."),
+            sourceId: z.string().describe("L'ID univoco dell'albero decisionale di origine."),
+            reason: z.string().describe("Motivo per cui questo albero è stato selezionato."),
+            summary: z.string().describe("Un breve riassunto della procedura descritta nell'albero."),
+        }))
+    });
 
-  const { output } = await ai.generate({
-    model: 'googleai/gemini-1.5-pro-latest',
-    prompt: `Analizza la seguente lista di alberi decisionali e restituisci solo quelli che sono altamente pertinenti alla query dell'utente. Per ogni albero, includi il suo ID univoco nel campo 'sourceId'.
+    const { output } = await ai.generate({
+        model: 'googleai/gemini-1.5-pro-latest',
+        prompt: `Analizza la seguente lista di alberi decisionali e restituisci solo quelli che sono altamente pertinenti alla query dell'utente. Per ogni albero, includi il suo ID univoco nel campo 'sourceId'.
 
 Query utente: "${query}"
 
@@ -1523,14 +1750,14 @@ Alberi disponibili:
 ${JSON.stringify(searchableTrees, null, 2)}
 
 Per ogni albero pertinente, fornisci un breve riassunto della procedura che descrive.`,
-    output: { schema: SearchResultSchema },
-  });
+        output: { schema: SearchResultSchema },
+    });
 
-  if (!output || output.relevantTrees.length === 0) {
-    return 'Nessun risultato trovato.';
-  }
+    if (!output || output.relevantTrees.length === 0) {
+        return 'Nessun risultato trovato.';
+    }
 
-  return JSON.stringify(output.relevantTrees, null, 2);
+    return JSON.stringify(output.relevantTrees, null, 2);
 }
 
 
@@ -1542,10 +1769,10 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
 
         const batch = writeBatch(db);
         const varDocRef = doc(db, 'variables', id);
-        
+
         const varDocSnap = await getDoc(varDocRef);
         if (!varDocSnap.exists()) throw new Error("Variabile da aggiornare non trovata.");
-        
+
         const oldVarData = varDocSnap.data() as Variable;
 
         // Ensure IDs are present for new options
@@ -1555,18 +1782,18 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
         }));
 
         const newName = updateData.name?.trim();
-        const newPossibleValues = updatedPossibleValues ? _.uniqBy((updatedPossibleValues || []).map(v => ({...v, name: v.name.trim()})).filter(v => v.name), 'name') : undefined;
-        
+        const newPossibleValues = updatedPossibleValues ? _.uniqBy((updatedPossibleValues || []).map(v => ({ ...v, name: v.name.trim() })).filter(v => v.name), 'name') : undefined;
+
         const dbUpdatePayload: any = { ..._.omit(updateData, 'id', 'usedIn', 'createdAt', 'possibleValues') };
         if (newPossibleValues) dbUpdatePayload.possibleValues = newPossibleValues;
         if (newName) dbUpdatePayload.name = newName;
 
         batch.update(varDocRef, dbUpdatePayload);
-        
-        const allVarsResult = await getVariablesAction(); 
+
+        const allVarsResult = await getVariablesAction();
         if (allVarsResult.error) throw new Error(allVarsResult.error);
         const affectedTreesIds = allVarsResult.data?.find(v => v.id === id)?.usedIn?.map(t => t.id) || [];
-        
+
         if (affectedTreesIds.length > 0) {
             const affectedTreesResult = await getTreesAction(affectedTreesIds);
             if (affectedTreesResult.error) throw new Error(affectedTreesResult.error);
@@ -1577,8 +1804,8 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
                 if (!treeDoc.jsonDecisionTree) continue;
                 let jsonTree;
                 try {
-                     jsonTree = JSON.parse(treeDoc.jsonDecisionTree);
-                } catch(e) {
+                    jsonTree = JSON.parse(treeDoc.jsonDecisionTree);
+                } catch (e) {
                     console.warn(`Skipping malformed tree ${treeDoc.id}`);
                     continue;
                 }
@@ -1587,7 +1814,7 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
                 const finalOldPossibleValues = oldVarData.possibleValues;
 
                 const { node: updatedJsonTree, updated } = recursiveTreeUpdateById(jsonTree, id, newName || oldVarData.name, finalPossibleValues, finalOldPossibleValues);
-                
+
                 if (updated) {
                     batch.update(treeToUpdateRef, {
                         jsonDecisionTree: JSON.stringify(updatedJsonTree, null, 2),
@@ -1595,9 +1822,9 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
                 }
             }
         }
-        
+
         await batch.commit();
-        
+
         if (treeId && typeof treeId === 'string') {
             const finalTreeResult = await getTreeAction(treeId);
             return { success: true, data: finalTreeResult.data, error: null };
@@ -1620,79 +1847,79 @@ function recursiveTreeUpdateById(
     newPossibleValues: VariableOption[],
     oldPossibleValues: VariableOption[] = []
 ): { node: any, updated: boolean } {
-  let updated = false;
-  const newNode = _.cloneDeep(node);
+    let updated = false;
+    const newNode = _.cloneDeep(node);
 
-  if (typeof node !== "object" || node === null) {
-    return { node, updated };
-  }
-
-  if (newNode.variableId === variableId) {
-    if (newQuestionName !== newNode.question) {
-      newNode.question = newQuestionName;
-      updated = true;
+    if (typeof node !== "object" || node === null) {
+        return { node, updated };
     }
-    
-    if (newPossibleValues && newNode.options) {
-      const newOptions: { [key: string]: any } = {};
-      const currentOptions = newNode.options;
-      
-      const oldOptionsMapById = new Map<string, any>();
-      oldPossibleValues.forEach(oldOpt => {
-        if(oldOpt.id && currentOptions[oldOpt.name]) {
-            oldOptionsMapById.set(oldOpt.id, currentOptions[oldOpt.name]);
-        }
-      });
-      
-      const oldOptionsMapByName = new Map(oldPossibleValues.map(opt => [opt.name, currentOptions[opt.name]]));
 
-      newPossibleValues.forEach(newOpt => {
-        let correspondingChild;
-        // Find by ID first (most reliable)
-        if (newOpt.id && oldOptionsMapById.has(newOpt.id)) {
-            correspondingChild = oldOptionsMapById.get(newOpt.id);
-        } else {
-             // Fallback for options that might not have had an ID before
-            const oldOptMatch = oldPossibleValues.find(o => o.name === newOpt.name);
-            if(oldOptMatch) {
-                correspondingChild = oldOptionsMapByName.get(oldOptMatch.name);
+    if (newNode.variableId === variableId) {
+        if (newQuestionName !== newNode.question) {
+            newNode.question = newQuestionName;
+            updated = true;
+        }
+
+        if (newPossibleValues && newNode.options) {
+            const newOptions: { [key: string]: any } = {};
+            const currentOptions = newNode.options;
+
+            const oldOptionsMapById = new Map<string, any>();
+            oldPossibleValues.forEach(oldOpt => {
+                if (oldOpt.id && currentOptions[oldOpt.name]) {
+                    oldOptionsMapById.set(oldOpt.id, currentOptions[oldOpt.name]);
+                }
+            });
+
+            const oldOptionsMapByName = new Map(oldPossibleValues.map(opt => [opt.name, currentOptions[opt.name]]));
+
+            newPossibleValues.forEach(newOpt => {
+                let correspondingChild;
+                // Find by ID first (most reliable)
+                if (newOpt.id && oldOptionsMapById.has(newOpt.id)) {
+                    correspondingChild = oldOptionsMapById.get(newOpt.id);
+                } else {
+                    // Fallback for options that might not have had an ID before
+                    const oldOptMatch = oldPossibleValues.find(o => o.name === newOpt.name);
+                    if (oldOptMatch) {
+                        correspondingChild = oldOptionsMapByName.get(oldOptMatch.name);
+                    }
+                }
+
+                if (correspondingChild) {
+                    newOptions[newOpt.name] = correspondingChild;
+                } else {
+                    // If a new option is added, it won't have a corresponding child yet.
+                    newOptions[newOpt.name] = { decision: 'Percorso non definito', id: nanoid(8) };
+                }
+            });
+
+            // Clean up options that were removed
+            const newOptionNames = new Set(newPossibleValues.map(opt => opt.name));
+            for (const currentOptName in currentOptions) {
+                if (!newOptionNames.has(currentOptName)) {
+                    // This option was removed, so it's not added to newOptions, effectively deleting it.
+                }
+            }
+
+            if (!_.isEqual(newNode.options, newOptions)) {
+                newNode.options = newOptions;
+                updated = true;
             }
         }
-        
-        if (correspondingChild) {
-          newOptions[newOpt.name] = correspondingChild;
-        } else {
-          // If a new option is added, it won't have a corresponding child yet.
-          newOptions[newOpt.name] = { decision: 'Percorso non definito', id: nanoid(8) };
+    }
+
+    if (newNode.options) {
+        for (const key in newNode.options) {
+            const result = recursiveTreeUpdateById(newNode.options[key], variableId, newQuestionName, newPossibleValues, oldPossibleValues);
+            if (result.updated) {
+                newNode.options[key] = result.node;
+                updated = true;
+            }
         }
-      });
-      
-      // Clean up options that were removed
-      const newOptionNames = new Set(newPossibleValues.map(opt => opt.name));
-      for (const currentOptName in currentOptions) {
-          if (!newOptionNames.has(currentOptName)) {
-             // This option was removed, so it's not added to newOptions, effectively deleting it.
-          }
-      }
-
-      if (!_.isEqual(newNode.options, newOptions)) {
-        newNode.options = newOptions;
-        updated = true;
-      }
     }
-  }
 
-  if (newNode.options) {
-    for (const key in newNode.options) {
-      const result = recursiveTreeUpdateById(newNode.options[key], variableId, newQuestionName, newPossibleValues, oldPossibleValues);
-      if (result.updated) {
-        newNode.options[key] = result.node;
-        updated = true;
-      }
-    }
-  }
-
-  return { node: newNode, updated };
+    return { node: newNode, updated };
 }
 
 
@@ -1712,7 +1939,7 @@ export async function deleteAllTreesAction(): Promise<{ success: boolean, error:
     try {
         const treesRef = collection(db, 'trees');
         const querySnapshot = await getDocs(treesRef);
-        
+
         if (querySnapshot.empty) {
             return { success: true, error: null };
         }
@@ -1748,7 +1975,7 @@ export async function mergeVariablesAction(
 
         const allVars = await getVariablesAction();
         if (allVars.error) throw new Error(allVars.error);
-        
+
         const sourceVarInfo = allVars.data?.find(v => v.id === sourceVariableId);
         const sourceTreeIds = sourceVarInfo?.usedIn?.map(t => t.id) || [];
 
@@ -1758,7 +1985,7 @@ export async function mergeVariablesAction(
 
             for (const tree of affectedTreesResult.data!) {
                 let jsonTree = JSON.parse(tree.jsonDecisionTree);
-                
+
                 const replaceVarId = (node: any) => {
                     if (typeof node !== 'object' || node === null) return node;
 
@@ -1793,7 +2020,7 @@ export async function mergeVariablesAction(
         const targetVarRef = doc(variablesRef, targetVariableId);
         batch.update(targetVarRef, {
             name: finalName,
-            possibleValues: _.uniqBy(finalPossibleValues.map(v => ({...v, id: v.id || nanoid(8)})), 'name')
+            possibleValues: _.uniqBy(finalPossibleValues.map(v => ({ ...v, id: v.id || nanoid(8) })), 'name')
         });
 
         const sourceVarRef = doc(variablesRef, sourceVariableId);
@@ -1808,7 +2035,7 @@ export async function mergeVariablesAction(
         return { success: false, error };
     }
 }
-    
+
 
 export async function executeTriggerAction(
     treeId: string,
@@ -1833,7 +2060,7 @@ export async function executeTriggerAction(
             };
 
             await addDoc(collection(db, collectionName), logData);
-            
+
             return {
                 success: true,
                 message: `Trigger '${name}' eseguito: log scritto nella collezione '${collectionName}'.`

@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { diagnoseProblemAction } from '../actions';
+import { diagnoseProblemAction, searchTreesAction, getTreeAction } from '../actions';
+import InteractiveGuide from '@/components/rule-sage/interactive-guide';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,8 @@ type Message = {
     links?: LinkItem[];
     triggers?: TriggerItem[];
     nodes?: DiagnosticNode[];
+    nodeIds?: string[]; // Added nodeIds to Message type
+    searchResults?: { name: string; sourceId: string; reason: string; summary: string }[];
 };
 
 const initialAssistantMessage: Message = {
@@ -43,6 +46,8 @@ export default function ChatbotPage() {
     const [initialProblem, setInitialProblem] = useState('');
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     const [previewingMedia, setPreviewingMedia] = useState<MediaItem | null>(null);
+    const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
+    const [selectedTreeJson, setSelectedTreeJson] = useState<string | null>(null);
 
     useEffect(() => {
         if (scrollAreaRef.current) {
@@ -67,8 +72,8 @@ export default function ChatbotPage() {
 
                     switch (type) {
                         case 'media':
-                            icon = item.type === 'image' 
-                                ? <ImageIcon className="h-4 w-4 text-purple-600" /> 
+                            icon = item.type === 'image'
+                                ? <ImageIcon className="h-4 w-4 text-purple-600" />
                                 : <Video className="h-4 w-4 text-purple-600" />;
                             name = item.name || item.originalFilename || 'Media';
                             actionWrapper = (children: React.ReactNode) => (
@@ -117,7 +122,7 @@ export default function ChatbotPage() {
         );
     };
 
-     const handleSubmit = async (value: string, isOptionClick = false) => {
+    const handleSubmit = async (value: string, isOptionClick = false) => {
         const userMessageText = value;
 
         if (!userMessageText.trim()) return;
@@ -127,11 +132,11 @@ export default function ChatbotPage() {
             role: 'user',
             text: userMessageText,
         };
-        
+
         // Use a functional update to ensure we have the latest state
         setMessages(prevMessages => [...prevMessages, newUserMessage]);
         const currentMessages = [...messages, newUserMessage];
-        
+
         setInput('');
         setIsLoading(true);
 
@@ -139,10 +144,10 @@ export default function ChatbotPage() {
             const history = currentMessages
                 .map(m => `${m.role}: ${m.text}`)
                 .join('\n');
-            
+
             // If it's not an option click, it's a new problem description
             const problem = !isOptionClick ? userMessageText : initialProblem;
-             if (!initialProblem) {
+            if (!initialProblem) {
                 setInitialProblem(problem);
             }
 
@@ -150,16 +155,63 @@ export default function ChatbotPage() {
             const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
             const openRouterConfig = apiKey ? { apiKey, model } : undefined;
 
+            // CHECK: Is this the initial search phase?
+            // If we don't have a current tree active AND this is not an option click (meaning it's a new query)
+            // AND we haven't already done a search that resulted in a selection...
+            const activeTreeId = messages.reduceRight((acc: string | undefined, m) => acc || m.treeId, undefined);
+
+            if (!activeTreeId && !isOptionClick) {
+                // Perform Search
+                try {
+                    const searchResultJson = await searchTreesAction(problem, openRouterConfig);
+                    let searchResults = [];
+                    try {
+                        // Check if it's the "No results" string or JSON
+                        if (searchResultJson.startsWith('Nessun risultato') || searchResultJson.startsWith('Errore')) {
+                            // Fallthrough to normal diagnose
+                        } else {
+                            searchResults = JSON.parse(searchResultJson);
+                        }
+                    } catch (e) {
+                        console.error("Error parsing search results", e);
+                    }
+
+                    if (searchResults && searchResults.length > 0) {
+                        const searchMessage: Message = {
+                            id: (Date.now() + 1).toString(),
+                            role: 'assistant',
+                            text: `Ho trovato ${searchResults.length} guide che potrebbero esserti utili. Seleziona quella più pertinente o continua a descrivere il problema.`,
+                            searchResults: searchResults
+                        };
+                        setMessages(prev => [...prev, searchMessage]);
+                        return; // Stop here, let user select
+                    }
+                } catch (e) {
+                    console.error("Search failed, falling back to direct diagnose", e);
+                }
+            }
+
+            // Get previous node ID from the last assistant message
+            let previousNodeId;
+            if (isOptionClick && messages.length > 0) {
+                const lastAssistantMsg = messages.reduceRight((found, m) => found || (m.role === 'assistant' ? m : undefined), undefined as Message | undefined);
+                if (lastAssistantMsg && lastAssistantMsg.nodeIds && lastAssistantMsg.nodeIds.length > 0) {
+                    previousNodeId = lastAssistantMsg.nodeIds[0];
+                }
+            }
+
             const result = await diagnoseProblemAction({
                 userProblem: problem,
                 currentAnswer: isOptionClick ? userMessageText : undefined,
                 history,
+                specificTreeId: activeTreeId, // Pass the active tree ID if any
+                previousNodeId: previousNodeId
             }, openRouterConfig);
 
             if (result.error || !result.data) {
                 throw new Error(result.error || 'La diagnosi è fallita senza un errore specifico.');
             }
-            
+
             const diagnosisData = result.data;
 
             const assistantMessage: Message = {
@@ -175,7 +227,7 @@ export default function ChatbotPage() {
                 triggers: diagnosisData.triggers,
                 nodes: diagnosisData.nodes
             };
-            
+
             setMessages(prev => [...prev, assistantMessage]);
 
         } catch (error) {
@@ -185,7 +237,7 @@ export default function ChatbotPage() {
                 title: 'Errore del Chatbot',
                 description: errorMessage,
             });
-             const assistantErrorMessage: Message = {
+            const assistantErrorMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
                 text: `Mi dispiace, si è verificato un errore: ${errorMessage}`,
@@ -196,17 +248,62 @@ export default function ChatbotPage() {
             setIsLoading(false);
         }
     };
-    
+
     const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         handleSubmit(input);
     }
-    
+
     const handleOptionClick = (option: string) => {
         handleSubmit(option, true);
     }
 
-    const isConversationOver = messages.length > 0 && messages[messages.length-1].isFinalDecision;
+    const handleTreeSelect = async (treeId: string, treeName: string) => {
+        const userMessage: Message = {
+            id: Date.now().toString(),
+            role: 'user',
+            text: `Seleziono la guida: ${treeName}`,
+        };
+        setMessages(prev => [...prev, userMessage]);
+        setIsLoading(true);
+
+        try {
+            // Fetch the tree's full JSON
+            const treeResult = await getTreeAction(treeId);
+            if (treeResult.error || !treeResult.data) {
+                throw new Error(treeResult.error || 'Impossibile caricare l\'albero.');
+            }
+
+            // Set selected tree state to trigger InteractiveGuide rendering
+            setSelectedTreeId(treeId);
+            setSelectedTreeJson(treeResult.data.jsonDecisionTree);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Si è verificato un errore sconosciuto.';
+            toast({
+                variant: 'destructive',
+                title: 'Errore del Chatbot',
+                description: errorMessage,
+            });
+            const assistantErrorMessage: Message = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                text: `Mi dispiace, si è verificato un errore: ${errorMessage}`,
+            };
+            setMessages(prev => [...prev, assistantErrorMessage]);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    const handleResetGuide = () => {
+        setSelectedTreeId(null);
+        setSelectedTreeJson(null);
+        setMessages([initialAssistantMessage]);
+        setInput('');
+        setInitialProblem('');
+    }
+
+    const isConversationOver = messages.length > 0 && messages[messages.length - 1].isFinalDecision;
 
     const currentTreeId = messages.reduceRight((acc: string | undefined, m) => acc || m.treeId, undefined);
 
@@ -248,106 +345,180 @@ export default function ChatbotPage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="flex-1 overflow-hidden p-0">
-                             <ScrollArea className="h-full" ref={scrollAreaRef}>
-                                <div className="p-6 space-y-6">
-                                    {messages.map((m) => (
-                                        <div key={m.id} className={cn('flex items-start gap-4', { 'justify-end': m.role === 'user' })}>
-                                            {m.role === 'assistant' && (
-                                                <Avatar className='border'>
-                                                    <AvatarFallback><Bot className='text-primary'/></AvatarFallback>
-                                                </Avatar>
-                                            )}
-                                            <div className={cn("max-w-[75%] space-y-2")}>
-                                                {m.nodes && m.nodes.length > 0 ? (
-                                                    <div className="space-y-2">
-                                                        {m.nodes.map((node, idx) => (
-                                                            <div key={idx} className={cn(
-                                                                'rounded-lg p-3 text-sm',
-                                                                m.role === 'user'
-                                                                    ? 'bg-primary text-primary-foreground'
-                                                                    : 'bg-muted'
-                                                            )}>
-                                                                <div className="whitespace-pre-wrap">{node.text}</div>
-                                                                {renderAttachments({ ...m, media: node.media, links: node.links, triggers: node.triggers })}
-                                                            </div>
-                                                        ))}
-                                                        {m.isFinalDecision && m.treeId && (
-                                                            <div className={cn('rounded-lg p-3 text-sm bg-muted')}>
-                                                                <Button asChild className="w-full">
-                                                                    <Link href={`/view/${m.treeId}`}>
-                                                                        Visualizza l'albero
-                                                                    </Link>
-                                                                </Button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                   <div className={cn(
+                            {selectedTreeId && selectedTreeJson ? (
+                                <ScrollArea className="h-full" ref={scrollAreaRef}>
+                                    <div className="p-6 space-y-6">
+                                        {/* Show previous messages */}
+                                        {messages.map((m) => (
+                                            <div
+                                                key={m.id}
+                                                className={cn(
+                                                    'flex items-start gap-4',
+                                                    m.role === 'user' && 'flex-row-reverse'
+                                                )}
+                                            >
+                                                {m.role === 'assistant' && (
+                                                    <Avatar className='border'>
+                                                        <AvatarFallback><Bot className='text-primary' /></AvatarFallback>
+                                                    </Avatar>
+                                                )}
+                                                <div className={cn('flex flex-col gap-2 max-w-[85%]', m.role === 'user' && 'items-end')}>
+                                                    <div className={cn(
                                                         'rounded-lg p-3 text-sm',
                                                         m.role === 'user'
                                                             ? 'bg-primary text-primary-foreground'
                                                             : 'bg-muted'
                                                     )}>
                                                         <div className="whitespace-pre-wrap">{m.text}</div>
-                                                        {renderAttachments(m)}
-                                                        {m.isFinalDecision && m.treeId && (
-                                                             <Button asChild className="mt-3">
-                                                                <Link href={`/view/${m.treeId}`}>
-                                                                    Visualizza l'albero
-                                                                </Link>
-                                                            </Button>
+                                                    </div>
+                                                </div>
+                                                {m.role === 'user' && (
+                                                    <Avatar className='border'>
+                                                        <AvatarFallback><User /></AvatarFallback>
+                                                    </Avatar>
+                                                )}
+                                            </div>
+                                        ))}
+                                        {/* Interactive Guide Container */}
+                                        <div className="flex items-start gap-4">
+                                            <Avatar className='border'>
+                                                <AvatarFallback><Bot className='text-primary' /></AvatarFallback>
+                                            </Avatar>
+                                            <div className="flex-1 max-w-full">
+                                                <InteractiveGuide jsonTree={selectedTreeJson} treeId={selectedTreeId} />
+                                                <div className="mt-4">
+                                                    <Button variant="outline" size="sm" onClick={handleResetGuide}>
+                                                        Nuova Ricerca
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </ScrollArea>
+                            ) : (
+                                <>
+                                    <ScrollArea className="h-full" ref={scrollAreaRef}>
+                                        <div className="p-6 space-y-6">
+                                            {messages.map((m) => (
+                                                <div
+                                                    key={m.id}
+                                                    className={cn(
+                                                        'flex items-start gap-4',
+                                                        m.role === 'user' && 'flex-row-reverse'
+                                                    )}
+                                                >
+                                                    {m.role === 'assistant' && (
+                                                        <Avatar className='border'>
+                                                            <AvatarFallback><Bot className='text-primary' /></AvatarFallback>
+                                                        </Avatar>
+                                                    )}
+                                                    <div className={cn('flex flex-col gap-2 max-w-[85%]', m.role === 'user' && 'items-end')}>
+                                                        {m.nodes && m.nodes.length > 0 ? (
+                                                            <div className="space-y-2">
+                                                                {m.nodes.map((node, idx) => (
+                                                                    <div key={idx} className={cn('rounded-lg p-3 text-sm bg-muted')}>
+                                                                        <div className="whitespace-pre-wrap">{node.text}</div>
+                                                                        {renderAttachments({ ...m, media: node.media, links: node.links, triggers: node.triggers })}
+                                                                    </div>
+                                                                ))}
+                                                                {m.isFinalDecision && m.treeId && (
+                                                                    <div className={cn('rounded-lg p-3 text-sm bg-muted')}>
+                                                                        <Button asChild className="w-full">
+                                                                            <Link href={`/view/${m.treeId}`}>
+                                                                                Visualizza l'albero
+                                                                            </Link>
+                                                                        </Button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ) : m.searchResults ? (
+                                                            <div className={cn('rounded-lg p-3 text-sm bg-muted space-y-3')}>
+                                                                <div className="font-medium mb-2">{m.text}</div>
+                                                                <div className="grid gap-2">
+                                                                    {m.searchResults.map((tree) => (
+                                                                        <button
+                                                                            key={tree.sourceId}
+                                                                            onClick={() => handleTreeSelect(tree.sourceId, tree.name)}
+                                                                            className="flex flex-col items-start text-left p-3 rounded-md bg-background border hover:bg-accent/50 transition-colors w-full"
+                                                                            disabled={isLoading}
+                                                                        >
+                                                                            <span className="font-semibold text-primary">{tree.name}</span>
+                                                                            <span className="text-xs text-muted-foreground mt-1 line-clamp-2">{tree.summary}</span>
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className={cn(
+                                                                'rounded-lg p-3 text-sm',
+                                                                m.role === 'user'
+                                                                    ? 'bg-primary text-primary-foreground'
+                                                                    : 'bg-muted'
+                                                            )}>
+                                                                <div className="whitespace-pre-wrap">{m.text}</div>
+                                                                {renderAttachments(m)}
+                                                                {m.isFinalDecision && m.treeId && (
+                                                                    <Button asChild className="mt-3">
+                                                                        <Link href={`/view/${m.treeId}`}>
+                                                                            Visualizza l'albero
+                                                                        </Link>
+                                                                    </Button>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {m.options && m.options.length > 0 && !m.isFinalDecision && (
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {m.options.map(option => (
+                                                                    <Button
+                                                                        key={option}
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        onClick={() => handleOptionClick(option)}
+                                                                        disabled={isLoading}
+                                                                    >
+                                                                        {option}
+                                                                    </Button>
+                                                                ))}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                )}
-                                                 {m.options && m.options.length > 0 && !m.isFinalDecision &&(
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {m.options.map(option => (
-                                                            <Button 
-                                                                key={option}
-                                                                variant="outline"
-                                                                size="sm"
-                                                                onClick={() => handleOptionClick(option)}
-                                                                disabled={isLoading}
-                                                            >
-                                                                {option}
-                                                            </Button>
-                                                        ))}
+                                                    {m.role === 'user' && (
+                                                        <Avatar className='border'>
+                                                            <AvatarFallback><User /></AvatarFallback>
+                                                        </Avatar>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            {isLoading && (
+                                                <div className='flex items-start gap-4'>
+                                                    <Avatar className='border'>
+                                                        <AvatarFallback><Bot className='text-primary' /></AvatarFallback>
+                                                    </Avatar>
+                                                    <div className="rounded-lg bg-muted p-3">
+                                                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                                                     </div>
-                                                )}
-                                            </div>
-                                             {m.role === 'user' && (
-                                                <Avatar className='border'>
-                                                    <AvatarFallback><User /></AvatarFallback>
-                                                </Avatar>
+                                                </div>
                                             )}
                                         </div>
-                                    ))}
-                                    {isLoading && (
-                                         <div className='flex items-start gap-4'>
-                                             <Avatar className='border'>
-                                                <AvatarFallback><Bot className='text-primary'/></AvatarFallback>
-                                            </Avatar>
-                                            <div className="rounded-lg bg-muted p-3">
-                                                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                                            </div>
-                                         </div>
-                                    )}
-                                </div>
-                             </ScrollArea>
+                                    </ScrollArea>
+                                </>
+                            )}
                         </CardContent>
-                        <div className="border-t p-4">
-                            <form onSubmit={handleFormSubmit} className="flex gap-2">
-                                <Input
-                                    value={input}
-                                    onChange={(e) => setInput(e.target.value)}
-                                    placeholder="Descrivi il tuo problema..."
-                                    disabled={isLoading || isConversationOver}
-                                />
-                                <Button type="submit" disabled={isLoading || !input.trim() || isConversationOver}>
-                                    <Send className="h-5 w-5" />
-                                </Button>
-                            </form>
-                        </div>
+                        {!selectedTreeId && (
+                            <div className="border-t p-4">
+                                <form onSubmit={handleFormSubmit} className="flex gap-2">
+                                    <Input
+                                        value={input}
+                                        onChange={(e) => setInput(e.target.value)}
+                                        placeholder="Descrivi il tuo problema..."
+                                        disabled={isLoading || isConversationOver}
+                                    />
+                                    <Button type="submit" disabled={isLoading || !input.trim() || isConversationOver}>
+                                        <Send className="h-5 w-5" />
+                                    </Button>
+                                </form>
+                            </div>
+                        )}
                     </Card>
                 </div>
             </main>
@@ -357,11 +528,11 @@ export default function ChatbotPage() {
                 <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black/90 border-none">
                     {previewingMedia?.type === 'image' && (
                         <div className="relative w-full h-[80vh]">
-                            <Image 
-                                src={previewingMedia.url} 
-                                alt={previewingMedia.name || 'Preview'} 
-                                fill 
-                                className="object-contain" 
+                            <Image
+                                src={previewingMedia.url}
+                                alt={previewingMedia.name || 'Preview'}
+                                fill
+                                className="object-contain"
                             />
                         </div>
                     )}
