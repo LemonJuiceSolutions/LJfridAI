@@ -461,19 +461,19 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
         const isLeafObject = typeof node === 'object' && node !== null;
 
         return (
-            <div key={index} className={cn("text-center p-4 w-full", index !== undefined && "border-b last:border-0")}>
+            <div key={index} className={cn("text-center p-2 w-full", index !== undefined && "border-b last:border-0")}>
                 {isExecutingTrigger ? (
-                    <Loader2 className="mx-auto h-12 w-12 text-primary animate-spin mb-4" />
+                    <Loader2 className="mx-auto h-5 w-5 text-primary animate-spin mb-1" />
                 ) : (
-                    <Sparkles className="mx-auto h-12 w-12 text-accent mb-4" />
+                    <Sparkles className="mx-auto h-5 w-5 text-accent mb-1" />
                 )}
-                <p className="text-lg font-semibold text-muted-foreground">Decisione Finale:</p>
-                <p className="text-2xl font-bold mt-2">{decisionText}</p>
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Decisione Finale:</p>
+                <p className="text-base font-bold mt-1">{decisionText}</p>
                 {isLeafObject && renderAttachments(node)}
 
                 {treeStack.length > 0 && (
-                    <Button onClick={() => completeSubTree(node as any)} className="mt-4 w-full sm:w-auto" variant="secondary">
-                        <ArrowLeft className="mr-2 h-4 w-4" />
+                    <Button onClick={() => completeSubTree(node as any)} className="mt-2 w-full sm:w-auto h-7 text-xs" variant="secondary">
+                        <ArrowLeft className="mr-2 h-3 w-3" />
                         Usa questo risultato
                     </Button>
                 )}
@@ -483,25 +483,25 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
 
     return (
         <>
-            <Card className="min-h-[400px] flex flex-col">
-                <CardHeader>
-                    <CardTitle>Guida Interattiva</CardTitle>
-                    <CardDescription>Rispondi alle domande per navigare nell'albero decisionale e trovare una soluzione.</CardDescription>
+            <Card className="min-h-[300px] flex flex-col">
+                <CardHeader className="py-3 px-4">
+                    <CardTitle className="text-lg">Guida Interattiva</CardTitle>
+                    <CardDescription className="text-xs">Rispondi alle domande per navigare nell'albero decisionale.</CardDescription>
                     {treeStack.length > 0 && (
-                        <div className="text-sm text-muted-foreground pt-2 flex items-center gap-2">
-                            <GitBranch className="h-4 w-4" />
-                            <span>Navigando sotto-albero: <strong>{currentTree.question}</strong></span>
+                        <div className="text-[10px] text-muted-foreground pt-1 flex items-center gap-1">
+                            <GitBranch className="h-3 w-3" />
+                            <span>Sotto-albero: <strong>{currentTree.question}</strong></span>
                         </div>
                     )}
                 </CardHeader>
-                <CardContent className="flex-grow flex items-center justify-center">
+                <CardContent className="flex-grow flex items-center justify-center p-2">
                     {isLoadingTree ? (
-                        <div className="text-center p-4">
-                            <Loader2 className="mx-auto h-12 w-12 text-primary animate-spin mb-4" />
-                            <p className="text-lg text-muted-foreground">Caricamento sotto-albero...</p>
+                        <div className="text-center p-2">
+                            <Loader2 className="mx-auto h-6 w-6 text-primary animate-spin mb-2" />
+                            <p className="text-sm text-muted-foreground">Caricamento...</p>
                         </div>
                     ) : Array.isArray(currentNode) ? (
-                        <div className="text-center p-4 w-full space-y-8">
+                        <div className="text-center p-1 w-full space-y-1">
                             {currentNode.map((node, index) => {
                                 // Check if this node came from a sub-tree
                                 const subTreeSource = (node as any)._subTreeSource || (node as any).subTreeRef;
@@ -512,7 +512,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                     return (
                                         <div key={index} className={cn("w-full", index !== undefined && "border-b last:border-0")}>
                                             {subTreeData && (
-                                                <div className="flex items-center gap-2 text-xs text-primary mb-2 px-4 pt-4">
+                                                <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-primary mb-0 px-2 pt-1">
                                                     <GitBranch className="h-3 w-3" />
                                                     <span className="font-medium">Da: {subTreeData.name}</span>
                                                 </div>
@@ -525,23 +525,23 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                 // Question node from sub-tree
                                 if (typeof node === 'object' && node !== null && 'question' in node && 'options' in node) {
                                     return (
-                                        <div key={index} className={cn("p-4 w-full border-t border-primary/20", index !== undefined && "border-b last:border-0")}>
+                                        <div key={index} className={cn("p-2 w-full border-t border-primary/20", index !== undefined && "border-b last:border-0")}>
                                             {subTreeData && (
-                                                <div className="flex items-center gap-2 text-sm text-primary mb-4">
-                                                    <GitBranch className="h-4 w-4" />
+                                                <div className="flex items-center gap-1 text-[10px] text-primary mb-1">
+                                                    <GitBranch className="h-3 w-3" />
                                                     <span className="font-medium">Sotto-processo: {subTreeData.name}</span>
                                                 </div>
                                             )}
-                                            <p className="text-lg font-medium text-center mb-4">{(node as DecisionNode).question}</p>
+                                            <p className="text-sm font-medium text-center mb-1">{(node as DecisionNode).question}</p>
                                             {renderAttachments(node as DecisionNode)}
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                                                 {Object.entries((node as DecisionNode).options!).map(([key, value]) => (
                                                     <Button
                                                         key={key}
                                                         onClick={() => handleSubTreeOptionClick(value, subTreeSource, index)}
                                                         variant="outline"
-                                                        size="lg"
-                                                        className="h-auto py-3"
+                                                        size="sm"
+                                                        className="h-auto py-1 px-2 text-xs"
                                                     >
                                                         {key}
                                                     </Button>
@@ -564,7 +564,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                             return (
                                                 <div key={index} className={cn("w-full", index !== undefined && "border-b last:border-0")}>
                                                     {subTreeData && (
-                                                        <div className="flex items-center gap-2 text-xs text-primary mb-2 px-4 pt-4">
+                                                        <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-primary mb-0 px-2 pt-1">
                                                             <GitBranch className="h-3 w-3" />
                                                             <span className="font-medium">Da: {subTreeData.name}</span>
                                                         </div>
@@ -584,9 +584,9 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
 
                                     if (isLoading) {
                                         return (
-                                            <div key={index} className={cn("text-center p-4 w-full", index !== undefined && "border-b last:border-0")}>
-                                                <Loader2 className="mx-auto h-8 w-8 text-primary animate-spin mb-2" />
-                                                <p className="text-sm text-muted-foreground">Caricamento sotto-processo...</p>
+                                            <div key={index} className={cn("text-center p-2 w-full", index !== undefined && "border-b last:border-0")}>
+                                                <Loader2 className="mx-auto h-5 w-5 text-primary animate-spin mb-1" />
+                                                <p className="text-[10px] text-muted-foreground">Caricamento...</p>
                                             </div>
                                         );
                                     }
@@ -598,25 +598,25 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                     const subTree = subTreeData.tree;
 
                                     return (
-                                        <div key={index} className={cn("p-4 w-full border-t border-primary/20", index !== undefined && "border-b last:border-0")}>
-                                            <div className="flex items-center gap-2 text-sm text-primary mb-4">
-                                                <GitBranch className="h-4 w-4" />
+                                        <div key={index} className={cn("p-2 w-full border-t border-primary/20", index !== undefined && "border-b last:border-0")}>
+                                            <div className="flex items-center gap-1 text-[10px] text-primary mb-1">
+                                                <GitBranch className="h-3 w-3" />
                                                 <span className="font-medium">Sotto-processo: {subTreeData.name}</span>
                                             </div>
 
                                             {/* Render sub-tree's root question inline */}
                                             {typeof subTree === 'object' && 'question' in subTree && subTree.options ? (
                                                 <>
-                                                    <p className="text-lg font-medium text-center mb-4">{subTree.question}</p>
+                                                    <p className="text-sm font-medium text-center mb-1">{subTree.question}</p>
                                                     {renderAttachments(subTree)}
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                                                         {Object.entries(subTree.options).map(([key, value]) => (
                                                             <Button
                                                                 key={key}
                                                                 onClick={() => handleSubTreeOptionClick(value, subTreeRef, index)}
                                                                 variant="outline"
-                                                                size="lg"
-                                                                className="h-auto py-3"
+                                                                size="sm"
+                                                                className="h-auto py-1 px-2 text-xs"
                                                             >
                                                                 {key}
                                                             </Button>
@@ -624,7 +624,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                                     </div>
                                                 </>
                                             ) : (
-                                                <p className="text-muted-foreground text-center">Il sotto-albero non contiene domande valide.</p>
+                                                <p className="text-muted-foreground text-center text-[10px]">Il sotto-albero non contiene domande valide.</p>
                                             )}
                                         </div>
                                     );
