@@ -139,3 +139,64 @@ I file che iniziano con `.` sono nascosti su Windows. Per vederli:
 Per un ambiente di produzione, modifica:
 - La password PostgreSQL in `docker-compose.yml`
 - Le chiavi API in `.env`
+
+---
+
+## 🔌 REST API
+
+L'applicazione espone delle API REST per integrazioni esterne.
+
+### Endpoint Disponibili
+
+| Metodo | Endpoint | Descrizione |
+|--------|----------|-------------|
+| GET | `/api/trees` | Lista tutti gli alberi |
+| POST | `/api/trees` | Crea albero da descrizione |
+| GET | `/api/trees/:id` | Dettagli albero |
+| DELETE | `/api/trees/:id` | Elimina albero |
+| POST | `/api/trees/:id/query` | Interroga con DetAI |
+
+### Esempi (PowerShell)
+
+**Lista alberi:**
+```powershell
+Invoke-RestMethod -Uri "http://localhost:3000/api/trees"
+```
+
+**Crea nuovo albero:**
+```powershell
+$body = @{
+    description = "Per una richiesta di reso, controlla la data. Se entro 30 giorni, approva. Altrimenti rifiuta."
+    openRouterApiKey = "sk-or-..." # opzionale
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "http://localhost:3000/api/trees" -Method POST -Body $body -ContentType "application/json"
+```
+
+**Interroga albero:**
+```powershell
+$body = @{
+    question = "Cliente con prodotto acquistato ieri, difettoso"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "http://localhost:3000/api/trees/ID_ALBERO/query" -Method POST -Body $body -ContentType "application/json"
+```
+
+### Esempi (cURL / Bash)
+
+```bash
+# Lista alberi
+curl http://localhost:3000/api/trees
+
+# Crea albero
+curl -X POST http://localhost:3000/api/trees \
+  -H "Content-Type: application/json" \
+  -d '{"description": "Gestione resi..."}'
+
+# Interroga
+curl -X POST http://localhost:3000/api/trees/ID/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Prodotto difettoso"}'
+```
+
+Per documentazione completa, vedi `API.md`.
