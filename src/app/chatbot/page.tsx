@@ -381,13 +381,13 @@ export default function ChatbotPage() {
                                         ))}
                                         {/* Interactive Guide Container */}
                                         <div className="flex items-start gap-4">
-                                            <Avatar className='border'>
-                                                <AvatarFallback><Bot className='text-primary' /></AvatarFallback>
+                                            <Avatar className='border h-8 w-8'>
+                                                <AvatarFallback><Bot className='text-primary h-4 w-4' /></AvatarFallback>
                                             </Avatar>
-                                            <div className="flex-1 max-w-full">
+                                            <div className="max-w-[75%] text-sm [&_.text-lg]:text-sm [&_.text-xl]:text-base [&_.text-base]:text-sm [&_.py-3]:py-2 [&_.p-6]:p-3 [&_.p-4]:p-2 [&_.gap-4]:gap-2 [&_.space-y-6]:space-y-3 [&_.min-h-\[300px\]]:min-h-0">
                                                 <InteractiveGuide jsonTree={selectedTreeJson} treeId={selectedTreeId} />
-                                                <div className="mt-4">
-                                                    <Button variant="outline" size="sm" onClick={handleResetGuide}>
+                                                <div className="mt-3">
+                                                    <Button variant="outline" size="sm" onClick={handleResetGuide} className="text-xs h-7">
                                                         Nuova Ricerca
                                                     </Button>
                                                 </div>
