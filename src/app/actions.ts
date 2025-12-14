@@ -599,6 +599,89 @@ export async function updateTreeNodeAction({
     }
 }
 
+// Action to regenerate the natural language description from a JSON decision tree
+export async function regenerateNaturalLanguageAction(
+    treeId: string,
+    openRouterConfig?: { apiKey: string, model: string }
+): Promise<{ success: boolean; error: string | null }> {
+    try {
+        if (!treeId) {
+            throw new Error("ID albero mancante.");
+        }
+
+        const treeDocRef = doc(db, 'trees', treeId);
+        const treeDoc = await getDoc(treeDocRef);
+        if (!treeDoc.exists()) {
+            throw new Error("Albero non trovato.");
+        }
+
+        const treeData = treeDoc.data() as StoredTree;
+        const jsonDecisionTree = treeData.jsonDecisionTree;
+
+        const systemPrompt = `Sei un assistente che deve creare una descrizione testuale in linguaggio naturale di un albero decisionale.
+
+**REGOLE IMPORTANTI**:
+1. Leggi attentamente il JSON dell'albero decisionale fornito.
+2. Scrivi una descrizione FLUIDA e DISCORSIVA in italiano che spiega il processo decisionale.
+3. **CRITICO**: Ogni volta che menzioni il TESTO ESATTO di una domanda o di una decisione proveniente dall'albero, devi racchiuderlo tra marcatori [[node:...]] così:
+   - Per domande: "Prima si chiede [[node:Il dispositivo è in garanzia?]]"
+   - Per decisioni: "La soluzione è [[node:Sostituire il componente]]"
+   - Per opzioni: "Se l'utente risponde [[node:Sì]]"
+4. Il testo descrittivo/connettivo (es. "Prima si verifica", "poi si procede", "in questo caso") deve restare SENZA marcatori.
+5. Sii completo: copri TUTTI i percorsi dell'albero.
+6. Mantieni un tono professionale e chiaro.
+
+**OUTPUT**: Restituisci SOLO un oggetto JSON con la chiave "naturalLanguageDecisionTree" contenente la descrizione.`;
+
+        const userPrompt = `Ecco l'albero decisionale da descrivere:
+
+${jsonDecisionTree}
+
+Genera la descrizione in linguaggio naturale seguendo le regole sopra.`;
+
+        let newDescription: string;
+
+        if (openRouterConfig && openRouterConfig.apiKey) {
+            const result = await callOpenRouterJSON(
+                openRouterConfig.apiKey,
+                openRouterConfig.model,
+                userPrompt,
+                systemPrompt
+            );
+            newDescription = result.naturalLanguageDecisionTree || result.description || "";
+        } else {
+            // Use Genkit/Gemini
+            const { output } = await ai.generate({
+                model: 'googleai/gemini-1.5-flash-latest',
+                prompt: userPrompt,
+                system: systemPrompt,
+                output: {
+                    schema: z.object({
+                        naturalLanguageDecisionTree: z.string().describe("La descrizione in linguaggio naturale dell'albero decisionale.")
+                    })
+                }
+            });
+            newDescription = output?.naturalLanguageDecisionTree || "";
+        }
+
+        if (!newDescription) {
+            throw new Error("L'IA non ha generato una descrizione valida.");
+        }
+
+        // Update the tree with the new description
+        await updateDoc(treeDocRef, {
+            naturalLanguageDecisionTree: newDescription,
+        });
+
+        return { success: true, error: null };
+
+    } catch (e) {
+        const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante la rigenerazione.";
+        console.error("Error in regenerateNaturalLanguageAction: ", e);
+        return { success: false, error: error.toString() };
+    }
+}
+
 export async function diagnoseProblemAction(input: Omit<DiagnoseProblemInput, 'decisionTree'> & { specificTreeId?: string; previousNodeId?: string }, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: DiagnoseProblemOutput | null; error: string | null; }> {
     try {
         const allTreesResult = await getTreesAction();
