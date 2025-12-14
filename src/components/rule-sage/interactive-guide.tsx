@@ -541,7 +541,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                                         onClick={() => handleSubTreeOptionClick(value, subTreeSource, index)}
                                                         variant="outline"
                                                         size="sm"
-                                                        className="h-auto py-1 px-2 text-xs"
+                                                        className="h-auto py-1 px-2 text-xs border-purple-600 text-purple-900 bg-purple-100 hover:bg-purple-200 hover:text-purple-950 hover:border-purple-700"
                                                     >
                                                         {key}
                                                     </Button>
@@ -616,7 +616,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                                                 onClick={() => handleSubTreeOptionClick(value, subTreeRef, index)}
                                                                 variant="outline"
                                                                 size="sm"
-                                                                className="h-auto py-1 px-2 text-xs"
+                                                                className="h-auto py-1 px-2 text-xs border-purple-600 text-purple-900 bg-purple-100 hover:bg-purple-200 hover:text-purple-950 hover:border-purple-700"
                                                             >
                                                                 {key}
                                                             </Button>
@@ -669,7 +669,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
                                 {Object.entries((currentNode as DecisionNode).options!).map(([key, value]) => (
-                                    <Button key={key} onClick={() => handleOptionClick(value)} variant="outline" size="lg" className="h-auto py-3">
+                                    <Button key={key} onClick={() => handleOptionClick(value)} variant="outline" size="lg" className="h-auto py-3 border-purple-600 text-purple-900 bg-purple-100 hover:bg-purple-200 hover:text-purple-950 hover:border-purple-700">
                                         {key}
                                     </Button>
                                 ))}
