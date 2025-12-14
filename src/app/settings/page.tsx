@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Settings, Save, PlayCircle, Loader2, CheckCircle2, XCircle, Send, Bot, User as UserIcon, Trash2 } from 'lucide-react';
+import { ArrowLeft, Settings, Save, PlayCircle, Loader2, CheckCircle2, XCircle, Send, Bot, User as UserIcon, Trash2, Search } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,7 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { testOpenRouterConnection, chatOpenRouterAction } from '../actions';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { testOpenRouterConnection, chatOpenRouterAction, fetchOpenRouterModelsAction } from '../actions';
 
 export default function SettingsPage() {
     const { toast } = useToast();
@@ -20,8 +22,14 @@ export default function SettingsPage() {
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+    // Model Selector State
+    const [allModels, setAllModels] = useState<any[]>([]);
+    const [isModelsLoading, setIsModelsLoading] = useState(false);
+    const [modelSearch, setModelSearch] = useState('');
+    const [isModelDialogOpen, setIsModelDialogOpen] = useState(false);
+
     // Chat state
-    const [chatMessages, setChatMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([]);
+    const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([]);
     const [inputMessage, setInputMessage] = useState('');
     const [isChatting, setIsChatting] = useState(false);
 
@@ -31,6 +39,30 @@ export default function SettingsPage() {
         if (storedKey) setApiKey(storedKey);
         if (storedModel) setModel(storedModel);
     }, []);
+
+    useEffect(() => {
+        if (isModelDialogOpen && allModels.length === 0) {
+            setIsModelsLoading(true);
+            fetchOpenRouterModelsAction().then(result => {
+                if (result.data) {
+                    // Sort by name or popularity if possible. For now name.
+                    setAllModels(result.data.sort((a, b) => a.name.localeCompare(b.name)));
+                } else {
+                    toast({
+                        title: "Errore",
+                        description: result.error || "Impossibile caricare i modelli.",
+                        variant: "destructive"
+                    });
+                }
+                setIsModelsLoading(false);
+            });
+        }
+    }, [isModelDialogOpen, allModels.length, toast]);
+
+    const filteredModels = allModels.filter(m =>
+        m.name.toLowerCase().includes(modelSearch.toLowerCase()) ||
+        m.id.toLowerCase().includes(modelSearch.toLowerCase())
+    );
 
     const handleSave = () => {
         setIsLoading(true);
@@ -65,7 +97,7 @@ export default function SettingsPage() {
                     description: "Connessione a OpenRouter stabilita con successo.",
                 });
             } else {
-                 toast({
+                toast({
                     title: "Test fallito",
                     description: result.message,
                     variant: "destructive"
@@ -73,7 +105,7 @@ export default function SettingsPage() {
             }
         } catch (error) {
             setTestResult({ success: false, message: "Errore durante il test di connessione." });
-             toast({
+            toast({
                 title: "Errore",
                 description: "Si è verificato un errore durante il test.",
                 variant: "destructive"
@@ -88,7 +120,7 @@ export default function SettingsPage() {
 
         const newUserMsg = { role: 'user' as const, content: inputMessage };
         const updatedMessages = [...chatMessages, newUserMsg];
-        
+
         setChatMessages(updatedMessages);
         setInputMessage('');
         setIsChatting(true);
@@ -118,7 +150,7 @@ export default function SettingsPage() {
     return (
         <div className="flex flex-col h-screen bg-background text-foreground">
             <header className="flex items-center h-16 px-4 border-b shrink-0 md:px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-                 <div className="flex items-center w-full gap-4 ml-auto md:gap-2 lg:gap-4">
+                <div className="flex items-center w-full gap-4 ml-auto md:gap-2 lg:gap-4">
                     <div className="flex-1 ml-auto sm:flex-initial">
                     </div>
                     <Button asChild variant="outline">
@@ -145,10 +177,10 @@ export default function SettingsPage() {
                         <CardContent className="space-y-6">
                             <div className="space-y-2">
                                 <Label htmlFor="api-key">OpenRouter API Key</Label>
-                                <Input 
-                                    id="api-key" 
-                                    type="password" 
-                                    placeholder="sk-or-..." 
+                                <Input
+                                    id="api-key"
+                                    type="password"
+                                    placeholder="sk-or-..."
                                     value={apiKey}
                                     onChange={(e) => setApiKey(e.target.value)}
                                 />
@@ -156,21 +188,90 @@ export default function SettingsPage() {
                                     La tua chiave API viene salvata localmente nel browser.
                                 </p>
                             </div>
-                            
+
                             <div className="space-y-2">
-                                <Label htmlFor="model">Modello Predefinito</Label>
-                                <Select value={model} onValueChange={setModel}>
-                                    <SelectTrigger id="model">
-                                        <SelectValue placeholder="Seleziona un modello" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="google/gemini-2.0-flash-001">Google Gemini 2.0 Flash</SelectItem>
-                                        <SelectItem value="anthropic/claude-3.5-sonnet">Anthropic Claude 3.5 Sonnet</SelectItem>
-                                        <SelectItem value="openai/gpt-4o">OpenAI GPT-4o</SelectItem>
-                                        <SelectItem value="meta-llama/llama-3-70b-instruct">Meta Llama 3 70B</SelectItem>
-                                        <SelectItem value="mistralai/mistral-large">Mistral Large</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                                <Label>Modello Predefinito</Label>
+                                <Dialog open={isModelDialogOpen} onOpenChange={setIsModelDialogOpen}>
+                                    <DialogTrigger asChild>
+                                        <Button variant="outline" className="w-full justify-between font-normal">
+                                            {model || "Seleziona un modello"}
+                                            <span className="text-muted-foreground ml-2 text-xs">Cambia</span>
+                                        </Button>
+                                    </DialogTrigger>
+                                    <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+                                        <DialogHeader>
+                                            <DialogTitle>Seleziona Modello AI</DialogTitle>
+                                        </DialogHeader>
+                                        <div className="flex items-center border rounded-md px-3 py-2 my-2 bg-muted/30">
+                                            <Search className="mr-2 h-4 w-4 opacity-50" />
+                                            <Input
+                                                placeholder="Cerca modello per nome o ID..."
+                                                value={modelSearch}
+                                                onChange={e => setModelSearch(e.target.value)}
+                                                className="border-0 focus-visible:ring-0 bg-transparent"
+                                                autoFocus
+                                            />
+                                        </div>
+                                        <div className="flex-1 overflow-auto border rounded-md">
+                                            {isModelsLoading ? (
+                                                <div className="flex items-center justify-center h-40">
+                                                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                                                    <span className="ml-2 text-muted-foreground">Caricamento modelli...</span>
+                                                </div>
+                                            ) : (
+                                                <Table>
+                                                    <TableHeader className="bg-muted/50 sticky top-0 backdrop-blur-sm z-10">
+                                                        <TableRow>
+                                                            <TableHead>Nome</TableHead>
+                                                            <TableHead>ID</TableHead>
+                                                            <TableHead>Context</TableHead>
+                                                            <TableHead>Input ($/1M)</TableHead>
+                                                            <TableHead>Output ($/1M)</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {filteredModels.map((m) => {
+                                                            const isSelected = model === m.id;
+                                                            return (
+                                                                <TableRow
+                                                                    key={m.id}
+                                                                    className={`cursor-pointer hover:bg-muted/50 ${isSelected ? 'bg-primary/5 dark:bg-primary/20' : ''}`}
+                                                                    onClick={() => {
+                                                                        setModel(m.id);
+                                                                        setIsModelDialogOpen(false);
+                                                                    }}
+                                                                >
+                                                                    <TableCell className="font-medium p-2 text-xs truncate max-w-[200px]" title={m.name}>
+                                                                        {m.name}
+                                                                        {isSelected && <CheckCircle2 className="inline ml-1 h-3 w-3 text-primary" />}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-[10px] text-muted-foreground font-mono p-2 truncate max-w-[150px]" title={m.id}>{m.id}</TableCell>
+                                                                    <TableCell className="text-[10px] p-2">{Math.round(m.context_length / 1000)}k</TableCell>
+                                                                    <TableCell className="text-[10px] font-mono p-2">
+                                                                        ${(parseFloat(m.pricing.prompt) * 1000000).toFixed(2)}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-[10px] font-mono p-2">
+                                                                        ${(parseFloat(m.pricing.completion) * 1000000).toFixed(2)}
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            );
+                                                        })}
+                                                        {filteredModels.length === 0 && (
+                                                            <TableRow>
+                                                                <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
+                                                                    Nessun modello trovato per "{modelSearch}"
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        )}
+                                                    </TableBody>
+                                                </Table>
+                                            )}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground text-right pt-2">
+                                            {filteredModels.length} modelli disponibili
+                                        </div>
+                                    </DialogContent>
+                                </Dialog>
                             </div>
 
                             <div className="flex flex-col gap-4 pt-4 border-t">
@@ -254,10 +355,10 @@ export default function SettingsPage() {
                                     )}
                                 </div>
                             </ScrollArea>
-                            
+
                             <div className="pt-4 mt-4 border-t flex gap-2">
-                                <Input 
-                                    placeholder="Scrivi un messaggio..." 
+                                <Input
+                                    placeholder="Scrivi un messaggio..."
                                     value={inputMessage}
                                     onChange={(e) => setInputMessage(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}

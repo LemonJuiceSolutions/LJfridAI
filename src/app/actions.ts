@@ -582,6 +582,19 @@ export async function updateTreeNodeAction({
             if (parsedNodeData === null) { // Deletion case
                 _.unset(jsonTree, lodashPath);
             } else {
+                // Circular Dependency Check
+                const newRefs = extractSubTreeRefs(parsedNodeData);
+                if (newRefs.length > 0) {
+                    try {
+                        // Check all introduced references
+                        for (const ref of newRefs) {
+                            await checkSubTreeCycle(treeId, ref);
+                        }
+                    } catch (e) {
+                        const error = e instanceof Error ? e.message : "Rilevato ciclo di dipendenze.";
+                        return { success: false, error: error };
+                    }
+                }
                 _.set(jsonTree, lodashPath, parsedNodeData);
             }
         }
@@ -597,6 +610,59 @@ export async function updateTreeNodeAction({
         console.error("Error in updateTreeNodeAction: ", e);
         return { success: false, error: error.toString() };
     }
+}
+
+// Helper to check for circular dependencies in sub-trees
+async function checkSubTreeCycle(originalTreeId: string, treeIdToCheck: string, visited: Set<string> = new Set()) {
+    if (treeIdToCheck === originalTreeId) {
+        throw new Error("Errore: Rilevato riferimento circolare. L'albero non può contenere se stesso (direttamente o indirettamente).");
+    }
+
+    if (visited.has(treeIdToCheck)) return;
+    visited.add(treeIdToCheck);
+
+    const treeDoc = await getDoc(doc(db, 'trees', treeIdToCheck));
+    if (!treeDoc.exists()) return;
+
+    const treeData = treeDoc.data();
+    if (!treeData.jsonDecisionTree) return;
+
+    let jsonTree;
+    try {
+        jsonTree = JSON.parse(treeData.jsonDecisionTree);
+    } catch {
+        return;
+    }
+
+    // Use the improved extractor to traverse the fetched tree
+    const subRefs = extractSubTreeRefs(jsonTree);
+    for (const ref of subRefs) {
+        await checkSubTreeCycle(originalTreeId, ref, visited);
+    }
+}
+
+function extractSubTreeRefs(node: any): string[] {
+    let refs: string[] = [];
+    if (!node || typeof node !== 'object') return refs;
+
+    // Handle arrays (e.g. multiple actions or children)
+    if (Array.isArray(node)) {
+        node.forEach(child => {
+            refs = [...refs, ...extractSubTreeRefs(child)];
+        });
+        return refs;
+    }
+
+    if (node.subTreeRef) {
+        refs.push(node.subTreeRef);
+    }
+
+    if (node.options) {
+        Object.values(node.options).forEach(child => {
+            refs = [...refs, ...extractSubTreeRefs(child)];
+        });
+    }
+    return refs;
 }
 
 // Action to regenerate the natural language description from a JSON decision tree
@@ -1432,6 +1498,16 @@ export async function deleteAllVariablesAction(): Promise<{ success: boolean, er
     }
 }
 
+export async function deleteVariableAction(id: string): Promise<{ success: boolean; error: string | null }> {
+    try {
+        await deleteDoc(doc(db, 'variables', id));
+        return { success: true, error: null };
+    } catch (e) {
+        const error = e instanceof Error ? e.message : "Errore durante l'eliminazione della variabile.";
+        return { success: false, error };
+    }
+}
+
 
 export async function getStandardizationDataAction(treeId: string): Promise<{ data: { tree: StoredTree, dbVariables: Variable[] } | null, error: string | null }> {
     try {
@@ -2173,5 +2249,40 @@ export async function executeTriggerAction(
         const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto durante l\'esecuzione del trigger.';
         console.error("Error in executeTriggerAction:", e);
         return { success: false, message: error };
+    }
+}
+
+export async function fetchOpenRouterModelsAction(): Promise<{ data: any[] | null; error: string | null }> {
+    try {
+        const response = await fetch('https://openrouter.ai/api/v1/models', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            next: { revalidate: 3600 } // Cache for 1 hour
+        });
+
+        if (!response.ok) {
+            throw new Error(`OpenRouter API error: ${response.statusText}`);
+        }
+
+        const json = await response.json();
+
+        // Transform data to a cleaner format
+        const models = json.data.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            context_length: m.context_length,
+            pricing: {
+                prompt: m.pricing.prompt,
+                completion: m.pricing.completion,
+            },
+            description: m.description
+        }));
+
+        return { data: models, error: null };
+    } catch (e) {
+        console.error("Error fetching OpenRouter models:", e);
+        return { data: null, error: e instanceof Error ? e.message : "Errore sconosciuto nel recupero dei modelli." };
     }
 }
