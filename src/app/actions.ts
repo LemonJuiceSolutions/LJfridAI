@@ -1678,6 +1678,7 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
 3.  **ONESTÀ SUI LIMITI**: Se non conosci la risposta E non trovi nulla con lo strumento di ricerca, o se la domanda riguarda informazioni in tempo reale (come la data di oggi, il meteo, o notizie recenti), DEVI dire onestamente che non hai accesso a quel tipo di informazione. Non inventare mai risposte.
 
 4.  **REGOLA CRITICA DI ATTRIBUZIONE DELLA FONTE**: Quando la tua risposta si basa sulle informazioni trovate tramite lo strumento di ricerca, DEVI OBBLIGATORIAMENTE formattare la tua risposta per includere l'attribuzione della fonte. Per ogni pezzo di informazione che proviene da un albero decisionale specifico, DEVI racchiuderlo in un tag speciale che indica il suo \`sourceId\`. Il formato esatto è \`[Fonte: ID_DELLA_FONTE] Testo dell'informazione... [Fine Fonte]\`.
+    *   **IMPORTANTE**: NON mettere il tag \`[Fonte: ...]\` solo alla fine della frase. Devi APRIRE il tag PRIMA del testo e CHIUDERLO con \`[Fine Fonte]\` alla fine.
     *   Esempio: Se hai trovato due procedure pertinenti, la tua risposta DOVREBBE assomigliare a questo:
         \`\`\`
         Ho trovato diverse procedure per l'acquisizione di una commessa.
@@ -1727,6 +1728,8 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
 
             const responseMessage = await callOpenRouterWithTools(openRouterConfig.apiKey, openRouterConfig.model, messages, tools);
 
+            console.log("OpenRouter Response Message:", JSON.stringify(responseMessage, null, 2));
+
             if (responseMessage.tool_calls) {
                 // Handle tool call
                 const toolCall = responseMessage.tool_calls[0];
@@ -1745,7 +1748,10 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
                 }
             }
 
-            return { data: { text: responseMessage.content }, error: null };
+            // Fallback for empty content or unhandled tool calls
+            const responseText = responseMessage.content || "(Nessuna risposta testuale dal modello)";
+
+            return { data: { text: responseText }, error: null };
 
         } else {
             const result = await detaiFlow(input);
@@ -1790,7 +1796,7 @@ FORMATO OUTPUT (JSON):
       "name": "Nome dell'albero",
       "sourceId": "ID univoco dell'albero (campo 'id')",
       "reason": "Motivo della selezione",
-      "summary": "Breve riassunto della procedura"
+      "summary": "Riassunto della procedura. IMPORTANTE: Devi racchiudere le azioni chiave, le decisioni e le domande tra marcatori [[node:...]]. Esempio: 'Per [[node:sbloccare l'account]], devi inviare una [[node:password temporanea]]'. Fallo anche se il testo originale non ha questi marcatori."
     }
   ]
 }
@@ -1832,7 +1838,7 @@ Query utente: "${query}"
 Alberi disponibili:
 ${JSON.stringify(searchableTrees, null, 2)}
 
-Per ogni albero pertinente, fornisci un breve riassunto della procedura che descrive.`,
+Per ogni albero pertinente, fornisci un breve riassunto della procedura che descrive. IMPORTANTE: Devi racchiudere le azioni chiave, le decisioni e le domande tra marcatori [[node:...]]. Esempio: 'Per [[node:sbloccare l'account]], devi inviare una [[node:password temporanea]]'. Fallo anche se il testo originale non ha questi marcatori.`,
         output: { schema: SearchResultSchema },
     });
 

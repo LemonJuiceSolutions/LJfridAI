@@ -39,8 +39,12 @@ const initialAssistantMessage: Message = {
 // Helper function to format bold markdown to styled HTML
 const formatText = (text: string) => {
     // Note: This is a simple implementation. For full markdown support, a library like react-markdown would be better.
-    const boldRegex = /\*\*(.*?)\*\*/g;
-    return text.replace(boldRegex, '<strong class="text-primary">$1</strong>');
+    let formatted = text.replace(/\*\*(.*?)\*\*/g, '<strong class="text-primary">$1</strong>');
+
+    // Highlight [[node:...]] text in purple
+    formatted = formatted.replace(/\[\[node:(.*?)\]\]/g, '<span class="text-primary font-medium">$1</span>');
+
+    return formatted;
 }
 
 export default function DetaiPage() {
@@ -60,7 +64,7 @@ export default function DetaiPage() {
         scrollToBottom();
     }, [messages]);
 
-     const handleSubmit = useCallback(async (currentMessages: Message[]) => {
+    const handleSubmit = useCallback(async (currentMessages: Message[]) => {
         setIsLoading(true);
 
         try {
@@ -70,18 +74,18 @@ export default function DetaiPage() {
 
             // Map local message state to the format expected by the AI flow
             const history: DetaiInput['messages'] = currentMessages
-                .filter(m => m.id !== 'initial-message') 
+                .filter(m => m.id !== 'initial-message')
                 .map(m => ({
                     role: m.role,
                     content: m.role === 'tool'
-                      ? [{ toolResponse: m.toolResponse }]
-                      : m.text
-                      ? [{ text: m.text }]
-                      : [{ toolRequest: m.toolRequest }]
+                        ? [{ toolResponse: m.toolResponse }]
+                        : m.text
+                            ? [{ text: m.text }]
+                            : [{ toolRequest: m.toolRequest }]
                 }));
-            
+
             const result = await detaiAction({ messages: history }, openRouterConfig);
-            
+
             if (result.error || !result.data) {
                 throw new Error(result.error || 'La risposta è fallita senza un errore specifico.');
             }
@@ -89,9 +93,9 @@ export default function DetaiPage() {
             // The AI might respond with text or a tool request
             const aiResponse = result.data;
             const newMessages: Message[] = [];
-            
+
             if (aiResponse.text) {
-                 newMessages.push({
+                newMessages.push({
                     id: (Date.now() + 1).toString(),
                     role: 'model',
                     text: aiResponse.text,
@@ -103,37 +107,37 @@ export default function DetaiPage() {
                     toolRequest: aiResponse.toolRequest,
                 };
                 newMessages.push(toolRequestMessage);
-                
+
                 // If there's a tool request, we need to make another call to the backend
                 // to execute the tool and get the response.
-                 const nextHistory: DetaiInput['messages'] = [...history, { role: 'model', content: [{ toolRequest: aiResponse.toolRequest }] }];
-                 const toolResult = await detaiAction({ messages: nextHistory }, openRouterConfig);
-                 
-                 if (toolResult.error || !toolResult.data?.toolResponse) {
-                     throw new Error(toolResult.error || 'Esecuzione dello strumento fallita.');
-                 }
+                const nextHistory: DetaiInput['messages'] = [...history, { role: 'model', content: [{ toolRequest: aiResponse.toolRequest }] }];
+                const toolResult = await detaiAction({ messages: nextHistory }, openRouterConfig);
 
-                 const toolResponseMessage: Message = {
+                if (toolResult.error || !toolResult.data?.toolResponse) {
+                    throw new Error(toolResult.error || 'Esecuzione dello strumento fallita.');
+                }
+
+                const toolResponseMessage: Message = {
                     id: (Date.now() + 2).toString(),
                     role: 'tool',
                     toolResponse: toolResult.data.toolResponse,
-                 };
-                 newMessages.push(toolResponseMessage);
-                 
-                 // Now we need to make one final call with the tool's response to get the final text answer
-                 const finalHistory: DetaiInput['messages'] = [...nextHistory, { role: 'tool', content: [{ toolResponse: toolResult.data.toolResponse }] }];
-                 const finalResult = await detaiAction({ messages: finalHistory }, openRouterConfig);
-                 
-                 if (finalResult.error || !finalResult.data?.text) {
+                };
+                newMessages.push(toolResponseMessage);
+
+                // Now we need to make one final call with the tool's response to get the final text answer
+                const finalHistory: DetaiInput['messages'] = [...nextHistory, { role: 'tool', content: [{ toolResponse: toolResult.data.toolResponse }] }];
+                const finalResult = await detaiAction({ messages: finalHistory }, openRouterConfig);
+
+                if (finalResult.error || !finalResult.data?.text) {
                     throw new Error(finalResult.error || 'Risposta finale fallita dopo l\'esecuzione dello strumento.');
-                 }
-                 newMessages.push({
+                }
+                newMessages.push({
                     id: (Date.now() + 3).toString(),
                     role: 'model',
                     text: finalResult.data.text
-                 });
+                });
             }
-            
+
             setMessages(prev => [...prev, ...newMessages]);
 
         } catch (error) {
@@ -143,7 +147,7 @@ export default function DetaiPage() {
                 title: 'Errore del Chatbot',
                 description: errorMessage,
             });
-             const assistantErrorMessage: Message = {
+            const assistantErrorMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: 'model',
                 text: `Mi dispiace, si è verificato un errore: ${errorMessage}`,
@@ -154,7 +158,7 @@ export default function DetaiPage() {
             setIsLoading(false);
         }
     }, [toast]);
-    
+
     const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (!input.trim()) return;
@@ -164,24 +168,24 @@ export default function DetaiPage() {
             role: 'user',
             text: input,
         };
-        
+
         const newMessages = [...messages, newUserMessage];
         setMessages(newMessages);
         setInput('');
-        
+
         // Pass the updated messages array directly to handleSubmit
         handleSubmit(newMessages);
     }
-    
+
     const ToolRequestMessage = ({ request }: { request: any }) => {
         let query = "Ricerca in corso...";
-        
+
         if (request.input && request.input.query) {
             query = request.input.query;
         } else if (request.function && request.function.arguments) {
             try {
-                const args = typeof request.function.arguments === 'string' 
-                    ? JSON.parse(request.function.arguments) 
+                const args = typeof request.function.arguments === 'string'
+                    ? JSON.parse(request.function.arguments)
                     : request.function.arguments;
                 if (args && args.query) {
                     query = args.query;
@@ -193,7 +197,7 @@ export default function DetaiPage() {
 
         return (
             <Badge variant="secondary" className="flex-shrink-0">
-                <Search className="h-3 w-3 mr-2"/>
+                <Search className="h-3 w-3 mr-2" />
                 Ricerca nel database: "{query}"...
             </Badge>
         );
@@ -213,7 +217,7 @@ export default function DetaiPage() {
         return (
             <details className="bg-muted/50 p-2 rounded-md max-w-full">
                 <summary className="cursor-pointer text-xs flex items-center">
-                    <Cog className="h-3 w-3 mr-2"/>
+                    <Cog className="h-3 w-3 mr-2" />
                     Risultato dello Strumento
                 </summary>
                 <pre className="text-xs mt-2 overflow-x-auto">
@@ -293,11 +297,11 @@ export default function DetaiPage() {
                         }
                         const colorClass = sourceColors[sourceIdToColorIndex.get(segment.sourceId)!];
                         return (
-                             <div key={index} className={cn('p-3 rounded-lg border', colorClass)}>
+                            <div key={index} className={cn('p-3 rounded-lg border', colorClass)}>
                                 <p dangerouslySetInnerHTML={{ __html: formatText(segment.content) }} />
                                 <Link href={`/view/${segment.sourceId}`} passHref>
                                     <Badge variant="outline" className="mt-3 cursor-pointer hover:border-primary/80">
-                                        <LinkIcon className="h-3 w-3 mr-1.5"/>
+                                        <LinkIcon className="h-3 w-3 mr-1.5" />
                                         Fonte: {segment.sourceName}
                                     </Badge>
                                 </Link>
@@ -342,56 +346,57 @@ export default function DetaiPage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="flex-1 overflow-hidden p-0">
-                             <ScrollArea className="h-full" ref={scrollAreaRef}>
+                            <ScrollArea className="h-full" ref={scrollAreaRef}>
                                 <div className="p-6 space-y-6">
                                     {messages.map((m, msgIndex) => {
                                         if (m.role === 'system') return null;
                                         const prevMessage = msgIndex > 0 ? messages[msgIndex - 1] : null;
 
                                         return (
-                                        <div key={m.id} className={cn('flex items-start gap-4', { 'justify-end': m.role === 'user' })}>
-                                            {m.role !== 'user' && (
-                                                <Avatar className='border flex-shrink-0'>
-                                                    <AvatarFallback><Bot className='text-primary'/></AvatarFallback>
-                                                </Avatar>
-                                            )}
-                                            <div className={cn("max-w-[75%] space-y-2 flex flex-col", { 'items-end': m.role === 'user', 'items-start': m.role !== 'user' })}>
-                                               {m.text && (
-                                                 <div className={cn(
-                                                        'rounded-lg p-3 text-sm whitespace-pre-wrap',
-                                                        m.role === 'user'
-                                                            ? 'bg-primary text-primary-foreground'
-                                                            : 'bg-muted'
-                                                    )}>
-                                                        {m.text.includes('[Fonte:') ? (
-                                                            <AttributedMessage text={m.text} toolResponse={prevMessage?.role === 'tool' ? prevMessage.toolResponse : undefined} />
-                                                        ) : (
-                                                            <p dangerouslySetInnerHTML={{ __html: formatText(m.text) }} />
-                                                        )}
-                                                    </div>
-                                               )}
-                                                {m.toolRequest && <ToolRequestMessage request={m.toolRequest} />}
-                                                {m.toolResponse && <ToolResponseMessage response={m.toolResponse} />}
+                                            <div key={m.id} className={cn('flex items-start gap-4', { 'justify-end': m.role === 'user' })}>
+                                                {m.role !== 'user' && (
+                                                    <Avatar className='border flex-shrink-0'>
+                                                        <AvatarFallback><Bot className='text-primary' /></AvatarFallback>
+                                                    </Avatar>
+                                                )}
+                                                <div className={cn("max-w-[75%] space-y-2 flex flex-col", { 'items-end': m.role === 'user', 'items-start': m.role !== 'user' })}>
+                                                    {m.text && (
+                                                        <div className={cn(
+                                                            'rounded-lg p-3 text-sm whitespace-pre-wrap',
+                                                            m.role === 'user'
+                                                                ? 'bg-primary text-primary-foreground'
+                                                                : 'bg-muted'
+                                                        )}>
+                                                            {m.text.includes('[Fonte:') ? (
+                                                                <AttributedMessage text={m.text} toolResponse={prevMessage?.role === 'tool' ? prevMessage.toolResponse : undefined} />
+                                                            ) : (
+                                                                <p dangerouslySetInnerHTML={{ __html: formatText(m.text) }} />
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {m.toolRequest && <ToolRequestMessage request={m.toolRequest} />}
+                                                    {m.toolResponse && <ToolResponseMessage response={m.toolResponse} />}
+                                                </div>
+                                                {m.role === 'user' && (
+                                                    <Avatar className='border flex-shrink-0'>
+                                                        <AvatarFallback><User /></AvatarFallback>
+                                                    </Avatar>
+                                                )}
                                             </div>
-                                             {m.role === 'user' && (
-                                                <Avatar className='border flex-shrink-0'>
-                                                    <AvatarFallback><User /></AvatarFallback>
-                                                </Avatar>
-                                            )}
-                                        </div>
-                                    )})}
+                                        )
+                                    })}
                                     {isLoading && (
-                                         <div className='flex items-start gap-4'>
-                                             <Avatar className='border'>
-                                                <AvatarFallback><Bot className='text-primary'/></AvatarFallback>
+                                        <div className='flex items-start gap-4'>
+                                            <Avatar className='border'>
+                                                <AvatarFallback><Bot className='text-primary' /></AvatarFallback>
                                             </Avatar>
                                             <div className="rounded-lg bg-muted p-3">
-                                                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                                             </div>
-                                         </div>
+                                        </div>
                                     )}
                                 </div>
-                             </ScrollArea>
+                            </ScrollArea>
                         </CardContent>
                         <div className="border-t p-4">
                             <form onSubmit={handleFormSubmit} className="flex gap-2">
