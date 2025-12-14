@@ -1689,7 +1689,9 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
         \`\`\`
     *   Devi usare questo formato per ogni blocco di informazioni distinto che proviene da una fonte diversa per consentire all'interfaccia utente di visualizzare le fonti.
 
-5.  **REGOLA DI FORMATTAZIONE (GRASSETTO)**: Quando includi informazioni che hai letto dai risultati della ricerca nella tua risposta, DEVI OBBLIGATORIAMENTE racchiudere quelle informazioni esatte tra doppi asterischi per renderle in grassetto, oltre ad usare i tag di attribuzione. Esempio: "[Fonte: id_albero_789] Secondo la procedura, devi **controllare il livello del liquido di raffreddamento**. [Fine Fonte]"`
+5.  **REGOLA DI FORMATTAZIONE (GRASSETTO)**: Quando includi informazioni che hai letto dai risultati della ricerca nella tua risposta, DEVI OBBLIGATORIAMENTE racchiudere quelle informazioni esatte tra doppi asterischi per renderle in grassetto, oltre ad usare i tag di attribuzione. Esempio: "[Fonte: id_albero_789] Secondo la procedura, devi **controllare il livello del liquido di raffreddamento**. [Fine Fonte]"
+
+6. **PRESERVAZIONE EVIDENZIATURA**: Se le informazioni che trovi contengono testo racchiuso in \`[[node:...]]\`, DEVI includere questi marcatori nella tua risposta esattamente come sono. Questo è CRUCIALE per l'esperienza utente.`
             };
 
             // Map messages for OpenRouter
@@ -1789,24 +1791,26 @@ export async function searchTreesAction(query: string, openRouterConfig?: { apiK
 Analizza la lista di alberi decisionali fornita e restituisci solo quelli che sono altamente pertinenti alla query dell'utente.
 Per ogni albero pertinente, devi fornire un breve riassunto della procedura.
 
-FORMATO OUTPUT (JSON):
-{
-  "relevantTrees": [
-    {
-      "name": "Nome dell'albero",
-      "sourceId": "ID univoco dell'albero (campo 'id')",
-      "reason": "Motivo della selezione",
-      "summary": "Riassunto della procedura. IMPORTANTE: Devi racchiudere le azioni chiave, le decisioni e le domande tra marcatori [[node:...]]. Esempio: 'Per [[node:sbloccare l'account]], devi inviare una [[node:password temporanea]]'. Fallo anche se il testo originale non ha questi marcatori."
-    }
-  ]
-}
+                    IMPORTANTE: Se il testo originale contiene marcatori [[node: ...]], DEVI preservarli nel riassunto quando citi quei passaggi esatti.
+
+FORMATO OUTPUT(JSON): {
+                        "relevantTrees": [
+                            {
+                                "name": "Nome dell'albero",
+                                "sourceId": "ID univoco dell'albero (campo 'id')",
+                                "reason": "Motivo della selezione",
+                                "summary": "Breve riassunto della procedura"
+                            }
+                        ]
+                    }
 
 Se nessun albero è pertinente, restituisci: { "relevantTrees": [] }`;
 
         const userPrompt = `Query utente: "${query}"
 
 Alberi disponibili:
-${JSON.stringify(searchableTrees, null, 2)}`;
+                    ${JSON.stringify(searchableTrees, null, 2)
+            } `;
 
         try {
             const result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, userPrompt, systemPrompt);
@@ -1838,7 +1842,8 @@ Query utente: "${query}"
 Alberi disponibili:
 ${JSON.stringify(searchableTrees, null, 2)}
 
-Per ogni albero pertinente, fornisci un breve riassunto della procedura che descrive. IMPORTANTE: Devi racchiudere le azioni chiave, le decisioni e le domande tra marcatori [[node:...]]. Esempio: 'Per [[node:sbloccare l'account]], devi inviare una [[node:password temporanea]]'. Fallo anche se il testo originale non ha questi marcatori.`,
+Per ogni albero pertinente, fornisci un breve riassunto della procedura che descrive.
+            IMPORTANTE: Se il testo originale contiene marcatori[[node: ...]], DEVI preservarli nel riassunto quando citi quei passaggi esatti.`,
         output: { schema: SearchResultSchema },
     });
 
@@ -1895,7 +1900,7 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
                 try {
                     jsonTree = JSON.parse(treeDoc.jsonDecisionTree);
                 } catch (e) {
-                    console.warn(`Skipping malformed tree ${treeDoc.id}`);
+                    console.warn(`Skipping malformed tree ${treeDoc.id} `);
                     continue;
                 }
 

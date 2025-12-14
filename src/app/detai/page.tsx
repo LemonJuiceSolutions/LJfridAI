@@ -39,12 +39,17 @@ const initialAssistantMessage: Message = {
 // Helper function to format bold markdown to styled HTML
 const formatText = (text: string) => {
     // Note: This is a simple implementation. For full markdown support, a library like react-markdown would be better.
-    let formatted = text.replace(/\*\*(.*?)\*\*/g, '<strong class="text-primary">$1</strong>');
+    let formattedText = text;
 
-    // Highlight [[node:...]] text in purple
-    formatted = formatted.replace(/\[\[node:(.*?)\]\]/g, '<span class="text-primary font-medium">$1</span>');
+    // Handle bold text
+    const boldRegex = /\*\*(.*?)\*\*/g;
+    formattedText = formattedText.replace(boldRegex, '<strong class="text-primary">$1</strong>');
 
-    return formatted;
+    // Handle node text highlighting [[node:...]]
+    const nodeRegex = /\[\[node:(.*?)\]\]/g;
+    formattedText = formattedText.replace(nodeRegex, '<span class="text-primary font-medium">$1</span>');
+
+    return formattedText;
 }
 
 export default function DetaiPage() {
