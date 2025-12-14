@@ -1,0 +1,36 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tree {
+  id                          String   @id @default(cuid())
+  name                        String
+  description                 String
+  naturalLanguageDecisionTree String   @db.Text
+  jsonDecisionTree            String   @db.Text
+  questionsScript             String   @db.Text
+  createdAt                   DateTime @default(now())
+}
+
+model Variable {
+  id             String   @id @default(cuid())
+  name           String
+  type           String
+  possibleValues Json     @default("[]") // VariableOption[]
+  createdAt      DateTime @default(now())
+  // Relation to Tree not strictly enforced in code but conceptually exists? 
+  // Code matches by ID manually.
+}
+
+model TriggerLog {
+  id          String   @id @default(cuid())
+  collection  String
+  data        Json
+  createdAt   DateTime @default(now())
+}

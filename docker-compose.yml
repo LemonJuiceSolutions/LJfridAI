@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  app:
+    container_name: rulesage-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/rulesagedb
+      # Add other environment variables here or use env_file
+      # - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY}
+    depends_on:
+      - db
+    networks:
+      - app-network
+
+  db:
+    container_name: rulesage-db
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: rulesagedb
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+
+volumes:
+  db_data:
+
+
+networks:
+  app-network:
+    driver: bridge

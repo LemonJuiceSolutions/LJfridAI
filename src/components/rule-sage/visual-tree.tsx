@@ -21,8 +21,7 @@ import { cn } from '@/lib/utils';
 import { getTreesAction, getVariablesAction, updateVariableAction, updateTreeNodeAction } from '@/app/actions';
 import EditOptionDialog from './edit-option-dialog';
 import AddChildNodeDialog from './add-child-node-dialog';
-import { storage } from '@/lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
 
 interface VisualTreeProps {
     treeData: StoredTree;

@@ -8,8 +8,9 @@ import { rephraseQuestion } from '@/ai/flows/rephrase-question';
 import { diagnoseProblem, type DiagnoseProblemInput, type DiagnoseProblemOutput as FlowOutput } from '@/ai/flows/diagnose-problem';
 import { detaiFlow, type DetaiInput } from '@/ai/flows/detai-flow';
 import type { DecisionNode, StoredTree, Variable, ConsolidationProposal, VariableOption, DecisionLeaf, TriggerItem, MediaItem, LinkItem, DiagnosticNode, DiagnoseProblemOutput } from '@/lib/types';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, getDoc, setDoc, query, orderBy, Timestamp, where, writeBatch, deleteDoc, updateDoc } from 'firebase/firestore';
+import { db } from '@/lib/db';
+import { Prisma } from '@prisma/client';
+
 
 
 import _ from 'lodash';
@@ -414,18 +415,18 @@ export async function processDescriptionAction(
 
         const name = `Albero-${Date.now().toString().slice(-6)}`;
 
-        const newTree: Omit<StoredTree, 'id' | 'variables'> = {
+        const newTreeData = {
             name,
             description: textDescription,
             ...decisionTreeResult,
-            createdAt: Timestamp.now(),
+            createdAt: new Date(),
         }
 
-        const treeDocRef = doc(collection(db, 'trees'));
+        const createdTree = await db.tree.create({
+            data: newTreeData
+        });
 
-        await setDoc(treeDocRef, newTree);
-
-        const data = { ...newTree, id: treeDocRef.id, createdAt: newTree.createdAt.toDate().toISOString(), debug: debugInfo };
+        const data = { ...createdTree, createdAt: createdTree.createdAt.toISOString(), debug: debugInfo };
 
         return { data, error: null };
 
@@ -463,40 +464,25 @@ export async function rephraseQuestionAction(question: string, context: string, 
 
 export async function getTreesAction(ids?: string[]): Promise<{ data: StoredTree[] | null; error: string | null; }> {
     try {
-        let q;
-        const trees: StoredTree[] = [];
-
-        const processSnapshot = (querySnapshot: any) => {
-            querySnapshot.forEach((doc: any) => {
-                const data = doc.data();
-                const createdAt = data.createdAt;
-                trees.push({
-                    id: doc.id,
-                    name: data.name,
-                    description: data.description,
-                    naturalLanguageDecisionTree: data.naturalLanguageDecisionTree,
-                    jsonDecisionTree: data.jsonDecisionTree,
-                    questionsScript: data.questionsScript,
-                    createdAt: createdAt?.toDate ? createdAt.toDate().toISOString() : (typeof createdAt === 'string' ? createdAt : null),
-                });
-            });
-        };
+        let treesData;
 
         if (ids && ids.length > 0) {
-            const chunks = _.chunk(ids, 30);
-            for (const chunk of chunks) {
-                q = query(collection(db, 'trees'), where('__name__', 'in', chunk));
-                const querySnapshot = await getDocs(q);
-                processSnapshot(querySnapshot);
-            }
-            if (trees[0]?.createdAt) {
-                trees.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            }
+            treesData = await db.tree.findMany({
+                where: {
+                    id: { in: ids }
+                },
+                orderBy: { createdAt: 'desc' }
+            });
         } else {
-            q = query(collection(db, 'trees'), orderBy('createdAt', 'desc'));
-            const querySnapshot = await getDocs(q);
-            processSnapshot(querySnapshot);
+            treesData = await db.tree.findMany({
+                orderBy: { createdAt: 'desc' }
+            });
         }
+
+        const trees: StoredTree[] = treesData.map(t => ({
+            ...t,
+            createdAt: t.createdAt.toISOString()
+        }));
 
         return { data: trees, error: null };
     } catch (e) {
@@ -511,24 +497,18 @@ export async function getTreeAction(id: string): Promise<{ data: StoredTree | nu
         if (typeof id !== 'string' || !id) {
             return { data: null, error: 'ID albero non valido fornito.' };
         }
-        const docRef = doc(db, 'trees', id);
-        const docSnap = await getDoc(docRef);
 
-        if (!docSnap.exists()) {
+        const treeData = await db.tree.findUnique({
+            where: { id }
+        });
+
+        if (!treeData) {
             return { data: null, error: 'Albero decisionale non trovato.' };
         }
 
-        const data = docSnap.data();
-        const createdAt = data.createdAt;
-
         const tree: StoredTree = {
-            id: docSnap.id,
-            name: data.name,
-            description: data.description,
-            naturalLanguageDecisionTree: data.naturalLanguageDecisionTree,
-            jsonDecisionTree: data.jsonDecisionTree,
-            questionsScript: data.questionsScript,
-            createdAt: createdAt?.toDate ? createdAt.toDate().toISOString() : (typeof createdAt === 'string' ? createdAt : null),
+            ...treeData,
+            createdAt: treeData.createdAt.toISOString()
         };
 
         return { data: tree, error: null };
@@ -554,13 +534,15 @@ export async function updateTreeNodeAction({
             throw new Error("Dati mancanti per l'aggiornamento del nodo.");
         }
 
-        const treeDocRef = doc(db, 'trees', treeId);
-        const treeDoc = await getDoc(treeDocRef);
-        if (!treeDoc.exists()) {
+        const treeToUpdate = await db.tree.findUnique({
+            where: { id: treeId }
+        });
+
+        if (!treeToUpdate) {
             throw new Error("Albero non trovato.");
         }
 
-        const treeToUpdate = treeDoc.data() as StoredTree;
+        // const treeToUpdate = treeDoc.data() as StoredTree; // No longer needed
         let jsonTree = JSON.parse(treeToUpdate.jsonDecisionTree);
 
         const lodashPath = nodePath.replace(/^root\.?/, '');
@@ -574,7 +556,10 @@ export async function updateTreeNodeAction({
 
         if (nodePath === 'root') {
             if (parsedNodeData && typeof parsedNodeData === 'object' && !Array.isArray(parsedNodeData) && 'name' in parsedNodeData) {
-                await updateDoc(treeDocRef, { name: parsedNodeData.name });
+                await db.tree.update({
+                    where: { id: treeId },
+                    data: { name: parsedNodeData.name }
+                });
                 return { success: true, error: null };
             }
             jsonTree = { ...jsonTree, ...parsedNodeData };
@@ -599,8 +584,11 @@ export async function updateTreeNodeAction({
             }
         }
 
-        await updateDoc(treeDocRef, {
-            jsonDecisionTree: JSON.stringify(jsonTree, null, 2),
+        await db.tree.update({
+            where: { id: treeId },
+            data: {
+                jsonDecisionTree: JSON.stringify(jsonTree, null, 2),
+            }
         });
 
         return { success: true, error: null };
@@ -621,10 +609,9 @@ async function checkSubTreeCycle(originalTreeId: string, treeIdToCheck: string, 
     if (visited.has(treeIdToCheck)) return;
     visited.add(treeIdToCheck);
 
-    const treeDoc = await getDoc(doc(db, 'trees', treeIdToCheck));
-    if (!treeDoc.exists()) return;
+    const treeData = await db.tree.findUnique({ where: { id: treeIdToCheck } });
+    if (!treeData) return;
 
-    const treeData = treeDoc.data();
     if (!treeData.jsonDecisionTree) return;
 
     let jsonTree;
@@ -675,13 +662,12 @@ export async function regenerateNaturalLanguageAction(
             throw new Error("ID albero mancante.");
         }
 
-        const treeDocRef = doc(db, 'trees', treeId);
-        const treeDoc = await getDoc(treeDocRef);
-        if (!treeDoc.exists()) {
+        const treeDoc = await db.tree.findUnique({ where: { id: treeId } });
+        if (!treeDoc) {
             throw new Error("Albero non trovato.");
         }
 
-        const treeData = treeDoc.data() as StoredTree;
+        const treeData = treeDoc; // Already StoredTreeish
         const jsonDecisionTree = treeData.jsonDecisionTree;
 
         const systemPrompt = `Sei un assistente che deve creare una descrizione testuale in linguaggio naturale di un albero decisionale.
@@ -735,8 +721,12 @@ Genera la descrizione in linguaggio naturale seguendo le regole sopra.`;
         }
 
         // Update the tree with the new description
-        await updateDoc(treeDocRef, {
-            naturalLanguageDecisionTree: newDescription,
+        // Update the tree with the new description
+        await db.tree.update({
+            where: { id: treeId },
+            data: {
+                naturalLanguageDecisionTree: newDescription
+            }
         });
 
         return { success: true, error: null };
@@ -1320,33 +1310,24 @@ Follow these steps with absolute rigor:
 
 export async function getVariablesAction(): Promise<{ data: Variable[] | null; error: string | null; }> {
     try {
-        const variablesQuery = query(collection(db, 'variables'), orderBy('name', 'asc'));
-        const treesQuery = query(collection(db, 'trees'));
-
-        const [variablesSnapshot, treesSnapshot] = await Promise.all([
-            getDocs(variablesQuery),
-            getDocs(treesQuery),
+        const [variablesData, treesData] = await Promise.all([
+            db.variable.findMany({ orderBy: { name: 'asc' } }),
+            db.tree.findMany(),
         ]);
 
-        const variables: Variable[] = [];
-        variablesSnapshot.forEach((doc) => {
-            const data = doc.data();
-            const createdAt = data.createdAt;
-            variables.push({
-                id: doc.id,
-                name: data.name,
-                type: data.type,
-                possibleValues: data.possibleValues || [],
-                createdAt: createdAt?.toDate ? createdAt.toDate().toISOString() : createdAt,
-                usedIn: [], // Initialize empty
-            });
-        });
+        const variables: Variable[] = variablesData.map(v => ({
+            id: v.id,
+            name: v.name,
+            type: v.type as Variable['type'],
+            possibleValues: (v.possibleValues as any) || [],
+            createdAt: v.createdAt.toISOString(),
+            usedIn: []
+        }));
 
         const variableMapById = new Map(variables.map(v => [v.id, v]));
 
-        for (const treeDoc of treesSnapshot.docs) {
-            const treeData = treeDoc.data() as StoredTree;
-            const treeId = treeDoc.id;
+        for (const treeData of treesData) {
+            const treeId = treeData.id;
             const treeName = treeData.name;
 
             const findVarIds = (node: any) => {
@@ -1477,19 +1458,7 @@ export async function chatOpenRouterAction(
 
 export async function deleteAllVariablesAction(): Promise<{ success: boolean, error: string | null }> {
     try {
-        const variablesRef = collection(db, 'variables');
-        const querySnapshot = await getDocs(variablesRef);
-
-        if (querySnapshot.empty) {
-            return { success: true, error: null }; // Nothing to delete
-        }
-
-        const batch = writeBatch(db);
-        querySnapshot.forEach((doc) => {
-            batch.delete(doc.ref);
-        });
-
-        await batch.commit();
+        await db.variable.deleteMany();
         return { success: true, error: null };
     } catch (e) {
         const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante l'eliminazione di massa.";
@@ -1497,10 +1466,9 @@ export async function deleteAllVariablesAction(): Promise<{ success: boolean, er
         return { success: false, error };
     }
 }
-
 export async function deleteVariableAction(id: string): Promise<{ success: boolean; error: string | null }> {
     try {
-        await deleteDoc(doc(db, 'variables', id));
+        await db.variable.delete({ where: { id } });
         return { success: true, error: null };
     } catch (e) {
         const error = e instanceof Error ? e.message : "Errore durante l'eliminazione della variabile.";
@@ -1552,9 +1520,6 @@ export async function executeConsolidationAction(
     }
 
     try {
-        const batch = writeBatch(db);
-        const variablesRef = collection(db, "variables");
-
         const treeResult = await getTreeAction(treeId);
         if (treeResult.error || !treeResult.data) {
             throw new Error(treeResult.error || 'Impossibile caricare l\'albero.');
@@ -1562,9 +1527,10 @@ export async function executeConsolidationAction(
         const treeToUpdate = treeResult.data;
         let jsonTree = JSON.parse(treeToUpdate.jsonDecisionTree);
 
+        const transactionOps: any[] = [];
+
         for (const action of approvedActions) {
             const varToSaveId = action.type === 'merge' && action.dbVarId ? action.dbVarId : nanoid();
-            const varToSaveRef = doc(variablesRef, varToSaveId);
 
             const cleanFinalOptions = _.uniqBy(
                 (action.finalOptions || []).map(opt => ({ ...opt, id: opt.id || nanoid(8) }))
@@ -1572,16 +1538,22 @@ export async function executeConsolidationAction(
                 'name'
             );
 
-            const varData: Omit<Variable, 'id' | 'usedIn' | 'createdAt'> = {
+            const varData = {
                 name: action.finalName,
                 type: 'enumeration',
                 possibleValues: cleanFinalOptions,
             };
 
-            const varDocSnap = await getDoc(varToSaveRef);
-            const existingCreatedAt = varDocSnap.exists() ? varDocSnap.data().createdAt : Timestamp.now();
+            // Use upsert to handle both create and update (merge) logic
+            transactionOps.push(db.variable.upsert({
+                where: { id: varToSaveId },
+                update: varData,
+                create: {
+                    id: varToSaveId,
+                    ...varData
+                }
+            }));
 
-            batch.set(varToSaveRef, { ...varData, createdAt: existingCreatedAt }, { merge: true });
 
             const { node: updatedJsonTree, updated } = recursiveTreeUpdate(
                 jsonTree,
@@ -1596,14 +1568,14 @@ export async function executeConsolidationAction(
             }
         }
 
-        const treeDocRef = doc(db, 'trees', treeId);
+        transactionOps.push(db.tree.update({
+            where: { id: treeId },
+            data: {
+                jsonDecisionTree: JSON.stringify(jsonTree, null, 2)
+            }
+        }));
 
-        batch.update(treeDocRef, {
-            jsonDecisionTree: JSON.stringify(jsonTree, null, 2),
-        });
-
-
-        await batch.commit();
+        await db.$transaction(transactionOps);
 
         const finalTreeResult = await getTreeAction(treeId);
 
@@ -1937,13 +1909,10 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
     try {
         if (!id) throw new Error("ID variabile non fornito.");
 
-        const batch = writeBatch(db);
-        const varDocRef = doc(db, 'variables', id);
+        const transactionOps: any[] = [];
 
-        const varDocSnap = await getDoc(varDocRef);
-        if (!varDocSnap.exists()) throw new Error("Variabile da aggiornare non trovata.");
-
-        const oldVarData = varDocSnap.data() as Variable;
+        const oldVarData = await db.variable.findUnique({ where: { id } });
+        if (!oldVarData) throw new Error("Variabile da aggiornare non trovata.");
 
         // Ensure IDs are present for new options
         const updatedPossibleValues = updateData.possibleValues?.map(opt => ({
@@ -1958,7 +1927,7 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
         if (newPossibleValues) dbUpdatePayload.possibleValues = newPossibleValues;
         if (newName) dbUpdatePayload.name = newName;
 
-        batch.update(varDocRef, dbUpdatePayload);
+        transactionOps.push(db.variable.update({ where: { id }, data: dbUpdatePayload }));
 
         const allVarsResult = await getVariablesAction();
         if (allVarsResult.error) throw new Error(allVarsResult.error);
@@ -1969,8 +1938,6 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
             if (affectedTreesResult.error) throw new Error(affectedTreesResult.error);
 
             for (const treeDoc of affectedTreesResult.data!) {
-                const treeToUpdateRef = doc(db, 'trees', treeDoc.id);
-
                 if (!treeDoc.jsonDecisionTree) continue;
                 let jsonTree;
                 try {
@@ -1980,20 +1947,23 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
                     continue;
                 }
 
-                const finalPossibleValues = newPossibleValues || oldVarData.possibleValues;
-                const finalOldPossibleValues = oldVarData.possibleValues;
+                const finalPossibleValues = newPossibleValues || (oldVarData.possibleValues as any);
+                const finalOldPossibleValues = (oldVarData.possibleValues as any);
 
                 const { node: updatedJsonTree, updated } = recursiveTreeUpdateById(jsonTree, id, newName || oldVarData.name, finalPossibleValues, finalOldPossibleValues);
 
                 if (updated) {
-                    batch.update(treeToUpdateRef, {
-                        jsonDecisionTree: JSON.stringify(updatedJsonTree, null, 2),
-                    });
+                    transactionOps.push(db.tree.update({
+                        where: { id: treeDoc.id },
+                        data: {
+                            jsonDecisionTree: JSON.stringify(updatedJsonTree, null, 2),
+                        }
+                    }));
                 }
             }
         }
 
-        await batch.commit();
+        await db.$transaction(transactionOps);
 
         if (treeId && typeof treeId === 'string') {
             const finalTreeResult = await getTreeAction(treeId);
@@ -2095,8 +2065,7 @@ function recursiveTreeUpdateById(
 
 export async function deleteTreeAction(id: string): Promise<{ success: boolean, error: string | null }> {
     try {
-        const docRef = doc(db, 'trees', id);
-        await deleteDoc(docRef);
+        await db.tree.delete({ where: { id } });
         return { success: true, error: null };
     } catch (e) {
         const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante l'eliminazione.";
@@ -2107,19 +2076,7 @@ export async function deleteTreeAction(id: string): Promise<{ success: boolean, 
 
 export async function deleteAllTreesAction(): Promise<{ success: boolean, error: string | null }> {
     try {
-        const treesRef = collection(db, 'trees');
-        const querySnapshot = await getDocs(treesRef);
-
-        if (querySnapshot.empty) {
-            return { success: true, error: null };
-        }
-
-        const batch = writeBatch(db);
-        querySnapshot.forEach((doc) => {
-            batch.delete(doc.ref);
-        });
-
-        await batch.commit();
+        await db.tree.deleteMany();
         return { success: true, error: null };
     } catch (e) {
         const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante l'eliminazione di massa.";
@@ -2139,9 +2096,7 @@ export async function mergeVariablesAction(
             throw new Error("ID sorgente, ID destinazione e nome finale sono obbligatori.");
         }
 
-        const batch = writeBatch(db);
-        const variablesRef = collection(db, 'variables');
-        const treesRef = collection(db, 'trees');
+        const transactionOps: any[] = [];
 
         const allVars = await getVariablesAction();
         if (allVars.error) throw new Error(allVars.error);
@@ -2181,22 +2136,26 @@ export async function mergeVariablesAction(
 
                 const updatedJsonTree = replaceVarId(jsonTree);
 
-                batch.update(doc(treesRef, tree.id), {
-                    jsonDecisionTree: JSON.stringify(updatedJsonTree, null, 2),
-                });
+                transactionOps.push(db.tree.update({
+                    where: { id: tree.id },
+                    data: {
+                        jsonDecisionTree: JSON.stringify(updatedJsonTree, null, 2),
+                    }
+                }));
             }
         }
 
-        const targetVarRef = doc(variablesRef, targetVariableId);
-        batch.update(targetVarRef, {
-            name: finalName,
-            possibleValues: _.uniqBy(finalPossibleValues.map(v => ({ ...v, id: v.id || nanoid(8) })), 'name')
-        });
+        transactionOps.push(db.variable.update({
+            where: { id: targetVariableId },
+            data: {
+                name: finalName,
+                possibleValues: _.uniqBy(finalPossibleValues.map(v => ({ ...v, id: v.id || nanoid(8) })), 'name')
+            }
+        }));
 
-        const sourceVarRef = doc(variablesRef, sourceVariableId);
-        batch.delete(sourceVarRef);
+        transactionOps.push(db.variable.delete({ where: { id: sourceVariableId } }));
 
-        await batch.commit();
+        await db.$transaction(transactionOps);
         return { success: true, error: null };
 
     } catch (e) {
@@ -2226,10 +2185,15 @@ export async function executeTriggerAction(
                 triggerPath: path,
                 treeId: treeId,
                 nodeId: nodeId || 'unknown',
-                executedAt: Timestamp.now(),
+                executedAt: new Date(), // Prisma uses Date objects for datetime
             };
 
-            await addDoc(collection(db, collectionName), logData);
+            await db.triggerLog.create({
+                data: {
+                    collection: collectionName,
+                    data: logData, // Store the entire logData object as JSON
+                }
+            });
 
             return {
                 success: true,

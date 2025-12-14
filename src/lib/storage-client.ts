@@ -1,0 +1,55 @@
+export interface FileInfo {
+    name: string;
+    url: string;
+    size: number;
+    createdAt: string;
+}
+
+export async function uploadFile(file: File, folder: string = 'uploads', customName?: string): Promise<{ url: string; name: string } | null> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+    if (customName) formData.append('name', customName);
+
+    try {
+        const res = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!res.ok) throw new Error('Upload failed');
+
+        const data = await res.json();
+        if (data.success) {
+            return { url: data.url, name: data.name };
+        }
+        return null;
+    } catch (e) {
+        console.error("Upload error:", e);
+        throw e;
+    }
+}
+
+export async function listFiles(folder: string = 'uploads'): Promise<FileInfo[]> {
+    try {
+        const res = await fetch(`/api/files?folder=${folder}`);
+        if (!res.ok) throw new Error('List failed');
+        const data = await res.json();
+        return data.files || [];
+    } catch (e) {
+        console.error("List error:", e);
+        return [];
+    }
+}
+
+export async function deleteFile(name: string, folder: string = 'uploads'): Promise<boolean> {
+    try {
+        const res = await fetch(`/api/files?name=${encodeURIComponent(name)}&folder=${folder}`, {
+            method: 'DELETE'
+        });
+        return res.ok;
+    } catch (e) {
+        console.error("Delete error:", e);
+        return false;
+    }
+}
