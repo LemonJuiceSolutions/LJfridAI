@@ -1003,7 +1003,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
     return (
         <Card className="h-[700px] flex flex-col">
-            <CardContent className="flex-grow p-0 relative overflow-hidden bg-slate-100 dark:bg-zinc-900/80">
+            <CardContent className="flex-grow p-0 relative overflow-hidden bg-slate-200 dark:bg-zinc-950">
                 <TooltipProvider>
                     <div className='absolute top-4 right-4 z-10 flex items-center gap-2 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm p-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700'>
                         <Tooltip>

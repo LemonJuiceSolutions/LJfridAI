@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import type { DecisionNode, DecisionLeaf, MediaItem, LinkItem, TriggerItem, StoredTree, DecisionOptionChild } from '@/lib/types';
-import { ArrowLeft, Brain, Eye, GitBranch, Lightbulb, Link as LinkIcon, Loader2, RotateCcw, Sparkles, Zap, Image as ImageIcon, Video } from 'lucide-react';
+import { ArrowLeft, Brain, Eye, GitBranch, Lightbulb, Link as LinkIcon, Loader2, RotateCcw, Sparkles, Zap, Image as ImageIcon, Video, Flag, Play, Check } from 'lucide-react';
 import { executeTriggerAction, getTreeAction, rephraseQuestionAction } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -461,19 +461,25 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
         const isLeafObject = typeof node === 'object' && node !== null;
 
         return (
-            <div key={index} className={cn("text-center p-2 w-full", index !== undefined && "border-b last:border-0")}>
-                {isExecutingTrigger ? (
-                    <Loader2 className="mx-auto h-5 w-5 text-primary animate-spin mb-1" />
-                ) : (
-                    <Sparkles className="mx-auto h-5 w-5 text-accent mb-1" />
-                )}
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Decisione Finale:</p>
-                <p className="text-base font-bold mt-1">{decisionText}</p>
-                {isLeafObject && renderAttachments(node)}
+            <div key={index} className={cn("w-full mb-4", index !== undefined && "border-b pb-4 last:border-0 last:pb-0")}>
+                <div className="relative w-full bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-start p-4 gap-4 transition-all hover:shadow-md hover:border-violet-300 dark:hover:border-violet-700">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                        {isExecutingTrigger ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                            <Flag className="h-5 w-5" />
+                        )}
+                    </div>
+                    <div className="flex-grow min-w-0">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground mb-0.5 opacity-70">Decisione Finale</p>
+                        <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{decisionText}</p>
+                        {isLeafObject && renderAttachments(node)}
+                    </div>
+                </div>
 
                 {treeStack.length > 0 && (
-                    <Button onClick={() => completeSubTree(node as any)} className="mt-2 w-full sm:w-auto h-7 text-xs" variant="secondary">
-                        <ArrowLeft className="mr-2 h-3 w-3" />
+                    <Button onClick={() => completeSubTree(node as any)} className="mt-4 w-full sm:w-auto h-9 text-sm" variant="secondary">
+                        <ArrowLeft className="mr-2 h-4 w-4" />
                         Usa questo risultato
                     </Button>
                 )}
@@ -510,11 +516,11 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                 // Direct decision node (string or object with 'decision')
                                 if (typeof node === 'string' || (typeof node === 'object' && node !== null && 'decision' in node && !('ref' in node) && !('question' in node) && !('subTreeRef' in node))) {
                                     return (
-                                        <div key={index} className={cn("w-full", index !== undefined && "border-b last:border-0")}>
+                                        <div key={index} className="w-full">
                                             {subTreeData && (
-                                                <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-primary mb-0 px-2 pt-1">
-                                                    <GitBranch className="h-3 w-3" />
-                                                    <span className="font-medium">Da: {subTreeData.name}</span>
+                                                <div className="flex items-center gap-2 mb-2 px-1">
+                                                    <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Da</span>
+                                                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{subTreeData.name}</span>
                                                 </div>
                                             )}
                                             {renderLeafNode(node as DecisionLeaf | string, index)}
@@ -525,27 +531,39 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                 // Question node from sub-tree
                                 if (typeof node === 'object' && node !== null && 'question' in node && 'options' in node) {
                                     return (
-                                        <div key={index} className={cn("p-2 w-full border-t border-primary/20", index !== undefined && "border-b last:border-0")}>
-                                            {subTreeData && (
-                                                <div className="flex items-center gap-1 text-[10px] text-primary mb-1">
-                                                    <GitBranch className="h-3 w-3" />
-                                                    <span className="font-medium">Sotto-processo: {subTreeData.name}</span>
+                                        <div key={index} className={cn("w-full mb-4", index !== undefined && "border-b pb-4 last:border-0 last:pb-0")}>
+                                            <div className="relative w-full bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-start p-4 gap-4 transition-all hover:shadow-md hover:border-violet-300 dark:hover:border-violet-700">
+                                                <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                                <GitBranch className="h-5 w-5" />
+                                            </div>
+                                            <div className="flex-grow min-w-0">
+                                                {subTreeData && (
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground opacity-70">Sotto-processo</span>
+                                                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{subTreeData.name}</span>
+                                                    </div>
+                                                )}
+                                                <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">{(node as DecisionNode).question}</p>
+                                                {renderAttachments(node as DecisionNode)}
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                                                    {Object.entries((node as DecisionNode).options!).map(([key, value]) => (
+                                                        <Button
+                                                            key={key}
+                                                            onClick={() => handleSubTreeOptionClick(value, subTreeSource, index)}
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-auto py-2 px-3 justify-start border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-slate-700 hover:text-violet-900 group"
+                                                        >
+                                                            <div className="flex items-center gap-2 w-full">
+                                                                <div className="flex-shrink-0 w-6 h-6 rounded bg-slate-50 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 flex items-center justify-center group-hover:bg-violet-100 group-hover:text-violet-600 transition-colors">
+                                                                    <Check className="h-4 w-4" />
+                                                                </div>
+                                                                <span className="font-medium text-left flex-1 whitespace-normal text-xs">{key}</span>
+                                                            </div>
+                                                        </Button>
+                                                    ))}
                                                 </div>
-                                            )}
-                                            <p className="text-sm font-medium text-center mb-1">{(node as DecisionNode).question}</p>
-                                            {renderAttachments(node as DecisionNode)}
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                                                {Object.entries((node as DecisionNode).options!).map(([key, value]) => (
-                                                    <Button
-                                                        key={key}
-                                                        onClick={() => handleSubTreeOptionClick(value, subTreeSource, index)}
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-auto py-1 px-2 text-xs border-purple-600 text-purple-900 bg-purple-100 hover:bg-purple-200 hover:text-purple-950 hover:border-purple-700"
-                                                    >
-                                                        {key}
-                                                    </Button>
-                                                ))}
+                                            </div>
                                             </div>
                                         </div>
                                     );
@@ -562,11 +580,11 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                         // If target is a decision, render it
                                         if (typeof targetNode === 'string' || 'decision' in targetNode) {
                                             return (
-                                                <div key={index} className={cn("w-full", index !== undefined && "border-b last:border-0")}>
+                                                <div key={index} className="w-full">
                                                     {subTreeData && (
-                                                        <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-primary mb-0 px-2 pt-1">
-                                                            <GitBranch className="h-3 w-3" />
-                                                            <span className="font-medium">Da: {subTreeData.name}</span>
+                                                        <div className="flex items-center gap-2 mb-2 px-1">
+                                                            <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Da</span>
+                                                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{subTreeData.name}</span>
                                                         </div>
                                                     )}
                                                     {renderLeafNode(targetNode as DecisionLeaf | string, index)}
@@ -584,9 +602,9 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
 
                                     if (isLoading) {
                                         return (
-                                            <div key={index} className={cn("text-center p-2 w-full", index !== undefined && "border-b last:border-0")}>
-                                                <Loader2 className="mx-auto h-5 w-5 text-primary animate-spin mb-1" />
-                                                <p className="text-[10px] text-muted-foreground">Caricamento...</p>
+                                            <div key={index} className={cn("text-center p-4 w-full mb-4", index !== undefined && "border-b pb-4 last:border-0 last:pb-0")}>
+                                                <Loader2 className="mx-auto h-6 w-6 text-primary animate-spin mb-2" />
+                                                <p className="text-sm text-muted-foreground">Caricamento Sotto-processo...</p>
                                             </div>
                                         );
                                     }
@@ -598,34 +616,46 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                     const subTree = subTreeData.tree;
 
                                     return (
-                                        <div key={index} className={cn("p-2 w-full border-t border-primary/20", index !== undefined && "border-b last:border-0")}>
-                                            <div className="flex items-center gap-1 text-[10px] text-primary mb-1">
-                                                <GitBranch className="h-3 w-3" />
-                                                <span className="font-medium">Sotto-processo: {subTreeData.name}</span>
-                                            </div>
-
-                                            {/* Render sub-tree's root question inline */}
-                                            {typeof subTree === 'object' && 'question' in subTree && subTree.options ? (
-                                                <>
-                                                    <p className="text-sm font-medium text-center mb-1">{subTree.question}</p>
-                                                    {renderAttachments(subTree)}
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                                                        {Object.entries(subTree.options).map(([key, value]) => (
-                                                            <Button
-                                                                key={key}
-                                                                onClick={() => handleSubTreeOptionClick(value, subTreeRef, index)}
-                                                                variant="outline"
-                                                                size="sm"
-                                                                className="h-auto py-1 px-2 text-xs border-purple-600 text-purple-900 bg-purple-100 hover:bg-purple-200 hover:text-purple-950 hover:border-purple-700"
-                                                            >
-                                                                {key}
-                                                            </Button>
-                                                        ))}
+                                        <div key={index} className={cn("w-full mb-4", index !== undefined && "border-b pb-4 last:border-0 last:pb-0")}>
+                                            <div className="relative w-full bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-start p-4 gap-4 transition-all hover:shadow-md hover:border-violet-300 dark:hover:border-violet-700">
+                                                <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                                    <LinkIcon className="h-5 w-5" />
+                                                </div>
+                                                <div className="flex-grow min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground opacity-70">Sotto-processo</span>
+                                                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{subTreeData.name}</span>
                                                     </div>
-                                                </>
-                                            ) : (
-                                                <p className="text-muted-foreground text-center text-[10px]">Il sotto-albero non contiene domande valide.</p>
-                                            )}
+
+                                                    {/* Render sub-tree's root question inline */}
+                                                    {typeof subTree === 'object' && 'question' in subTree && subTree.options ? (
+                                                        <>
+                                                            <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">{subTree.question}</p>
+                                                            {renderAttachments(subTree)}
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                                                                {Object.entries(subTree.options).map(([key, value]) => (
+                                                                    <Button
+                                                                        key={key}
+                                                                        onClick={() => handleSubTreeOptionClick(value, subTreeRef, index)}
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        className="h-auto py-2 px-3 justify-start border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-slate-700 hover:text-violet-900 group"
+                                                                    >
+                                                                        <div className="flex items-center gap-2 w-full">
+                                                                            <div className="flex-shrink-0 w-6 h-6 rounded bg-slate-50 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 flex items-center justify-center group-hover:bg-violet-100 group-hover:text-violet-600 transition-colors">
+                                                                                <Check className="h-4 w-4" />
+                                                                            </div>
+                                                                            <span className="font-medium text-left flex-1 whitespace-normal text-xs">{key}</span>
+                                                                        </div>
+                                                                    </Button>
+                                                                ))}
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <p className="text-muted-foreground text-sm">Il sotto-albero non contiene domande valide.</p>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
                                     );
                                 }
@@ -654,23 +684,47 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                         </div>
                     ) : isQuestion && 'options' in currentNode && currentNode.options ? (
                         <div className="w-full">
-                            <p className="text-xl font-medium text-center mb-6">{(currentNode as DecisionNode).question}</p>
-                            {rephrasedQuestion && (
-                                <Alert className="mb-4 bg-primary/10 border-primary/50">
-                                    <Lightbulb className="h-4 w-4 text-primary" />
-                                    <AlertTitle>Suggerimento</AlertTitle>
-                                    <AlertDescription>
-                                        {rephrasedQuestion}
-                                    </AlertDescription>
-                                </Alert>
-                            )}
+                            <div className="relative w-full bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-start p-4 gap-4 mb-6 transition-all hover:shadow-md hover:border-violet-300 dark:hover:border-violet-700">
+                                <div className={cn("flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center",
+                                    nodeHistory.length === 0 ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                )}>
+                                    {nodeHistory.length === 0 ? <Play className="h-5 w-5 fill-current" /> : <GitBranch className="h-5 w-5" />}
+                                </div>
+                                <div className="flex-grow min-w-0">
+                                    <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground mb-0.5 opacity-70">
+                                        {nodeHistory.length === 0 ? "Punto di Partenza" : "Domanda"}
+                                    </p>
+                                    <p className="text-xl font-medium text-slate-900 dark:text-slate-100 mb-2">{(currentNode as DecisionNode).question}</p>
+                                    
+                                    {rephrasedQuestion && (
+                                        <Alert className="mb-4 bg-primary/10 border-primary/50">
+                                            <Lightbulb className="h-4 w-4 text-primary" />
+                                            <AlertTitle>Suggerimento</AlertTitle>
+                                            <AlertDescription>
+                                                {rephrasedQuestion}
+                                            </AlertDescription>
+                                        </Alert>
+                                    )}
 
-                            {renderAttachments(currentNode as DecisionNode)}
+                                    {renderAttachments(currentNode as DecisionNode)}
+                                </div>
+                            </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                                 {Object.entries((currentNode as DecisionNode).options!).map(([key, value]) => (
-                                    <Button key={key} onClick={() => handleOptionClick(value)} variant="outline" size="lg" className="h-auto py-3 border-purple-600 text-purple-900 bg-purple-100 hover:bg-purple-200 hover:text-purple-950 hover:border-purple-700">
-                                        {key}
+                                    <Button 
+                                        key={key} 
+                                        onClick={() => handleOptionClick(value)} 
+                                        variant="outline" 
+                                        size="lg" 
+                                        className="h-auto py-3 px-4 justify-start border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-slate-700 hover:text-violet-900 group"
+                                    >
+                                        <div className="flex items-center gap-3 w-full">
+                                            <div className="flex-shrink-0 w-8 h-8 rounded-md bg-slate-50 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 flex items-center justify-center group-hover:bg-violet-100 group-hover:text-violet-600 transition-colors">
+                                                <Check className="h-4 w-4" />
+                                            </div>
+                                            <span className="font-medium text-left flex-1 whitespace-normal">{key}</span>
+                                        </div>
                                     </Button>
                                 ))}
                             </div>

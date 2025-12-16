@@ -34,9 +34,33 @@ export default function ViewTreePage() {
   const [isConsolidateDialogOpen, setIsConsolidateDialogOpen] = useState(false);
   const [standardizationData, setStandardizationData] = useState<{ tree: StoredTree, dbVariables: Variable[] } | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
 
 
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
+
+  const handleExit = async () => {
+    if (!id) {
+        router.push('/');
+        return;
+    }
+    setIsExiting(true);
+    try {
+      const apiKey = localStorage.getItem('openrouter_api_key');
+      const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+      const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+
+      toast({ title: 'Salvataggio in corso...', description: 'Sto rigenerando la descrizione e salvando le modifiche.' });
+
+      await regenerateNaturalLanguageAction(id, openRouterConfig);
+      
+      router.push('/');
+    } catch (e) {
+        const error = e instanceof Error ? e.message : 'Errore sconosciuto';
+        toast({ variant: 'destructive', title: 'Attenzione', description: `Impossibile aggiornare la descrizione: ${error}. Uscita in corso...` });
+        router.push('/');
+    }
+  };
 
   const fetchTree = useCallback(async () => {
     if (!id) return;
@@ -187,11 +211,9 @@ export default function ViewTreePage() {
               <h1 className="text-xl font-bold">Like AI Said</h1>
             </Link>
           </div>
-          <Button asChild variant="outline">
-            <Link href="/">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Torna alla Lista
-            </Link>
+          <Button variant="outline" onClick={handleExit} disabled={isExiting || isLoadingAction}>
+            {isExiting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowLeft className="mr-2 h-4 w-4" />}
+            Torna alla Lista
           </Button>
         </div>
       </header>
@@ -246,18 +268,13 @@ export default function ViewTreePage() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    <span className="font-semibold text-foreground">Descrizione originale:</span> {tree.description}
-                  </p>
-                </CardContent>
               </Card>
 
               {/* Natural Language Description Card */}
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex justify-between items-center">
-                    <CardTitle className="text-lg">Descrizione in Linguaggio Naturale</CardTitle>
+                    <CardTitle className="text-lg">Descrizione Processo</CardTitle>
                     <Button size="sm" variant="outline" onClick={handleRegenerateDescription} disabled={isRegenerating || isLoadingAction}>
                       {isRegenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                       Rigenera
@@ -266,7 +283,7 @@ export default function ViewTreePage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                    {renderHighlightedText(tree.naturalLanguageDecisionTree)}
+                    {renderHighlightedText(tree.naturalLanguageDecisionTree || tree.description)}
                   </p>
                 </CardContent>
               </Card>
