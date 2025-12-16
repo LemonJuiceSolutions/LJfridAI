@@ -4,7 +4,7 @@
 import type { DecisionNode, StoredTree, DecisionLeaf, Variable, VariableOption } from '@/lib/types';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database } from 'lucide-react';
+import { AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag } from 'lucide-react';
 import _ from 'lodash';
 import EditNodeDialog from './edit-node-dialog';
 import AddNodeDialog from './add-node-dialog';
@@ -30,11 +30,11 @@ interface VisualTreeProps {
 }
 
 // --- Layout Constants ---
-const NODE_WIDTH = 180;
-const NODE_HEIGHT = 100;
-const OPTION_NODE_WIDTH = 150;
-const OPTION_NODE_HEIGHT = 50;
-const H_SPACING = 16;
+const NODE_WIDTH = 220; // Increased to provide more space
+const NODE_HEIGHT = 120;
+const OPTION_NODE_WIDTH = 220; // Match standard node width
+const OPTION_NODE_HEIGHT = 80; // Slightly increased height for options
+const H_SPACING = 24; // Increased spacing to avoid crowding
 const V_SPACING = 80;
 
 
@@ -979,6 +979,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 id: `${node.id}-${parent.id}-connector`,
                 pathD,
                 midX, midY,
+                startX, startY,
+                endX, endY,
                 isLink,
                 isSubTreeLink,
                 targetName,
@@ -1001,35 +1003,27 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
     return (
         <Card className="h-[700px] flex flex-col">
-            <CardHeader>
-                <div className="flex justify-between items-start">
-                    <div>
-                        <CardTitle>Albero Decisionale Visuale</CardTitle>
-                        <CardDescription>Trascina per spostare e usa la rotellina per lo zoom. Le modifiche sono sempre attive.</CardDescription>
+            <CardContent className="flex-grow p-0 relative overflow-hidden bg-slate-100 dark:bg-zinc-900/80">
+                <TooltipProvider>
+                    <div className='absolute top-4 right-4 z-10 flex items-center gap-2 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm p-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700'>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white dark:hover:bg-zinc-700" onClick={() => setZoomReset(prev => prev + 1)} disabled={isSaving}>
+                                    <Expand className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Adatta allo Schermo</p></TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white dark:hover:bg-zinc-700" onClick={downloadJson} disabled={isSaving}>
+                                    <Download className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Download JSON</p></TooltipContent>
+                        </Tooltip>
                     </div>
-                    <TooltipProvider>
-                        <div className='flex items-center gap-4'>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button variant="outline" size="sm" onClick={() => setZoomReset(prev => prev + 1)} disabled={isSaving}>
-                                        <Expand className="h-4 w-4" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent><p>Adatta allo Schermo</p></TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button variant="outline" size="sm" onClick={downloadJson} disabled={isSaving}>
-                                        <Download className="h-4 w-4" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent><p>Download JSON</p></TooltipContent>
-                            </Tooltip>
-                        </div>
-                    </TooltipProvider>
-                </div>
-            </CardHeader>
-            <CardContent className="flex-grow p-0 relative overflow-hidden">
+                </TooltipProvider>
                 <TooltipProvider>
                     <PanZoomContainer
                         contentWidth={layout.contentWidth}
@@ -1038,16 +1032,29 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     >
                         <div className="visual-tree-container" style={{ width: layout.contentWidth, height: layout.contentHeight }} onClick={() => setSelectedLinkId(null)}>
                             <svg className="connector-svg">
-                                {connectorData.map(c => (
-                                    <g key={c.id} onClick={(e) => { e.stopPropagation(); setSelectedLinkId(c.id); }} className="cursor-pointer" style={{ pointerEvents: 'auto' }}>
-                                        <path
-                                            d={c.pathD}
-                                            className={cn('connector-path', { 'is-link': c.isLink || c.isSubTreeLink, 'is-broken': c.isBroken })}
-                                            style={selectedLinkId === c.id ? { stroke: '#6366f1', strokeWidth: 2, filter: 'drop-shadow(0 0 2px rgba(99, 102, 241, 0.5))' } : (c.isBroken ? { stroke: '#ef4444', strokeDasharray: '8 4', strokeWidth: 3, opacity: 0.8 } : undefined)}
-                                        />
-                                        <path d={c.pathD} stroke="transparent" strokeWidth="30" fill="none" />
-                                    </g>
-                                ))}
+                                {connectorData.map(c => {
+                                    const isSecondary = c.isLink || c.isSubTreeLink;
+                                    const strokeColor = selectedLinkId === c.id ? '#6366f1' : (c.isBroken ? '#ef4444' : (isSecondary ? '#f59e0b' : '#a78bfa')); // Amber-500 for secondary, Violet-400 for direct
+                                    
+                                    return (
+                                        <g key={c.id} onClick={(e) => { e.stopPropagation(); setSelectedLinkId(c.id); }} className="cursor-pointer" style={{ pointerEvents: 'auto' }}>
+                                            <path
+                                                d={c.pathD}
+                                                className={cn('connector-path transition-all duration-300', { 'is-link': isSecondary, 'is-broken': c.isBroken })}
+                                                style={{
+                                                    stroke: strokeColor,
+                                                    strokeWidth: 2,
+                                                    strokeDasharray: c.isBroken ? '8 4' : '6 4',
+                                                    fill: 'none',
+                                                    filter: selectedLinkId === c.id ? 'drop-shadow(0 0 2px rgba(99, 102, 241, 0.5))' : undefined
+                                                }}
+                                            />
+                                            <circle cx={c.startX} cy={c.startY} r="4" fill={strokeColor} />
+                                            <circle cx={c.endX} cy={c.endY} r="4" fill={strokeColor} />
+                                            <path d={c.pathD} stroke="transparent" strokeWidth="30" fill="none" />
+                                        </g>
+                                    );
+                                })}
                             </svg>
 
                             {layout.positionedNodes.map(item => {
@@ -1095,39 +1102,55 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 return (
                                     <div
                                         key={`${item.id}-${path}`}
-                                        className={cn(`tree-node-wrapper group is-${type}`, { 'is-undefined-path': isUndefinedPath, 'is-link': isInternalLink || isSubTree })}
+                                        className={cn(`tree-node-wrapper group is-${type} flex flex-col`, { 'is-undefined-path': isUndefinedPath, 'is-link': isInternalLink || isSubTree })}
                                         style={{ left: x, top: y, width: width, height: height }}
                                     >
-                                        <div className="tree-node-content relative">
-                                            {type === 'option' ? (
-                                                <div className='node-text-scroll py-1 px-2 flex items-center justify-center h-full'>
-                                                    <span>{text}</span>
+                                        <div className="relative w-full h-full bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center p-3 gap-3 overflow-hidden transition-all hover:shadow-md hover:border-violet-300 dark:hover:border-violet-700">
+                                            
+                                            <div className={cn("flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center",
+                                                type === 'question' ? (path === 'root' ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400") :
+                                                type === 'sub-tree-link' ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                                                type === 'decision' ? "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400" :
+                                                "bg-slate-50 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500"
+                                            )}>
+                                                {(() => {
+                                                    if (type === 'question') return path === 'root' ? <Play className="h-5 w-5 fill-current" /> : <GitBranch className="h-5 w-5" />;
+                                                    if (type === 'decision') return <Flag className="h-5 w-5" />;
+                                                    if (type === 'sub-tree-link') return <LinkIcon className="h-5 w-5" />;
+                                                    if (type === 'option') return <Check className="h-4 w-4" />;
+                                                    return <AlertCircle className="h-5 w-5" />;
+                                                })()}
+                                            </div>
+
+                                            <div className="flex-grow min-w-0 flex flex-col justify-center">
+                                                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-0.5 opacity-70">
+                                                    {type === 'question' ? (path === 'root' ? 'Start' : 'Switch') :
+                                                     type === 'decision' ? (isSubTree ? 'Sub-Tree' : 'End') :
+                                                     'Condition'}
                                                 </div>
-                                            ) : (
-                                                <>
-                                                    <div className='node-text-scroll py-1 px-2 flex items-start justify-center text-center'>
-                                                        <span>{text}</span>
-                                                    </div>
-                                                    <div className='flex-shrink-0 flex items-center justify-center gap-2 h-6 border-t mt-1'>
-                                                        {mediaItems && mediaItems.some((m: any) => m.type === 'image') && <ImageIcon className="h-4 w-4 text-muted-foreground" />}
-                                                        {mediaItems && mediaItems.some((m: any) => m.type === 'video') && <Video className="h-4 w-4 text-muted-foreground" />}
-                                                        {linkItems && linkItems.length > 0 && <LinkIcon className="h-4 w-4 text-muted-foreground" />}
-                                                        {triggerItems && triggerItems.length > 0 && <Zap className="h-4 w-4 text-muted-foreground" />}
-                                                        {isSubTree && <GitBranch className="h-4 w-4 text-muted-foreground" />}
-                                                    </div>
-                                                </>
-                                            )}
+                                                <div className={cn("text-sm font-medium text-foreground leading-snug", type === 'option' ? "line-clamp-2" : "line-clamp-3")} title={text}>
+                                                    {text}
+                                                </div>
+                                                
+                                                {/* Mini indicators row */}
+                                                <div className="flex items-center gap-1 mt-1">
+                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'image') && <ImageIcon className="h-3 w-3 text-muted-foreground" />}
+                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'video') && <Video className="h-3 w-3 text-muted-foreground" />}
+                                                     {linkItems && linkItems.length > 0 && <LinkIcon className="h-3 w-3 text-muted-foreground" />}
+                                                     {triggerItems && triggerItems.length > 0 && <Zap className="h-3 w-3 text-amber-500" />}
+                                                </div>
+                                            </div>
 
                                             {variableId && (type === 'question' || type === 'option') && (
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
-                                                        <Button asChild variant="link" size="icon" className="absolute -top-3 -right-3 h-6 w-6 cursor-pointer">
+                                                        <Button asChild variant="ghost" size="icon" className="absolute top-1 right-1 h-5 w-5 cursor-pointer text-slate-400 hover:text-primary p-0">
                                                             <Link href={type === 'option' && nodeAsOption.optionId ? `/variables?varId=${variableId}#${nodeAsOption.optionId}` : `/variables?varId=${variableId}`} target="_blank">
-                                                                <Database className="h-4 w-4 text-primary" />
+                                                                <Database className="h-3 w-3" />
                                                             </Link>
                                                         </Button>
                                                     </TooltipTrigger>
-                                                    <TooltipContent>
+                                                    <TooltipContent side="left">
                                                         {type === 'option' && nodeAsOption.optionId ? (
                                                             <p>Opzione: {nodeAsOption.optionId}</p>
                                                         ) : (
@@ -1137,51 +1160,52 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                                 </Tooltip>
                                             )}
                                         </div>
-                                        <div className="edit-controls">
-                                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                        
+                                        <div className="node-edit-controls absolute -bottom-9 left-0 right-0 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-white/95 dark:bg-zinc-800/95 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 py-1 px-2 gap-1 z-20 pointer-events-auto transform scale-90 group-hover:scale-100 origin-top duration-200">
+                                            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => {
                                                 if (item.type === 'question' || item.type === 'decision' || item.type === 'option') {
                                                     handleEdit(path, item.type);
                                                 }
                                             }} title="Modifica" disabled={isSaving || (item.type !== 'question' && item.type !== 'decision' && item.type !== 'option')}>
-                                                <Pencil className="h-4 w-4" />
+                                                <Pencil className="h-3.5 w-3.5" />
                                             </Button>
 
                                             {item.type === 'question' && (
                                                 <>
-                                                    <div className="h-5 w-px bg-border" />
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                                    <div className="h-4 w-px bg-border my-auto" />
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => {
                                                         setAddingNodeInfo({ path, type: 'add', varId: variableId });
                                                     }} title="Aggiungi Nuova Opzione" disabled={isSaving}>
-                                                        <Plus className="h-4 w-4" />
+                                                        <Plus className="h-3.5 w-3.5" />
                                                     </Button>
                                                 </>
                                             )}
 
                                             {item.type === 'option' && (
                                                 <>
-                                                    <div className="h-5 w-px bg-border" />
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                                    <div className="h-4 w-px bg-border my-auto" />
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => {
                                                         const parentNode = item.parent ? getNodeFromPath(tree, item.parent.path) : null;
                                                         const optionName = (item.node as any).option;
                                                         const currentNode = parentNode && parentNode.options ? parentNode.options[optionName] : {};
                                                         setLinkingNodeInfo({ path, currentNode: currentNode });
                                                     }} title="Collega a Nodo Esistente" disabled={isSaving}>
-                                                        <Link2 className="h-4 w-4" />
+                                                        <Link2 className="h-3.5 w-3.5" />
                                                     </Button>
-                                                    <div className="h-5 w-px bg-border" />
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                                    <div className="h-4 w-px bg-border my-auto" />
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => {
                                                         setAddingChildNodeInfo({ path: path });
                                                     }} title="Aggiungi Nodo" disabled={isSaving}>
-                                                        <Plus className="h-4 w-4" />
+                                                        <Plus className="h-3.5 w-3.5" />
                                                     </Button>
                                                 </>
                                             )}
 
                                             {path !== 'root' && (
                                                 <>
-                                                    <div className="h-5 w-px bg-border" />
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDeleteNode(path)} title="Elimina" disabled={isSaving}>
-                                                        <Trash2 className="h-4 w-4" />
+                                                    <div className="h-4 w-px bg-border my-auto" />
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-red-50 text-destructive hover:text-destructive dark:hover:bg-red-900/20" onClick={() => handleDeleteNode(path)} title="Elimina" disabled={isSaving}>
+                                                        <Trash2 className="h-3.5 w-3.5" />
                                                     </Button>
                                                 </>
                                             )}
