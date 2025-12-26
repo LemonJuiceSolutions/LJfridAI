@@ -1,10 +1,10 @@
 
 
 export interface VariableOption {
-    id: string;
-    name: string;
-    value: number;
-    abbreviation: string;
+  id: string;
+  name: string;
+  value: number;
+  abbreviation: string;
 }
 
 export interface Variable {
@@ -12,7 +12,7 @@ export interface Variable {
   name: string;
   type: 'boolean' | 'enumeration' | 'numeric' | 'text';
   possibleValues: VariableOption[];
-  description?: string; 
+  description?: string;
   createdAt?: any;
   usedIn?: { id: string, name: string }[];
 }
@@ -24,10 +24,10 @@ export interface AnalysisResult {
 }
 
 export interface MediaItem {
-    name: string;
-    type: 'image' | 'video';
-    url: string;
-    originalFilename?: string;
+  name: string;
+  type: 'image' | 'video';
+  url: string;
+  originalFilename?: string;
 }
 
 export interface LinkItem {
@@ -36,8 +36,8 @@ export interface LinkItem {
 }
 
 export interface TriggerItem {
-    name: string;
-    path: string;
+  name: string;
+  path: string;
 }
 
 export interface DecisionLeaf {
@@ -70,37 +70,37 @@ export interface DecisionNode {
 }
 
 export interface StoredTree extends AnalysisResult {
-    id: string;
-    name: string;
-    description: string;
-    createdAt?: any; 
+  id: string;
+  name: string;
+  description: string;
+  createdAt?: any;
 }
 
 export interface DiagnosticNode {
-    text: string;
-    media?: MediaItem[];
-    links?: LinkItem[];
-    triggers?: TriggerItem[];
-    id?: string;
+  text: string;
+  media?: MediaItem[];
+  links?: LinkItem[];
+  triggers?: TriggerItem[];
+  id?: string;
 }
 
 export type DiagnoseProblemOutput = {
-    question: string;
-    options?: string[];
-    isFinalDecision: boolean;
-    treeName?: string;
-    media?: MediaItem[];
-    links?: LinkItem[];
-    triggers?: TriggerItem[];
-    nodeIds?: string[];
-    nodes?: DiagnosticNode[];
+  question: string;
+  options?: string[];
+  isFinalDecision: boolean;
+  treeName?: string;
+  media?: MediaItem[];
+  links?: LinkItem[];
+  triggers?: TriggerItem[];
+  nodeIds?: string[];
+  nodes?: DiagnosticNode[];
 };
 
 export type ConsolidationProposal = {
-    type: 'add';
-    treeVariable: Variable;
+  type: 'add';
+  treeVariable: Variable;
 } | {
-    type: 'merge';
-    treeVariable: Variable;
-    dbVariable: Variable;
+  type: 'merge';
+  treeVariable: Variable;
+  dbVariable: Variable;
 };

@@ -1,0 +1,128 @@
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import bcrypt from 'bcryptjs';
+
+export async function POST(request: Request) {
+    try {
+        const body = await request.json();
+        const { name, email, password, companyName, departmentName, token } = body;
+
+        // Validazione base
+        if (!name || !email || !password) {
+            return NextResponse.json(
+                { error: 'Nome, email e password sono obbligatori' },
+                { status: 400 }
+            );
+        }
+
+        if (!token && (!companyName || !departmentName)) {
+            return NextResponse.json(
+                { error: 'Nome azienda e dipartimento sono obbligatori per le nuove registrazioni' },
+                { status: 400 }
+            );
+        }
+
+        if (password.length < 6) {
+            return NextResponse.json(
+                { error: 'La password deve essere di almeno 6 caratteri' },
+                { status: 400 }
+            );
+        }
+
+        // Controlla se l'email esiste già
+        const existingUser = await db.user.findUnique({
+            where: { email },
+        });
+
+        if (existingUser) {
+            return NextResponse.json(
+                { error: 'Email già registrata' },
+                { status: 400 }
+            );
+        }
+
+        // Hash della password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        let companyIdToUse = null;
+        let departmentIdToUse = null;
+        let userRole = 'admin'; // Default per nuove aziende
+
+        if (token) {
+            // Flusso Invito
+            const invitation = await db.invitation.findUnique({
+                where: { token },
+                include: { company: true }
+            });
+
+            if (!invitation) {
+                return NextResponse.json({ error: 'Token di invito non valido' }, { status: 400 });
+            }
+
+            if (invitation.expires < new Date()) {
+                return NextResponse.json({ error: 'Invito scaduto' }, { status: 400 });
+            }
+
+            if (invitation.email.toLowerCase() !== email.toLowerCase()) {
+                // Opzionale: forzare che l'email coincida con l'invito?
+                // Spesso è meglio di sì per sicurezza.
+                return NextResponse.json({ error: 'L\'email di registrazione deve corrispondere all\'email invitata' }, { status: 400 });
+            }
+
+            companyIdToUse = invitation.companyId;
+            userRole = invitation.role; // 'user' usually
+
+            // Cerchiamo un dipartimento di default (o null)
+            const defaultDept = await db.department.findFirst({ where: { companyId: companyIdToUse } });
+            if (defaultDept) departmentIdToUse = defaultDept.id;
+
+            // Delete invitation
+            await db.invitation.delete({ where: { id: invitation.id } });
+
+        } else {
+            // Flusso Nuova Azienda
+            const company = await db.company.create({
+                data: { name: companyName },
+            });
+            companyIdToUse = company.id;
+
+            const department = await db.department.create({
+                data: {
+                    name: departmentName,
+                    companyId: company.id,
+                },
+            });
+            departmentIdToUse = department.id;
+        }
+
+        // Crea l'utente
+        const user = await db.user.create({
+            data: {
+                name,
+                email,
+                password: hashedPassword,
+                role: userRole,
+                companyId: companyIdToUse,
+                departmentId: departmentIdToUse,
+            },
+        });
+
+        return NextResponse.json(
+            {
+                message: 'Registrazione completata con successo',
+                user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                },
+            },
+            { status: 201 }
+        );
+    } catch (error) {
+        console.error('Registration error:', error);
+        return NextResponse.json(
+            { error: 'Errore durante la registrazione' },
+            { status: 500 }
+        );
+    }
+}

@@ -17,16 +17,16 @@ export default function ResultsDisplay({ result, onDataRefresh, isSaving = false
   return (
     <Tabs defaultValue="visual" className="w-full">
       <TabsList className="grid w-full grid-cols-3">
-        <TabsTrigger value="visual">Albero Visuale</TabsTrigger>
+        <TabsTrigger value="visual">Regola Visuale</TabsTrigger>
         <TabsTrigger value="guide">Guida Interattiva</TabsTrigger>
         <TabsTrigger value="json">JSON</TabsTrigger>
       </TabsList>
-      
+
       <TabsContent value="visual" className="mt-4">
-        <VisualTree 
-            treeData={result} 
-            onDataRefresh={onDataRefresh}
-            isSaving={isSaving} 
+        <VisualTree
+          treeData={result}
+          onDataRefresh={onDataRefresh}
+          isSaving={isSaving}
         />
       </TabsContent>
       <TabsContent value="guide" className="mt-4">
@@ -35,9 +35,9 @@ export default function ResultsDisplay({ result, onDataRefresh, isSaving = false
       <TabsContent value="json" className="mt-4">
         <Card>
           <CardHeader>
-            <CardTitle>Albero Decisionale (JSON)</CardTitle>
+            <CardTitle>Regola Decisionale (JSON)</CardTitle>
             <CardDescription>
-              Una rappresentazione JSON strutturata dell'albero decisionale per l'interpretazione automatica.
+              Una rappresentazione JSON strutturata della regola decisionale per l'interpretazione automatica.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -49,4 +49,4 @@ export default function ResultsDisplay({ result, onDataRefresh, isSaving = false
   );
 }
 
-    
+

@@ -493,8 +493,8 @@ export default function EditNodeDialog({
                 </div>
               )}
 
-              {/* Links, Triggers and Media Section for Question and Decision */}
-              {(nodeType === 'question' || nodeType === 'decision') && (
+              {/* Links, Triggers and Media Section for Question and Decision (but NOT for options) */}
+              {((nodeType === 'question' && 'question' in initialNode) || nodeType === 'decision') && (
                 <div className="space-y-4">
                   {/* --- Links Section --- */}
                   <div className="space-y-2 p-3 border border-primary/50 rounded-lg">

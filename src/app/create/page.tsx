@@ -3,13 +3,13 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { BotMessageSquare, BrainCircuit, Loader2, ArrowLeft, Sparkles, Mic, MicOff, AlertCircle } from 'lucide-react';
+import { BotMessageSquare, BrainCircuit, Loader2, ArrowLeft, Sparkles, Mic, MicOff, AlertCircle, RefreshCw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { processDescriptionAction } from '../actions';
+import { processDescriptionAction, getTreeAction, regenerateNaturalLanguageAction } from '../actions';
 import { useToast } from '@/hooks/use-toast';
 import type { StoredTree } from '@/lib/types';
 import ResultsDisplay from '@/components/rule-sage/results-display';
@@ -40,7 +40,7 @@ export default function CreatePage() {
   const [textDescription, setTextDescription] = useState('');
   const { toast } = useToast();
   const [currentModel, setCurrentModel] = useState<string>('google/gemini-2.0-flash-001');
-  
+
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeechSupported, setIsSpeechSupported] = useState(true);
   const recognitionRef = useRef<any>(null);
@@ -78,18 +78,18 @@ export default function CreatePage() {
     };
 
     recognition.onerror = (event: any) => {
-        if (event.error !== 'aborted') {
-             toast({
-                variant: 'destructive',
-                title: 'Errore Riconoscimento Vocale',
-                description: `Si è verificato un errore: ${event.error}`,
-            });
-        }
-        setIsRecording(false);
+      if (event.error !== 'aborted') {
+        toast({
+          variant: 'destructive',
+          title: 'Errore Riconoscimento Vocale',
+          description: `Si è verificato un errore: ${event.error}`,
+        });
+      }
+      setIsRecording(false);
     };
-    
+
     recognition.onend = () => {
-        setIsRecording(false);
+      setIsRecording(false);
     }
 
     recognitionRef.current = recognition;
@@ -103,12 +103,12 @@ export default function CreatePage() {
 
   const toggleRecording = () => {
     if (!isSpeechSupported) {
-        toast({
-            variant: 'destructive',
-            title: 'Browser Non Supportato',
-            description: 'Il riconoscimento vocale non è supportato dal tuo browser.',
-        });
-        return;
+      toast({
+        variant: 'destructive',
+        title: 'Browser Non Supportato',
+        description: 'Il riconoscimento vocale non è supportato dal tuo browser.',
+      });
+      return;
     }
     if (isRecording) {
       recognitionRef.current?.stop();
@@ -129,6 +129,11 @@ export default function CreatePage() {
       });
       return;
     }
+
+    if (analysisResult && !confirm("Attenzione: stiamo per RIGENERARE l'intera regola basandosi su questo testo.\n\nTutte le modifiche manuali fatte all'editor grafico andranno PERSE.\n\nVuoi davvero sovrascrivere la regola corrente?")) {
+      return;
+    }
+
     setIsLoading(true);
     setAnalysisResult(null);
     try {
@@ -140,7 +145,7 @@ export default function CreatePage() {
       if (result.error || !result.data) {
         throw new Error(result.error || 'Analisi fallita senza un errore specifico.');
       }
-      
+
       if ((result.data as any).debug) {
         console.group("🔍 AI Debug Info");
         console.log("Model:", (result.data as any).debug.model);
@@ -154,13 +159,13 @@ export default function CreatePage() {
       setAnalysisResult(result.data);
 
       toast({
-          title: 'Analisi Completata!',
-          description: 'Il tuo albero decisionale è stato creato e salvato.',
-          action: (
-             <Button asChild variant="secondary" size="sm">
-                <Link href={`/view/${result.data.id}`}>Visualizza</Link>
-             </Button>
-          )
+        title: 'Analisi Completata!',
+        description: 'La tua regola decisionale è stata creata e salvata.',
+        action: (
+          <Button asChild variant="secondary" size="sm">
+            <Link href={`/view/${result.data.id}`}>Visualizza</Link>
+          </Button>
+        )
       });
 
     } catch (error) {
@@ -171,7 +176,7 @@ export default function CreatePage() {
         description: errorMessage,
       });
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -180,61 +185,64 @@ export default function CreatePage() {
     setTextDescription(processExamples[randomIndex]);
   }
 
+  const handleUpdateDescription = async () => {
+    if (!analysisResult?.id) return;
+    setIsLoading(true);
+    try {
+      const apiKey = localStorage.getItem('openrouter_api_key');
+      const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+      const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+
+      const res = await regenerateNaturalLanguageAction(analysisResult.id, openRouterConfig);
+      if (res.error) throw new Error(res.error);
+
+      setTextDescription(res.data || '');
+      toast({ title: "Descrizione aggiornata", description: "Il testo è stato allineato con la struttura della regola." });
+    } catch (e: any) {
+      toast({ title: "Errore", description: e.message || "Errore aggiornamento descrizione", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getStarted = !analysisResult && !isLoading;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <header className="sticky top-0 z-10 w-full border-b bg-background/80 backdrop-blur-sm">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
-          <div className="flex items-center gap-2">
-            <Link href="/" className="flex items-center gap-2">
-                <BrainCircuit className="h-7 w-7 text-primary" />
-                <h1 className="text-xl font-bold">Like AI Said</h1>
-            </Link>
-          </div>
-           <Button asChild variant="outline">
-            <Link href="/">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Torna alla Lista
-            </Link>
-          </Button>
-        </div>
-      </header>
-
       <main className="flex-1">
         <div className="container mx-auto flex flex-col flex-1 gap-8 px-4 py-8 md:px-6">
           <Card>
             <CardHeader>
               <div className="flex justify-between items-start">
                 <div>
-                  <CardTitle>Crea un Nuovo Albero</CardTitle>
+                  <CardTitle>Crea una Nuova Regola</CardTitle>
                   <CardDescription>
-                    Descrivi un processo per generare un albero decisionale.
+                    Descrivi un processo per generare una regola decisionale.
                     <span className="flex items-center gap-2 mt-2">
-                       Generato con: <Badge variant="secondary" className="font-mono text-xs">{currentModel}</Badge>
+                      Generato con: <Badge variant="secondary" className="font-mono text-xs">{currentModel}</Badge>
                     </span>
                   </CardDescription>
                 </div>
-                 <div className="flex items-center gap-2">
-                      <TooltipProvider>
-                           <Tooltip>
-                              <TooltipTrigger asChild>
-                                  <Button variant={isRecording ? 'destructive' : 'ghost'} size="sm" onClick={toggleRecording} className="shrink-0">
-                                      {isRecording ? <MicOff className="mr-2 h-4 w-4 animate-pulse"/> : <Mic className="mr-2 h-4 w-4" />}
-                                      {isRecording ? 'Registrando...' : ''}
-                                  </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                  <p>{isRecording ? 'Ferma registrazione' : 'Avvia registrazione'}</p>
-                              </TooltipContent>
-                          </Tooltip>
-                      </TooltipProvider>
+                <div className="flex items-center gap-2">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant={isRecording ? 'destructive' : 'ghost'} size="sm" onClick={toggleRecording} className="shrink-0">
+                          {isRecording ? <MicOff className="mr-2 h-4 w-4 animate-pulse" /> : <Mic className="mr-2 h-4 w-4" />}
+                          {isRecording ? 'Registrando...' : ''}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{isRecording ? 'Ferma registrazione' : 'Avvia registrazione'}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
 
-                       <Button variant="ghost" size="sm" onClick={handleSetExample} className="shrink-0">
-                          <Sparkles className="mr-2 h-4 w-4" />
-                          Esempio AI
-                      </Button>
-                 </div>
+                  <Button variant="ghost" size="sm" onClick={handleSetExample} className="shrink-0">
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Esempio AI
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -247,22 +255,31 @@ export default function CreatePage() {
                     onChange={(e) => setTextDescription(e.target.value)}
                     disabled={isLoading}
                   />
-                   {!isSpeechSupported && (
+                  {!isSpeechSupported && (
                     <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-2 rounded-md">
                       <AlertCircle className="h-4 w-4" />
                       <p>Riconoscimento vocale non supportato dal browser.</p>
                     </div>
                   )}
-                  <Button type="submit" disabled={isLoading}>
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Analizzando e Salvando...
-                      </>
-                    ) : (
-                      'Analizza e Salva'
+                  <div className="flex gap-2">
+                    <Button type="submit" disabled={isLoading} className="flex-1" variant={analysisResult ? "destructive" : "default"}>
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          {analysisResult ? 'Sovrascrivendo...' : 'Analizzando...'}
+                        </>
+                      ) : (
+                        analysisResult ? '⚠️ Sovrascrivi Regola' : 'Analizza e Salva'
+                      )}
+                    </Button>
+
+                    {analysisResult && (
+                      <Button type="button" variant="secondary" onClick={handleUpdateDescription} disabled={isLoading} title="Aggiorna la descrizione basandosi sulla regola attuale">
+                        {isLoading ? <Loader2 className="animate-spin h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                        Sync Testo
+                      </Button>
                     )}
-                  </Button>
+                  </div>
                 </div>
               </form>
             </CardContent>
@@ -283,17 +300,27 @@ export default function CreatePage() {
             )}
 
             {analysisResult && !isLoading && (
-              <ResultsDisplay result={analysisResult} />
+              <ResultsDisplay
+                result={analysisResult}
+                onDataRefresh={async () => {
+                  if (analysisResult.id) {
+                    const refreshed = await getTreeAction(analysisResult.id);
+                    if (refreshed.data) {
+                      setAnalysisResult(refreshed.data);
+                    }
+                  }
+                }}
+              />
             )}
-            
+
             {getStarted && (
-                <div className="flex h-full min-h-[500px] flex-col items-center justify-center rounded-lg border-2 border-dashed bg-card p-8 text-center">
-                  <BotMessageSquare className="h-16 w-16 text-muted-foreground" />
-                  <h2 className="mt-6 text-xl font-semibold">Inizia il processo</h2>
-                  <p className="mt-2 text-muted-foreground">
-                    Descrivi un processo, usa la voce o un esempio AI per generare e salvare un nuovo albero decisionale.
-                  </p>
-                </div>
+              <div className="flex h-full min-h-[500px] flex-col items-center justify-center rounded-lg border-2 border-dashed bg-card p-8 text-center">
+                <BotMessageSquare className="h-16 w-16 text-muted-foreground" />
+                <h2 className="mt-6 text-xl font-semibold">Inizia il processo</h2>
+                <p className="mt-2 text-muted-foreground">
+                  Descrivi un processo, usa la voce o un esempio AI per generare e salvare una nuova regola decisionale.
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -307,6 +334,5 @@ export default function CreatePage() {
   );
 }
 
-    
 
-    
+

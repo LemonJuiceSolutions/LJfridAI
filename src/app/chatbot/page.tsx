@@ -309,23 +309,6 @@ export default function ChatbotPage() {
 
     return (
         <div className="flex flex-col h-screen bg-background">
-            <header className="sticky top-0 z-10 w-full border-b bg-background/80 backdrop-blur-sm">
-                <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
-                    <div className="flex items-center gap-2">
-                        <Link href="/" className="flex items-center gap-2">
-                            <BrainCircuit className="h-7 w-7 text-primary" />
-                            <h1 className="text-xl font-bold">Like AI Said</h1>
-                        </Link>
-                    </div>
-                    <Button asChild variant="outline">
-                        <Link href="/">
-                            <ArrowLeft className="mr-2 h-4 w-4" />
-                            Torna alla Home
-                        </Link>
-                    </Button>
-                </div>
-            </header>
-
             <main className="flex-1 overflow-hidden">
                 <div className="container mx-auto h-full p-4 md:p-6">
                     <Card className="h-full flex flex-col">

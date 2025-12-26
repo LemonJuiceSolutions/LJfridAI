@@ -12,7 +12,11 @@ import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
 import { testOpenRouterConnection, chatOpenRouterAction, fetchOpenRouterModelsAction } from '../actions';
+import { createInvitationAction, getInvitationsAction, revokeInvitationAction } from '../actions/invitations';
+import { ConnectorsManager } from './connectors-manager';
+import { Users, UserPlus, Copy } from 'lucide-react';
 
 export default function SettingsPage() {
     const { toast } = useToast();
@@ -33,11 +37,22 @@ export default function SettingsPage() {
     const [inputMessage, setInputMessage] = useState('');
     const [isChatting, setIsChatting] = useState(false);
 
+    // Invitation State
+    const [invitations, setInvitations] = useState<any[]>([]);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [isInviting, setIsInviting] = useState(false);
+    const [inviteLink, setInviteLink] = useState('');
+
     useEffect(() => {
         const storedKey = localStorage.getItem('openrouter_api_key');
         const storedModel = localStorage.getItem('openrouter_model');
         if (storedKey) setApiKey(storedKey);
         if (storedModel) setModel(storedModel);
+
+        // Load invitations
+        getInvitationsAction().then(res => {
+            if (res.data) setInvitations(res.data);
+        });
     }, []);
 
     useEffect(() => {
@@ -147,23 +162,105 @@ export default function SettingsPage() {
         setChatMessages([]);
     };
 
+    const handleInvite = async () => {
+        if (!inviteEmail) return;
+        setIsInviting(true);
+        setInviteLink('');
+        try {
+            const res = await createInvitationAction(inviteEmail);
+            if (res.error) {
+                toast({ title: "Errore", description: res.error, variant: "destructive" });
+            } else {
+                setInviteEmail('');
+                const link = `${window.location.origin}/auth/signup?token=${res.token}`;
+                setInviteLink(link);
+                toast({ title: "Invito creato!", description: "Copia il link qui sotto." });
+                // Refresh list
+                const list = await getInvitationsAction();
+                if (list.data) setInvitations(list.data);
+            }
+        } catch (e) {
+            toast({ title: "Errore imprevisto", variant: "destructive" });
+        } finally {
+            setIsInviting(false);
+        }
+    };
+
     return (
         <div className="flex flex-col h-screen bg-background text-foreground">
-            <header className="flex items-center h-16 px-4 border-b shrink-0 md:px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-                <div className="flex items-center w-full gap-4 ml-auto md:gap-2 lg:gap-4">
-                    <div className="flex-1 ml-auto sm:flex-initial">
-                    </div>
-                    <Button asChild variant="outline">
-                        <Link href="/">
-                            <ArrowLeft className="mr-2 h-4 w-4" />
-                            Torna alla Home
-                        </Link>
-                    </Button>
-                </div>
-            </header>
-
             <main className="flex-1 overflow-y-auto">
                 <div className="container mx-auto p-4 md:p-6 max-w-2xl pb-20">
+
+                    {/* Team Management Card */}
+                    <Card className="mb-6 border-primary/20 bg-primary/5">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Users className="h-6 w-6 text-primary" />
+                                Gestione Team
+                            </CardTitle>
+                            <CardDescription>Invita colleghi alla tua azienda per collaborare.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="flex gap-2 mb-4">
+                                <Input
+                                    placeholder="Email collega..."
+                                    value={inviteEmail}
+                                    onChange={e => setInviteEmail(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleInvite()}
+                                />
+                                <Button onClick={handleInvite} disabled={isInviting}>
+                                    {isInviting ? <Loader2 className="animate-spin h-4 w-4" /> : <UserPlus className="h-4 w-4 mr-2" />}
+                                    Invita
+                                </Button>
+                            </div>
+
+                            {inviteLink && (
+                                <div className="flex flex-col gap-2 p-3 bg-background border rounded-md mb-4 animate-in fade-in slide-in-from-top-2">
+                                    <Label className="text-xs text-muted-foreground">Link di invito generato:</Label>
+                                    <div className="flex items-center gap-2">
+                                        <code className="text-xs flex-1 break-all bg-muted p-2 rounded select-all">{inviteLink}</code>
+                                        <Button variant="outline" size="icon" onClick={() => {
+                                            navigator.clipboard.writeText(inviteLink);
+                                            toast({ title: "Link copiato!" });
+                                        }}>
+                                            <Copy className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground">Invia questo link al tuo collega. Una volta registrato, sarà aggiunto automaticamente al tuo team.</p>
+                                </div>
+                            )}
+
+                            <div className="space-y-2 mt-6">
+                                <h3 className="text-sm font-medium">Inviti In Attesa</h3>
+                                {invitations.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground italic">Nessun invito attivo.</p>
+                                ) : (
+                                    <div className="border rounded-md divide-y bg-background">
+                                        {invitations.map(inv => (
+                                            <div key={inv.id} className="p-3 flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm font-medium">{inv.email}</p>
+                                                    <p className="text-[10px] text-muted-foreground">Scadenza: {new Date(inv.expires).toLocaleDateString()}</p>
+                                                </div>
+                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={async () => {
+                                                    await revokeInvitationAction(inv.id);
+                                                    setInvitations(prev => prev.filter(i => i.id !== inv.id));
+                                                    toast({ title: "Invito revocato" });
+                                                }}>
+                                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <div className="mb-6">
+                        <ConnectorsManager />
+                    </div>
+
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">

@@ -337,23 +337,6 @@ function VariablesContent() {
 
     return (
         <div className="flex flex-col min-h-screen bg-background">
-            <header className="sticky top-0 z-10 w-full border-b bg-background/80 backdrop-blur-sm">
-                <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
-                    <div className="flex items-center gap-2">
-                        <Link href="/" className="flex items-center gap-2">
-                            <BrainCircuit className="h-7 w-7 text-primary" />
-                            <h1 className="text-xl font-bold">Like AI Said</h1>
-                        </Link>
-                    </div>
-                    <Button asChild variant="outline">
-                        <Link href="/">
-                            <ArrowLeft className="mr-2 h-4 w-4" />
-                            Torna alla Home
-                        </Link>
-                    </Button>
-                </div>
-            </header>
-
             <main className="flex-1">
                 <div className="container mx-auto px-4 py-8 md:px-6">
                     <Card>

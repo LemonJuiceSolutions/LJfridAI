@@ -435,7 +435,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             return;
         }
 
-        const parentPath = path.substring(0, path.lastIndexOf(".options"));
+        const lastOptIdx = path.lastIndexOf(".options");
+        const parentPath = lastOptIdx !== -1 ? path.substring(0, lastOptIdx) : "root";
         const parentNode = getNodeFromPath(tree, parentPath);
         const varId = parentNode?.variableId;
         const optionKeyMatch = path.match(/\['(.*?)'\]$/);
@@ -445,7 +446,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             if (varId && optionName) {
                 // Standard variable, open the detailed option editor
                 const dbVar = dbVariables.find(v => v.id === varId);
-                const optionData = dbVar?.possibleValues.find((opt: VariableOption) => opt.name === optionName);
+                const optionData = dbVar?.possibleValues?.find((opt: VariableOption) => opt.name === optionName);
 
                 if (optionData) {
                     setEditingOptionInfo({ path, option: optionData, varId });
@@ -459,18 +460,18 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             return;
         }
 
-        if (typeof node === 'object' && 'question' in node) {
+        if (typeof node === 'object' && node !== null && 'question' in node) {
             setEditingNodeInfo({ path, node: node, type: 'question' });
-        } else if (typeof node === 'object' && 'decision' in node) {
+        } else if (typeof node === 'object' && node !== null && 'decision' in node) {
             setEditingNodeInfo({ path, node: node, type: 'decision' });
         } else if (typeof node === 'string') {
             setEditingNodeInfo({ path, node: { decision: node }, type: 'decision' });
-        } else if (typeof node === 'object' && ('ref' in node || 'subTreeRef' in node)) {
+        } else if (typeof node === 'object' && node !== null && ('ref' in node || 'subTreeRef' in node)) {
             toast({ variant: "default", title: "Info", description: "I nodi di collegamento non possono essere modificati direttamente. Eliminali e ricreali se necessario." });
             return;
         } else {
-            console.error("Node at path is not an editable type:", path, node);
-            toast({ variant: "destructive", title: "Errore", description: "Questo tipo di nodo non è modificabile." });
+            console.error("Node at path is not an editable type or is null:", path, node);
+            toast({ variant: "destructive", title: "Errore", description: "Questo tipo di nodo non è modificabile o è nullo." });
             return;
         }
     };
@@ -1035,7 +1036,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 {connectorData.map(c => {
                                     const isSecondary = c.isLink || c.isSubTreeLink;
                                     const strokeColor = selectedLinkId === c.id ? '#6366f1' : (c.isBroken ? '#ef4444' : (isSecondary ? '#f59e0b' : '#a78bfa')); // Amber-500 for secondary, Violet-400 for direct
-                                    
+
                                     return (
                                         <g key={c.id} onClick={(e) => { e.stopPropagation(); setSelectedLinkId(c.id); }} className="cursor-pointer" style={{ pointerEvents: 'auto' }}>
                                             <path
@@ -1073,18 +1074,19 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
                                 switch (type) {
                                     case 'question':
-                                        text = nodeAsQuestion.question || 'Domanda non valida';
+                                        const nodeAsQ = actualNode as DecisionNode;
+                                        text = (actualNode && typeof actualNode === 'object' && 'question' in actualNode) ? (nodeAsQ.question || 'Domanda non valida') : 'Domanda non valida';
                                         break;
                                     case 'decision':
-                                        text = typeof actualNode === 'string' ? actualNode : nodeAsLeaf?.decision || 'Decisione non valida';
+                                        text = typeof actualNode === 'string' ? actualNode : (actualNode && typeof actualNode === 'object' && 'decision' in actualNode ? (actualNode as DecisionLeaf).decision : 'Decisione non valida');
                                         break;
                                     case 'option':
                                         text = nodeAsOption.option;
                                         break;
                                     case 'sub-tree-link':
-                                        const subTreeId = (actualNode as { subTreeRef: string }).subTreeRef;
-                                        const subTreeInfo = allTrees.find(t => t.id === subTreeId);
-                                        text = `Sotto-Albero: ${subTreeInfo?.name || subTreeId}`;
+                                        const subTreeId = (actualNode && typeof actualNode === 'object' && 'subTreeRef' in actualNode) ? (actualNode as { subTreeRef: string }).subTreeRef : null;
+                                        const subTreeInfo = subTreeId ? allTrees.find(t => t.id === subTreeId) : null;
+                                        text = subTreeId ? `Sotto-Albero: ${subTreeInfo?.name || subTreeId}` : 'Sotto-Albero non valido';
                                         break;
                                     default:
                                         text = 'Nodo non valido';
@@ -1092,11 +1094,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
                                 const isUndefinedPath = type === 'decision' && text === 'Percorso non definito';
                                 const variableId = type === 'question' ? nodeAsQuestion.variableId : (type === 'option' ? nodeAsOption.variableId : undefined);
-                                const mediaItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && 'media' in actualNode ? actualNode.media : [];
-                                const linkItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && 'links' in actualNode ? actualNode.links : [];
-                                const triggerItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && 'triggers' in actualNode ? actualNode.triggers : [];
+                                const mediaItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && actualNode !== null && 'media' in actualNode ? actualNode.media : [];
+                                const linkItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && actualNode !== null && 'links' in actualNode ? actualNode.links : [];
+                                const triggerItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && actualNode !== null && 'triggers' in actualNode ? actualNode.triggers : [];
 
-                                const isInternalLink = type === 'decision' && typeof actualNode === 'object' && 'ref' in actualNode;
+                                const isInternalLink = type === 'decision' && typeof actualNode === 'object' && actualNode !== null && 'ref' in actualNode;
                                 const isSubTree = type === 'sub-tree-link';
 
                                 return (
@@ -1106,12 +1108,12 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                         style={{ left: x, top: y, width: width, height: height }}
                                     >
                                         <div className="relative w-full h-full bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center p-3 gap-3 overflow-hidden transition-all hover:shadow-md hover:border-violet-300 dark:hover:border-violet-700">
-                                            
+
                                             <div className={cn("flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center",
                                                 type === 'question' ? (path === 'root' ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400") :
-                                                type === 'sub-tree-link' ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-                                                type === 'decision' ? "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400" :
-                                                "bg-slate-50 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500"
+                                                    type === 'sub-tree-link' ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                                                        type === 'decision' ? "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400" :
+                                                            "bg-slate-50 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500"
                                             )}>
                                                 {(() => {
                                                     if (type === 'question') return path === 'root' ? <Play className="h-5 w-5 fill-current" /> : <GitBranch className="h-5 w-5" />;
@@ -1125,19 +1127,19 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                             <div className="flex-grow min-w-0 flex flex-col justify-center">
                                                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-0.5 opacity-70">
                                                     {type === 'question' ? (path === 'root' ? 'Start' : 'Switch') :
-                                                     type === 'decision' ? (isSubTree ? 'Sub-Tree' : 'End') :
-                                                     'Condition'}
+                                                        type === 'decision' ? (isSubTree ? 'Sub-Tree' : 'End') :
+                                                            'Condition'}
                                                 </div>
                                                 <div className={cn("text-sm font-medium text-foreground leading-snug", type === 'option' ? "line-clamp-2" : "line-clamp-3")} title={text}>
                                                     {text}
                                                 </div>
-                                                
+
                                                 {/* Mini indicators row */}
                                                 <div className="flex items-center gap-1 mt-1">
-                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'image') && <ImageIcon className="h-3 w-3 text-muted-foreground" />}
-                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'video') && <Video className="h-3 w-3 text-muted-foreground" />}
-                                                     {linkItems && linkItems.length > 0 && <LinkIcon className="h-3 w-3 text-muted-foreground" />}
-                                                     {triggerItems && triggerItems.length > 0 && <Zap className="h-3 w-3 text-amber-500" />}
+                                                    {mediaItems && mediaItems.some((m: any) => m.type === 'image') && <ImageIcon className="h-3 w-3 text-muted-foreground" />}
+                                                    {mediaItems && mediaItems.some((m: any) => m.type === 'video') && <Video className="h-3 w-3 text-muted-foreground" />}
+                                                    {linkItems && linkItems.length > 0 && <LinkIcon className="h-3 w-3 text-muted-foreground" />}
+                                                    {triggerItems && triggerItems.length > 0 && <Zap className="h-3 w-3 text-amber-500" />}
                                                 </div>
                                             </div>
 
@@ -1160,7 +1162,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                                 </Tooltip>
                                             )}
                                         </div>
-                                        
+
                                         <div className="node-edit-controls absolute -bottom-9 left-0 right-0 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-white/95 dark:bg-zinc-800/95 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 py-1 px-2 gap-1 z-20 pointer-events-auto transform scale-90 group-hover:scale-100 origin-top duration-200">
                                             <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => {
                                                 if (item.type === 'question' || item.type === 'decision' || item.type === 'option') {

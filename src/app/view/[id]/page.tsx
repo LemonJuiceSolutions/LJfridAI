@@ -41,8 +41,8 @@ export default function ViewTreePage() {
 
   const handleExit = async () => {
     if (!id) {
-        router.push('/');
-        return;
+      router.push('/');
+      return;
     }
     setIsExiting(true);
     try {
@@ -53,12 +53,12 @@ export default function ViewTreePage() {
       toast({ title: 'Salvataggio in corso...', description: 'Sto rigenerando la descrizione e salvando le modifiche.' });
 
       await regenerateNaturalLanguageAction(id, openRouterConfig);
-      
+
       router.push('/');
     } catch (e) {
-        const error = e instanceof Error ? e.message : 'Errore sconosciuto';
-        toast({ variant: 'destructive', title: 'Attenzione', description: `Impossibile aggiornare la descrizione: ${error}. Uscita in corso...` });
-        router.push('/');
+      const error = e instanceof Error ? e.message : 'Errore sconosciuto';
+      toast({ variant: 'destructive', title: 'Attenzione', description: `Impossibile aggiornare la descrizione: ${error}. Uscita in corso...` });
+      router.push('/');
     }
   };
 
@@ -70,7 +70,7 @@ export default function ViewTreePage() {
       toast({
         variant: 'destructive',
         title: 'Errore',
-        description: result.error || "Impossibile caricare l'albero decisionale.",
+        description: result.error || "Impossibile caricare la regola decisionale.",
       });
       router.push('/');
     } else {
@@ -154,7 +154,7 @@ export default function ViewTreePage() {
       await fetchTree(); // Re-fetch the tree to show updates
       toast({
         title: 'Successo!',
-        description: `L'albero è stato aggiornato con ${approvedActions.length} variabili standard.`,
+        description: `La regola è stata aggiornata con ${approvedActions.length} variabili standard.`,
       });
     } catch (e) {
       const error = e instanceof Error ? e.message : "Errore sconosciuto durante l'aggiornamento";
@@ -298,7 +298,7 @@ export default function ViewTreePage() {
             <Card>
               <CardHeader>
                 <CardTitle>Non Trovato</CardTitle>
-                <CardDescription>L'albero decisionale richiesto non è stato trovato.</CardDescription>
+                <CardDescription>La regola decisionale richiesta non è stata trovata.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Button onClick={() => router.push('/')}>Torna Indietro</Button>

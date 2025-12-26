@@ -17,6 +17,22 @@ import _ from 'lodash';
 import { nanoid } from 'nanoid';
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+
+export async function getAuthenticatedUser() {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+        throw new Error("Non autorizzato. Effettua il login.");
+    }
+    // Cast to include custom fields
+    return session.user as {
+        id: string;
+        name?: string | null;
+        email?: string | null;
+        companyId: string
+    };
+}
 
 function findNodeByQuestion(node: DecisionNode | DecisionLeaf | string | { ref: string } | { subTreeRef: string } | any, questionOrDecision: string): DecisionNode | DecisionLeaf | null {
     if (!node) return null;
@@ -335,17 +351,27 @@ ${variablesTable}`;
 
     const treeResult = await callOpenRouterJSON(config.apiKey, config.model, treePrompt, generateTreeSystemPrompt);
 
-    // Ensure jsonDecisionTree is a string for storage (as per StoredTree type)
+    // Ensure all string fields are actually strings for storage
     let jsonDecisionTreeStr = treeResult.jsonDecisionTree;
     if (typeof jsonDecisionTreeStr !== 'string') {
-        jsonDecisionTreeStr = JSON.stringify(jsonDecisionTreeStr);
+        jsonDecisionTreeStr = JSON.stringify(jsonDecisionTreeStr, null, 2);
+    }
+
+    let naturalLanguageTreeStr = treeResult.naturalLanguageDecisionTree;
+    if (typeof naturalLanguageTreeStr !== 'string') {
+        naturalLanguageTreeStr = JSON.stringify(naturalLanguageTreeStr, null, 2);
+    }
+
+    let questionsScriptStr = treeResult.questionsScript;
+    if (typeof questionsScriptStr !== 'string') {
+        questionsScriptStr = JSON.stringify(questionsScriptStr, null, 2);
     }
 
     return {
-        variables, // though not strictly needed by StoredTree directly, it's used for table gen
-        naturalLanguageDecisionTree: treeResult.naturalLanguageDecisionTree,
+        variables,
+        naturalLanguageDecisionTree: naturalLanguageTreeStr,
         jsonDecisionTree: jsonDecisionTreeStr,
-        questionsScript: treeResult.questionsScript,
+        questionsScript: questionsScriptStr,
         debug: {
             model: config.model,
             extractVarsInput: {
@@ -367,6 +393,7 @@ export async function processDescriptionAction(
     openRouterConfig?: { apiKey: string, model: string }
 ): Promise<{ data: StoredTree & { debug?: any } | null; error: string | null; }> {
     try {
+        const user = await getAuthenticatedUser();
         let decisionTreeResult;
         let extractedVariables = [];
         let debugInfo = null;
@@ -406,10 +433,21 @@ export async function processDescriptionAction(
             });
         }
 
+        // Final safety check: ensure all required fields are strings before Prisma
+        const finalTreeData = {
+            naturalLanguageDecisionTree: String(decisionTreeResult.naturalLanguageDecisionTree || ''),
+            jsonDecisionTree: typeof decisionTreeResult.jsonDecisionTree === 'string'
+                ? decisionTreeResult.jsonDecisionTree
+                : JSON.stringify(decisionTreeResult.jsonDecisionTree || {}),
+            questionsScript: typeof decisionTreeResult.questionsScript === 'string'
+                ? decisionTreeResult.questionsScript
+                : JSON.stringify(decisionTreeResult.questionsScript || ''),
+        };
+
         try {
-            JSON.parse(decisionTreeResult.jsonDecisionTree);
+            JSON.parse(finalTreeData.jsonDecisionTree);
         } catch (e) {
-            console.error("JSON non valido ricevuto dall'IA (controllo finale):", decisionTreeResult.jsonDecisionTree);
+            console.error("JSON non valido ricevuto dall'IA (controllo finale):", finalTreeData.jsonDecisionTree);
             return { data: null, error: "L'IA ha generato un albero decisionale JSON non valido. Prova a riformulare la tua input o a riprovare." };
         }
 
@@ -418,8 +456,9 @@ export async function processDescriptionAction(
         const newTreeData = {
             name,
             description: textDescription,
-            ...decisionTreeResult,
+            ...finalTreeData,
             createdAt: new Date(),
+            companyId: user.companyId
         }
 
         const createdTree = await db.tree.create({
@@ -464,17 +503,22 @@ export async function rephraseQuestionAction(question: string, context: string, 
 
 export async function getTreesAction(ids?: string[]): Promise<{ data: StoredTree[] | null; error: string | null; }> {
     try {
+        const user = await getAuthenticatedUser();
         let treesData;
 
         if (ids && ids.length > 0) {
             treesData = await db.tree.findMany({
                 where: {
-                    id: { in: ids }
+                    id: { in: ids },
+                    companyId: user.companyId
                 },
                 orderBy: { createdAt: 'desc' }
             });
         } else {
             treesData = await db.tree.findMany({
+                where: {
+                    companyId: user.companyId
+                },
                 orderBy: { createdAt: 'desc' }
             });
         }
@@ -494,12 +538,16 @@ export async function getTreesAction(ids?: string[]): Promise<{ data: StoredTree
 
 export async function getTreeAction(id: string): Promise<{ data: StoredTree | null; error: string | null; }> {
     try {
+        const user = await getAuthenticatedUser();
         if (typeof id !== 'string' || !id) {
             return { data: null, error: 'ID albero non valido fornito.' };
         }
 
-        const treeData = await db.tree.findUnique({
-            where: { id }
+        const treeData = await db.tree.findFirst({
+            where: {
+                id,
+                companyId: user.companyId
+            }
         });
 
         if (!treeData) {
@@ -530,12 +578,17 @@ export async function updateTreeNodeAction({
     nodeData: string;
 }): Promise<{ success: boolean; error: string | null }> {
     try {
+        const user = await getAuthenticatedUser();
+        console.log("updateTreeNodeAction called:", { treeId, nodePath, nodeData: nodeData?.substring(0, 50) });
         if (!treeId || !nodePath) {
             throw new Error("Dati mancanti per l'aggiornamento del nodo.");
         }
 
-        const treeToUpdate = await db.tree.findUnique({
-            where: { id: treeId }
+        const treeToUpdate = await db.tree.findFirst({
+            where: {
+                id: treeId,
+                companyId: user.companyId
+            }
         });
 
         if (!treeToUpdate) {
@@ -656,7 +709,7 @@ function extractSubTreeRefs(node: any): string[] {
 export async function regenerateNaturalLanguageAction(
     treeId: string,
     openRouterConfig?: { apiKey: string, model: string }
-): Promise<{ success: boolean; error: string | null }> {
+): Promise<{ success: boolean; error: string | null; data?: string }> {
     try {
         if (!treeId) {
             throw new Error("ID albero mancante.");
@@ -667,7 +720,7 @@ export async function regenerateNaturalLanguageAction(
             throw new Error("Albero non trovato.");
         }
 
-        const treeData = treeDoc; // Already StoredTreeish
+        const treeData = treeDoc;
         const jsonDecisionTree = treeData.jsonDecisionTree;
 
         const systemPrompt = `Sei un assistente che deve creare una descrizione testuale in linguaggio naturale di un albero decisionale.
@@ -721,7 +774,6 @@ Genera la descrizione in linguaggio naturale seguendo le regole sopra.`;
         }
 
         // Update the tree with the new description
-        // Update the tree with the new description
         await db.tree.update({
             where: { id: treeId },
             data: {
@@ -729,7 +781,7 @@ Genera la descrizione in linguaggio naturale seguendo le regole sopra.`;
             }
         });
 
-        return { success: true, error: null };
+        return { success: true, error: null, data: newDescription };
 
     } catch (e) {
         const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante la rigenerazione.";
@@ -1310,9 +1362,15 @@ Follow these steps with absolute rigor:
 
 export async function getVariablesAction(): Promise<{ data: Variable[] | null; error: string | null; }> {
     try {
+        const user = await getAuthenticatedUser();
         const [variablesData, treesData] = await Promise.all([
-            db.variable.findMany({ orderBy: { name: 'asc' } }),
-            db.tree.findMany(),
+            db.variable.findMany({
+                where: { companyId: user.companyId },
+                orderBy: { name: 'asc' }
+            }),
+            db.tree.findMany({
+                where: { companyId: user.companyId }
+            }),
         ]);
 
         const variables: Variable[] = variablesData.map(v => ({
@@ -1907,11 +1965,12 @@ Per ogni albero pertinente, fornisci un breve riassunto della procedura che desc
 
 export async function updateVariableAction(treeId: string | undefined, id: string, updateData: Partial<Variable>): Promise<{ success: boolean; data: StoredTree | null; error: string | null; }> {
     try {
+        const user = await getAuthenticatedUser();
         if (!id) throw new Error("ID variabile non fornito.");
 
         const transactionOps: any[] = [];
 
-        const oldVarData = await db.variable.findUnique({ where: { id } });
+        const oldVarData = await db.variable.findFirst({ where: { id, companyId: user.companyId } });
         if (!oldVarData) throw new Error("Variabile da aggiornare non trovata.");
 
         // Ensure IDs are present for new options

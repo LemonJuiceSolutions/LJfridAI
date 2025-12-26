@@ -8,6 +8,109 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// MULTI-TENANT MODELS
+// ============================================
+
+model Company {
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  users       User[]
+  departments Department[]
+  trees       Tree[]
+  variables   Variable[]
+  invitations Invitation[]
+  connectors  Connector[]
+  tokenCaches TokenCache[]
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  users     User[]
+  
+  @@index([companyId])
+}
+
+// ============================================
+// NEXTAUTH.JS MODELS
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  password      String?   // Hashed password for credentials login
+  image         String?
+  role          String    @default("user") // user, admin, superadmin
+  
+  companyId     String?
+  company       Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  departmentId  String?
+  department    Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  
+  accounts      Account[]
+  sessions      Session[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([companyId])
+  @@index([departmentId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================
+// APPLICATION MODELS (with multi-tenant support)
+// ============================================
+
 model Tree {
   id                          String   @id @default(cuid())
   name                        String
@@ -16,6 +119,11 @@ model Tree {
   jsonDecisionTree            String   @db.Text
   questionsScript             String   @db.Text
   createdAt                   DateTime @default(now())
+  
+  companyId                   String?
+  company                     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
 }
 
 model Variable {
@@ -24,8 +132,11 @@ model Variable {
   type           String
   possibleValues Json     @default("[]") // VariableOption[]
   createdAt      DateTime @default(now())
-  // Relation to Tree not strictly enforced in code but conceptually exists? 
-  // Code matches by ID manually.
+  
+  companyId      String?
+  company        Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
 }
 
 model TriggerLog {
@@ -33,4 +144,47 @@ model TriggerLog {
   collection  String
   data        Json
   createdAt   DateTime @default(now())
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  role      String   @default("user")
+  status    String   @default("PENDING") // PENDING, ACCEPTED
+  expires   DateTime
+  createdAt DateTime @default(now())
+
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([email])
+  @@unique([email, companyId])
+}
+
+model Connector {
+  id        String   @id @default(cuid())
+  name      String
+  type      String   // SQL, HUBSPOT, SHAREPOINT, SMTP
+  config    String   // JSON config
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([companyId])
+}
+
+model TokenCache {
+  id        String   @id @default(cuid())
+  companyId String
+  provider  String   // "sharepoint", "microsoft"
+  cacheData String   @db.Text // Serialized MSAL token cache
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@unique([companyId, provider])
+  @@index([companyId])
 }
