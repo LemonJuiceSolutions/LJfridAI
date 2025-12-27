@@ -390,7 +390,8 @@ ${variablesTable}`;
 
 export async function processDescriptionAction(
     textDescription: string,
-    openRouterConfig?: { apiKey: string, model: string }
+    openRouterConfig?: { apiKey: string, model: string },
+    type: string = 'RULE'
 ): Promise<{ data: StoredTree & { debug?: any } | null; error: string | null; }> {
     try {
         const user = await getAuthenticatedUser();
@@ -457,7 +458,9 @@ export async function processDescriptionAction(
             name,
             description: textDescription,
             ...finalTreeData,
+            ...finalTreeData,
             createdAt: new Date(),
+            type: type,
             companyId: user.companyId
         }
 
@@ -501,7 +504,7 @@ export async function rephraseQuestionAction(question: string, context: string, 
     }
 }
 
-export async function getTreesAction(ids?: string[]): Promise<{ data: StoredTree[] | null; error: string | null; }> {
+export async function getTreesAction(ids?: string[], type?: string): Promise<{ data: StoredTree[] | null; error: string | null; }> {
     try {
         const user = await getAuthenticatedUser();
         let treesData;
@@ -517,7 +520,8 @@ export async function getTreesAction(ids?: string[]): Promise<{ data: StoredTree
         } else {
             treesData = await db.tree.findMany({
                 where: {
-                    companyId: user.companyId
+                    companyId: user.companyId,
+                    type: type // Optional filter
                 },
                 orderBy: { createdAt: 'desc' }
             });
@@ -556,6 +560,7 @@ export async function getTreeAction(id: string): Promise<{ data: StoredTree | nu
 
         const tree: StoredTree = {
             ...treeData,
+            type: treeData.type || 'RULE',
             createdAt: treeData.createdAt.toISOString()
         };
 

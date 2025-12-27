@@ -38,7 +38,7 @@ export default function Home() {
 
   const fetchTrees = async () => {
     setIsLoading(true);
-    const result = await getTreesAction();
+    const result = await getTreesAction(undefined, 'RULE');
     if (result.data) {
       setTrees(result.data);
     } else if (result.error) {
@@ -186,19 +186,20 @@ export default function Home() {
                   </CardDescription>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <Link href="/create">
+                  <Link href="/create?type=RULE">
                     <Button variant="default" className="bg-primary hover:bg-primary/90">
                       <PlusCircle className="mr-2 h-4 w-4" />
                       Crea Nuova Regola
                     </Button>
                   </Link>
                   <Button
-                    variant="destructive"
+                    variant="outline"
+                    className="border-[#ff2800] text-[#ff2800] hover:bg-red-50 hover:text-[#ff2800]"
                     onClick={() => setDialogState('delete-all')}
                     disabled={isLoading || trees.length === 0}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
-                    Elimina Tutti
+                    Elimina Tutte
                   </Button>
                 </div>
               </div>
@@ -257,7 +258,7 @@ export default function Home() {
                     Crea la tua prima regola usando gli esempi AI o descrivendo un tuo processo.
                   </p>
                   <Button asChild className="mt-4">
-                    <Link href="/create">
+                    <Link href="/create?type=RULE">
                       <PlusCircle className="mr-2 h-4 w-4" />
                       Crea la Tua Prima Regola
                     </Link>

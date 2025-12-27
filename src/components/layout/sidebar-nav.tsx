@@ -14,7 +14,8 @@ import {
     BrainCircuit,
     ChevronRight,
     LayoutDashboard,
-    LogOut
+    LogOut,
+    Workflow
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 
 const navItems = [
     { name: 'Regole', href: '/', icon: LayoutDashboard },
+    { name: 'Pipeline', href: '/pipeline', icon: Workflow },
     { name: 'detAI', href: '/detai', icon: BrainCircuit },
     { name: 'Chatbot Diagnostico', href: '/chatbot', icon: Bot },
     { name: 'Variabili', href: '/variables', icon: Database },

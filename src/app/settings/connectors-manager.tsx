@@ -66,6 +66,9 @@ export function ConnectorsManager() {
     const [selectedFile, setSelectedFile] = useState<{ id: string; name: string; path: string } | null>(null);
     const [browserStep, setBrowserStep] = useState<'drives' | 'files' | 'sheets'>('drives');
 
+    // Auth Trigger State to know what to resume after login
+    const [authTrigger, setAuthTrigger] = useState<'test' | 'browse'>('test');
+
     useEffect(() => {
         loadConnectors();
     }, []);
@@ -163,25 +166,7 @@ export function ConnectorsManager() {
                 if (connectorId) setTestResults(prev => ({ ...prev, [connectorId]: 'error' }));
 
                 // Start Device Code Flow
-                const deviceCodeRes = await generateDeviceCodeAction(
-                    configForDeviceCode.tenantId,
-                    configForDeviceCode.clientId
-                );
-
-                if (deviceCodeRes.error) {
-                    toast({ variant: 'destructive', title: 'Errore Auth', description: deviceCodeRes.error });
-                } else if (deviceCodeRes.success) {
-                    setDeviceCode({
-                        userCode: deviceCodeRes.userCode!,
-                        verificationUri: deviceCodeRes.verificationUri!,
-                        deviceCode: deviceCodeRes.deviceCode!,
-                        message: deviceCodeRes.message!
-                    });
-                    setDeviceCodeDialog(true);
-
-                    // Start polling for token
-                    startDeviceCodePolling(configForDeviceCode.tenantId, configForDeviceCode.clientId, deviceCodeRes.deviceCode!, connectorId);
-                }
+                initiateAuth(configForDeviceCode.tenantId, configForDeviceCode.clientId, 'test', connectorId);
 
                 if (!connectorId) setIsTestingDialog(false);
                 return;
@@ -229,6 +214,25 @@ export function ConnectorsManager() {
         }
     };
 
+    const initiateAuth = async (tenantId: string, clientId: string, trigger: 'test' | 'browse', connectorId?: string) => {
+        setAuthTrigger(trigger);
+
+        const deviceCodeRes = await generateDeviceCodeAction(tenantId, clientId);
+
+        if (deviceCodeRes.error) {
+            toast({ variant: 'destructive', title: 'Errore Auth', description: deviceCodeRes.error });
+        } else if (deviceCodeRes.success) {
+            setDeviceCode({
+                userCode: deviceCodeRes.userCode!,
+                verificationUri: deviceCodeRes.verificationUri!,
+                deviceCode: deviceCodeRes.deviceCode!,
+                message: deviceCodeRes.message!
+            });
+            setDeviceCodeDialog(true);
+            startDeviceCodePolling(tenantId, clientId, deviceCodeRes.deviceCode!, connectorId);
+        }
+    };
+
     const startDeviceCodePolling = async (tenantId: string, clientId: string, deviceCodeStr: string, connectorId?: string) => {
         setIsPolling(true);
         let attempts = 0;
@@ -265,11 +269,16 @@ export function ConnectorsManager() {
                     className: 'bg-green-50 border-green-200 text-green-900 border'
                 });
 
-                // Retry the original test now that we're authenticated
-                if (connectorId) {
-                    setTimeout(() => handleTest(undefined, undefined, connectorId), 1000);
+                // Retry the original action now that we're authenticated
+                if (authTrigger === 'browse') {
+                    // Slight delay to allow token propagation/state update
+                    setTimeout(() => openFileBrowser(), 1000);
                 } else {
-                    setTimeout(() => handleTest(), 1000);
+                    if (connectorId) {
+                        setTimeout(() => handleTest(undefined, undefined, connectorId), 1000);
+                    } else {
+                        setTimeout(() => handleTest(), 1000);
+                    }
                 }
             }
         };
@@ -302,8 +311,10 @@ export function ConnectorsManager() {
         setBrowserLoading(false);
 
         if (res.needsAuth) {
-            toast({ variant: 'destructive', title: 'Autenticazione richiesta', description: 'Usa "Test Connessione" per autenticarti prima' });
+            toast({ title: 'Autenticazione richiesta', description: 'Avvio procedura di login...' });
             setFileBrowserOpen(false);
+            // Auto-trigger auth
+            initiateAuth(configData.tenantId, configData.clientId, 'browse');
             return;
         }
 

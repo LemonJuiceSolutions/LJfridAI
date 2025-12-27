@@ -74,6 +74,8 @@ export interface StoredTree extends AnalysisResult {
   name: string;
   description: string;
   createdAt?: any;
+  type?: string;
+  companyId?: string | null;
 }
 
 export interface DiagnosticNode {

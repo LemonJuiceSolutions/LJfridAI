@@ -120,6 +120,8 @@ model Tree {
   questionsScript             String   @db.Text
   createdAt                   DateTime @default(now())
   
+  type                        String   @default("RULE") // RULE, PIPELINE
+
   companyId                   String?
   company                     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
   

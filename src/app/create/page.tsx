@@ -141,7 +141,10 @@ export default function CreatePage() {
       const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
       const openRouterConfig = apiKey ? { apiKey, model } : undefined;
 
-      const result = await processDescriptionAction(textDescription, openRouterConfig);
+      const searchParams = new URLSearchParams(window.location.search);
+      const type = searchParams.get('type') || 'RULE';
+
+      const result = await processDescriptionAction(textDescription, openRouterConfig, type);
       if (result.error || !result.data) {
         throw new Error(result.error || 'Analisi fallita senza un errore specifico.');
       }
@@ -262,14 +265,23 @@ export default function CreatePage() {
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <Button type="submit" disabled={isLoading} className="flex-1" variant={analysisResult ? "destructive" : "default"}>
+                    <Button
+                      type="submit"
+                      disabled={isLoading}
+                      className={`flex-1 ${analysisResult ? "border-[#ff2800] text-[#ff2800] hover:bg-red-50 hover:text-[#ff2800]" : ""}`}
+                      variant={analysisResult ? "outline" : "default"}
+                    >
                       {isLoading ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           {analysisResult ? 'Sovrascrivendo...' : 'Analizzando...'}
                         </>
                       ) : (
-                        analysisResult ? '⚠️ Sovrascrivi Regola' : 'Analizza e Salva'
+                        analysisResult ? (
+                          <>
+                            ⚠️ Sovrascrivi Regola
+                          </>
+                        ) : 'Analizza e Salva'
                       )}
                     </Button>
 
