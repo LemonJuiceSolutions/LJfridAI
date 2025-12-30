@@ -38,7 +38,7 @@ export default function Home() {
 
   const fetchTrees = async () => {
     setIsLoading(true);
-    const result = await getTreesAction(undefined, 'RULE');
+    const result = await getTreesAction(); // Fetch everything (Rules + Pipelines)
     if (result.data) {
       setTrees(result.data);
     } else if (result.error) {
@@ -180,16 +180,16 @@ export default function Home() {
             <CardHeader className="space-y-4">
               <div className="flex flex-row items-start justify-between gap-4">
                 <div>
-                  <CardTitle>Regole Decisionali</CardTitle>
+                  <CardTitle>Flussi & Regole</CardTitle>
                   <CardDescription>
-                    Cerca o fai clic su una regola per visualizzarla e modificarla.
+                    Gestisci le tue regole decisionali e pipeline di dati in un unico posto.
                   </CardDescription>
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <Link href="/create?type=RULE">
                     <Button variant="default" className="bg-primary hover:bg-primary/90">
                       <PlusCircle className="mr-2 h-4 w-4" />
-                      Crea Nuova Regola
+                      Nuovo Flusso
                     </Button>
                   </Link>
                   <Button
@@ -260,7 +260,7 @@ export default function Home() {
                   <Button asChild className="mt-4">
                     <Link href="/create?type=RULE">
                       <PlusCircle className="mr-2 h-4 w-4" />
-                      Crea la Tua Prima Regola
+                      Crea il Primo Flusso
                     </Link>
                   </Button>
                 </div>

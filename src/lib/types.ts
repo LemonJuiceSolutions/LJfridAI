@@ -46,6 +46,8 @@ export interface DecisionLeaf {
   media?: MediaItem[];
   links?: LinkItem[];
   triggers?: TriggerItem[];
+  sqlQuery?: string;
+  sqlConnectorId?: string;
 }
 
 export type SingleDecisionOptionChild = DecisionNode | DecisionLeaf | string | { ref: string, id?: string } | { subTreeRef: string, id?: string };
@@ -65,6 +67,8 @@ export interface DecisionNode {
   media?: MediaItem[];
   links?: LinkItem[];
   triggers?: TriggerItem[];
+  sqlQuery?: string;
+  sqlConnectorId?: string;
   ref?: string;
   subTreeRef?: string;
 }

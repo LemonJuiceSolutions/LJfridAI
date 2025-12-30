@@ -13,7 +13,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem } from '@/lib/types';
 import { Input } from '../ui/input';
@@ -21,7 +28,7 @@ import _ from 'lodash';
 import { useToast } from '@/hooks/use-toast';
 import { uploadFile } from '@/lib/storage-client';
 import Image from 'next/image';
-import { executeTriggerAction } from '@/app/actions';
+import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction } from '@/app/actions';
 import { ScrollArea } from '../ui/scroll-area';
 
 interface EditNodeDialogProps {
@@ -68,6 +75,12 @@ export default function EditNodeDialog({
   const [newTriggerPath, setNewTriggerPath] = useState('');
   const [internalSaving, setInternalSaving] = useState(false);
   const [previewingMedia, setPreviewingMedia] = useState<MediaItem | { url: string, type: 'image' | 'video' } | null>(null);
+
+  // SQL State
+  const [sqlQuery, setSqlQuery] = useState('');
+  const [sqlConnectorId, setSqlConnectorId] = useState<string>('');
+  const [sqlConnectors, setSqlConnectors] = useState<{ id: string, name: string }[]>([]);
+  const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
 
   // State for inline editing links
   const [editingLinkIndex, setEditingLinkIndex] = useState<number | null>(null);
@@ -126,14 +139,43 @@ export default function EditNodeDialog({
       setNewTriggerName('');
       setNewTriggerPath('');
       setPreviewingMedia(null);
-      setEditingLinkIndex(null);
       setEditingLink(null);
       setEditingTriggerIndex(null);
       setEditingTrigger(null);
       setEditingMediaName(null);
 
+      // Load SQL Query
+      if (node && 'sqlQuery' in node) {
+        setSqlQuery(node.sqlQuery || '');
+      } else {
+        setSqlQuery('');
+      }
+      setSqlPreviewData(null);
+      if (node && 'sqlConnectorId' in node) {
+        setSqlConnectorId(node.sqlConnectorId || '');
+      } else {
+        setSqlConnectorId('');
+      }
+
     }
   }, [isOpen, initialNode, nodeType]);
+
+  // Load Connectors
+  useEffect(() => {
+    if (isOpen) {
+      const loadConnectors = async () => {
+        // const { getConnectorsAction } = await import('@/app/actions'); // Refactored to static
+
+        const res = await getConnectorsAction();
+        if (res.data) {
+          const sqls = res.data.filter((c: any) => c.type === 'SQL').map((c: any) => ({ id: c.id, name: c.name }));
+          setSqlConnectors(sqls);
+          // If no connector selected but we have some, maybe select first? No, explicit is better.
+        }
+      };
+      loadConnectors();
+    }
+  }, [isOpen]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -313,6 +355,7 @@ export default function EditNodeDialog({
           media: finalMedia.length > 0 ? finalMedia : undefined,
           links: links.length > 0 ? links : undefined,
           triggers: triggers.length > 0 ? triggers : undefined,
+          sqlQuery: sqlQuery.trim() || undefined,
         };
       } else if (nodeType === 'question' && 'option' in initialNode) {
         newNodeData = { option: optionText };
@@ -323,6 +366,7 @@ export default function EditNodeDialog({
           media: finalMedia.length > 0 ? finalMedia : undefined,
           links: links.length > 0 ? links : undefined,
           triggers: triggers.length > 0 ? triggers : undefined,
+          sqlQuery: sqlQuery.trim() || undefined,
         };
       }
 
@@ -712,6 +756,133 @@ export default function EditNodeDialog({
                           <Input id="media-upload" type="file" accept="image/*,video/*" onChange={handleFileChange} disabled={componentIsSaving} multiple className='hidden' />
                         </Label>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* --- SQL Query Section --- */}
+                  <div className="space-y-2 p-3 border border-indigo-500/50 rounded-lg bg-indigo-50/10">
+                    <Label className='flex items-center gap-2 text-indigo-600 font-semibold'>
+                      <Database className='h-4 w-4' />
+                      Dati SQL (Anteprima & Pipeline)
+                    </Label>
+                    <div className="flex flex-col gap-3">
+                      {/* Connector Selector */}
+                      <div className="flex flex-col gap-1">
+                        <Label className="text-xs text-muted-foreground">Database</Label>
+                        <Select value={sqlConnectorId} onValueChange={setSqlConnectorId} disabled={componentIsSaving}>
+                          <SelectTrigger className="h-8 max-w-[200px]">
+                            <SelectValue placeholder="Seleziona DB..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {sqlConnectors.map(c => (
+                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                            ))}
+                            {sqlConnectors.length === 0 && <SelectItem value="_none" disabled>Nessun DB SQL Trovato</SelectItem>}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          placeholder="Descrivi cosa estrarre (es. 'Tutti i clienti attivi')"
+                          className="flex-1 text-sm bg-background/50"
+                          id="sql-prompt-input" // adding ID for easy access if needed
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={!sqlConnectorId}
+                          onClick={async () => {
+                            const input = document.getElementById('sql-prompt-input') as HTMLInputElement;
+                            const desc = input?.value;
+                            if (!desc) {
+                              toast({ title: 'Inserisci una descrizione', variant: 'destructive' });
+                              return;
+                            }
+                            if (!sqlConnectorId) {
+                              toast({ title: 'Seleziona un Database', variant: 'destructive' });
+                              return;
+                            }
+
+                            setInternalSaving(true);
+                            try {
+                              // Dynamic import refactored to static
+                              // const { generateSqlAction } = await import('@/app/actions');
+                              const apiKey = localStorage.getItem('openrouter_api_key');
+                              const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+
+                              const res = await generateSqlAction(desc, apiKey ? { apiKey, model } : undefined, sqlConnectorId);
+                              if (res.sql) {
+                                setSqlQuery(res.sql);
+                                toast({ title: 'Query Generata!' });
+                              } else {
+                                toast({ title: 'Errore generazione', description: res.error || 'Unknown', variant: 'destructive' });
+                              }
+                            } catch (e) {
+                              console.error(e);
+                              toast({ title: 'Errore', variant: 'destructive' });
+                            } finally {
+                              setInternalSaving(false);
+                            }
+                          }}
+                        >
+                          <Bot className="mr-2 h-3 w-3" />
+                          Genera SQL
+                        </Button>
+                      </div>
+
+                      <Textarea
+                        value={sqlQuery}
+                        onChange={(e) => setSqlQuery(e.target.value)}
+                        placeholder="SELECT * FROM ..."
+                        className="font-mono text-xs h-24 bg-background/80"
+                      />
+
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="text-xs border-indigo-200"
+                          disabled={!sqlConnectorId}
+                          onClick={async () => {
+                            if (!sqlQuery.trim()) return;
+                            if (!sqlConnectorId) {
+                              toast({ title: 'Seleziona un Database', variant: 'destructive' });
+                              return;
+                            }
+                            setInternalSaving(true);
+                            try {
+                              // const { executeSqlPreviewAction } = await import('@/app/actions');
+                              const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId);
+                              if (res.data) {
+                                // Show data - for now simple alert or maybe a small dialog inside?
+                                // Let's use a simple way first: set a state to show below.
+                                setSqlPreviewData(res.data);
+                              } else {
+                                toast({ title: 'Errore esecuzione', description: res.error || 'Errore', variant: 'destructive' });
+                              }
+                            } catch (e) {
+                              toast({ title: 'Errore critico', variant: 'destructive' });
+                            } finally {
+                              setInternalSaving(false);
+                            }
+                          }}
+                        >
+                          Esegui Anteprima
+                        </Button>
+                      </div>
+
+                      {sqlPreviewData && (
+                        <div className="mt-2 p-2 bg-black/5 rounded text-xs overflow-auto max-h-40 border font-mono">
+                          <div className="flex justify-between items-center mb-1 sticky top-0 bg-secondary/80 p-1">
+                            <span className="font-bold">Risultati Preview:</span>
+                            <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setSqlPreviewData(null)}><X className="h-3 w-3" /></Button>
+                          </div>
+                          <pre>{JSON.stringify(sqlPreviewData, null, 2)}</pre>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
