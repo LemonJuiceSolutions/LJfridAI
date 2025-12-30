@@ -30,6 +30,7 @@ import { uploadFile } from '@/lib/storage-client';
 import Image from 'next/image';
 import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction } from '@/app/actions';
 import { ScrollArea } from '../ui/scroll-area';
+import { DataTable } from '../ui/data-table';
 
 interface EditNodeDialogProps {
   isOpen: boolean;
@@ -356,6 +357,7 @@ export default function EditNodeDialog({
           links: links.length > 0 ? links : undefined,
           triggers: triggers.length > 0 ? triggers : undefined,
           sqlQuery: sqlQuery.trim() || undefined,
+          sqlConnectorId: sqlConnectorId || undefined,
         };
       } else if (nodeType === 'question' && 'option' in initialNode) {
         newNodeData = { option: optionText };
@@ -367,6 +369,7 @@ export default function EditNodeDialog({
           links: links.length > 0 ? links : undefined,
           triggers: triggers.length > 0 ? triggers : undefined,
           sqlQuery: sqlQuery.trim() || undefined,
+          sqlConnectorId: sqlConnectorId || undefined,
         };
       }
 
@@ -760,12 +763,12 @@ export default function EditNodeDialog({
                   </div>
 
                   {/* --- SQL Query Section --- */}
-                  <div className="space-y-2 p-3 border border-indigo-500/50 rounded-lg bg-indigo-50/10">
+                  <div className="space-y-2 p-3 border border-primary/50 rounded-lg min-w-0 w-full max-w-[80vw] sm:max-w-[530px] overflow-hidden">
                     <Label className='flex items-center gap-2 text-indigo-600 font-semibold'>
                       <Database className='h-4 w-4' />
                       Dati SQL (Anteprima & Pipeline)
                     </Label>
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-3 min-w-0 w-full">
                       {/* Connector Selector */}
                       <div className="flex flex-col gap-1">
                         <Label className="text-xs text-muted-foreground">Database</Label>
@@ -875,12 +878,17 @@ export default function EditNodeDialog({
                       </div>
 
                       {sqlPreviewData && (
-                        <div className="mt-2 p-2 bg-black/5 rounded text-xs overflow-auto max-h-40 border font-mono">
-                          <div className="flex justify-between items-center mb-1 sticky top-0 bg-secondary/80 p-1">
-                            <span className="font-bold">Risultati Preview:</span>
-                            <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setSqlPreviewData(null)}><X className="h-3 w-3" /></Button>
+                        <div className="mt-2 text-xs border rounded-md overflow-hidden bg-background w-full max-w-full grid grid-cols-1">
+                          <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
+                            <span className="font-semibold text-xs flex items-center gap-2">
+                              <Database className="h-3 w-3" />
+                              Risultati Anteprima
+                            </span>
+                            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setSqlPreviewData(null)}><X className="h-3 w-3" /></Button>
                           </div>
-                          <pre>{JSON.stringify(sqlPreviewData, null, 2)}</pre>
+                          <div className="bg-background w-full">
+                            <DataTable data={sqlPreviewData} className="max-h-[300px] w-full" />
+                          </div>
                         </div>
                       )}
                     </div>
