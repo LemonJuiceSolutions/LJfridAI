@@ -315,7 +315,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         }
 
         if (!list.some(n => n.id === id)) {
-            list.push({ id, text, path });
+            list.push({ id, text, path, node });
         }
 
         if (typeof node === 'object' && 'options' in node && node.options) {
@@ -991,6 +991,43 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         }).filter((n): n is NonNullable<typeof n> => n !== null);
     }, [layout.positionedNodes]);
 
+    // Returns only pipeline tables from ancestor nodes of the given path
+    const getAncestorInputTables = useMemo(() => {
+        return (currentPath: string): { name: string, connectorId?: string, sqlQuery?: string }[] => {
+            const tables: { name: string, connectorId?: string, sqlQuery?: string }[] = [];
+
+            flatTree.forEach((item: any) => {
+                const actualNode = item.node;
+                if (actualNode && typeof actualNode === 'object' && 'sqlResultName' in actualNode && actualNode.sqlResultName) {
+                    const nodePath = item.path;
+
+                    // Check if this node's path is a TRUE hierarchical ancestor of currentPath
+                    // An ancestor path must:
+                    // 1. Be a prefix of the current path
+                    // 2. Not be equal to the current path
+                    // 3. The next character after the prefix in currentPath must be '.' (hierarchical boundary)
+                    //    This prevents "root.options['S']" from matching "root.options['SÌ']"
+                    const isAncestor =
+                        currentPath !== nodePath &&
+                        currentPath.startsWith(nodePath) &&
+                        currentPath.charAt(nodePath.length) === '.';
+
+                    if (isAncestor) {
+                        tables.push({
+                            name: actualNode.sqlResultName,
+                            connectorId: actualNode.sqlConnectorId,
+                            sqlQuery: actualNode.sqlQuery
+                        });
+                        console.log(`[ANCESTOR] Path "${nodePath}" → Table "${actualNode.sqlResultName}" visible to "${currentPath}"`);
+                    }
+                }
+            });
+
+            console.log('DEBUG: Ancestor Tables for path', currentPath, ':', tables.map(t => t.name));
+            return tables;
+        };
+    }, [flatTree]);
+
     if (!tree) {
         return (
             <Card>
@@ -1136,6 +1173,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
                                                 {/* Mini indicators row */}
                                                 <div className="flex items-center gap-1 mt-1">
+                                                    {item.node && typeof item.node === 'object' && 'sqlConnectorId' in item.node && (item.node as any).sqlConnectorId && (
+                                                        <Database className="h-3 w-3 text-blue-600" />
+                                                    )}
                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'image') && <ImageIcon className="h-3 w-3 text-muted-foreground" />}
                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'video') && <Video className="h-3 w-3 text-muted-foreground" />}
                                                     {linkItems && linkItems.length > 0 && <LinkIcon className="h-3 w-3 text-muted-foreground" />}
@@ -1250,6 +1290,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     nodePath={editingNodeInfo.path}
                     treeId={treeData.id}
                     isSaving={isSaving}
+                    availableInputTables={getAncestorInputTables(editingNodeInfo.path)}
                 />
             )}
 

@@ -31,7 +31,7 @@ export function DataTable<TData extends Record<string, any>>({
     const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('asc')
     const [filters, setFilters] = React.useState<Record<string, string>>({})
     const [currentPage, setCurrentPage] = React.useState(1)
-    const pageSize = 10
+    const pageSize = 50
 
     const columns = React.useMemo(() => {
         if (!data || data.length === 0) return []
@@ -113,7 +113,7 @@ export function DataTable<TData extends Record<string, any>>({
         <div className={`space-y-4 ${className} w-full max-w-full`}>
             <div className="rounded-md border max-h-[400px] overflow-auto relative w-full max-w-full">
                 <table className="w-max min-w-full caption-bottom text-sm">
-                    <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                    <TableHeader className="bg-muted sticky top-0 z-10 shadow-sm">
                         <TableRow>
                             {columns.map((column) => (
                                 <TableHead key={column} className="min-w-[150px] whitespace-nowrap">

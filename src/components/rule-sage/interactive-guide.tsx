@@ -14,6 +14,10 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { cn } from '@/lib/utils';
+import { DataTable } from '@/components/ui/data-table';
+import { executeSqlPreviewAction } from '@/app/actions';
+import { Database } from 'lucide-react';
+
 
 interface InteractiveGuideProps {
     jsonTree: string;
@@ -28,6 +32,61 @@ type HistoryFrame = {
 };
 
 type HistoryItem = DecisionOptionChild;
+
+// Helper component for SQL Preview
+function SqlDataPreview({ connectorId, query }: { connectorId: string, query: string }) {
+    const [data, setData] = useState<any[] | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let mounted = true;
+        const fetchData = async () => {
+            if (!connectorId || !query) return;
+            setLoading(true);
+            try {
+                const result = await executeSqlPreviewAction(query, connectorId);
+                if (mounted) {
+                    if (result.data) {
+                        setData(result.data);
+                    } else {
+                        setError(result.error || 'Errore esecuzione query');
+                    }
+                }
+            } catch (e) {
+                if (mounted) setError('Errore di connessione');
+            } finally {
+                if (mounted) setLoading(false);
+            }
+        };
+        fetchData();
+        return () => { mounted = false; };
+    }, [connectorId, query]);
+
+    if (!connectorId || !query) return null;
+
+    return (
+        <div className="mt-4 border rounded-md overflow-hidden w-full max-w-full min-w-0 grid grid-cols-1">
+            <div className="bg-muted px-3 py-2 border-b flex items-center gap-2">
+                <Database className="h-4 w-4 text-violet-600" />
+                <span className="text-xs font-semibold uppercase tracking-wider">Dati Correlati</span>
+            </div>
+            {loading ? (
+                <div className="p-8 flex justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+            ) : error ? (
+                <div className="p-4 text-sm text-destructive bg-destructive/10">
+                    {error}
+                </div>
+            ) : data ? (
+                <div className="max-h-[300px] overflow-auto w-full max-w-full">
+                    <DataTable data={data} className="border-0" />
+                </div>
+            ) : null}
+        </div>
+    );
+}
 
 // Helper to find a node by ID recursively in the tree
 const findNodeById = (node: any, id: string): any => {
@@ -474,6 +533,9 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                         <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground mb-0.5 opacity-70">Decisione Finale</p>
                         <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{decisionText}</p>
                         {isLeafObject && renderAttachments(node)}
+                        {isLeafObject && 'sqlConnectorId' in node && 'sqlQuery' in node && (node as any).sqlConnectorId && (
+                            <SqlDataPreview connectorId={(node as any).sqlConnectorId} query={(node as any).sqlQuery} />
+                        )}
                     </div>
                 </div>
 
@@ -534,36 +596,39 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                         <div key={index} className={cn("w-full mb-4", index !== undefined && "border-b pb-4 last:border-0 last:pb-0")}>
                                             <div className="relative w-full bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-start p-4 gap-4 transition-all hover:shadow-md hover:border-violet-300 dark:hover:border-violet-700">
                                                 <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                                <GitBranch className="h-5 w-5" />
-                                            </div>
-                                            <div className="flex-grow min-w-0">
-                                                {subTreeData && (
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground opacity-70">Sotto-processo</span>
-                                                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{subTreeData.name}</span>
-                                                    </div>
-                                                )}
-                                                <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">{(node as DecisionNode).question}</p>
-                                                {renderAttachments(node as DecisionNode)}
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                                                    {Object.entries((node as DecisionNode).options!).map(([key, value]) => (
-                                                        <Button
-                                                            key={key}
-                                                            onClick={() => handleSubTreeOptionClick(value, subTreeSource, index)}
-                                                            variant="outline"
-                                                            size="sm"
-                                                            className="h-auto py-2 px-3 justify-start border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-slate-700 hover:text-violet-900 group"
-                                                        >
-                                                            <div className="flex items-center gap-2 w-full">
-                                                                <div className="flex-shrink-0 w-6 h-6 rounded bg-slate-50 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 flex items-center justify-center group-hover:bg-violet-100 group-hover:text-violet-600 transition-colors">
-                                                                    <Check className="h-4 w-4" />
-                                                                </div>
-                                                                <span className="font-medium text-left flex-1 whitespace-normal text-xs">{key}</span>
-                                                            </div>
-                                                        </Button>
-                                                    ))}
+                                                    <GitBranch className="h-5 w-5" />
                                                 </div>
-                                            </div>
+                                                <div className="flex-grow min-w-0">
+                                                    {subTreeData && (
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground opacity-70">Sotto-processo</span>
+                                                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{subTreeData.name}</span>
+                                                        </div>
+                                                    )}
+                                                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">{(node as DecisionNode).question}</p>
+                                                    {renderAttachments(node as DecisionNode)}
+                                                    {'sqlConnectorId' in node && 'sqlQuery' in node && (node as any).sqlConnectorId && (
+                                                        <SqlDataPreview connectorId={(node as any).sqlConnectorId} query={(node as any).sqlQuery} />
+                                                    )}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                                                        {Object.entries((node as DecisionNode).options!).map(([key, value]) => (
+                                                            <Button
+                                                                key={key}
+                                                                onClick={() => handleSubTreeOptionClick(value, subTreeSource, index)}
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-auto py-2 px-3 justify-start border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-slate-700 hover:text-violet-900 group"
+                                                            >
+                                                                <div className="flex items-center gap-2 w-full">
+                                                                    <div className="flex-shrink-0 w-6 h-6 rounded bg-slate-50 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 flex items-center justify-center group-hover:bg-violet-100 group-hover:text-violet-600 transition-colors">
+                                                                        <Check className="h-4 w-4" />
+                                                                    </div>
+                                                                    <span className="font-medium text-left flex-1 whitespace-normal text-xs">{key}</span>
+                                                                </div>
+                                                            </Button>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -695,7 +760,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                         {nodeHistory.length === 0 ? "Punto di Partenza" : "Domanda"}
                                     </p>
                                     <p className="text-xl font-medium text-slate-900 dark:text-slate-100 mb-2">{(currentNode as DecisionNode).question}</p>
-                                    
+
                                     {rephrasedQuestion && (
                                         <Alert className="mb-4 bg-primary/10 border-primary/50">
                                             <Lightbulb className="h-4 w-4 text-primary" />
@@ -707,16 +772,19 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                     )}
 
                                     {renderAttachments(currentNode as DecisionNode)}
+                                    {'sqlConnectorId' in currentNode && 'sqlQuery' in currentNode && (currentNode as any).sqlConnectorId && (
+                                        <SqlDataPreview connectorId={(currentNode as any).sqlConnectorId} query={(currentNode as any).sqlQuery} />
+                                    )}
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                                 {Object.entries((currentNode as DecisionNode).options!).map(([key, value]) => (
-                                    <Button 
-                                        key={key} 
-                                        onClick={() => handleOptionClick(value)} 
-                                        variant="outline" 
-                                        size="lg" 
+                                    <Button
+                                        key={key}
+                                        onClick={() => handleOptionClick(value)}
+                                        variant="outline"
+                                        size="lg"
                                         className="h-auto py-3 px-4 justify-start border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-slate-700 hover:text-violet-900 group"
                                     >
                                         <div className="flex items-center gap-3 w-full">

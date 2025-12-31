@@ -924,7 +924,14 @@ Diagnostica il prossimo passo.`;
 
 
 
-export async function executeSqlPreviewAction(query: string, connectorId?: string): Promise<{ data: any[] | null; error: string | null }> {
+export async function executeSqlPreviewAction(
+    query: string,
+    connectorId?: string,
+    pipelineDependencies?: { tableName: string, query: string }[]
+): Promise<{ data: any[] | null; error: string | null }> {
+    let pool: sql.ConnectionPool | null = null;
+    const createdTempTables: string[] = [];
+
     try {
         const user = await getAuthenticatedUser();
 
@@ -938,7 +945,6 @@ export async function executeSqlPreviewAction(query: string, connectorId?: strin
                 }
             });
         } else {
-            // Fallback to first available if not specific (legacy behavior or default)
             connector = await db.connector.findFirst({
                 where: {
                     companyId: user.companyId,
@@ -951,7 +957,6 @@ export async function executeSqlPreviewAction(query: string, connectorId?: strin
             return { data: null, error: "Connettore SQL non trovato o non configurato." };
         }
 
-        // 2. Parse config
         let conf;
         try {
             conf = JSON.parse(connector.config);
@@ -959,7 +964,6 @@ export async function executeSqlPreviewAction(query: string, connectorId?: strin
             return { data: null, error: "Configurazione connettore non valida." };
         }
 
-        // 3. Connect and Execute
         const sqlConfig: any = {
             user: conf.user,
             password: conf.password,
@@ -968,7 +972,8 @@ export async function executeSqlPreviewAction(query: string, connectorId?: strin
             options: {
                 encrypt: conf.host && conf.host.includes('database.windows.net'),
                 trustServerCertificate: true,
-                connectTimeout: 15000
+                connectTimeout: 30000,
+                requestTimeout: 120000 // 2 minutes for complex queries
             }
         };
 
@@ -979,16 +984,117 @@ export async function executeSqlPreviewAction(query: string, connectorId?: strin
             }
         }
 
-        const pool = new sql.ConnectionPool(sqlConfig);
+        pool = new sql.ConnectionPool(sqlConfig);
         await pool.connect();
 
-        // Security check: simple one, mainly relies on read-only user permissions ideally
-        // But let's force a TOP 5 if select, to treat it as preview
-        let finalQuery = query.trim();
-        // naive check to prevent drastic actions in preview if possible, though user has control
+        // Execute Pipeline Dependencies in order
+        if (pipelineDependencies && pipelineDependencies.length > 0) {
+            console.log(`[PIPELINE] Executing ${pipelineDependencies.length} dependencies...`);
 
+            for (const dep of pipelineDependencies) {
+                const tempTableName = `##${dep.tableName}`;
+                console.log(`[PIPELINE] Materializing: ${tempTableName}`);
+
+                try {
+                    // Drop if exists (from previous failed run)
+                    await pool.request().query(`IF OBJECT_ID('tempdb..${tempTableName}') IS NOT NULL DROP TABLE ${tempTableName};`);
+
+                    // Execute the source query and capture into temp table
+                    // For complex scripts with dynamic SQL, we wrap differently
+                    const sourceQuery = dep.query.trim();
+
+                    // Strategy: Execute the script, then SELECT INTO from the result
+                    // This requires wrapping in a way that captures the final SELECT
+                    // Simplest approach: Execute script, then use INSERT INTO from OPENROWSET
+                    // But that's complex. Instead, we modify the script to output into temp table.
+
+                    // For now, we execute the script directly. If it ends with a SELECT,
+                    // we should capture that. But complex scripts with sp_executesql are tricky.
+                    // Let's try a workaround: execute, then select into temp.
+
+                    // Actually, for dynamic SQL scripts, the cleanest way is to:
+                    // 1. Execute the script (which returns data)
+                    // 2. Use that result somehow
+
+                    // The limitation is SQL Server doesn't let us easily capture sp_executesql output.
+                    // For now, let's at least try executing it and see if it produces a recordset.
+
+                    // Better approach for scripts: Execute them in a way that the final SELECT
+                    // goes into the temp table. We can do this by injecting:
+                    // "SELECT * INTO ##TableName FROM (...final query...)"
+
+                    // For very complex scripts, suggest the user use a simpler pattern or VIEW.
+                    // But let's try executing directly first:
+
+                    const result = await pool.request().query(sourceQuery);
+
+                    if (result.recordset && result.recordset.length > 0) {
+                        // We got data! Now put it into a temp table
+                        // Create table structure from first row
+                        const columns = Object.keys(result.recordset[0]);
+
+                        // Build CREATE TABLE statement
+                        const colDefs = columns.map(col => {
+                            const val = result.recordset[0][col];
+                            let colType = 'NVARCHAR(MAX)';
+                            if (typeof val === 'number') {
+                                colType = Number.isInteger(val) ? 'BIGINT' : 'DECIMAL(18,4)';
+                            } else if (val instanceof Date) {
+                                colType = 'DATETIME';
+                            }
+                            return `[${col}] ${colType}`;
+                        }).join(', ');
+
+                        await pool.request().query(`CREATE TABLE ${tempTableName} (${colDefs});`);
+                        createdTempTables.push(tempTableName);
+
+                        // Insert data in batches
+                        const batchSize = 100;
+                        for (let i = 0; i < result.recordset.length; i += batchSize) {
+                            const batch = result.recordset.slice(i, i + batchSize);
+                            const values = batch.map(row => {
+                                const vals = columns.map(col => {
+                                    const v = row[col];
+                                    if (v === null || v === undefined) return 'NULL';
+                                    if (typeof v === 'number') return v.toString();
+                                    if (v instanceof Date) return `'${v.toISOString()}'`;
+                                    return `N'${String(v).replace(/'/g, "''")}'`;
+                                }).join(', ');
+                                return `(${vals})`;
+                            }).join(', ');
+
+                            await pool.request().query(`INSERT INTO ${tempTableName} VALUES ${values};`);
+                        }
+
+                        console.log(`[PIPELINE] Created ${tempTableName} with ${result.recordset.length} rows`);
+                    } else {
+                        console.warn(`[PIPELINE] Source query for ${dep.tableName} returned no data.`);
+                    }
+
+                } catch (depError) {
+                    console.error(`[PIPELINE] Error materializing ${dep.tableName}:`, depError);
+                    throw new Error(`Errore nell'esecuzione della dipendenza "${dep.tableName}": ${depError instanceof Error ? depError.message : 'Errore sconosciuto'}`);
+                }
+            }
+        }
+
+        // Execute main query
+        let finalQuery = query.trim();
+
+        // Replace pipeline table references with global temp table names
+        if (pipelineDependencies) {
+            for (const dep of pipelineDependencies) {
+                // Replace "FROM TableName" with "FROM ##TableName"
+                const regex = new RegExp(`\\bFROM\\s+${dep.tableName}\\b`, 'gi');
+                finalQuery = finalQuery.replace(regex, `FROM ##${dep.tableName}`);
+                // Also replace "JOIN TableName" 
+                const joinRegex = new RegExp(`\\bJOIN\\s+${dep.tableName}\\b`, 'gi');
+                finalQuery = finalQuery.replace(joinRegex, `JOIN ##${dep.tableName}`);
+            }
+        }
+
+        console.log(`[PIPELINE] Executing main query...`);
         const result = await pool.request().query(finalQuery);
-        await pool.close();
 
         return { data: result.recordset, error: null };
 
@@ -996,6 +1102,26 @@ export async function executeSqlPreviewAction(query: string, connectorId?: strin
         const error = e instanceof Error ? e.message : "Errore durante l'esecuzione della query.";
         console.error("Execute SQL Preview Error:", e);
         return { data: null, error };
+    } finally {
+        // Cleanup temp tables
+        if (pool && createdTempTables.length > 0) {
+            try {
+                for (const tableName of createdTempTables) {
+                    await pool.request().query(`IF OBJECT_ID('tempdb..${tableName}') IS NOT NULL DROP TABLE ${tableName};`);
+                    console.log(`[PIPELINE] Dropped ${tableName}`);
+                }
+            } catch (cleanupError) {
+                console.warn("[PIPELINE] Cleanup error:", cleanupError);
+            }
+        }
+
+        if (pool) {
+            try {
+                await pool.close();
+            } catch (closeError) {
+                console.warn("[PIPELINE] Pool close error:", closeError);
+            }
+        }
     }
 }
 

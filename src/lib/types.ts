@@ -48,6 +48,7 @@ export interface DecisionLeaf {
   triggers?: TriggerItem[];
   sqlQuery?: string;
   sqlConnectorId?: string;
+  sqlResultName?: string;
 }
 
 export type SingleDecisionOptionChild = DecisionNode | DecisionLeaf | string | { ref: string, id?: string } | { subTreeRef: string, id?: string };
@@ -69,6 +70,7 @@ export interface DecisionNode {
   triggers?: TriggerItem[];
   sqlQuery?: string;
   sqlConnectorId?: string;
+  sqlResultName?: string;
   ref?: string;
   subTreeRef?: string;
 }

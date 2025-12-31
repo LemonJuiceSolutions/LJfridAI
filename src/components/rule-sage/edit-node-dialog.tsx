@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -16,6 +16,8 @@ import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
+  SelectGroup,
+  SelectLabel,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -42,6 +44,7 @@ interface EditNodeDialogProps {
   nodePath: string;
   treeId: string;
   isSaving: boolean;
+  availableInputTables?: { name: string, connectorId?: string, sqlQuery?: string }[];
 }
 
 type FileToUpload = {
@@ -60,6 +63,7 @@ export default function EditNodeDialog({
   nodePath,
   treeId,
   isSaving,
+  availableInputTables = [],
 }: EditNodeDialogProps) {
   const { toast } = useToast();
 
@@ -80,6 +84,8 @@ export default function EditNodeDialog({
   // SQL State
   const [sqlQuery, setSqlQuery] = useState('');
   const [sqlConnectorId, setSqlConnectorId] = useState<string>('');
+  const [sqlResultName, setSqlResultName] = useState('');
+  const [selectedPipeline, setSelectedPipeline] = useState<string | null>(null);
   const [sqlConnectors, setSqlConnectors] = useState<{ id: string, name: string }[]>([]);
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
 
@@ -96,6 +102,16 @@ export default function EditNodeDialog({
 
 
   const componentIsSaving = isSaving || internalSaving;
+
+  // Track if we've already done initial pipeline restoration to prevent re-running
+  const hasRestoredPipeline = useRef(false);
+
+  // Reset the ref when dialog closes
+  useEffect(() => {
+    if (!isOpen) {
+      hasRestoredPipeline.current = false;
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -146,20 +162,69 @@ export default function EditNodeDialog({
       setEditingMediaName(null);
 
       // Load SQL Query
-      if (node && 'sqlQuery' in node) {
-        setSqlQuery(node.sqlQuery || '');
-      } else {
-        setSqlQuery('');
-      }
+      const query = node.sqlQuery || '';
+      setSqlQuery(query);
       setSqlPreviewData(null);
-      if (node && 'sqlConnectorId' in node) {
-        setSqlConnectorId(node.sqlConnectorId || '');
+      const connId = node.sqlConnectorId || '';
+      setSqlConnectorId(connId);
+
+      // Debug: Log all relevant data
+      console.log('[EDIT-DIALOG] Loading node SQL data:', {
+        query,
+        connId,
+        availableTablesCount: availableInputTables?.length || 0,
+        availableTables: availableInputTables?.map(t => t.name) || [],
+        hasRestoredPipeline: hasRestoredPipeline.current
+      });
+
+      // Only try to restore pipeline selection ONCE per dialog open
+      // This prevents the useEffect from resetting user's selection when availableInputTables changes
+      if (!hasRestoredPipeline.current && availableInputTables && availableInputTables.length >= 0) {
+        hasRestoredPipeline.current = true;
+
+        // Try to restore pipeline selection visual state
+        if (query && availableInputTables.length > 0) {
+          // Check: is query exactly "SELECT * FROM TableName"?
+          const match = query.trim().match(/^SELECT \* FROM\s+(\S+)/i);
+          console.log('[EDIT-DIALOG] Query pattern match:', match);
+
+          if (match) {
+            const tableName = match[1].trim();
+            // Find the table in available ancestors (more lenient: just match name)
+            const foundTable = availableInputTables.find(t => t.name === tableName);
+            console.log('[EDIT-DIALOG] Looking for table:', tableName, 'Found:', foundTable);
+
+            if (foundTable) {
+              // Restore both visual selection AND connector if needed
+              const pipelineValue = `pipeline:${foundTable.name}:${foundTable.connectorId || ''}`;
+              setSelectedPipeline(pipelineValue);
+              console.log('[EDIT-DIALOG] Setting selectedPipeline to:', pipelineValue);
+
+              if (foundTable.connectorId && !connId) {
+                setSqlConnectorId(foundTable.connectorId);
+              }
+            } else {
+              setSelectedPipeline(null);
+              console.log('[EDIT-DIALOG] Table not found in ancestors, clearing selection');
+            }
+          } else {
+            setSelectedPipeline(null);
+            console.log('[EDIT-DIALOG] Query does not match SELECT * FROM pattern');
+          }
+        } else {
+          setSelectedPipeline(null);
+          console.log('[EDIT-DIALOG] No query or no available tables, clearing selection');
+        }
+      }
+
+      if (node && 'sqlResultName' in node) {
+        setSqlResultName(node.sqlResultName || '');
       } else {
-        setSqlConnectorId('');
+        setSqlResultName('');
       }
 
     }
-  }, [isOpen, initialNode, nodeType]);
+  }, [isOpen, initialNode, nodeType, availableInputTables]);
 
   // Load Connectors
   useEffect(() => {
@@ -358,6 +423,7 @@ export default function EditNodeDialog({
           triggers: triggers.length > 0 ? triggers : undefined,
           sqlQuery: sqlQuery.trim() || undefined,
           sqlConnectorId: sqlConnectorId || undefined,
+          sqlResultName: sqlResultName.trim() || undefined,
         };
       } else if (nodeType === 'question' && 'option' in initialNode) {
         newNodeData = { option: optionText };
@@ -370,6 +436,7 @@ export default function EditNodeDialog({
           triggers: triggers.length > 0 ? triggers : undefined,
           sqlQuery: sqlQuery.trim() || undefined,
           sqlConnectorId: sqlConnectorId || undefined,
+          sqlResultName: sqlResultName.trim() || undefined,
         };
       }
 
@@ -771,16 +838,50 @@ export default function EditNodeDialog({
                     <div className="flex flex-col gap-3 min-w-0 w-full">
                       {/* Connector Selector */}
                       <div className="flex flex-col gap-1">
-                        <Label className="text-xs text-muted-foreground">Database</Label>
-                        <Select value={sqlConnectorId} onValueChange={setSqlConnectorId} disabled={componentIsSaving}>
+                        <Label className="text-xs text-muted-foreground">Database / Sorgente</Label>
+                        <Select
+                          value={selectedPipeline || sqlConnectorId}
+                          onValueChange={(val) => {
+                            if (val.startsWith('pipeline:')) {
+                              // Handle Pipeline Table Selection
+                              const [_, tableName, originalConnectorId] = val.split(':');
+                              if (originalConnectorId) setSqlConnectorId(originalConnectorId);
+                              setSelectedPipeline(val); // Keep visual selection
+                              setSqlQuery(`SELECT * FROM ${tableName}`);
+                              toast({
+                                title: "Sorgente Impostata",
+                                description: `DB impostato su ${originalConnectorId} e query su ${tableName}`,
+                              });
+                            } else {
+                              // Handle Standard Connector Selection
+                              setSqlConnectorId(val);
+                              setSelectedPipeline(null); // Clear pipeline selection
+                            }
+                          }}
+                          disabled={componentIsSaving}
+                        >
                           <SelectTrigger className="h-8 max-w-[200px]">
                             <SelectValue placeholder="Seleziona DB..." />
                           </SelectTrigger>
                           <SelectContent>
-                            {sqlConnectors.map(c => (
-                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                            ))}
-                            {sqlConnectors.length === 0 && <SelectItem value="_none" disabled>Nessun DB SQL Trovato</SelectItem>}
+                            <SelectGroup>
+                              <SelectLabel>Database</SelectLabel>
+                              {sqlConnectors.map(c => (
+                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                              ))}
+                              {sqlConnectors.length === 0 && <SelectItem value="_none" disabled>Nessun DB SQL Trovato</SelectItem>}
+                            </SelectGroup>
+
+                            {availableInputTables.length > 0 && (
+                              <SelectGroup>
+                                <SelectLabel>Tabelle Pipeline</SelectLabel>
+                                {availableInputTables.map((t, idx) => (
+                                  <SelectItem key={`pipe-${idx}`} value={`pipeline:${t.name}:${t.connectorId || ''}`}>
+                                    {t.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>
@@ -842,26 +943,68 @@ export default function EditNodeDialog({
                         className="font-mono text-xs h-24 bg-background/80"
                       />
 
+                      <div className="flex flex-col gap-1">
+                        <Label className="text-xs text-muted-foreground">Nome Tabella di Output (Opzionale)</Label>
+                        <Input
+                          placeholder="Es. ClientiAttivi"
+                          value={sqlResultName}
+                          onChange={(e) => setSqlResultName(e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                        <p className="text-[10px] text-muted-foreground">Dai un nome a questa tabella per usarla come input in altre query successive.</p>
+                      </div>
+
                       <div className="flex justify-end">
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
                           className="text-xs border-indigo-200"
-                          disabled={!sqlConnectorId}
+                          disabled={!sqlConnectorId && !selectedPipeline}
                           onClick={async () => {
                             if (!sqlQuery.trim()) return;
-                            if (!sqlConnectorId) {
+
+                            // Get connectorId from pipeline if not set directly
+                            let effectiveConnectorId = sqlConnectorId;
+                            if (!effectiveConnectorId && selectedPipeline && selectedPipeline.startsWith('pipeline:')) {
+                              const [_, tableName] = selectedPipeline.split(':');
+                              const sourceTable = availableInputTables.find(t => t.name === tableName);
+                              if (sourceTable?.connectorId) {
+                                effectiveConnectorId = sourceTable.connectorId;
+                                setSqlConnectorId(effectiveConnectorId); // Also update state
+                              }
+                            }
+
+                            if (!effectiveConnectorId) {
                               toast({ title: 'Seleziona un Database', variant: 'destructive' });
                               return;
                             }
                             setInternalSaving(true);
                             try {
-                              // const { executeSqlPreviewAction } = await import('@/app/actions');
-                              const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId);
+                              // Build Pipeline Dependencies
+                              let pipelineDeps: { tableName: string, query: string }[] = [];
+
+                              if (selectedPipeline && selectedPipeline.startsWith('pipeline:')) {
+                                const [_, tableName] = selectedPipeline.split(':');
+                                const sourceTable = availableInputTables.find(t => t.name === tableName);
+
+                                if (sourceTable && sourceTable.sqlQuery) {
+                                  pipelineDeps.push({
+                                    tableName: sourceTable.name,
+                                    query: sourceTable.sqlQuery
+                                  });
+                                  console.log("Pipeline Dependencies:", pipelineDeps);
+                                }
+                              }
+
+                              // Execute with dependencies (backend handles sequential execution)
+                              const res = await executeSqlPreviewAction(
+                                sqlQuery,
+                                effectiveConnectorId,
+                                pipelineDeps.length > 0 ? pipelineDeps : undefined
+                              );
+
                               if (res.data) {
-                                // Show data - for now simple alert or maybe a small dialog inside?
-                                // Let's use a simple way first: set a state to show below.
                                 setSqlPreviewData(res.data);
                               } else {
                                 toast({ title: 'Errore esecuzione', description: res.error || 'Errore', variant: 'destructive' });
@@ -887,7 +1030,7 @@ export default function EditNodeDialog({
                             <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setSqlPreviewData(null)}><X className="h-3 w-3" /></Button>
                           </div>
                           <div className="bg-background w-full">
-                            <DataTable data={sqlPreviewData} className="max-h-[300px] w-full" />
+                            <DataTable data={sqlPreviewData} className="w-full" />
                           </div>
                         </div>
                       )}
