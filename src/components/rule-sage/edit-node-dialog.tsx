@@ -43,6 +43,69 @@ import { uploadFile } from '@/lib/storage-client';
 import Image from 'next/image';
 import { ScrollArea } from '../ui/scroll-area';
 import { DataTable } from '../ui/data-table';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+
+const CollapsibleSection = ({
+  title,
+  count = 0,
+  storageKey,
+  children,
+  icon: Icon
+}: {
+  title: string,
+  count?: number,
+  storageKey: string,
+  children: React.ReactNode,
+  icon?: any
+}) => {
+  // Default to open if has items, closed if empty - UNLESS a user preference is saved
+  const [isOpen, setIsOpen] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  useEffect(() => {
+    const savedState = localStorage.getItem(storageKey);
+    if (savedState !== null) {
+      setIsOpen(savedState === 'true');
+    } else {
+      // Default rule: open if has items, closed otherwise
+      setIsOpen(count > 0);
+    }
+    setHasLoaded(true);
+  }, [storageKey, count]);
+
+  const toggle = () => {
+    const newState = !isOpen;
+    setIsOpen(newState);
+    localStorage.setItem(storageKey, String(newState));
+  };
+
+  if (!hasLoaded) return null; // Avoid hydration mismatch or flash
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={toggle} className="border border-border/50 rounded-lg overflow-hidden bg-white dark:bg-zinc-900/50">
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" className="w-full flex items-center justify-between p-3 h-auto hover:bg-muted/50 rounded-none">
+          <div className="flex items-center gap-2">
+            {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
+            <span className="font-medium text-sm">{title}</span>
+            {count > 0 && (
+              <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                {count}
+              </span>
+            )}
+          </div>
+          {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="p-3 pt-0 border-t border-border/50 bg-muted/10">
+          {children}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+};
 
 interface EditNodeDialogProps {
   isOpen: boolean;
@@ -219,9 +282,10 @@ export default function EditNodeDialog({
 
       // Also restore pipeline selection if needed (this logic is safe to run inside the initialization block)
       if (availableInputTables && availableInputTables.length >= 0) {
-
-        // Try to restore pipeline selection visual state
-        if (query && availableInputTables.length > 0) {
+        if ('selectedPipelines' in node && Array.isArray((node as any).selectedPipelines)) {
+          setSelectedPipelines((node as any).selectedPipelines);
+        } else if (query && availableInputTables.length > 0) {
+          // Fallback: Try to restore pipeline selection visual state from query regex
           const foundPipelines: string[] = [];
 
           // scan query for table names
@@ -230,7 +294,7 @@ export default function EditNodeDialog({
             // We use a regex to ensure whole word match to avoid partial matches
             const regex = new RegExp(`\\b${t.name}\\b`, 'i');
             if (regex.test(query)) {
-              foundPipelines.push(`pipeline:${t.name}:${t.connectorId || ''}`);
+              foundPipelines.push(t.name);
 
               // If we found a pipeline table and no connector is set, set it from the first one found
               if (t.connectorId && !connId) {
@@ -241,9 +305,7 @@ export default function EditNodeDialog({
 
           if (foundPipelines.length > 0) {
             setSelectedPipelines(foundPipelines);
-            console.log('[EDIT-DIALOG] Restored pipelines:', foundPipelines);
-          } else {
-            console.log('[EDIT-DIALOG] No pipeline tables found in query');
+            console.log('[EDIT-DIALOG] Restored pipelines from query:', foundPipelines);
           }
         }
       }
@@ -480,10 +542,17 @@ export default function EditNodeDialog({
           newNodeData.sqlQuery = sqlQuery.trim();
           newNodeData.sqlConnectorId = sqlConnectorId || undefined;
           newNodeData.sqlResultName = sqlResultName.trim() || undefined;
+
+          if (selectedPipelines.length > 0) {
+            newNodeData.selectedPipelines = selectedPipelines;
+          } else {
+            delete newNodeData.selectedPipelines;
+          }
         } else {
           delete newNodeData.sqlQuery;
           delete newNodeData.sqlConnectorId;
           delete newNodeData.sqlResultName;
+          delete newNodeData.selectedPipelines;
         }
 
       } else if (currentNodeType === 'decision') {
@@ -507,10 +576,17 @@ export default function EditNodeDialog({
           newNodeData.sqlQuery = sqlQuery.trim();
           newNodeData.sqlConnectorId = sqlConnectorId || undefined;
           newNodeData.sqlResultName = sqlResultName.trim() || undefined;
+
+          if (selectedPipelines.length > 0) {
+            newNodeData.selectedPipelines = selectedPipelines;
+          } else {
+            delete newNodeData.selectedPipelines;
+          }
         } else {
           delete newNodeData.sqlQuery;
           delete newNodeData.sqlConnectorId;
           delete newNodeData.sqlResultName;
+          delete newNodeData.selectedPipelines;
         }
 
       } else if ('option' in initialNode) {
@@ -729,515 +805,494 @@ export default function EditNodeDialog({
                 </div>
               )}
 
-              {/* Links, Triggers and Media Section for Question and Decision (but NOT for options) */}
-              {((currentNodeType === 'question' && !('option' in initialNode)) || currentNodeType === 'decision') && (
-                <div className="space-y-4">
-                  {/* --- Links Section --- */}
-                  <div className="space-y-2 p-3 border border-primary/50 rounded-lg">
-                    <Label className='flex items-center gap-2 text-primary font-semibold'>
-                      <LinkIcon className='h-4 w-4' />
-                      Links
-                    </Label>
-                    <div className='space-y-2'>
-                      <div className='space-y-1 max-h-36 overflow-y-auto bg-muted/50 rounded-md p-1'>
-                        {links.map((link, index) => {
-                          const isEditing = editingLinkIndex === index;
-                          return (
-                            <div key={index} className="flex items-center gap-2 p-1.5 rounded-md bg-background/50 hover:bg-background">
-                              {isEditing && editingLink ? (
-                                <div className='flex-1 min-w-0 space-y-2'>
-                                  <Input
-                                    value={editingLink.name}
-                                    onChange={e => setEditingLink({ ...editingLink, name: e.target.value })}
-                                    className="h-8 text-xs"
-                                    placeholder="Nome link..."
-                                    disabled={componentIsSaving}
-                                  />
-                                  <Input
-                                    value={editingLink.url}
-                                    onChange={e => setEditingLink({ ...editingLink, url: e.target.value })}
-                                    className="h-8 text-xs"
-                                    placeholder="https://..."
-                                    disabled={componentIsSaving}
-                                  />
-                                </div>
-                              ) : (
-                                <div className='flex-1 min-w-0'>
-                                  <p className='truncate text-sm font-medium'>{link.name}</p>
-                                  <p className='text-xs text-muted-foreground' style={{ wordBreak: 'break-all' }}>{link.url}</p>
-                                </div>
-                              )}
-                              <div className='flex items-center'>
-                                {isEditing ? (
-                                  <>
-                                    <Button variant="ghost" size="icon" onClick={handleSaveEditLink} className="h-8 w-8 text-green-600 hover:text-green-700" title="Salva" disabled={componentIsSaving}>
-                                      <Check className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" onClick={handleCancelEditLink} className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Annulla" disabled={componentIsSaving}>
-                                      <X className="h-4 w-4" />
-                                    </Button>
-                                  </>
-                                ) : (
-                                  <>
-                                    <a href={link.url} target="_blank" rel="noopener noreferrer">
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Apri link">
-                                        <LinkIcon className="h-4 w-4" />
-                                      </Button>
-                                    </a>
-                                    <Button variant="ghost" size="icon" onClick={() => handleStartEditLink(index)} className="h-8 w-8 text-muted-foreground" title="Modifica" disabled={componentIsSaving}>
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" onClick={() => handleRemoveLink(index)} className="h-8 w-8 text-destructive" title="Rimuovi" disabled={componentIsSaving}>
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </>
-                                )}
-                              </div>
+              {/* Links Section */}
+              <CollapsibleSection
+                title="Links"
+                count={links.length}
+                storageKey={`collapse-links-${treeId}-${nodePath}`}
+                icon={LinkIcon}
+              >
+                <div className="space-y-2 pt-2">
+                  <div className='space-y-1 max-h-36 overflow-y-auto bg-muted/50 rounded-md p-1'>
+                    {links.map((link, index) => {
+                      const isEditing = editingLinkIndex === index;
+                      return (
+                        <div key={index} className="flex items-center gap-2 p-1.5 rounded-md bg-background/50 hover:bg-background">
+                          {isEditing && editingLink ? (
+                            <div className='flex-1 min-w-0 space-y-2'>
+                              <Input
+                                value={editingLink.name}
+                                onChange={e => setEditingLink({ ...editingLink, name: e.target.value })}
+                                className="h-8 text-xs"
+                                placeholder="Nome link..."
+                                disabled={componentIsSaving}
+                              />
+                              <Input
+                                value={editingLink.url}
+                                onChange={e => setEditingLink({ ...editingLink, url: e.target.value })}
+                                className="h-8 text-xs"
+                                placeholder="https://..."
+                                disabled={componentIsSaving}
+                              />
                             </div>
-                          );
-                        })}
-                        {links.length === 0 && (
-                          <p className='text-xs text-center text-muted-foreground py-2'>Nessun link allegato.</p>
-                        )}
-                      </div>
-                      <div className="flex gap-2 items-end">
-                        <div className="flex-1 grid grid-cols-2 gap-2">
-                          <Input
-                            value={newLinkName}
-                            onChange={e => setNewLinkName(e.target.value)}
-                            placeholder="Nome Link"
-                            disabled={componentIsSaving}
-                          />
-                          <Input
-                            value={newLinkUrl}
-                            onChange={e => setNewLinkUrl(e.target.value)}
-                            placeholder="https://..."
-                            disabled={componentIsSaving}
-                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddLink(); } }}
-                          />
-                        </div>
-                        <Button type="button" variant="outline" size="sm" onClick={handleAddLink} disabled={componentIsSaving || !newLinkName.trim() || !newLinkUrl.trim()} className="text-primary border-primary/50 hover:bg-primary/10 hover:text-primary">Aggiungi</Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* --- Triggers Section --- */}
-                  <div className="space-y-2 p-3 border border-primary/50 rounded-lg">
-                    <Label className='flex items-center gap-2 text-primary font-semibold'>
-                      <Zap className='h-4 w-4' />
-                      Triggers
-                    </Label>
-                    <div className='space-y-2'>
-                      <div className='space-y-1 max-h-36 overflow-y-auto bg-muted/50 rounded-md p-1'>
-                        {triggers.map((trigger, index) => {
-                          const isEditing = editingTriggerIndex === index;
-                          return (
-                            <div key={index} className="flex items-center gap-2 p-1.5 rounded-md bg-background/50 hover:bg-background">
-                              {isEditing && editingTrigger ? (
-                                <div className='flex-1 min-w-0 space-y-2'>
-                                  <Input
-                                    value={editingTrigger.name}
-                                    onChange={e => setEditingTrigger({ ...editingTrigger, name: e.target.value })}
-                                    className="h-8 text-xs"
-                                    placeholder="Nome trigger..."
-                                    disabled={componentIsSaving}
-                                  />
-                                  <Input
-                                    value={editingTrigger.path}
-                                    onChange={e => setEditingTrigger({ ...editingTrigger, path: e.target.value })}
-                                    className="h-8 text-xs"
-                                    placeholder="Path/ID trigger..."
-                                    disabled={componentIsSaving}
-                                  />
-                                </div>
-                              ) : (
-                                <div className='flex-1 min-w-0'>
-                                  <p className='truncate text-sm font-medium'>{trigger.name}</p>
-                                  <p className='text-xs text-muted-foreground break-all' style={{ wordBreak: 'break-all' }}>{trigger.path}</p>
-                                </div>
-                              )}
-                              <div className='flex items-center'>
-                                {isEditing ? (
-                                  <>
-                                    <Button variant="ghost" size="icon" onClick={handleSaveEditTrigger} className="h-8 w-8 text-green-600 hover:text-green-700" title="Salva" disabled={componentIsSaving}>
-                                      <Check className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" onClick={handleCancelEditTrigger} className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Annulla" disabled={componentIsSaving}>
-                                      <X className="h-4 w-4" />
-                                    </Button>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Button variant="ghost" size="icon" onClick={() => handleExecuteTrigger(trigger)} className="h-8 w-8 text-muted-foreground" title="Esegui Trigger">
-                                      <Zap className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" onClick={() => handleStartEditTrigger(index)} className="h-8 w-8 text-muted-foreground" title="Modifica" disabled={componentIsSaving}>
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" onClick={() => handleRemoveTrigger(index)} className="h-8 w-8 text-destructive" title="Rimuovi" disabled={componentIsSaving}>
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </>
-                                )}
-                              </div>
+                          ) : (
+                            <div className='flex-1 min-w-0'>
+                              <p className='truncate text-sm font-medium'>{link.name}</p>
+                              <p className='text-xs text-muted-foreground' style={{ wordBreak: 'break-all' }}>{link.url}</p>
                             </div>
-                          )
-                        })}
-                        {triggers.length === 0 && (
-                          <p className='text-xs text-center text-muted-foreground py-2'>Nessun trigger definito.</p>
-                        )}
-                      </div>
-                      <div className="flex gap-2 items-end">
-                        <div className="flex-1 grid grid-cols-2 gap-2">
-                          <Input
-                            value={newTriggerName}
-                            onChange={e => setNewTriggerName(e.target.value)}
-                            placeholder="Nome Trigger"
-                            disabled={componentIsSaving}
-                          />
-                          <Input
-                            value={newTriggerPath}
-                            onChange={e => setNewTriggerPath(e.target.value)}
-                            placeholder="Path/ID Trigger"
-                            disabled={componentIsSaving}
-                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTrigger(); } }}
-                          />
-                        </div>
-                        <Button type="button" variant="outline" size="sm" onClick={handleAddTrigger} disabled={componentIsSaving || !newTriggerName.trim() || !newTriggerPath.trim()} className="text-primary border-primary/50 hover:bg-primary/10 hover:text-primary">Aggiungi</Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* --- Media Section --- */}
-                  <div className="space-y-2 p-3 border border-primary/50 rounded-lg">
-                    <Label className='flex items-center gap-2 text-primary font-semibold'>
-                      <ImageIcon className='h-4 w-4' />
-                      Media (Immagini/Video, &lt;10MB)
-                    </Label>
-                    <div className='space-y-2'>
-                      <div className='space-y-1 max-h-48 overflow-y-auto bg-muted/50 rounded-md p-1'>
-                        {media.map((item, index) => (
-                          <MediaListItem
-                            key={`existing-${index}`}
-                            item={item}
-                            isUrl={true}
-                            index={index}
-                            onRemove={() => handleRemoveExistingMedia(index)}
-                            onPreview={() => setPreviewingMedia(item)}
-                          />
-                        ))}
-                        {filesToUpload.map((fileItem, index) => (
-                          <MediaListItem
-                            key={`new-${index}`}
-                            item={fileItem}
-                            isUrl={false}
-                            index={index}
-                            onRemove={() => handleRemoveNewFile(index)}
-                            onPreview={() => setPreviewingMedia({ url: URL.createObjectURL(fileItem.file), type: fileItem.type })}
-                          />
-                        ))}
-                        {media.length === 0 && filesToUpload.length === 0 && (
-                          <p className='text-xs text-center text-muted-foreground py-4'>Nessun media allegato.</p>
-                        )}
-                      </div>
-                      <div className="flex items-end">
-                        <Label htmlFor="media-upload" className="w-full">
-                          <Button asChild variant="outline" className="w-full text-primary border-primary/50 hover:bg-primary/10 hover:text-primary" disabled={componentIsSaving}>
-                            <span>Scegli File</span>
-                          </Button>
-                          <Input id="media-upload" type="file" accept="image/*,video/*" onChange={handleFileChange} disabled={componentIsSaving} multiple className='hidden' />
-                        </Label>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* --- SQL Query Section --- */}
-                  <div className="space-y-2 p-3 border border-primary/50 rounded-lg min-w-0 w-full max-w-[80vw] sm:max-w-[530px] overflow-hidden">
-                    <Label className='flex items-center gap-2 text-indigo-600 font-semibold'>
-                      <Database className='h-4 w-4' />
-                      Dati SQL (Anteprima & Pipeline)
-                    </Label>
-                    <div className="flex flex-col gap-3 min-w-0 w-full">
-                      {/* Connector Selector */}
-                      <div className="flex flex-col gap-2">
-                        <Label className="text-xs text-muted-foreground">Database Principale</Label>
-                        <Select
-                          value={sqlConnectorId}
-                          onValueChange={(val) => {
-                            setSqlConnectorId(val);
-                          }}
-                          disabled={componentIsSaving}
-                        >
-                          <SelectTrigger className="h-8 w-full">
-                            <SelectValue placeholder="Seleziona DB..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {sqlConnectors.map(c => (
-                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                            ))}
-                            {sqlConnectors.length === 0 && <SelectItem value="_none" disabled>Nessun DB SQL Trovato</SelectItem>}
-                          </SelectContent>
-                        </Select>
-
-                        {availableInputTables.length > 0 && (
-                          <div className="flex flex-col gap-2 p-2 border rounded-md bg-muted/20">
-                            <Label className="text-xs font-semibold text-muted-foreground">Tabelle Pipeline Disponibili (JOIN)</Label>
-                            <div className="grid grid-cols-2 gap-2">
-                              {availableInputTables.map((t, idx) => {
-                                const pipelineValue = `pipeline:${t.name}:${t.connectorId || ''}`;
-                                const isSelected = selectedPipelines.includes(pipelineValue);
-                                return (
-                                  <div key={`pipe-${idx}`} className="flex items-center space-x-2">
-                                    <input
-                                      type="checkbox"
-                                      id={`pipe-${idx}`}
-                                      checked={isSelected}
-                                      onChange={(e) => {
-                                        const checked = e.target.checked;
-                                        let newSelection = [...selectedPipelines];
-                                        if (checked) {
-                                          newSelection.push(pipelineValue);
-                                          // If this is the first selected pipeline and no DB is set, set DB
-                                          if (newSelection.length === 1 && !sqlConnectorId && t.connectorId) {
-                                            setSqlConnectorId(t.connectorId);
-                                          }
-                                          // Auto-update query if empty
-                                          if (!sqlQuery.trim()) {
-                                            setSqlQuery(`SELECT * FROM ${t.name}`);
-                                          } else if (checked) {
-                                            // Append join template if query exists
-                                            // setSqlQuery(prev => `${prev}\n-- JOIN ${t.name} ON ...`);
-                                          }
-                                        } else {
-                                          newSelection = newSelection.filter(v => v !== pipelineValue);
-                                        }
-                                        setSelectedPipelines(newSelection);
-                                      }}
-                                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                    />
-                                    <label htmlFor={`pipe-${idx}`} className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
-                                      {t.name}
-                                    </label>
-                                  </div>
-                                );
-                              })}
-                            </div>
+                          )}
+                          <div className='flex items-center'>
+                            {isEditing ? (
+                              <>
+                                <Button variant="ghost" size="icon" onClick={handleSaveEditLink} className="h-8 w-8 text-green-600 hover:text-green-700" title="Salva" disabled={componentIsSaving}>
+                                  <Check className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={handleCancelEditLink} className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Annulla" disabled={componentIsSaving}>
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <a href={link.url} target="_blank" rel="noopener noreferrer">
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Apri link">
+                                    <LinkIcon className="h-4 w-4" />
+                                  </Button>
+                                </a>
+                                <Button variant="ghost" size="icon" onClick={() => handleStartEditLink(index)} className="h-8 w-8 text-muted-foreground" title="Modifica" disabled={componentIsSaving}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => handleRemoveLink(index)} className="h-8 w-8 text-destructive" title="Rimuovi" disabled={componentIsSaving}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
                           </div>
-                        )}
-                      </div>
-
-                      <div className="flex gap-2 items-center">
-                        <Input
-                          placeholder="Descrivi cosa estrarre (es. 'Tutti i clienti attivi')"
-                          className="flex-1 text-sm bg-background/50"
-                          id="sql-prompt-input" // adding ID for easy access if needed
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          disabled={!sqlConnectorId && selectedPipelines.length === 0}
-                          onClick={async () => {
-                            const input = document.getElementById('sql-prompt-input') as HTMLInputElement;
-                            let desc = input?.value;
-                            if (!desc) {
-                              toast({ title: 'Inserisci una descrizione', variant: 'destructive' });
-                              return;
-                            }
-
-                            // Get connectorId from pipeline if not set directly
-                            let effectiveConnectorId = sqlConnectorId;
-                            // If no DB selected but pipelines are led, try to use first pipeline's DB
-                            if (!effectiveConnectorId && selectedPipelines.length > 0) {
-                              // Take the first one
-                              const firstPipe = selectedPipelines[0];
-                              const [_, tableName] = firstPipe.split(':');
-                              const sourceTable = availableInputTables.find(t => t.name === tableName);
-                              if (sourceTable?.connectorId) {
-                                effectiveConnectorId = sourceTable.connectorId;
-                                setSqlConnectorId(effectiveConnectorId);
-                              }
-                            }
-
-                            if (!effectiveConnectorId) {
-                              toast({ title: 'Seleziona un Database o una Pipeline', variant: 'destructive' });
-                              return;
-                            }
-
-                            // Append context about available pipeline tables to the prompt
-                            if (selectedPipelines.length > 0) {
-                              const selectedTableNames = selectedPipelines.map(p => p.split(':')[1]).join(', ');
-                              desc = `${desc}. Usa queste tabelle pipeline disponibili per fare JOIN se necessario: ${selectedTableNames}`;
-                            }
-
-                            // Extract table names from selected pipelines for schema context
-                            let formattedTables: string[] = [];
-                            if (selectedPipelines.length > 0) {
-                              formattedTables = selectedPipelines.map(p => {
-                                // p is "pipeline:TableName:ConnectorId"
-                                const parts = p.split(':');
-                                return parts[1];
-                              });
-                            }
-
-                            setInternalSaving(true);
-                            setAgentStatus("🕵️ Analisi Schema...");
-
-                            try {
-                              const apiKey = localStorage.getItem('openrouter_api_key');
-                              const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
-
-                              // Step 1: Fetch Schema
-                              let schemaContext: string | undefined = undefined;
-                              if (selectedPipelines.length > 0) {
-                                const tableNames = selectedPipelines.map(p => p.split(':')[1]);
-                                const schemaRes = await fetchTableSchemaAction(effectiveConnectorId, tableNames);
-
-                                if (schemaRes.schemaContext) {
-                                  schemaContext = schemaRes.schemaContext;
-                                } else if (schemaRes.error) {
-                                  console.warn("Schema fetch error:", schemaRes.error);
-                                  // toast({ title: 'Info', description: 'Schema non disponibile, procedo...', variant: 'default' });
-                                }
-                              }
-
-                              // Step 2: Generate SQL
-                              setAgentStatus("🧠 Generazione Query...");
-
-                              const res = await generateSqlAction(desc, apiKey ? { apiKey, model } : undefined, effectiveConnectorId, schemaContext);
-                              console.log('[GEN-SQL] Response:', res);
-
-                              if (res.sql) {
-                                setSqlQuery(res.sql);
-                                toast({ title: 'Query Generata!', description: 'Controlla la console per i dettagli' });
-                              } else {
-                                toast({ title: 'Errore generazione', description: res.error || 'Unknown', variant: 'destructive' });
-                              }
-                            } catch (e) {
-                              console.error(e);
-                              toast({ title: 'Errore', variant: 'destructive' });
-                            } finally {
-                              setInternalSaving(false);
-                              setAgentStatus(null);
-                            }
-                          }}
-                        >
-                          <Bot className="mr-2 h-3 w-3" />
-                          Genera SQL
-                        </Button>
-                      </div>
-
-                      <Textarea
-                        value={sqlQuery}
-                        onChange={(e) => setSqlQuery(e.target.value)}
-                        placeholder="SELECT * FROM ..."
-                        className="font-mono text-xs h-24 bg-background/80"
+                        </div>
+                      );
+                    })}
+                    {links.length === 0 && (
+                      <p className='text-xs text-center text-muted-foreground py-2'>Nessun link allegato.</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1 grid grid-cols-2 gap-2">
+                      <Input
+                        value={newLinkName}
+                        onChange={e => setNewLinkName(e.target.value)}
+                        placeholder="Nome Link"
+                        disabled={componentIsSaving}
+                        className="h-8 text-xs"
                       />
+                      <Input
+                        value={newLinkUrl}
+                        onChange={e => setNewLinkUrl(e.target.value)}
+                        placeholder="https://..."
+                        disabled={componentIsSaving}
+                        className="h-8 text-xs"
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddLink(); } }}
+                      />
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={handleAddLink} disabled={componentIsSaving || !newLinkName.trim() || !newLinkUrl.trim()} className="text-primary border-primary/50 hover:bg-primary/10 hover:text-primary h-8">Aggiungi</Button>
+                  </div>
+                </div>
+              </CollapsibleSection>
 
-                      <div className="flex flex-col gap-1">
-                        <Label className="text-xs text-muted-foreground">Nome Tabella di Output (Opzionale)</Label>
-                        <Input
-                          placeholder="Es. ClientiAttivi"
-                          value={sqlResultName}
-                          onChange={(e) => setSqlResultName(e.target.value)}
-                          className="h-8 text-sm"
-                        />
-                        <p className="text-[10px] text-muted-foreground">Dai un nome a questa tabella per usarla come input in altre query successive.</p>
-                      </div>
-
-                      <div className="flex justify-end">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="text-xs border-indigo-200"
-                          disabled={!sqlConnectorId && selectedPipelines.length === 0}
-                          onClick={async () => {
-                            if (!sqlQuery.trim()) return;
-
-                            // Get connectorId from pipeline if not set directly
-                            let effectiveConnectorId = sqlConnectorId;
-                            // If no DB selected but pipelines are led, try to use first pipeline's DB
-                            if (!effectiveConnectorId && selectedPipelines.length > 0) {
-                              // Take the first one
-                              const firstPipe = selectedPipelines[0];
-                              const [_, tableName] = firstPipe.split(':');
-                              const sourceTable = availableInputTables.find(t => t.name === tableName);
-                              if (sourceTable?.connectorId) {
-                                effectiveConnectorId = sourceTable.connectorId;
-                                setSqlConnectorId(effectiveConnectorId);
-                              }
-                            }
-
-                            if (!effectiveConnectorId) {
-                              toast({ title: 'Seleziona un Database', variant: 'destructive' });
-                              return;
-                            }
-                            setInternalSaving(true);
-                            try {
-                              // Build Pipeline Dependencies
-                              let pipelineDeps: { tableName: string, query: string }[] = [];
-
-                              if (selectedPipelines.length > 0) {
-                                selectedPipelines.forEach(pipeStr => {
-                                  const [_, tableName] = pipeStr.split(':');
-                                  const sourceTable = availableInputTables.find(t => t.name === tableName);
-
-                                  if (sourceTable && sourceTable.sqlQuery) {
-                                    pipelineDeps.push({
-                                      tableName: sourceTable.name,
-                                      query: sourceTable.sqlQuery
-                                    });
-                                  }
-                                });
-                                console.log("Pipeline Dependencies:", pipelineDeps);
-                              }
-
-                              // Execute with dependencies (backend handles sequential execution)
-                              const res = await executeSqlPreviewAction(
-                                sqlQuery,
-                                effectiveConnectorId,
-                                pipelineDeps.length > 0 ? pipelineDeps : undefined
-                              );
-
-                              if (res.data) {
-                                setSqlPreviewData(res.data);
-                              } else {
-                                toast({ title: 'Errore esecuzione', description: res.error || 'Errore', variant: 'destructive' });
-                              }
-                            } catch (e) {
-                              toast({ title: 'Errore critico', variant: 'destructive' });
-                            } finally {
-                              setInternalSaving(false);
-                            }
-                          }}
-                        >
-                          Esegui Anteprima
-                        </Button>
-                      </div>
-
-                      {sqlPreviewData && (
-                        <div className="mt-2 text-xs border rounded-md overflow-hidden bg-background w-full max-w-full grid grid-cols-1">
-                          <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
-                            <span className="font-semibold text-xs flex items-center gap-2">
-                              <Database className="h-3 w-3" />
-                              Risultati Anteprima
-                            </span>
-                            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setSqlPreviewData(null)}><X className="h-3 w-3" /></Button>
+              {/* Triggers Section */}
+              <CollapsibleSection
+                title="Triggers"
+                count={triggers.length}
+                storageKey={`collapse-triggers-${treeId}-${nodePath}`}
+                icon={Zap}
+              >
+                <div className="space-y-2 pt-2">
+                  <div className='space-y-1 max-h-36 overflow-y-auto bg-muted/50 rounded-md p-1'>
+                    {triggers.map((trigger, index) => {
+                      const isEditing = editingTriggerIndex === index;
+                      return (
+                        <div key={index} className="flex items-center gap-2 p-1.5 rounded-md bg-background/50 hover:bg-background">
+                          {isEditing && editingTrigger ? (
+                            <div className='flex-1 min-w-0 space-y-2'>
+                              <Input
+                                value={editingTrigger.name}
+                                onChange={e => setEditingTrigger({ ...editingTrigger, name: e.target.value })}
+                                className="h-8 text-xs"
+                                placeholder="Nome trigger..."
+                                disabled={componentIsSaving}
+                              />
+                              <Input
+                                value={editingTrigger.path}
+                                onChange={e => setEditingTrigger({ ...editingTrigger, path: e.target.value })}
+                                className="h-8 text-xs"
+                                placeholder="Path/ID trigger..."
+                                disabled={componentIsSaving}
+                              />
+                            </div>
+                          ) : (
+                            <div className='flex-1 min-w-0'>
+                              <p className='truncate text-sm font-medium'>{trigger.name}</p>
+                              <p className='text-xs text-muted-foreground break-all' style={{ wordBreak: 'break-all' }}>{trigger.path}</p>
+                            </div>
+                          )}
+                          <div className='flex items-center'>
+                            {isEditing ? (
+                              <>
+                                <Button variant="ghost" size="icon" onClick={handleSaveEditTrigger} className="h-8 w-8 text-green-600 hover:text-green-700" title="Salva" disabled={componentIsSaving}>
+                                  <Check className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={handleCancelEditTrigger} className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Annulla" disabled={componentIsSaving}>
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button variant="ghost" size="icon" onClick={() => handleExecuteTrigger(trigger)} className="h-8 w-8 text-muted-foreground" title="Esegui Trigger">
+                                  <Zap className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => handleStartEditTrigger(index)} className="h-8 w-8 text-muted-foreground" title="Modifica" disabled={componentIsSaving}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => handleRemoveTrigger(index)} className="h-8 w-8 text-destructive" title="Rimuovi" disabled={componentIsSaving}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
                           </div>
-                          <div className="bg-background w-full">
-                            <DataTable data={sqlPreviewData} className="w-full" />
+                        </div>
+                      )
+                    })}
+                    {triggers.length === 0 && (
+                      <p className='text-xs text-center text-muted-foreground py-2'>Nessun trigger definito.</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1 grid grid-cols-2 gap-2">
+                      <Input
+                        value={newTriggerName}
+                        onChange={e => setNewTriggerName(e.target.value)}
+                        placeholder="Nome Trigger"
+                        disabled={componentIsSaving}
+                        className="h-8 text-xs"
+                      />
+                      <Input
+                        value={newTriggerPath}
+                        onChange={e => setNewTriggerPath(e.target.value)}
+                        placeholder="Path/ID Trigger"
+                        disabled={componentIsSaving}
+                        className="h-8 text-xs"
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTrigger(); } }}
+                      />
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={handleAddTrigger} disabled={componentIsSaving || !newTriggerName.trim() || !newTriggerPath.trim()} className="text-primary border-primary/50 hover:bg-primary/10 hover:text-primary h-8">Aggiungi</Button>
+                  </div>
+                </div>
+              </CollapsibleSection>
+
+              {/* Media Section */}
+              <CollapsibleSection
+                title="Media"
+                count={media.length + filesToUpload.length}
+                storageKey={`collapse-media-${treeId}-${nodePath}`}
+                icon={ImageIcon}
+              >
+                <div className='space-y-2 pt-2'>
+                  <div className='space-y-1 max-h-48 overflow-y-auto bg-muted/50 rounded-md p-1'>
+                    {media.map((item, index) => (
+                      <MediaListItem
+                        key={`existing-${index}`}
+                        item={item}
+                        isUrl={true}
+                        index={index}
+                        onRemove={() => handleRemoveExistingMedia(index)}
+                        onPreview={() => setPreviewingMedia(item)}
+                      />
+                    ))}
+                    {filesToUpload.map((fileItem, index) => (
+                      <MediaListItem
+                        key={`new-${index}`}
+                        item={fileItem}
+                        isUrl={false}
+                        index={index}
+                        onRemove={() => handleRemoveNewFile(index)}
+                        onPreview={() => setPreviewingMedia({ url: URL.createObjectURL(fileItem.file), type: fileItem.type })}
+                      />
+                    ))}
+                    {media.length === 0 && filesToUpload.length === 0 && (
+                      <p className='text-xs text-center text-muted-foreground py-4'>Nessun media allegato.</p>
+                    )}
+                  </div>
+                  <div className="flex items-end">
+                    <Label htmlFor="media-upload" className="w-full cursor-pointer">
+                      <div className="w-full text-primary border border-primary/50 hover:bg-primary/10 hover:text-primary rounded-md h-9 flex items-center justify-center text-sm font-medium transition-colors">
+                        Scegli File
+                      </div>
+                      <Input id="media-upload" type="file" accept="image/*,video/*" onChange={handleFileChange} disabled={componentIsSaving} multiple className='hidden' />
+                    </Label>
+                  </div>
+                </div>
+              </CollapsibleSection>
+
+
+              {/* SQL Generation with Chatbot UI */}
+              <CollapsibleSection
+                title="Dati e Integrazioni SQL"
+                count={sqlQuery ? 1 : 0}
+                storageKey={`collapse-sql-${treeId}-${nodePath}`}
+                icon={Database}
+              >
+                <div className="grid gap-4 pt-3">
+                  {/* Connector Selection */}
+                  <div className="grid gap-2">
+                    <Label>Connettore Database</Label>
+                    <Select value={sqlConnectorId} onValueChange={setSqlConnectorId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleziona un Database..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sqlConnectors.map((c: any) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Pipeline Selection (Moved Up) */}
+                  {availableInputTables && availableInputTables.length > 0 && (
+                    <div className="grid gap-2 p-3 bg-muted/20 rounded-lg border border-dashed">
+                      <Label className="text-xs font-semibold uppercase text-muted-foreground">Usa Risultati Da (Pipeline)</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {availableInputTables.map(t => (
+                          <div key={t.name} className="flex items-center space-x-2 bg-white dark:bg-zinc-800 p-1.5 px-2.5 rounded-full border shadow-sm">
+                            <Check
+                              className={`h-3 w-3 cursor-pointer ${selectedPipelines.includes(t.name) ? 'text-primary' : 'text-muted-foreground/30'}`}
+                              onClick={() => {
+                                if (selectedPipelines.includes(t.name)) {
+                                  setSelectedPipelines(prev => prev.filter(p => p !== t.name));
+                                } else {
+                                  setSelectedPipelines(prev => [...prev, t.name]);
+                                }
+                              }}
+                            />
+                            <Label className="text-xs cursor-pointer" onClick={() => {
+                              if (selectedPipelines.includes(t.name)) {
+                                setSelectedPipelines(prev => prev.filter(p => p !== t.name));
+                              } else {
+                                setSelectedPipelines(prev => [...prev, t.name]);
+                              }
+                            }}>{t.name}</Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Enhanced Chatbot UI for Generation */}
+                  <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col">
+                    {/* Chat Header */}
+                    <div className="bg-muted/50 p-2 px-3 border-b flex items-center justify-between">
+                      <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                        <Bot className="h-3.5 w-3.5" />
+                        AI Data Assistant
+                      </span>
+                      {agentStatus && (
+                        <div className="bg-background text-[10px] h-5 gap-1 flex items-center px-2 rounded-full border">
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                          {agentStatus.replace('...', '')}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Chat Body */}
+                    <div className="p-4 min-h-[100px] flex flex-col gap-3">
+                      {/* Intro */}
+                      <div className="flex gap-3">
+                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Bot className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
+                          <p>Ciao! Posso aiutarti a scrivere query SQL per i tuoi dati. Dimmi cosa ti serve estrarre.</p>
+                        </div>
+                      </div>
+
+                      {/* Active Status */}
+                      {agentStatus && (
+                        <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
+                          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Bot className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              <span>{agentStatus}</span>
+                            </div>
+                            <div className="h-1 bg-muted rounded-full overflow-hidden w-32">
+                              <div className="h-full bg-primary animate-pulse w-2/3" />
+                            </div>
                           </div>
                         </div>
                       )}
                     </div>
+
+                    {/* Input Area */}
+                    <div className="p-2 border-t bg-background flex gap-2">
+                      <Input
+                        placeholder="Descrivi cosa estrarre (es. 'Tutti i clienti attivi')"
+                        className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent"
+                        id="ai-prompt-input"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            // Trigger click on button
+                            const btn = document.getElementById('ai-send-btn');
+                            if (btn) btn.click();
+                          }
+                        }}
+                      />
+                      <Button
+                        id="ai-send-btn"
+                        size="sm"
+                        className="gap-2 rounded-lg"
+                        disabled={!!agentStatus}
+                        onClick={() => {
+                          const input = document.getElementById('ai-prompt-input') as HTMLInputElement;
+                          if (!input || !input.value) return;
+
+                          const userPrompt = input.value;
+                          // Get API key and model from local storage
+                          const apiKey = localStorage.getItem('openrouter_api_key') || '';
+                          const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+
+                          if (!apiKey) {
+                            toast({ variant: 'destructive', title: "Configurazione Mancante", description: "Imposta la chiave API nelle Impostazioni." });
+                            return;
+                          }
+
+                          setAgentStatus("Analisi Schema in corso...");
+
+                          // Fetch Schema with array args
+                          fetchTableSchemaAction(
+                            sqlConnectorId || '', // connectorId (string)
+                            selectedPipelines.map(p => p.split(':')[1]) // tableNames (string[])
+                          ).then((schemaRes) => {
+                            let schemaContext = schemaRes.schemaContext;
+
+                            // Continue even if schema error (maybe just no schema found)
+                            if (schemaRes.error) {
+                              console.warn("Schema fetch warning:", schemaRes.error);
+                            }
+
+                            setAgentStatus("Generazione Query SQL...");
+
+                            // Generate SQL with correct args
+                            generateSqlAction(
+                              userPrompt, // userDescription
+                              { apiKey, model }, // openRouterConfig
+                              sqlConnectorId, // connectorId
+                              schemaContext || undefined // schemaContextArgs
+                            ).then((res) => {
+                              if (res.sql) {
+                                setSqlQuery(res.sql);
+                                toast({ title: "SQL Generato!", description: "La query è stata scritta nell'editor." });
+                              } else {
+                                toast({ variant: 'destructive', title: "Errore AI", description: res.error || "Errore sconosciuto" });
+                              }
+                              setAgentStatus(null);
+                            });
+                          });
+                        }}
+                      >
+                        {agentStatus ? 'Elaborazione...' : 'Invia'}
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
+
+                  {/* SQL Editor & Preview */}
+                  <div className="grid gap-2">
+                    <Label>Query SQL</Label>
+                    <Textarea
+                      value={sqlQuery}
+                      onChange={(e) => setSqlQuery(e.target.value)}
+                      className="font-mono text-sm h-32"
+                      placeholder="SELECT * FROM ..."
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        if (!sqlQuery) {
+                          toast({ variant: 'destructive', title: "Errore", description: "Inserisci una query SQL prima di eseguire l'anteprima." });
+                          return;
+                        }
+                        setAgentStatus("Esecuzione Query...");
+
+                        // Build Dependencies for Execution
+                        let pipelineDeps: { tableName: string, query: string }[] = [];
+                        if (availableInputTables && availableInputTables.length > 0) {
+                          // Include ALL available tables as dependencies if they are referenced
+                          // Or better, include active pipelines? 
+                          // Current logic: Include EVERYTHING so user can query it? 
+                          // Or better: Filter based on `selectedPipelines`? 
+                          // Usually `availableInputTables` ARE the dependencies.
+                          pipelineDeps = availableInputTables.map(table => ({
+                            tableName: table.name,
+                            query: table.sqlQuery || ''
+                          })).filter(d => d.query !== '' && selectedPipelines.includes(d.tableName));
+
+                          // If logic requires *all* previous nodes to be available regardless of selection (implicit context), 
+                          // then we might need to change this. But assuming explicit selection is better.
+                          // Actually the user screenshot shows they selected "HR1".
+                        }
+
+                        executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps).then((res) => {
+                          setAgentStatus(null);
+                          if (res.data) {
+                            setSqlPreviewData(res.data);
+                            toast({ title: "Query Eseguita", description: `Estratti ${res.data.length} record.` });
+                          } else {
+                            toast({ variant: 'destructive', title: "Errore SQL", description: res.error || "Errore sconosciuto" });
+                          }
+                        });
+                      }}
+                      disabled={!!agentStatus}
+                    >
+                      {agentStatus === "Esecuzione Query..." ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                      Esegui Anteprima
+                    </Button>
+                  </div>
+
+                  {/* Data Preview Table */}
+                  {sqlPreviewData && (
+                    <div className="border rounded-md overflow-hidden max-w-full">
+                      <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
+                        <span className="font-semibold text-xs flex items-center gap-2">
+                          <Database className="h-3 w-3" />
+                          Risultati Anteprima
+                        </span>
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setSqlPreviewData(null)}><X className="h-3 w-3" /></Button>
+                      </div>
+                      <DataTable
+                        data={sqlPreviewData}
+                      />
+                    </div>
+                  )}
+
+                  <div className="grid gap-2">
+                    <Label>Nome Tabella Risultato (Opzionale)</Label>
+                    <Input
+                      value={sqlResultName}
+                      onChange={(e) => setSqlResultName(e.target.value)}
+                      placeholder="Es. ClientiAttivi (per riutilizzo in altri nodi)"
+                    />
+                    <p className="text-[10px] text-muted-foreground">Dai un nome a questa tabella per usarla come input nei nodi successivi (JOIN).</p>
+                  </div>
+
                 </div>
-              )}
-
-
+              </CollapsibleSection>
             </div>
+
           </ScrollArea>
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={componentIsSaving}>Annulla</Button>
             <Button onClick={handleSaveClick} disabled={!canSave}>
@@ -1245,11 +1300,12 @@ export default function EditNodeDialog({
               Salva Modifiche
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </DialogContent >
+      </Dialog >
 
       {/* Media Preview Dialog */}
-      <Dialog open={!!previewingMedia} onOpenChange={(open) => !open && setPreviewingMedia(null)}>
+      < Dialog open={!!previewingMedia
+      } onOpenChange={(open) => !open && setPreviewingMedia(null)}>
         <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Anteprima Media</DialogTitle>
@@ -1266,7 +1322,7 @@ export default function EditNodeDialog({
             <Button variant="outline" onClick={() => setPreviewingMedia(null)}>Chiudi</Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog >
 
       <AlertDialog open={!!pendingTypeChange} onOpenChange={(open) => !open && setPendingTypeChange(null)}>
         <AlertDialogContent>
@@ -1288,3 +1344,4 @@ export default function EditNodeDialog({
     </>
   );
 }
+
