@@ -14,6 +14,16 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Select,
   SelectContent,
   SelectGroup,
@@ -22,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot } from 'lucide-react';
+import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem } from '@/lib/types';
 import { Input } from '../ui/input';
@@ -66,6 +76,26 @@ export default function EditNodeDialog({
   availableInputTables = [],
 }: EditNodeDialogProps) {
   const { toast } = useToast();
+
+  // Local state for node type switching (Question <-> Decision)
+  const [currentNodeType, setCurrentNodeType] = useState<'question' | 'decision'>(nodeType);
+  const [pendingTypeChange, setPendingTypeChange] = useState<'question' | 'decision' | null>(null);
+
+  // Helper to request type change with confirmation
+  const requestTypeChange = (targetType: 'question' | 'decision') => {
+    if (currentNodeType === targetType) return;
+
+    // Always ask for confirmation as requested by user ("chiedimi conferma prima di procedere")
+    // Use pendingTypeChange to trigger the dialog
+    setPendingTypeChange(targetType);
+  };
+
+  const confirmTypeChange = () => {
+    if (pendingTypeChange) {
+      setCurrentNodeType(pendingTypeChange);
+      setPendingTypeChange(null);
+    }
+  };
 
   const [questionText, setQuestionText] = useState('');
   const [optionText, setOptionText] = useState('');
@@ -122,6 +152,8 @@ export default function EditNodeDialog({
   useEffect(() => {
     if (isOpen && !hasInitialized.current) {
       hasInitialized.current = true; // Mark as initialized
+
+      setCurrentNodeType(nodeType); // Sync prop to state on open
 
       const node = initialNode as DecisionNode; // Cast for simplicity, check properties
       if (nodeType === 'question' && 'question' in node) {
@@ -397,6 +429,16 @@ export default function EditNodeDialog({
   };
 
   const handleSaveClick = async () => {
+    // Validation based on CURRENT node type
+    if (currentNodeType === 'question' && !('option' in initialNode) && !questionText.trim()) {
+      toast({ title: 'Il testo della domanda è obbligatorio', variant: 'destructive' });
+      return;
+    }
+    if (currentNodeType === 'decision' && !decisionText.trim()) {
+      toast({ title: 'Il testo della decisione è obbligatorio', variant: 'destructive' });
+      return;
+    }
+
     setInternalSaving(true);
 
     try {
@@ -412,42 +454,81 @@ export default function EditNodeDialog({
 
       const finalMedia = [...media, ...uploadedMedia];
 
-      let newNodeData: any;
-      if (nodeType === 'question' && 'question' in initialNode) {
-        newNodeData = {
-          ...initialNode,
-          question: questionText,
-          media: finalMedia.length > 0 ? finalMedia : undefined,
-          links: links.length > 0 ? links : undefined,
-          triggers: triggers.length > 0 ? triggers : undefined,
-          sqlQuery: sqlQuery.trim() || undefined,
-          sqlConnectorId: sqlConnectorId || undefined,
-          sqlResultName: sqlResultName.trim() || undefined,
-        };
-      } else if (nodeType === 'question' && 'option' in initialNode) {
+      let newNodeData: any = { ...initialNode };
+
+      // Handle Node Type Logic
+      if (currentNodeType === 'question') {
+        // Ensure it has question structure
+        // If converting from Decision, we need to add question and remove decision
+        newNodeData.question = questionText;
+        if ('decision' in newNodeData) delete newNodeData.decision;
+
+        if (!newNodeData.options) newNodeData.options = {};
+
+        // Keep other fields
+        if (finalMedia.length > 0) newNodeData.media = finalMedia;
+        else delete newNodeData.media;
+
+        if (links.length > 0) newNodeData.links = links;
+        else delete newNodeData.links;
+
+        if (triggers.length > 0) newNodeData.triggers = triggers;
+        else delete newNodeData.triggers;
+
+        // SQL Data (Questions can have SQL generally, though usually Leaf has it? Actually prompts say questions can have dynamic data)
+        if (sqlQuery) {
+          newNodeData.sqlQuery = sqlQuery.trim();
+          newNodeData.sqlConnectorId = sqlConnectorId || undefined;
+          newNodeData.sqlResultName = sqlResultName.trim() || undefined;
+        } else {
+          delete newNodeData.sqlQuery;
+          delete newNodeData.sqlConnectorId;
+          delete newNodeData.sqlResultName;
+        }
+
+      } else if (currentNodeType === 'decision') {
+        // Ensure it has Decision structure
+        // If converting from Question, we remove question and OPTIONS (the destructive part)
+        newNodeData.decision = decisionText;
+        if ('question' in newNodeData) delete newNodeData.question;
+        if ('options' in newNodeData) delete newNodeData.options;
+
+        if (finalMedia.length > 0) newNodeData.media = finalMedia;
+        else delete newNodeData.media;
+
+        if (links.length > 0) newNodeData.links = links;
+        else delete newNodeData.links;
+
+        if (triggers.length > 0) newNodeData.triggers = triggers;
+        else delete newNodeData.triggers;
+
+        // SQL Data
+        if (sqlQuery) {
+          newNodeData.sqlQuery = sqlQuery.trim();
+          newNodeData.sqlConnectorId = sqlConnectorId || undefined;
+          newNodeData.sqlResultName = sqlResultName.trim() || undefined;
+        } else {
+          delete newNodeData.sqlQuery;
+          delete newNodeData.sqlConnectorId;
+          delete newNodeData.sqlResultName;
+        }
+
+      } else if ('option' in initialNode) {
+        // Option node, no type switch allowed
         newNodeData = { option: optionText };
-      } else { // Decision node
-        newNodeData = {
-          ...initialNode,
-          decision: decisionText,
-          media: finalMedia.length > 0 ? finalMedia : undefined,
-          links: links.length > 0 ? links : undefined,
-          triggers: triggers.length > 0 ? triggers : undefined,
-          sqlQuery: sqlQuery.trim() || undefined,
-          sqlConnectorId: sqlConnectorId || undefined,
-          sqlResultName: sqlResultName.trim() || undefined,
-        };
       }
 
       onSave(nodePath, newNodeData);
+      onClose();
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Si è verificato un errore sconosciuto.';
+      console.error('Error saving node:', error);
       toast({
         variant: 'destructive',
-        title: 'Upload Fallito',
-        description: errorMessage,
+        title: 'Errore Salvataggio',
+        description: 'Impossibile salvare le modifiche.',
       });
+    } finally {
       setInternalSaving(false);
     }
   };
@@ -455,19 +536,23 @@ export default function EditNodeDialog({
   let title = 'Modifica Nodo';
   let description = "Apporta le modifiche al nodo qui sotto. Fai clic su Salva quando hai finito.";
 
-  if (nodeType === 'question' && 'question' in initialNode) {
+
+
+  if (currentNodeType === 'question' && !('option' in initialNode)) {
     title = 'Modifica Domanda';
-  } else if (nodeType === 'question' && 'option' in initialNode) {
-    title = 'Modifica Nome Opzione (Locale)';
-    description = "Stai modificando un'opzione che esiste solo in questo albero.";
-  } else if (nodeType === 'decision') {
-    title = 'Modifica Decisione';
+    description = "Modifica il testo della domanda e aggiungi eventuali media o link.";
+  } else if (currentNodeType === 'question' && 'option' in initialNode) {
+    title = 'Modifica Opzione';
+    description = "Modifica il testo dell'opzione di risposta.";
+  } else if (currentNodeType === 'decision') {
+    title = 'Modifica Risultato Finale';
+    description = "Specifica il risultato finale o l'azione da intraprendere.";
   }
 
   const canSave = !componentIsSaving && (
-    (nodeType === 'question' && 'question' in initialNode && questionText.trim() !== '') ||
-    (nodeType === 'question' && 'option' in initialNode && optionText.trim() !== '') ||
-    (nodeType === 'decision' && decisionText.trim() !== '')
+    (currentNodeType === 'question' && !('option' in initialNode) && questionText.trim() !== '') ||
+    (currentNodeType === 'question' && 'option' in initialNode && optionText.trim() !== '') ||
+    (currentNodeType === 'decision' && decisionText.trim() !== '')
   );
 
   const MediaListItem = ({
@@ -550,12 +635,50 @@ export default function EditNodeDialog({
       <Dialog open={isOpen} onOpenChange={(open) => !open && !componentIsSaving && onClose()}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
+            <div className="flex items-center justify-between pr-8">
+              <div className='grid gap-1.5'>
+                <DialogTitle>{title}</DialogTitle>
+                <DialogDescription>{description}</DialogDescription>
+              </div>
+
+              {/* Node Type Switcher - Only show for Question/Decision nodes, not Options */}
+              {!('option' in initialNode) && (
+                <div className="flex items-center gap-2 bg-muted/50 rounded-lg p-1">
+                  <Button
+                    type="button"
+                    variant={currentNodeType === 'question' ? 'default' : 'ghost'}
+                    size="sm"
+                    className={`h-8 text-xs px-3 gap-2 transition-all ${currentNodeType === 'question'
+                      ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
+                      : 'text-muted-foreground hover:bg-muted'
+                      }`}
+                    onClick={() => requestTypeChange('question')}
+                    disabled={componentIsSaving}
+                  >
+                    <GitBranch className="h-3.5 w-3.5" />
+                    Domanda
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={currentNodeType === 'decision' ? 'default' : 'ghost'}
+                    size="sm"
+                    className={`h-8 text-xs px-3 gap-2 transition-all ${currentNodeType === 'decision'
+                      ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
+                      : 'text-muted-foreground hover:bg-muted'
+                      }`}
+                    onClick={() => requestTypeChange('decision')}
+                    disabled={componentIsSaving}
+                  >
+                    <Flag className="h-3.5 w-3.5" />
+                    Risultato
+                  </Button>
+                </div>
+              )}
+            </div>
           </DialogHeader>
           <ScrollArea className="max-h-[70vh] -mx-6 px-6">
             <div className="grid gap-4 py-4">
-              {nodeType === 'question' && 'question' in initialNode && (
+              {currentNodeType === 'question' && !('option' in initialNode) && (
                 <div className="grid gap-4">
                   {variableId && (
                     <div className="space-y-1 mb-4">
@@ -578,7 +701,7 @@ export default function EditNodeDialog({
                   </div>
                 </div>
               )}
-              {nodeType === 'question' && 'option' in initialNode && (
+              {currentNodeType === 'question' && 'option' in initialNode && (
                 <div className="grid gap-2">
                   <Label htmlFor="option-text">Nome Opzione</Label>
                   <Input
@@ -590,7 +713,7 @@ export default function EditNodeDialog({
                   />
                 </div>
               )}
-              {nodeType === 'decision' && (
+              {currentNodeType === 'decision' && (
                 <div className="grid gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="decision-text">Testo Decisione (Obbligatorio)</Label>
@@ -607,7 +730,7 @@ export default function EditNodeDialog({
               )}
 
               {/* Links, Triggers and Media Section for Question and Decision (but NOT for options) */}
-              {((nodeType === 'question' && 'question' in initialNode) || nodeType === 'decision') && (
+              {((currentNodeType === 'question' && !('option' in initialNode)) || currentNodeType === 'decision') && (
                 <div className="space-y-4">
                   {/* --- Links Section --- */}
                   <div className="space-y-2 p-3 border border-primary/50 rounded-lg">
@@ -1144,6 +1267,24 @@ export default function EditNodeDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!pendingTypeChange} onOpenChange={(open) => !open && setPendingTypeChange(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Conferma modifica tipo</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingTypeChange === 'decision'
+                ? "Stai convertendo una Domanda in un Risultato. Tutte le opzioni e i nodi figli verranno eliminati. Questa azione non può essere annullata."
+                : "Stai convertendo un Risultato in una Domanda. Il testo del risultato attuale verrà perso."
+              }
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmTypeChange}>Procedi</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
