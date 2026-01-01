@@ -4,7 +4,7 @@
 import type { DecisionNode, StoredTree, DecisionLeaf, Variable, VariableOption } from '@/lib/types';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag } from 'lucide-react';
+import { AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code } from 'lucide-react';
 import _ from 'lodash';
 import EditNodeDialog from './edit-node-dialog';
 import AddNodeDialog from './add-node-dialog';
@@ -36,6 +36,14 @@ const OPTION_NODE_WIDTH = 220; // Match standard node width
 const OPTION_NODE_HEIGHT = 80; // Slightly increased height for options
 const H_SPACING = 24; // Increased spacing to avoid crowding
 const V_SPACING = 80;
+
+// --- Custom Python Icon ---
+// --- Custom Python Icon ---
+const PythonIcon = ({ className }: { className?: string }) => (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
+        <path d="M11.97 2c-1.373 0-2.618.122-3.645.342-.962.206-1.743.522-2.308.932-.562.408-.888.895-.888 1.48v1.89h4.64v.667H3.43c-.767 0-1.365.234-1.841.614-.475.38-.68 1.006-.68 1.692v3.744c0 .686.205 1.31.68 1.693.476.38 1.074.614 1.84.614h1.423v-2.008c0-.686.205-1.312.682-1.694.476-.381 1.071-.614 1.838-.614h3.764c.767 0 1.365-.233 1.842-.614.477-.38.681-1.006.681-1.692V6.442c0-.686-.204-1.311-.681-1.693-.477-.38-1.075-.614-1.842-.614H8.48V3.12c0-.361.341-.741 1-.954C10.144 2.016 10.99 2 12.03 2c1.04 0 1.886.016 2.55.166.659.213 1 .593 1 .954v1.015h-1.317c-.767 0-1.362.233-1.839.614-.477.38-.68 1.006-.68 1.692v3.744c0 .686.203 1.31.68 1.693.477.38 1.072.614 1.839.614h3.764c.766 0 1.362.234 1.838.614.476.38.68 1.006.68 1.692V10.45c0-.585-.326-1.072-.888-1.48-.565-.41-1.346-.726-2.308-.932-1.027-.22-2.272-.342-3.645-.342zM12.03 22c1.373 0 2.617-.122 3.645-.342.962-.206 1.743-.522 2.308-.932.562-.408.888-.895.888-1.48v-1.89h-4.64v-.667h6.339c.767 0 1.365-.234 1.841-.614.475-.38.681-1.006.681-1.692V10.64c0-.686-.206-1.31-.681-1.693-.476-.38-1.074-.614-1.841-.614h-1.423v2.008c0 .686-.205 1.312-.682 1.694-.476.381-1.071.614-1.838.614H13.56c-.767 0-1.365.234-1.842.614-.477.381-.681 1.006-.681 1.692v3.745c0 .686.204 1.311.681 1.692.477.38 1.075.614 1.842.614h3.754V20.88c0 .361-.341.741-1 .954-.664.15-1.51.166-2.55.166-1.04 0-1.886-.016-2.55-.166-.659-.213-1-.593-1-.954v-1.015h1.317c.767 0 1.361-.233 1.839-.614.477-.38.68-1.006.68-1.692V13.82c0-.686-.203-1.31-.68-1.693-.478-.38-1.072-.614-1.839-.614h-3.764c-.766 0-1.362-.234-1.838-.614-.476-.38-.681-1.006-.681-1.692v3.744c0 .585.326 1.072.888 1.48.565.41 1.346.727 2.308.933 1.027.22 2.272.342 3.645.342z" />
+    </svg>
+);
 
 
 // --- Helper to ensure all nodes have an ID ---
@@ -998,27 +1006,24 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
             flatTree.forEach((item: any) => {
                 const actualNode = item.node;
-                if (actualNode && typeof actualNode === 'object' && 'sqlResultName' in actualNode && actualNode.sqlResultName) {
-                    const nodePath = item.path;
+                if (actualNode && typeof actualNode === 'object') {
+                    const resultName = actualNode.sqlResultName || actualNode.pythonResultName;
 
-                    // Check if this node's path is a TRUE hierarchical ancestor of currentPath
-                    // An ancestor path must:
-                    // 1. Be a prefix of the current path
-                    // 2. Not be equal to the current path
-                    // 3. The next character after the prefix in currentPath must be '.' (hierarchical boundary)
-                    //    This prevents "root.options['S']" from matching "root.options['SÌ']"
-                    const isAncestor =
-                        currentPath !== nodePath &&
-                        currentPath.startsWith(nodePath) &&
-                        currentPath.charAt(nodePath.length) === '.';
+                    if (resultName) {
+                        const nodePath = item.path;
+                        const isAncestor =
+                            currentPath !== nodePath &&
+                            currentPath.startsWith(nodePath) &&
+                            currentPath.charAt(nodePath.length) === '.';
 
-                    if (isAncestor) {
-                        tables.push({
-                            name: actualNode.sqlResultName,
-                            connectorId: actualNode.sqlConnectorId,
-                            sqlQuery: actualNode.sqlQuery
-                        });
-                        console.log(`[ANCESTOR] Path "${nodePath}" → Table "${actualNode.sqlResultName}" visible to "${currentPath}"`);
+                        if (isAncestor) {
+                            tables.push({
+                                name: resultName,
+                                connectorId: actualNode.sqlConnectorId || actualNode.pythonConnectorId,
+                                sqlQuery: actualNode.sqlQuery
+                            });
+                            console.log(`[ANCESTOR] Path "${nodePath}" → Result "${resultName}" visible to "${currentPath}"`);
+                        }
                     }
                 }
             });
@@ -1175,6 +1180,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                                 <div className="flex items-center gap-1 mt-1">
                                                     {item.node && typeof item.node === 'object' && 'sqlConnectorId' in item.node && (item.node as any).sqlConnectorId && (
                                                         <Database className="h-3 w-3 text-blue-600" />
+                                                    )}
+                                                    {actualNode && typeof actualNode === 'object' && 'pythonCode' in actualNode && (actualNode as any).pythonCode && (
+                                                        <PythonIcon className="h-3 w-3 text-emerald-600" />
                                                     )}
                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'image') && <ImageIcon className="h-3 w-3 text-muted-foreground" />}
                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'video') && <Video className="h-3 w-3 text-muted-foreground" />}
@@ -1350,7 +1358,6 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         </Card>
     );
 }
-
 
 
 

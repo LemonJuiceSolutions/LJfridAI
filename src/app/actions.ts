@@ -1303,6 +1303,211 @@ Rules:
 }
 
 
+// --- PYTHON ACTIONS ---
+
+export async function generatePythonAction(
+    userDescription: string,
+    openRouterConfig?: { apiKey: string, model: string },
+    outputType: 'table' | 'variable' | 'chart' = 'table'
+): Promise<{ code: string | null; error: string | null }> {
+    try {
+        if (!openRouterConfig?.apiKey) {
+            return { code: null, error: "OpenRouter API Key is required." };
+        }
+
+        const outputInstructions: Record<string, string> = {
+            table: `Return a Pandas DataFrame. The last line of the script MUST be the DataFrame variable (e.g., just 'df' on its own line). 
+Example: df = pd.DataFrame({'col1': [1,2,3], 'col2': ['a','b','c']})
+df`,
+            variable: `Return a dictionary containing one or more variables. The last line MUST be the dictionary variable (e.g., just 'result' on its own line).
+Example: result = {'total': 100, 'average': 50.5, 'status': 'complete'}
+result`,
+            chart: `Create a Matplotlib or Plotly chart. IMPORTANT: Do NOT call plt.show(). Instead, the last line MUST be the figure object (e.g., just 'fig' on its own line).
+Example with Matplotlib: 
+fig, ax = plt.subplots()
+ax.bar(['A', 'B', 'C'], [10, 20, 30])
+ax.set_title('My Chart')
+fig
+
+Example with Plotly:
+fig = px.bar(x=['A', 'B', 'C'], y=[10, 20, 30], title='My Chart')
+fig`
+        };
+
+        const systemPrompt = `You are a Python code generator. Generate ONLY Python code that accomplishes the user's request.
+${outputInstructions[outputType]}
+
+Available libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), plotly.express (px), plotly.graph_objects (go).
+
+RULES:
+1. Output ONLY the Python code, no explanations.
+2. Wrap code in \`\`\`python ... \`\`\` code block.
+3. The LAST line must be the result variable only (no assignment, no print).
+4. Do NOT include print statements.
+5. All code must be safe to execute in a sandboxed environment.`;
+
+        const userPrompt = `Generate Python code for: ${userDescription}`;
+
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${openRouterConfig.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: openRouterConfig.model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData?.error?.message || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const content = data?.choices?.[0]?.message?.content || '';
+
+        // Extract code from markdown block
+        const codeBlockRegex = /```(?:python|py)?\s*([\s\S]*?)```/i;
+        const match = content.match(codeBlockRegex);
+
+        let cleanCode = '';
+        if (match && match[1]) {
+            cleanCode = match[1].trim();
+        } else {
+            cleanCode = content.replace(/```/g, '').trim();
+        }
+
+        return { code: cleanCode, error: null };
+
+    } catch (e) {
+        const error = e instanceof Error ? e.message : "Error generating Python code.";
+        return { code: null, error };
+    }
+}
+
+export async function executePythonPreviewAction(
+    code: string,
+    outputType: 'table' | 'variable' | 'chart',
+    inputData: Record<string, any[]> = {},
+    dependencies?: { tableName: string; connectorId?: string; query?: string }[]
+): Promise<{ success: boolean; data?: any[]; variables?: Record<string, any>; chartBase64?: string; error?: string; rowCount?: number; stdout?: string }> {
+    try {
+        const user = await getAuthenticatedUser();
+
+        // If there are dependencies (SQL queries from parent nodes), fetch them first
+        if (dependencies && dependencies.length > 0) {
+            console.log(`[Python] Fetching ${dependencies.length} dependencies:`, dependencies.map(d => d.tableName).join(', '));
+            for (const dep of dependencies) {
+                console.log(`[Python] Processing dependency: ${dep.tableName}, Query length: ${dep.query?.length || 0}, Connector: ${dep.connectorId || 'default'}`);
+                inputData[dep.tableName] = []; // Assicuriamoci che la variabile esista sempre (anche se vuota)
+                if (dep.query) {
+                    try {
+                        const sqlRes = await executeSqlPreviewAction(dep.query, dep.connectorId as string);
+                        if (sqlRes.data) {
+                            inputData[dep.tableName] = sqlRes.data;
+                            console.log(`[Python] ✅ Fetched ${sqlRes.data.length} rows for ${dep.tableName}`);
+                        } else {
+                            console.warn(`[Python] ⚠️ No data returned for ${dep.tableName}. Error: ${sqlRes.error || 'None'}`);
+                        }
+                    } catch (err) {
+                        console.error(`[Python] ❌ Error fetching dependency ${dep.tableName}:`, err);
+                    }
+                } else {
+                    console.warn(`[Python] ⚠️ Skipping dependency ${dep.tableName} because query is missing.`);
+                }
+            }
+        }
+
+        const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || 'http://localhost:5005';
+
+        console.log('[executePythonPreviewAction] Calling Python backend at 5005...');
+        console.log('[executePythonPreviewAction] Output type:', outputType);
+        console.log('[executePythonPreviewAction] Code length:', code.length);
+        console.log('[executePythonPreviewAction] Input data keys:', Object.keys(inputData));
+        Object.keys(inputData).forEach(k => console.log(`  - ${k}: ${inputData[k].length} rows`));
+
+        const response = await fetch(`${PYTHON_BACKEND_URL}/execute`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                code,
+                outputType,
+                inputData: inputData || {}
+            })
+        });
+
+        if (!response.ok) {
+            let errorMsg = `Python backend returned ${response.status}`;
+            try {
+                const text = await response.text();
+                try {
+                    const errorData = JSON.parse(text);
+                    errorMsg = errorData?.error || errorMsg;
+                } catch (e) {
+                    console.error('[executePythonPreviewAction] Non-JSON error response:', text.substring(0, 200));
+                }
+            } catch (e) { }
+            throw new Error(errorMsg);
+        }
+
+        const result = await response.json();
+
+        if (!result.success) {
+            return {
+                success: false,
+                error: result.error || 'Unknown error from Python backend',
+                stdout: result.stdout
+            };
+        }
+
+        // Return the appropriate result based on output type
+        if (outputType === 'table') {
+            return {
+                success: true,
+                data: result.data,
+                rowCount: result.rowCount,
+                stdout: result.stdout
+            };
+        } else if (outputType === 'variable') {
+            return {
+                success: true,
+                variables: result.variables,
+                stdout: result.stdout
+            };
+        } else if (outputType === 'chart') {
+            return {
+                success: true,
+                chartBase64: result.chartBase64,
+                stdout: result.stdout
+            };
+        }
+
+        return { success: false, error: 'Unknown output type' };
+
+    } catch (e) {
+        const error = e instanceof Error ? e.message : "Error executing Python code.";
+
+        // Check if it's a connection error
+        if (error.includes('ECONNREFUSED') || error.includes('fetch failed')) {
+            return {
+                success: false,
+                error: 'Python backend non raggiungibile. Assicurati che sia in esecuzione su porta 5005.'
+            };
+        }
+
+        return { success: false, error };
+    }
+}
+
+
+
 
 export async function getVariablesAction(): Promise<{ data: Variable[] | null; error: string | null; }> {
     try {

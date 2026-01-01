@@ -32,13 +32,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag } from 'lucide-react';
+import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem } from '@/lib/types';
 import { Input } from '../ui/input';
 import _ from 'lodash';
 import { useToast } from '@/hooks/use-toast';
-import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction, fetchTableSchemaAction } from '@/app/actions';
+import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction } from '@/app/actions';
 import { uploadFile } from '@/lib/storage-client';
 import Image from 'next/image';
 import { ScrollArea } from '../ui/scroll-area';
@@ -183,6 +183,20 @@ export default function EditNodeDialog({
   const [sqlConnectors, setSqlConnectors] = useState<{ id: string, name: string }[]>([]);
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
 
+  // Python State
+  const [pythonCode, setPythonCode] = useState('');
+  const [pythonOutputType, setPythonOutputType] = useState<'table' | 'variable' | 'chart'>('table');
+  const [pythonResultName, setPythonResultName] = useState('');
+  const [pythonAgentStatus, setPythonAgentStatus] = useState<string | null>(null);
+  const [pythonPreviewResult, setPythonPreviewResult] = useState<{
+    type: 'table' | 'variable' | 'chart';
+    data?: any[];
+    variables?: Record<string, any>;
+    chartBase64?: string;
+  } | null>(null);
+  const [pythonConnectorId, setPythonConnectorId] = useState<string>('');
+  const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
+
   // State for inline editing links
   const [editingLinkIndex, setEditingLinkIndex] = useState<number | null>(null);
   const [editingLink, setEditingLink] = useState<LinkItem | null>(null);
@@ -315,6 +329,14 @@ export default function EditNodeDialog({
       } else {
         setSqlResultName('');
       }
+
+      // Load Python Script Data
+      setPythonCode((node as any).pythonCode || '');
+      setPythonOutputType((node as any).pythonOutputType || 'table');
+      setPythonResultName((node as any).pythonResultName || '');
+      setPythonConnectorId((node as any).pythonConnectorId || '');
+      setPythonSelectedPipelines((node as any).pythonSelectedPipelines || []);
+      setPythonPreviewResult(null);
 
     }
   }, [isOpen, initialNode, nodeType, availableInputTables]);
@@ -555,6 +577,25 @@ export default function EditNodeDialog({
           delete newNodeData.selectedPipelines;
         }
 
+        // Python Data
+        if (pythonCode) {
+          newNodeData.pythonCode = pythonCode.trim();
+          newNodeData.pythonOutputType = pythonOutputType;
+          newNodeData.pythonResultName = pythonResultName.trim() || undefined;
+          newNodeData.pythonConnectorId = pythonConnectorId || undefined;
+          if (pythonSelectedPipelines.length > 0) {
+            newNodeData.pythonSelectedPipelines = pythonSelectedPipelines;
+          } else {
+            delete newNodeData.pythonSelectedPipelines;
+          }
+        } else {
+          delete newNodeData.pythonCode;
+          delete newNodeData.pythonOutputType;
+          delete newNodeData.pythonResultName;
+          delete newNodeData.pythonConnectorId;
+          delete newNodeData.pythonSelectedPipelines;
+        }
+
       } else if (currentNodeType === 'decision') {
         // Ensure it has Decision structure
         // If converting from Question, we remove question and OPTIONS (the destructive part)
@@ -587,6 +628,25 @@ export default function EditNodeDialog({
           delete newNodeData.sqlConnectorId;
           delete newNodeData.sqlResultName;
           delete newNodeData.selectedPipelines;
+        }
+
+        // Python Data
+        if (pythonCode) {
+          newNodeData.pythonCode = pythonCode.trim();
+          newNodeData.pythonOutputType = pythonOutputType;
+          newNodeData.pythonResultName = pythonResultName.trim() || undefined;
+          newNodeData.pythonConnectorId = pythonConnectorId || undefined;
+          if (pythonSelectedPipelines.length > 0) {
+            newNodeData.pythonSelectedPipelines = pythonSelectedPipelines;
+          } else {
+            delete newNodeData.pythonSelectedPipelines;
+          }
+        } else {
+          delete newNodeData.pythonCode;
+          delete newNodeData.pythonOutputType;
+          delete newNodeData.pythonResultName;
+          delete newNodeData.pythonConnectorId;
+          delete newNodeData.pythonSelectedPipelines;
         }
 
       } else if ('option' in initialNode) {
@@ -1285,6 +1345,279 @@ export default function EditNodeDialog({
                       placeholder="Es. ClientiAttivi (per riutilizzo in altri nodi)"
                     />
                     <p className="text-[10px] text-muted-foreground">Dai un nome a questa tabella per usarla come input nei nodi successivi (JOIN).</p>
+                  </div>
+
+                </div>
+              </CollapsibleSection>
+
+              {/* Python Script Section */}
+              <CollapsibleSection
+                title="Script Python"
+                count={pythonCode ? 1 : 0}
+                storageKey={`collapse-python-${treeId}-${nodePath}`}
+                icon={Code}
+              >
+                <div className="grid gap-4 pt-3">
+                  {/* Output Type Selector */}
+                  <div className="grid gap-2">
+                    <Label className="text-xs font-semibold uppercase text-muted-foreground">Tipo Output</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant={pythonOutputType === 'table' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setPythonOutputType('table')}
+                        className="flex-1"
+                      >
+                        <Table className="h-3.5 w-3.5 mr-1.5" />
+                        Tabella
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={pythonOutputType === 'variable' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setPythonOutputType('variable')}
+                        className="flex-1"
+                      >
+                        <Variable className="h-3.5 w-3.5 mr-1.5" />
+                        Variabile
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={pythonOutputType === 'chart' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setPythonOutputType('chart')}
+                        className="flex-1"
+                      >
+                        <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
+                        Grafico
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Database Connector Selection */}
+                  <div className="grid gap-2">
+                    <Label>Database (per accesso dati)</Label>
+                    <Select value={pythonConnectorId} onValueChange={setPythonConnectorId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleziona un Database..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nessuno</SelectItem>
+                        {sqlConnectors.map((c: any) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground">Opzionale: seleziona un database per usare i dati nel tuo script.</p>
+                  </div>
+
+                  {/* Pipeline Selection */}
+                  {availableInputTables && availableInputTables.length > 0 && (
+                    <div className="grid gap-2 p-3 bg-muted/20 rounded-lg border border-dashed">
+                      <Label className="text-xs font-semibold uppercase text-muted-foreground">Usa Dati Da (Pipeline)</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {availableInputTables.map(t => (
+                          <div key={t.name} className="flex items-center space-x-2 bg-white dark:bg-zinc-800 p-1.5 px-2.5 rounded-full border shadow-sm">
+                            <Check
+                              className={`h-3 w-3 cursor-pointer ${pythonSelectedPipelines.includes(t.name) ? 'text-yellow-600' : 'text-muted-foreground/30'}`}
+                              onClick={() => {
+                                if (pythonSelectedPipelines.includes(t.name)) {
+                                  setPythonSelectedPipelines(prev => prev.filter(p => p !== t.name));
+                                } else {
+                                  setPythonSelectedPipelines(prev => [...prev, t.name]);
+                                }
+                              }}
+                            />
+                            <Label className="text-xs cursor-pointer" onClick={() => {
+                              if (pythonSelectedPipelines.includes(t.name)) {
+                                setPythonSelectedPipelines(prev => prev.filter(p => p !== t.name));
+                              } else {
+                                setPythonSelectedPipelines(prev => [...prev, t.name]);
+                              }
+                            }}>{t.name}</Label>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">Questi risultati saranno disponibili come DataFrame nel tuo script.</p>
+                    </div>
+                  )}
+
+                  {/* AI Chatbot for Python Generation */}
+                  <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col">
+                    <div className="bg-muted/50 p-2 px-3 border-b flex items-center justify-between">
+                      <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                        <Bot className="h-3.5 w-3.5" />
+                        AI Python Assistant
+                      </span>
+                      {pythonAgentStatus && (
+                        <div className="bg-background text-[10px] h-5 gap-1 flex items-center px-2 rounded-full border">
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                          {pythonAgentStatus.replace('...', '')}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-4 min-h-[80px] flex flex-col gap-3">
+                      <div className="flex gap-3">
+                        <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
+                          <Bot className="h-4 w-4 text-yellow-600" />
+                        </div>
+                        <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
+                          <p>Ciao! Posso generare script Python per {pythonOutputType === 'table' ? 'tabelle' : pythonOutputType === 'variable' ? 'variabili' : 'grafici'}. Dimmi cosa ti serve.</p>
+                        </div>
+                      </div>
+
+                      {pythonAgentStatus && (
+                        <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
+                          <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
+                            <Bot className="h-4 w-4 text-yellow-600" />
+                          </div>
+                          <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              <span>{pythonAgentStatus}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-2 border-t bg-background flex gap-2">
+                      <Input
+                        placeholder={`Descrivi ${pythonOutputType === 'table' ? 'la tabella' : pythonOutputType === 'variable' ? 'le variabili' : 'il grafico'} da generare...`}
+                        className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent"
+                        id="python-prompt-input"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            const btn = document.getElementById('python-send-btn');
+                            if (btn) btn.click();
+                          }
+                        }}
+                      />
+                      <Button
+                        id="python-send-btn"
+                        size="sm"
+                        className="gap-2 rounded-lg bg-yellow-600 hover:bg-yellow-700"
+                        disabled={!!pythonAgentStatus}
+                        onClick={() => {
+                          const input = document.getElementById('python-prompt-input') as HTMLInputElement;
+                          if (!input || !input.value) return;
+
+                          const userPrompt = input.value;
+                          const apiKey = localStorage.getItem('openrouter_api_key') || '';
+                          const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+
+                          if (!apiKey) {
+                            toast({ variant: 'destructive', title: "Configurazione Mancante", description: "Imposta la chiave API nelle Impostazioni." });
+                            return;
+                          }
+
+                          setPythonAgentStatus("Generazione Codice Python...");
+
+                          // Call generatePythonAction (to be created)
+                          generatePythonAction(userPrompt, { apiKey, model }, pythonOutputType).then((res) => {
+                            if (res.code) {
+                              setPythonCode(res.code);
+                              toast({ title: "Codice Generato!", description: "Lo script Python è stato inserito nell'editor." });
+                            } else {
+                              toast({ variant: 'destructive', title: "Errore AI", description: res.error || "Errore sconosciuto" });
+                            }
+                            setPythonAgentStatus(null);
+                          });
+                        }}
+                      >
+                        {pythonAgentStatus ? 'Elaborazione...' : 'Invia'}
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Python Code Editor */}
+                  <div className="grid gap-2">
+                    <Label>Codice Python</Label>
+                    <Textarea
+                      value={pythonCode}
+                      onChange={(e) => setPythonCode(e.target.value)}
+                      className="font-mono text-sm h-40"
+                      placeholder={`# ${pythonOutputType === 'table' ? 'Ritorna un DataFrame Pandas' : pythonOutputType === 'variable' ? 'Ritorna un dizionario di variabili' : 'Ritorna una figura Matplotlib/Plotly'}\n`}
+                    />
+                  </div>
+
+                  {/* Preview Button */}
+                  <div className="flex justify-end">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        if (!pythonCode) {
+                          toast({ variant: 'destructive', title: "Errore", description: "Inserisci del codice Python prima di eseguire l'anteprima." });
+                          return;
+                        }
+                        setPythonAgentStatus("Esecuzione Script...");
+
+                        // Prepara i dati di input e le dipendenze dai nodi selezionati
+                        const dependencies: { tableName: string; connectorId?: string; query?: string }[] = [];
+                        if (availableInputTables) {
+                          pythonSelectedPipelines.forEach(pName => {
+                            const table = availableInputTables.find(t => t.name === pName);
+                            if (table) {
+                              dependencies.push({
+                                tableName: pName,
+                                connectorId: table.connectorId,
+                                query: table.sqlQuery
+                              });
+                            }
+                          });
+                        }
+
+                        executePythonPreviewAction(pythonCode, pythonOutputType, {}, dependencies).then((res: any) => {
+                          setPythonAgentStatus(null);
+                          if (res.success) {
+                            setPythonPreviewResult({ type: pythonOutputType, ...res });
+                            toast({ title: "Script Eseguito", description: "Anteprima pronta." });
+                          } else {
+                            toast({ variant: 'destructive', title: "Errore Python", description: res.error || "Errore sconosciuto" });
+                          }
+                        });
+                      }}
+                      disabled={!!pythonAgentStatus}
+                    >
+                      {pythonAgentStatus === "Esecuzione Script..." ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                      Esegui Anteprima
+                    </Button>
+                  </div>
+
+                  {/* Preview Result */}
+                  {pythonPreviewResult && (
+                    <div className="border rounded-md overflow-hidden max-w-full">
+                      <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
+                        <span className="font-semibold text-xs flex items-center gap-2">
+                          <Code className="h-3 w-3" />
+                          Risultato Python ({pythonPreviewResult.type})
+                        </span>
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPythonPreviewResult(null)}><X className="h-3 w-3" /></Button>
+                      </div>
+                      {pythonPreviewResult.type === 'table' && pythonPreviewResult.data && (
+                        <DataTable data={pythonPreviewResult.data} />
+                      )}
+                      {pythonPreviewResult.type === 'variable' && pythonPreviewResult.variables && (
+                        <pre className="p-3 text-xs overflow-auto max-h-48">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
+                      )}
+                      {pythonPreviewResult.type === 'chart' && pythonPreviewResult.chartBase64 && (
+                        <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className="max-w-full" />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Result Name */}
+                  <div className="grid gap-2">
+                    <Label>Nome Risultato (Opzionale)</Label>
+                    <Input
+                      value={pythonResultName}
+                      onChange={(e) => setPythonResultName(e.target.value)}
+                      placeholder="Es. DataAnalysis (per riutilizzo)"
+                    />
+                    <p className="text-[10px] text-muted-foreground">Dai un nome a questo risultato per usarlo in altri nodi.</p>
                   </div>
 
                 </div>
