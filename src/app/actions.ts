@@ -988,20 +988,38 @@ export async function executeSqlPreviewAction(
         await pool.connect();
 
         // Execute Pipeline Dependencies in order
+        const nameMap = new Map<string, string>();
+
         if (pipelineDependencies && pipelineDependencies.length > 0) {
             console.log(`[PIPELINE] Executing ${pipelineDependencies.length} dependencies...`);
 
             for (const dep of pipelineDependencies) {
-                const tempTableName = `##${dep.tableName}`;
+                // Use unique naming to prevent collisions
+                const uniqueId = new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 1000).toString(); // Add random for extra safety
+                const tempTableName = `##${dep.tableName}_${uniqueId}`;
+                nameMap.set(dep.tableName, tempTableName);
+
                 console.log(`[PIPELINE] Materializing: ${tempTableName}`);
 
                 try {
-                    // Drop if exists (from previous failed run)
+                    // Drop if exists (paranoid check)
                     await pool.request().query(`IF OBJECT_ID('tempdb..${tempTableName}') IS NOT NULL DROP TABLE ${tempTableName};`);
 
                     // Execute the source query and capture into temp table
                     // For complex scripts with dynamic SQL, we wrap differently
-                    const sourceQuery = dep.query.trim();
+                    let sourceQuery = dep.query.trim();
+
+                    // Replace usage of PREVIOUS dependencies with their unique temp names
+                    // Iterate over nameMap
+                    for (const [orig, temp] of nameMap.entries()) {
+                        // Avoid replacing itself if recursive (shouldn't happen in DAG)
+                        if (orig === dep.tableName) continue;
+
+                        const regex = new RegExp(`\\bFROM\\s+${orig}\\b`, 'gi');
+                        sourceQuery = sourceQuery.replace(regex, `FROM ${temp}`);
+                        const joinRegex = new RegExp(`\\bJOIN\\s+${orig}\\b`, 'gi');
+                        sourceQuery = sourceQuery.replace(joinRegex, `JOIN ${temp}`);
+                    }
 
                     // Strategy: Execute the script, then SELECT INTO from the result
                     // This requires wrapping in a way that captures the final SELECT
@@ -1082,14 +1100,14 @@ export async function executeSqlPreviewAction(
         let finalQuery = query.trim();
 
         // Replace pipeline table references with global temp table names
-        if (pipelineDependencies) {
-            for (const dep of pipelineDependencies) {
+        if (nameMap.size > 0) {
+            for (const [originalName, tempName] of nameMap.entries()) {
                 // Replace "FROM TableName" with "FROM ##TableName"
-                const regex = new RegExp(`\\bFROM\\s+${dep.tableName}\\b`, 'gi');
-                finalQuery = finalQuery.replace(regex, `FROM ##${dep.tableName}`);
+                const regex = new RegExp(`\\bFROM\\s+${originalName}\\b`, 'gi');
+                finalQuery = finalQuery.replace(regex, `FROM ${tempName}`);
                 // Also replace "JOIN TableName" 
-                const joinRegex = new RegExp(`\\bJOIN\\s+${dep.tableName}\\b`, 'gi');
-                finalQuery = finalQuery.replace(joinRegex, `JOIN ##${dep.tableName}`);
+                const joinRegex = new RegExp(`\\bJOIN\\s+${originalName}\\b`, 'gi');
+                finalQuery = finalQuery.replace(joinRegex, `JOIN ${tempName}`);
             }
         }
 
@@ -1125,30 +1143,107 @@ export async function executeSqlPreviewAction(
     }
 }
 
-export async function generateSqlAction(userDescription: string, openRouterConfig?: { apiKey: string, model: string }, connectorId?: string): Promise<{ sql: string | null; error: string | null }> {
+// New action to just fetch schema
+export async function fetchTableSchemaAction(connectorId: string, tableNames: string[]): Promise<{ schemaContext: string | null; error: string | null }> {
+    let pool: sql.ConnectionPool | null = null;
     try {
         const user = await getAuthenticatedUser();
 
-        // 1. Find the SQL connector to get schema hint
-        let connector;
-        if (connectorId) {
-            connector = await db.connector.findFirst({
-                where: { id: connectorId, companyId: user.companyId, type: 'SQL' }
+        const connector = await db.connector.findFirst({
+            where: { id: connectorId, companyId: user.companyId, type: 'SQL' }
+        });
+
+        if (!connector) return { schemaContext: null, error: "Connector not found" };
+
+        let schemaDesc = "";
+
+        try {
+            const config = JSON.parse(connector.config as string);
+            pool = new sql.ConnectionPool({
+                user: config.user,
+                password: config.password,
+                server: config.server,
+                database: config.database,
+                port: parseInt(config.port || '1433'),
+                options: {
+                    encrypt: config.encrypt === 'true',
+                    trustServerCertificate: config.trustServerCertificate === 'true',
+                    connectTimeout: 15000
+                }
             });
-        } else {
-            connector = await db.connector.findFirst({
-                where: { companyId: user.companyId, type: 'SQL' }
-            });
+            await pool.connect();
+
+            // Sanitize table names
+            const sanitizedTables = tableNames.map(t => `'${t.replace(/'/g, "''")}'`).join(',');
+
+            const schemaQuery = `
+                SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME IN (${sanitizedTables})
+                ORDER BY TABLE_NAME, ORDINAL_POSITION
+            `;
+
+            const result = await pool.request().query(schemaQuery);
+
+            if (result.recordset.length > 0) {
+                const tablesSchema: Record<string, string[]> = {};
+                result.recordset.forEach(row => {
+                    if (!tablesSchema[row.TABLE_NAME]) {
+                        tablesSchema[row.TABLE_NAME] = [];
+                    }
+                    tablesSchema[row.TABLE_NAME].push(`${row.COLUMN_NAME} (${row.DATA_TYPE})`);
+                });
+
+                schemaDesc = "Database Schema:\n";
+                for (const [table, cols] of Object.entries(tablesSchema)) {
+                    schemaDesc += `- Table '${table}': ${cols.join(', ')}\n`;
+                }
+            } else {
+                schemaDesc = "No columns found for the selected tables (they might not exist or permissions issue).";
+            }
+
+        } catch (dbErr: any) {
+            console.error("[FETCH-SCHEMA] DB Error:", dbErr);
+            return { schemaContext: null, error: `Database Error: ${dbErr.message}` };
+        } finally {
+            if (pool) await pool.close();
         }
 
-        let schemaContext = "No specific schema provided. Assume standard SQL naming conventions.";
-        if (connector) {
-            // Ideally we would fetch the schema here, but that's slow. 
-            // We can just tell the AI "You are connected to a generic SQL Server database".
-            // Or if we want to be fancy, we could cache schema in the connector.
-            // For now, let's keep it generic but prompt well.
-            schemaContext = "Target Database: SQL Server (T-SQL).";
+        return { schemaContext: schemaDesc, error: null };
+
+    } catch (err: any) {
+        console.error("[FETCH-SCHEMA] Action Error:", err);
+        return { schemaContext: null, error: err.message };
+    }
+}
+
+export async function generateSqlAction(userDescription: string, openRouterConfig?: { apiKey: string, model: string }, connectorId?: string, schemaContextArgs?: string): Promise<{ sql: string | null; error: string | null }> {
+
+    try {
+        const user = await getAuthenticatedUser();
+
+        // 1. Context setup
+        let schemaContext = schemaContextArgs || "No specific schema provided. Assume standard SQL naming conventions.";
+
+        // If no context provided but we have a connector, set a basic target hint
+        if (!schemaContextArgs) {
+            let connector;
+            if (connectorId) {
+                connector = await db.connector.findFirst({
+                    where: { id: connectorId, companyId: user.companyId, type: 'SQL' }
+                });
+            } else {
+                connector = await db.connector.findFirst({
+                    where: { companyId: user.companyId, type: 'SQL' }
+                });
+            }
+
+            if (connector) {
+                schemaContext = "Target Database: SQL Server (T-SQL). No specific table schema provided.";
+            }
         }
+
+
 
         const systemPrompt = `You are an expert SQL Data Analyst.
 Task: precise T-SQL query generation based on user request.
@@ -1183,7 +1278,17 @@ Rules:
             const content = json.choices[0].message.content;
 
             // Cleanup markdown if present
-            const cleanSql = content.replace(/```sql/g, '').replace(/```/g, '').trim();
+            // Extract content between ```sql ... ``` or just ``` ... ```
+            const codeBlockRegex = /```(?:sql|tsql|mssql)?\s*([\s\S]*?)```/i;
+            const match = content.match(codeBlockRegex);
+
+            let cleanSql = '';
+            if (match && match[1]) {
+                cleanSql = match[1].trim();
+            } else {
+                // Fallback: remove any backticks and trim
+                cleanSql = content.replace(/```/g, '').trim();
+            }
             return { sql: cleanSql, error: null };
 
         } else {

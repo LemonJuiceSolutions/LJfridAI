@@ -28,9 +28,9 @@ import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem } fro
 import { Input } from '../ui/input';
 import _ from 'lodash';
 import { useToast } from '@/hooks/use-toast';
+import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction, fetchTableSchemaAction } from '@/app/actions';
 import { uploadFile } from '@/lib/storage-client';
 import Image from 'next/image';
-import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction } from '@/app/actions';
 import { ScrollArea } from '../ui/scroll-area';
 import { DataTable } from '../ui/data-table';
 
@@ -85,7 +85,8 @@ export default function EditNodeDialog({
   const [sqlQuery, setSqlQuery] = useState('');
   const [sqlConnectorId, setSqlConnectorId] = useState<string>('');
   const [sqlResultName, setSqlResultName] = useState('');
-  const [selectedPipeline, setSelectedPipeline] = useState<string | null>(null);
+  const [selectedPipelines, setSelectedPipelines] = useState<string[]>([]);
+  const [agentStatus, setAgentStatus] = useState<string | null>(null);
   const [sqlConnectors, setSqlConnectors] = useState<{ id: string, name: string }[]>([]);
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
 
@@ -107,14 +108,21 @@ export default function EditNodeDialog({
   const hasRestoredPipeline = useRef(false);
 
   // Reset the ref when dialog closes
+  // Track initialization to prevent overwriting state on re-renders
+  const hasInitialized = useRef(false);
+
+  // Reset the ref when dialog closes
   useEffect(() => {
     if (!isOpen) {
       hasRestoredPipeline.current = false;
+      hasInitialized.current = false;
     }
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !hasInitialized.current) {
+      hasInitialized.current = true; // Mark as initialized
+
       const node = initialNode as DecisionNode; // Cast for simplicity, check properties
       if (nodeType === 'question' && 'question' in node) {
         setQuestionText(node.question || '');
@@ -177,43 +185,34 @@ export default function EditNodeDialog({
         hasRestoredPipeline: hasRestoredPipeline.current
       });
 
-      // Only try to restore pipeline selection ONCE per dialog open
-      // This prevents the useEffect from resetting user's selection when availableInputTables changes
-      if (!hasRestoredPipeline.current && availableInputTables && availableInputTables.length >= 0) {
-        hasRestoredPipeline.current = true;
+      // Also restore pipeline selection if needed (this logic is safe to run inside the initialization block)
+      if (availableInputTables && availableInputTables.length >= 0) {
 
         // Try to restore pipeline selection visual state
         if (query && availableInputTables.length > 0) {
-          // Check: is query exactly "SELECT * FROM TableName"?
-          const match = query.trim().match(/^SELECT \* FROM\s+(\S+)/i);
-          console.log('[EDIT-DIALOG] Query pattern match:', match);
+          const foundPipelines: string[] = [];
 
-          if (match) {
-            const tableName = match[1].trim();
-            // Find the table in available ancestors (more lenient: just match name)
-            const foundTable = availableInputTables.find(t => t.name === tableName);
-            console.log('[EDIT-DIALOG] Looking for table:', tableName, 'Found:', foundTable);
+          // scan query for table names
+          availableInputTables.forEach(t => {
+            // Simple check: does the query contain the table name?
+            // We use a regex to ensure whole word match to avoid partial matches
+            const regex = new RegExp(`\\b${t.name}\\b`, 'i');
+            if (regex.test(query)) {
+              foundPipelines.push(`pipeline:${t.name}:${t.connectorId || ''}`);
 
-            if (foundTable) {
-              // Restore both visual selection AND connector if needed
-              const pipelineValue = `pipeline:${foundTable.name}:${foundTable.connectorId || ''}`;
-              setSelectedPipeline(pipelineValue);
-              console.log('[EDIT-DIALOG] Setting selectedPipeline to:', pipelineValue);
-
-              if (foundTable.connectorId && !connId) {
-                setSqlConnectorId(foundTable.connectorId);
+              // If we found a pipeline table and no connector is set, set it from the first one found
+              if (t.connectorId && !connId) {
+                setSqlConnectorId(t.connectorId);
               }
-            } else {
-              setSelectedPipeline(null);
-              console.log('[EDIT-DIALOG] Table not found in ancestors, clearing selection');
             }
+          });
+
+          if (foundPipelines.length > 0) {
+            setSelectedPipelines(foundPipelines);
+            console.log('[EDIT-DIALOG] Restored pipelines:', foundPipelines);
           } else {
-            setSelectedPipeline(null);
-            console.log('[EDIT-DIALOG] Query does not match SELECT * FROM pattern');
+            console.log('[EDIT-DIALOG] No pipeline tables found in query');
           }
-        } else {
-          setSelectedPipeline(null);
-          console.log('[EDIT-DIALOG] No query or no available tables, clearing selection');
         }
       }
 
@@ -837,53 +836,71 @@ export default function EditNodeDialog({
                     </Label>
                     <div className="flex flex-col gap-3 min-w-0 w-full">
                       {/* Connector Selector */}
-                      <div className="flex flex-col gap-1">
-                        <Label className="text-xs text-muted-foreground">Database / Sorgente</Label>
+                      <div className="flex flex-col gap-2">
+                        <Label className="text-xs text-muted-foreground">Database Principale</Label>
                         <Select
-                          value={selectedPipeline || sqlConnectorId}
+                          value={sqlConnectorId}
                           onValueChange={(val) => {
-                            if (val.startsWith('pipeline:')) {
-                              // Handle Pipeline Table Selection
-                              const [_, tableName, originalConnectorId] = val.split(':');
-                              if (originalConnectorId) setSqlConnectorId(originalConnectorId);
-                              setSelectedPipeline(val); // Keep visual selection
-                              setSqlQuery(`SELECT * FROM ${tableName}`);
-                              toast({
-                                title: "Sorgente Impostata",
-                                description: `DB impostato su ${originalConnectorId} e query su ${tableName}`,
-                              });
-                            } else {
-                              // Handle Standard Connector Selection
-                              setSqlConnectorId(val);
-                              setSelectedPipeline(null); // Clear pipeline selection
-                            }
+                            setSqlConnectorId(val);
                           }}
                           disabled={componentIsSaving}
                         >
-                          <SelectTrigger className="h-8 max-w-[200px]">
+                          <SelectTrigger className="h-8 w-full">
                             <SelectValue placeholder="Seleziona DB..." />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectGroup>
-                              <SelectLabel>Database</SelectLabel>
-                              {sqlConnectors.map(c => (
-                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                              ))}
-                              {sqlConnectors.length === 0 && <SelectItem value="_none" disabled>Nessun DB SQL Trovato</SelectItem>}
-                            </SelectGroup>
-
-                            {availableInputTables.length > 0 && (
-                              <SelectGroup>
-                                <SelectLabel>Tabelle Pipeline</SelectLabel>
-                                {availableInputTables.map((t, idx) => (
-                                  <SelectItem key={`pipe-${idx}`} value={`pipeline:${t.name}:${t.connectorId || ''}`}>
-                                    {t.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            )}
+                            {sqlConnectors.map(c => (
+                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                            ))}
+                            {sqlConnectors.length === 0 && <SelectItem value="_none" disabled>Nessun DB SQL Trovato</SelectItem>}
                           </SelectContent>
                         </Select>
+
+                        {availableInputTables.length > 0 && (
+                          <div className="flex flex-col gap-2 p-2 border rounded-md bg-muted/20">
+                            <Label className="text-xs font-semibold text-muted-foreground">Tabelle Pipeline Disponibili (JOIN)</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {availableInputTables.map((t, idx) => {
+                                const pipelineValue = `pipeline:${t.name}:${t.connectorId || ''}`;
+                                const isSelected = selectedPipelines.includes(pipelineValue);
+                                return (
+                                  <div key={`pipe-${idx}`} className="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      id={`pipe-${idx}`}
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        let newSelection = [...selectedPipelines];
+                                        if (checked) {
+                                          newSelection.push(pipelineValue);
+                                          // If this is the first selected pipeline and no DB is set, set DB
+                                          if (newSelection.length === 1 && !sqlConnectorId && t.connectorId) {
+                                            setSqlConnectorId(t.connectorId);
+                                          }
+                                          // Auto-update query if empty
+                                          if (!sqlQuery.trim()) {
+                                            setSqlQuery(`SELECT * FROM ${t.name}`);
+                                          } else if (checked) {
+                                            // Append join template if query exists
+                                            // setSqlQuery(prev => `${prev}\n-- JOIN ${t.name} ON ...`);
+                                          }
+                                        } else {
+                                          newSelection = newSelection.filter(v => v !== pipelineValue);
+                                        }
+                                        setSelectedPipelines(newSelection);
+                                      }}
+                                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <label htmlFor={`pipe-${idx}`} className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                                      {t.name}
+                                    </label>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex gap-2 items-center">
@@ -896,30 +913,80 @@ export default function EditNodeDialog({
                           type="button"
                           size="sm"
                           variant="secondary"
-                          disabled={!sqlConnectorId}
+                          disabled={!sqlConnectorId && selectedPipelines.length === 0}
                           onClick={async () => {
                             const input = document.getElementById('sql-prompt-input') as HTMLInputElement;
-                            const desc = input?.value;
+                            let desc = input?.value;
                             if (!desc) {
                               toast({ title: 'Inserisci una descrizione', variant: 'destructive' });
                               return;
                             }
-                            if (!sqlConnectorId) {
-                              toast({ title: 'Seleziona un Database', variant: 'destructive' });
+
+                            // Get connectorId from pipeline if not set directly
+                            let effectiveConnectorId = sqlConnectorId;
+                            // If no DB selected but pipelines are led, try to use first pipeline's DB
+                            if (!effectiveConnectorId && selectedPipelines.length > 0) {
+                              // Take the first one
+                              const firstPipe = selectedPipelines[0];
+                              const [_, tableName] = firstPipe.split(':');
+                              const sourceTable = availableInputTables.find(t => t.name === tableName);
+                              if (sourceTable?.connectorId) {
+                                effectiveConnectorId = sourceTable.connectorId;
+                                setSqlConnectorId(effectiveConnectorId);
+                              }
+                            }
+
+                            if (!effectiveConnectorId) {
+                              toast({ title: 'Seleziona un Database o una Pipeline', variant: 'destructive' });
                               return;
                             }
 
+                            // Append context about available pipeline tables to the prompt
+                            if (selectedPipelines.length > 0) {
+                              const selectedTableNames = selectedPipelines.map(p => p.split(':')[1]).join(', ');
+                              desc = `${desc}. Usa queste tabelle pipeline disponibili per fare JOIN se necessario: ${selectedTableNames}`;
+                            }
+
+                            // Extract table names from selected pipelines for schema context
+                            let formattedTables: string[] = [];
+                            if (selectedPipelines.length > 0) {
+                              formattedTables = selectedPipelines.map(p => {
+                                // p is "pipeline:TableName:ConnectorId"
+                                const parts = p.split(':');
+                                return parts[1];
+                              });
+                            }
+
                             setInternalSaving(true);
+                            setAgentStatus("🕵️ Analisi Schema...");
+
                             try {
-                              // Dynamic import refactored to static
-                              // const { generateSqlAction } = await import('@/app/actions');
                               const apiKey = localStorage.getItem('openrouter_api_key');
                               const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
 
-                              const res = await generateSqlAction(desc, apiKey ? { apiKey, model } : undefined, sqlConnectorId);
+                              // Step 1: Fetch Schema
+                              let schemaContext: string | undefined = undefined;
+                              if (selectedPipelines.length > 0) {
+                                const tableNames = selectedPipelines.map(p => p.split(':')[1]);
+                                const schemaRes = await fetchTableSchemaAction(effectiveConnectorId, tableNames);
+
+                                if (schemaRes.schemaContext) {
+                                  schemaContext = schemaRes.schemaContext;
+                                } else if (schemaRes.error) {
+                                  console.warn("Schema fetch error:", schemaRes.error);
+                                  // toast({ title: 'Info', description: 'Schema non disponibile, procedo...', variant: 'default' });
+                                }
+                              }
+
+                              // Step 2: Generate SQL
+                              setAgentStatus("🧠 Generazione Query...");
+
+                              const res = await generateSqlAction(desc, apiKey ? { apiKey, model } : undefined, effectiveConnectorId, schemaContext);
+                              console.log('[GEN-SQL] Response:', res);
+
                               if (res.sql) {
                                 setSqlQuery(res.sql);
-                                toast({ title: 'Query Generata!' });
+                                toast({ title: 'Query Generata!', description: 'Controlla la console per i dettagli' });
                               } else {
                                 toast({ title: 'Errore generazione', description: res.error || 'Unknown', variant: 'destructive' });
                               }
@@ -928,6 +995,7 @@ export default function EditNodeDialog({
                               toast({ title: 'Errore', variant: 'destructive' });
                             } finally {
                               setInternalSaving(false);
+                              setAgentStatus(null);
                             }
                           }}
                         >
@@ -960,18 +1028,21 @@ export default function EditNodeDialog({
                           size="sm"
                           variant="outline"
                           className="text-xs border-indigo-200"
-                          disabled={!sqlConnectorId && !selectedPipeline}
+                          disabled={!sqlConnectorId && selectedPipelines.length === 0}
                           onClick={async () => {
                             if (!sqlQuery.trim()) return;
 
                             // Get connectorId from pipeline if not set directly
                             let effectiveConnectorId = sqlConnectorId;
-                            if (!effectiveConnectorId && selectedPipeline && selectedPipeline.startsWith('pipeline:')) {
-                              const [_, tableName] = selectedPipeline.split(':');
+                            // If no DB selected but pipelines are led, try to use first pipeline's DB
+                            if (!effectiveConnectorId && selectedPipelines.length > 0) {
+                              // Take the first one
+                              const firstPipe = selectedPipelines[0];
+                              const [_, tableName] = firstPipe.split(':');
                               const sourceTable = availableInputTables.find(t => t.name === tableName);
                               if (sourceTable?.connectorId) {
                                 effectiveConnectorId = sourceTable.connectorId;
-                                setSqlConnectorId(effectiveConnectorId); // Also update state
+                                setSqlConnectorId(effectiveConnectorId);
                               }
                             }
 
@@ -984,17 +1055,19 @@ export default function EditNodeDialog({
                               // Build Pipeline Dependencies
                               let pipelineDeps: { tableName: string, query: string }[] = [];
 
-                              if (selectedPipeline && selectedPipeline.startsWith('pipeline:')) {
-                                const [_, tableName] = selectedPipeline.split(':');
-                                const sourceTable = availableInputTables.find(t => t.name === tableName);
+                              if (selectedPipelines.length > 0) {
+                                selectedPipelines.forEach(pipeStr => {
+                                  const [_, tableName] = pipeStr.split(':');
+                                  const sourceTable = availableInputTables.find(t => t.name === tableName);
 
-                                if (sourceTable && sourceTable.sqlQuery) {
-                                  pipelineDeps.push({
-                                    tableName: sourceTable.name,
-                                    query: sourceTable.sqlQuery
-                                  });
-                                  console.log("Pipeline Dependencies:", pipelineDeps);
-                                }
+                                  if (sourceTable && sourceTable.sqlQuery) {
+                                    pipelineDeps.push({
+                                      tableName: sourceTable.name,
+                                      query: sourceTable.sqlQuery
+                                    });
+                                  }
+                                });
+                                console.log("Pipeline Dependencies:", pipelineDeps);
                               }
 
                               // Execute with dependencies (backend handles sequential execution)
