@@ -32,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play } from 'lucide-react';
+import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play, Download, LineChart } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem } from '@/lib/types';
 import { Input } from '../ui/input';
@@ -117,7 +117,7 @@ interface EditNodeDialogProps {
   nodePath: string;
   treeId: string;
   isSaving: boolean;
-  availableInputTables?: { name: string, connectorId?: string, sqlQuery?: string }[];
+  availableInputTables?: { name: string, connectorId?: string, sqlQuery?: string, pipelineDependencies?: { tableName: string; query: string }[] }[];
 }
 
 type FileToUpload = {
@@ -188,14 +188,21 @@ export default function EditNodeDialog({
   const [pythonOutputType, setPythonOutputType] = useState<'table' | 'variable' | 'chart'>('table');
   const [pythonResultName, setPythonResultName] = useState('');
   const [pythonAgentStatus, setPythonAgentStatus] = useState<string | null>(null);
+  const [pythonProgressStep, setPythonProgressStep] = useState<number>(0); // 0=none, 1=dati, 2=python, 3=rendering
+  const [hasPythonCodeChanged, setHasPythonCodeChanged] = useState(false);
   const [pythonPreviewResult, setPythonPreviewResult] = useState<{
     type: 'table' | 'variable' | 'chart';
     data?: any[];
     variables?: Record<string, any>;
     chartBase64?: string;
+    chartHtml?: string;
+    debugLogs?: string[];
   } | null>(null);
   const [pythonConnectorId, setPythonConnectorId] = useState<string>('');
   const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
+  const [pythonDebugLogs, setPythonDebugLogs] = useState<string[]>([]);
+
+  const isExecutingRef = useRef(false);
 
   // State for inline editing links
   const [editingLinkIndex, setEditingLinkIndex] = useState<number | null>(null);
@@ -769,7 +776,7 @@ export default function EditNodeDialog({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => !open && !componentIsSaving && onClose()}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="sm:max-w-[75vw] md:max-w-[75vw] lg:max-w-[75vw] !max-w-[75vw] w-[75vw]">
           <DialogHeader>
             <div className="flex items-center justify-between pr-8">
               <div className='grid gap-1.5'>
@@ -1545,6 +1552,7 @@ export default function EditNodeDialog({
                   </div>
 
                   {/* Preview Button */}
+
                   <div className="flex justify-end">
                     <Button
                       variant="secondary"
@@ -1553,10 +1561,30 @@ export default function EditNodeDialog({
                           toast({ variant: 'destructive', title: "Errore", description: "Inserisci del codice Python prima di eseguire l'anteprima." });
                           return;
                         }
-                        setPythonAgentStatus("Esecuzione Script...");
+
+                        // Reset visual state
+                        setPythonAgentStatus("Recupero Dati in corso...");
+                        setPythonProgressStep(1);
+                        isExecutingRef.current = true;
+
+                        // Simulate progress phases
+                        setTimeout(() => {
+                          if (isExecutingRef.current) {
+                            setPythonAgentStatus("Elaborazione Python...");
+                            setPythonProgressStep(2);
+                          }
+                        }, 2000);
+
+                        setTimeout(() => {
+                          if (isExecutingRef.current) {
+                            setPythonAgentStatus("Rendering Grafico...");
+                            setPythonProgressStep(3);
+                          }
+                        }, 5000);
 
                         // Prepara i dati di input e le dipendenze dai nodi selezionati
-                        const dependencies: { tableName: string; connectorId?: string; query?: string }[] = [];
+                        // Include pipelineDependencies for cascading SQL execution
+                        const dependencies: { tableName: string; connectorId?: string; query?: string; pipelineDependencies?: { tableName: string; query: string }[] }[] = [];
                         if (availableInputTables) {
                           pythonSelectedPipelines.forEach(pName => {
                             const table = availableInputTables.find(t => t.name === pName);
@@ -1564,16 +1592,26 @@ export default function EditNodeDialog({
                               dependencies.push({
                                 tableName: pName,
                                 connectorId: table.connectorId,
-                                query: table.sqlQuery
+                                query: table.sqlQuery,
+                                pipelineDependencies: table.pipelineDependencies // Pass ancestor queries
                               });
                             }
                           });
                         }
 
                         executePythonPreviewAction(pythonCode, pythonOutputType, {}, dependencies).then((res: any) => {
+                          isExecutingRef.current = false;
                           setPythonAgentStatus(null);
+                          setPythonProgressStep(0); // Reset on finish
                           if (res.success) {
-                            setPythonPreviewResult({ type: pythonOutputType, ...res });
+                            setPythonPreviewResult({
+                              type: pythonOutputType,
+                              data: res.data,
+                              variables: res.variables,
+                              chartBase64: res.chartBase64,
+                              chartHtml: res.chartHtml,
+                              debugLogs: res.debugLogs
+                            });
                             toast({ title: "Script Eseguito", description: "Anteprima pronta." });
                           } else {
                             toast({ variant: 'destructive', title: "Errore Python", description: res.error || "Errore sconosciuto" });
@@ -1582,10 +1620,43 @@ export default function EditNodeDialog({
                       }}
                       disabled={!!pythonAgentStatus}
                     >
-                      {pythonAgentStatus === "Esecuzione Script..." ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
-                      Esegui Anteprima
+                      {pythonAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                      {pythonAgentStatus || "Esegui Anteprima"}
                     </Button>
                   </div>
+
+                  {/* Visual Stepper "N Pallini" */}
+                  {pythonAgentStatus && (
+                    <div className="flex items-center justify-center gap-8 py-4 animate-in fade-in zoom-in-95 duration-300">
+                      {/* Step 1: Dati */}
+                      <div className="flex flex-col items-center gap-2">
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pythonProgressStep >= 1 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
+                          {pythonProgressStep > 1 ? <Check className="h-5 w-5" /> : <Database className="h-4 w-4" />}
+                        </div>
+                        <span className={`text-[10px] font-medium ${pythonProgressStep >= 1 ? 'text-primary' : 'text-muted-foreground'}`}>Recupero Dati</span>
+                      </div>
+
+                      <div className={`h-0.5 w-16 transition-all ${pythonProgressStep >= 2 ? 'bg-primary' : 'bg-muted'}`} />
+
+                      {/* Step 2: Python */}
+                      <div className="flex flex-col items-center gap-2">
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pythonProgressStep >= 2 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
+                          {pythonProgressStep > 2 ? <Check className="h-5 w-5" /> : <Code className="h-4 w-4" />}
+                        </div>
+                        <span className={`text-[10px] font-medium ${pythonProgressStep >= 2 ? 'text-primary' : 'text-muted-foreground'}`}>Elaborazione</span>
+                      </div>
+
+                      <div className={`h-0.5 w-16 transition-all ${pythonProgressStep >= 3 ? 'bg-primary' : 'bg-muted'}`} />
+
+                      {/* Step 3: Grafica */}
+                      <div className="flex flex-col items-center gap-2">
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pythonProgressStep >= 3 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
+                          <LineChart className="h-4 w-4" />
+                        </div>
+                        <span className={`text-[10px] font-medium ${pythonProgressStep >= 3 ? 'text-primary' : 'text-muted-foreground'}`}>Rendering</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Preview Result */}
                   {pythonPreviewResult && (
@@ -1595,7 +1666,44 @@ export default function EditNodeDialog({
                           <Code className="h-3 w-3" />
                           Risultato Python ({pythonPreviewResult.type})
                         </span>
-                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPythonPreviewResult(null)}><X className="h-3 w-3" /></Button>
+                        <div className="flex items-center gap-1">
+                          {pythonPreviewResult.type === 'chart' && pythonPreviewResult.chartHtml && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[10px] gap-1 px-2 font-bold"
+                              onClick={() => {
+                                const fullHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${pythonResultName || 'Chart Preview'}</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: sans-serif; background-color: #f8fafc; }
+    .chart-container { background: white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); padding: 20px; }
+  </style>
+</head>
+<body>
+  <div class="chart-container">
+    ${pythonPreviewResult.chartHtml}
+  </div>
+</body>
+</html>`;
+                                const blob = new Blob([fullHtml], { type: 'text/html' });
+                                const url = window.URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = `${pythonResultName || 'chart_preview'}.html`;
+                                link.click();
+                                window.URL.revokeObjectURL(url);
+                              }}
+                            >
+                              <Download className="h-3 w-3" /> Scarica HTML
+                            </Button>
+                          )}
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPythonPreviewResult(null)}><X className="h-3 w-3" /></Button>
+                        </div>
                       </div>
                       {pythonPreviewResult.type === 'table' && pythonPreviewResult.data && (
                         <DataTable data={pythonPreviewResult.data} />
@@ -1603,10 +1711,43 @@ export default function EditNodeDialog({
                       {pythonPreviewResult.type === 'variable' && pythonPreviewResult.variables && (
                         <pre className="p-3 text-xs overflow-auto max-h-48">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
                       )}
-                      {pythonPreviewResult.type === 'chart' && pythonPreviewResult.chartBase64 && (
-                        <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className="max-w-full" />
+                      {pythonPreviewResult.type === 'chart' && (
+                        <div className="bg-white dark:bg-zinc-950">
+                          {pythonPreviewResult.chartHtml ? (
+                            <div className="w-full h-[70vh] border-none overflow-auto">
+                              <iframe
+                                srcDoc={`
+                                  <html>
+                                    <head>
+                                      <style>body { margin: 0; padding: 0; background: transparent; }</style>
+                                    </head>
+                                    <body>${pythonPreviewResult.chartHtml}</body>
+                                  </html>
+                                `}
+                                className="w-full border-none"
+                                style={{ minHeight: '100%', height: 'auto' }}
+                                title="Interactive Chart"
+                              />
+                            </div>
+                          ) : pythonPreviewResult.chartBase64 ? (
+                            <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className="max-w-full block mx-auto py-4" />
+                          ) : (
+                            <div className="p-8 text-center text-muted-foreground italic text-xs">Nessun grafico generato</div>
+                          )}
+                        </div>
                       )}
                     </div>
+                  )}
+
+                  {/* Debug Info */}
+                  {pythonDebugLogs.length > 0 && (
+                    <CollapsibleSection title="Debug Info & Timing" storageKey="debug-info">
+                      <div className="bg-slate-950 text-slate-100 p-2 text-[10px] font-mono rounded overflow-auto max-h-40 border border-slate-800">
+                        {pythonDebugLogs.map((log: string, i: number) => (
+                          <div key={i} className="border-b border-slate-800/50 pb-0.5 mb-0.5 last:border-0">{log}</div>
+                        ))}
+                      </div>
+                    </CollapsibleSection>
                   )}
 
                   {/* Result Name */}

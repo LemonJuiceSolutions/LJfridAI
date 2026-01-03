@@ -49,6 +49,11 @@ export interface DecisionLeaf {
   sqlQuery?: string;
   sqlConnectorId?: string;
   sqlResultName?: string;
+  pythonCode?: string;
+  pythonOutputType?: 'table' | 'variable' | 'chart';
+  pythonResultName?: string;
+  pythonConnectorId?: string;
+  pythonSelectedPipelines?: string[];
 }
 
 export type SingleDecisionOptionChild = DecisionNode | DecisionLeaf | string | { ref: string, id?: string } | { subTreeRef: string, id?: string };
@@ -73,6 +78,11 @@ export interface DecisionNode {
   sqlResultName?: string;
   ref?: string;
   subTreeRef?: string;
+  pythonCode?: string;
+  pythonOutputType?: 'table' | 'variable' | 'chart';
+  pythonResultName?: string;
+  pythonConnectorId?: string;
+  pythonSelectedPipelines?: string[];
 }
 
 export interface StoredTree extends AnalysisResult {

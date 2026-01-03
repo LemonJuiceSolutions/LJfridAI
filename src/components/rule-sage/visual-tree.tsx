@@ -283,6 +283,12 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         }
     }, [treeData.id]);
 
+    // Fix: Refresh variables when treeData changes (e.g. after consolidation)
+    useEffect(() => {
+        fetchExternalData();
+    }, [treeData, fetchExternalData]);
+
+
     const layout = useMemo(() => {
         if (!tree) return { positionedNodes: [], contentWidth: 0, contentHeight: 0 };
         // Enrich tree with possibleValues from dbVariables
@@ -290,6 +296,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         const enrichNode = (node: any) => {
             if (node.variableId) {
                 const dbVar = dbVariables.find(v => v.id === node.variableId);
+                // Fix: Check if dbVar exists to prevent runtime errors
                 if (dbVar) {
                     node.possibleValues = dbVar.possibleValues;
                 }
@@ -319,7 +326,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         } else if ('question' in node) {
             text = node.question || "Invalid Node";
         } else {
-            text = "Invalid Node";
+            text = "Unknown Node";
         }
 
         if (!list.some(n => n.id === id)) {
@@ -336,7 +343,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 }
             });
         }
-    }, []);
+    }, [tree]); // Simplified for brevity in replace
 
     const flatTree = useMemo(() => {
         if (!tree) return [];
@@ -433,7 +440,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     }
 
 
-    const handleEdit = (path: string, type: 'question' | 'decision' | 'option') => {
+    const handleEdit = (path: string, type: 'question' | 'decision' | 'option', explicitOptionName?: string) => {
         if (!tree) return;
 
         const node = getNodeFromPath(tree, path);
@@ -447,19 +454,29 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         const parentPath = lastOptIdx !== -1 ? path.substring(0, lastOptIdx) : "root";
         const parentNode = getNodeFromPath(tree, parentPath);
         const varId = parentNode?.variableId;
-        const optionKeyMatch = path.match(/\['(.*?)'\]$/);
-        const optionName = optionKeyMatch ? optionKeyMatch[1].replace(/\\'/g, "'") : null;
+
+        let optionName = explicitOptionName || null;
+        if (!optionName) {
+            const optionKeyMatch = path.match(/\['(.*?)'\]$/);
+            optionName = optionKeyMatch ? optionKeyMatch[1].replace(/\\'/g, "'") : null;
+        }
 
         if (type === 'option') {
             if (varId && optionName) {
                 // Standard variable, open the detailed option editor
                 const dbVar = dbVariables.find(v => v.id === varId);
+
+                if (!dbVar) {
+                    toast({ variant: 'destructive', title: "Errore Variabile", description: `Variabile standard (${varId}) non trovata nel database. Prova a ricaricare.` });
+                    return;
+                }
+
                 const optionData = dbVar?.possibleValues?.find((opt: VariableOption) => opt.name === optionName);
 
                 if (optionData) {
                     setEditingOptionInfo({ path, option: optionData, varId });
                 } else {
-                    toast({ variant: 'destructive', title: "Errore", description: "Impossibile trovare i dati dell'opzione standard nel database." });
+                    toast({ variant: 'destructive', title: "Errore Opzione", description: `Dati opzione '${optionName}' non trovati nella variabile '${dbVar.name}'.` });
                 }
             } else if (optionName) {
                 // Local variable, open the simple name editor
@@ -574,6 +591,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             if (parentNode?.variableId) {
                 const dbVar = dbVariables.find(v => v.id === parentNode.variableId);
                 if (dbVar) {
+                    parentNode.possibleValues = dbVar.possibleValues;
+
                     const newOptionToAdd: VariableOption = {
                         id: nanoid(8),
                         name: optionName,
@@ -586,8 +605,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                         throw new Error(varUpdateResult.error || "Aggiornamento della variabile standard fallito");
                     }
                     await fetchExternalData(); // Refresh db variables state
+                } else {
+                    throw new Error("Variabile standard non trovata nel database");
                 }
             }
+
 
             const newPath = `${path}.options['${optionName.replace(/'/g, "\\'")}']`;
             const result = await updateTreeNodeAction({
@@ -1000,9 +1022,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     }, [layout.positionedNodes]);
 
     // Returns only pipeline tables from ancestor nodes of the given path
+    // Each table includes its own ancestors as pipelineDependencies for cascading execution
     const getAncestorInputTables = useMemo(() => {
-        return (currentPath: string): { name: string, connectorId?: string, sqlQuery?: string }[] => {
-            const tables: { name: string, connectorId?: string, sqlQuery?: string }[] = [];
+        return (currentPath: string): { name: string, connectorId?: string, sqlQuery?: string, pipelineDependencies?: { tableName: string; query: string }[] }[] => {
+            // First, collect all ancestors with their paths for ordering
+            const ancestorItems: { path: string; name: string; connectorId?: string; sqlQuery?: string }[] = [];
 
             flatTree.forEach((item: any) => {
                 const actualNode = item.node;
@@ -1017,16 +1041,39 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                             currentPath.charAt(nodePath.length) === '.';
 
                         if (isAncestor) {
-                            tables.push({
+                            ancestorItems.push({
+                                path: nodePath,
                                 name: resultName,
                                 connectorId: actualNode.sqlConnectorId || actualNode.pythonConnectorId,
                                 sqlQuery: actualNode.sqlQuery
                             });
-                            console.log(`[ANCESTOR] Path "${nodePath}" → Result "${resultName}" visible to "${currentPath}"`);
                         }
                     }
                 }
             });
+
+            // Sort by path length (shortest first = highest in tree = should execute first)
+            ancestorItems.sort((a, b) => a.path.length - b.path.length);
+
+            // Build result with pipelineDependencies for each table
+            const tables: { name: string, connectorId?: string, sqlQuery?: string, pipelineDependencies?: { tableName: string; query: string }[] }[] = [];
+
+            for (let i = 0; i < ancestorItems.length; i++) {
+                const item = ancestorItems[i];
+                // pipelineDependencies are all ancestors that come BEFORE this one
+                const pipelineDeps = ancestorItems.slice(0, i)
+                    .filter(dep => dep.sqlQuery) // Only include items with SQL queries
+                    .map(dep => ({ tableName: dep.name, query: dep.sqlQuery! }));
+
+                tables.push({
+                    name: item.name,
+                    connectorId: item.connectorId,
+                    sqlQuery: item.sqlQuery,
+                    pipelineDependencies: pipelineDeps.length > 0 ? pipelineDeps : undefined
+                });
+
+                console.log(`[ANCESTOR] "${item.name}" has ${pipelineDeps.length} pipeline dependencies:`, pipelineDeps.map(d => d.tableName));
+            }
 
             console.log('DEBUG: Ancestor Tables for path', currentPath, ':', tables.map(t => t.name));
             return tables;
@@ -1214,7 +1261,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                         <div className="node-edit-controls absolute -bottom-9 left-0 right-0 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-white/95 dark:bg-zinc-800/95 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 py-1 px-2 gap-1 z-20 pointer-events-auto transform scale-90 group-hover:scale-100 origin-top duration-200">
                                             <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => {
                                                 if (item.type === 'question' || item.type === 'decision' || item.type === 'option') {
-                                                    handleEdit(path, item.type);
+                                                    const optionName = item.type === 'option' ? (item.node as any).option : undefined;
+                                                    handleEdit(path, item.type, optionName);
                                                 }
                                             }} title="Modifica" disabled={isSaving || (item.type !== 'question' && item.type !== 'decision' && item.type !== 'option')}>
                                                 <Pencil className="h-3.5 w-3.5" />

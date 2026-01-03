@@ -1322,15 +1322,16 @@ df`,
             variable: `Return a dictionary containing one or more variables. The last line MUST be the dictionary variable (e.g., just 'result' on its own line).
 Example: result = {'total': 100, 'average': 50.5, 'status': 'complete'}
 result`,
-            chart: `Create a Matplotlib or Plotly chart. IMPORTANT: Do NOT call plt.show(). Instead, the last line MUST be the figure object (e.g., just 'fig' on its own line).
-Example with Matplotlib: 
-fig, ax = plt.subplots()
-ax.bar(['A', 'B', 'C'], [10, 20, 30])
-ax.set_title('My Chart')
+            chart: `Create a Plotly or Matplotlib chart. For an interactive "Next.js style" experience, STRONGLY PREFER Plotly (px or go). 
+IMPORTANT: Do NOT call plt.show(). Instead, the last line MUST be the figure object (e.g., just 'fig' on its own line).
+
+Example with Plotly (PREFERRED):
+fig = px.bar(data, x='Category', y='Value', title='Interattivo', color_discrete_sequence=['#059669'])
 fig
 
-Example with Plotly:
-fig = px.bar(x=['A', 'B', 'C'], y=[10, 20, 30], title='My Chart')
+Example with Matplotlib (STATIC):
+fig, ax = plt.subplots()
+ax.bar(data['Category'], data['Value'], color='#059669')
 fig`
         };
 
@@ -1394,67 +1395,97 @@ export async function executePythonPreviewAction(
     code: string,
     outputType: 'table' | 'variable' | 'chart',
     inputData: Record<string, any[]> = {},
-    dependencies?: { tableName: string; connectorId?: string; query?: string }[]
-): Promise<{ success: boolean; data?: any[]; variables?: Record<string, any>; chartBase64?: string; error?: string; rowCount?: number; stdout?: string }> {
+    dependencies?: { tableName: string; connectorId?: string; query?: string; pipelineDependencies?: { tableName: string; query: string }[] }[]
+): Promise<{ success: boolean; data?: any[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
+    const debugLogs: string[] = [];
+    const tStart = performance.now();
+
     try {
         const user = await getAuthenticatedUser();
 
         // If there are dependencies (SQL queries from parent nodes), fetch them first
         if (dependencies && dependencies.length > 0) {
             console.log(`[Python] Fetching ${dependencies.length} dependencies:`, dependencies.map(d => d.tableName).join(', '));
+            debugLogs.push(`[${new Date().toLocaleTimeString()}] Start fetching ${dependencies.length} dependencies`);
+
             for (const dep of dependencies) {
-                console.log(`[Python] Processing dependency: ${dep.tableName}, Query length: ${dep.query?.length || 0}, Connector: ${dep.connectorId || 'default'}`);
-                inputData[dep.tableName] = []; // Assicuriamoci che la variabile esista sempre (anche se vuota)
+                const tDepStart = performance.now();
+                const pipelineCount = dep.pipelineDependencies?.length || 0;
+                console.log(`[Python] Processing dependency: ${dep.tableName}, Query length: ${dep.query?.length || 0}, Connector: ${dep.connectorId || 'default'}, Pipeline deps: ${pipelineCount}`);
+                debugLogs.push(`[${new Date().toLocaleTimeString()}] Fetching SQL for table '${dep.tableName}' (with ${pipelineCount} ancestors)...`);
+
+                let queryResults: any[] = [];
                 if (dep.query) {
                     try {
-                        const sqlRes = await executeSqlPreviewAction(dep.query, dep.connectorId as string);
-                        if (sqlRes.data) {
-                            inputData[dep.tableName] = sqlRes.data;
-                            console.log(`[Python] ✅ Fetched ${sqlRes.data.length} rows for ${dep.tableName}`);
-                        } else {
-                            console.warn(`[Python] ⚠️ No data returned for ${dep.tableName}. Error: ${sqlRes.error || 'None'}`);
+                        if (dep.connectorId) {
+                            // Fetch connector config to know dbType
+                            const connector = await db.connector.findUnique({
+                                where: { id: dep.connectorId, companyId: user.companyId }
+                            });
+                            if (connector && (connector.type === 'mssql' || connector.type === 'sql' || connector.type === 'SQL')) {
+                                // Use executeSqlPreviewAction WITH pipelineDependencies for cascading!
+                                const res = await executeSqlPreviewAction(
+                                    dep.query,
+                                    dep.connectorId,
+                                    dep.pipelineDependencies // 🔥 KEY FIX: Pass ancestor queries
+                                );
+                                if (res.data) {
+                                    queryResults = res.data;
+                                } else {
+                                    console.error(`[Python] Error fetching dependent SQL data for ${dep.tableName}: ${res.error}`);
+                                    debugLogs.push(`[ERROR] Fetch failed for ${dep.tableName}: ${res.error}`);
+                                }
+                            } else {
+                                // Default/HubSpot/Other handling (simplified for now, assuming only MSSQL works this way or generic)
+                                // If it's the internal DB or other, we might need a different handler.
+                                // Fallback or Specific handling if needed.
+                                console.warn(`[Python] Dependency ${dep.tableName} has connector type ${connector?.type} which might not be fully supported in preview yet.`);
+                                debugLogs.push(`[WARN] Unsupported connector type for ${dep.tableName}`);
+                            }
                         }
-                    } catch (err) {
-                        console.error(`[Python] ❌ Error fetching dependency ${dep.tableName}:`, err);
+
+                        inputData[dep.tableName] = queryResults;
+                        const tDepEnd = performance.now();
+                        const dur = ((tDepEnd - tDepStart) / 1000).toFixed(2);
+                        console.log(`[Python] ✅ Fetched ${queryResults.length} rows for ${dep.tableName} in ${dur}s`);
+                        debugLogs.push(`[${new Date().toLocaleTimeString()}] ✅ Fetched ${queryResults.length} rows used for '${dep.tableName}' in ${dur}s`);
+
+                    } catch (err: any) {
+                        console.error(`[Python] Execute SQL Preview Error:`, err);
+                        debugLogs.push(`[ERROR] Exception fetching ${dep.tableName}: ${err.message}`);
                     }
                 } else {
                     console.warn(`[Python] ⚠️ Skipping dependency ${dep.tableName} because query is missing.`);
+                    debugLogs.push(`[WARN] Skipping dependency ${dep.tableName} because query is missing.`);
                 }
             }
         }
 
-        const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || 'http://localhost:5005';
+        const tPythonStart = performance.now();
+        console.log(`[executePythonPreviewAction] Calling Python backend at 5005...`);
+        debugLogs.push(`[${new Date().toLocaleTimeString()}] Sending data to Python backend...`);
 
-        console.log('[executePythonPreviewAction] Calling Python backend at 5005...');
-        console.log('[executePythonPreviewAction] Output type:', outputType);
-        console.log('[executePythonPreviewAction] Code length:', code.length);
-        console.log('[executePythonPreviewAction] Input data keys:', Object.keys(inputData));
-        Object.keys(inputData).forEach(k => console.log(`  - ${k}: ${inputData[k].length} rows`));
+        console.log(`[executePythonPreviewAction] Input data keys:`, Object.keys(inputData));
+        for (const k in inputData) {
+            console.log(`  - ${k}: ${inputData[k]?.length} rows`);
+        }
 
-        const response = await fetch(`${PYTHON_BACKEND_URL}/execute`, {
+        // Call Flask backend
+        const response = await fetch('http://localhost:5005/execute', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 code,
                 outputType,
-                inputData: inputData || {}
-            })
+                inputData
+            }),
+            signal: AbortSignal.timeout(300000) // 5 minutes timeout
         });
 
         if (!response.ok) {
-            let errorMsg = `Python backend returned ${response.status}`;
-            try {
-                const text = await response.text();
-                try {
-                    const errorData = JSON.parse(text);
-                    errorMsg = errorData?.error || errorMsg;
-                } catch (e) {
-                    console.error('[executePythonPreviewAction] Non-JSON error response:', text.substring(0, 200));
-                }
-            } catch (e) { }
-            throw new Error(errorMsg);
+            const errText = await response.text();
+            debugLogs.push(`[ERROR] Python backend HTTP ${response.status}: ${errText}`);
+            throw new Error(`Python backend error (${response.status}): ${errText}`);
         }
 
         const result = await response.json();
@@ -1485,6 +1516,7 @@ export async function executePythonPreviewAction(
             return {
                 success: true,
                 chartBase64: result.chartBase64,
+                chartHtml: result.chartHtml,
                 stdout: result.stdout
             };
         }
@@ -1727,6 +1759,7 @@ export async function executeConsolidationAction(
     }
 
     try {
+        const user = await getAuthenticatedUser();
         const treeResult = await getTreeAction(treeId);
         if (treeResult.error || !treeResult.data) {
             throw new Error(treeResult.error || 'Impossibile caricare l\'albero.');
@@ -1737,7 +1770,8 @@ export async function executeConsolidationAction(
         const transactionOps: any[] = [];
 
         for (const action of approvedActions) {
-            const varToSaveId = action.type === 'merge' && action.dbVarId ? action.dbVarId : nanoid();
+            // Fix: Use provided ID if available (for merges OR restoring orphans), otherwise gen new
+            const varToSaveId = action.dbVarId ? action.dbVarId : nanoid();
 
             const cleanFinalOptions = _.uniqBy(
                 (action.finalOptions || []).map(opt => ({ ...opt, id: opt.id || nanoid(8) }))
@@ -1757,7 +1791,8 @@ export async function executeConsolidationAction(
                 update: varData,
                 create: {
                     id: varToSaveId,
-                    ...varData
+                    ...varData,
+                    companyId: user.companyId
                 }
             }));
 
@@ -2459,3 +2494,33 @@ export async function fetchOpenRouterModelsAction(): Promise<{ data: any[] | nul
     }
 }
 
+
+export async function importTreeFromJsonAction(treeData: Partial<StoredTree>) {
+    try {
+        const user = await getAuthenticatedUser();
+
+        // Basic validation
+        if (!treeData.name || !treeData.jsonDecisionTree) {
+            return { error: 'Struttura JSON non valida: mancano nome o dati dell\'albero.' };
+        }
+
+        const newTree = await db.tree.create({
+            data: {
+                id: nanoid(),
+                name: treeData.name + ' (Importato)',
+                description: treeData.description || 'Importato da JSON',
+                jsonDecisionTree: typeof treeData.jsonDecisionTree === 'string' ? treeData.jsonDecisionTree : JSON.stringify(treeData.jsonDecisionTree),
+                naturalLanguageDecisionTree: treeData.naturalLanguageDecisionTree || '',
+                questionsScript: treeData.questionsScript || '',
+                type: treeData.type || 'RULE',
+                companyId: user.companyId,
+                createdAt: new Date(),
+            }
+        });
+
+        return { success: true, treeId: newTree.id };
+    } catch (e) {
+        console.error("Errore nell'importazione dell'albero:", e);
+        return { error: 'Errore interno durante il salvataggio dell\'albero.' };
+    }
+}

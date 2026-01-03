@@ -1,0 +1,6 @@
+Generating 20k rows of dummy data...
+Data shape: (20075, 8)
+Sending request to localhost:5005...
+Status: 200
+Time: 1.74 seconds
+Success. Chart HTML len: 508695

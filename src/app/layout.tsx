@@ -24,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className={inter.variable}>
-      <body className={`${inter.className} antialiased bg-background text-foreground selection:bg-primary/30`}>
+      <body suppressHydrationWarning className={`${inter.className} antialiased bg-background text-foreground selection:bg-primary/30`}>
         <AuthProvider>
           <div className="flex min-h-screen">
             <SidebarNav />

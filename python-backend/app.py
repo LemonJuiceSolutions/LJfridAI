@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import pandas as pd
 import numpy as np
@@ -7,20 +7,96 @@ matplotlib.use('Agg')  # Non-interactive backend for server
 import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import io
 import base64
 import sys
 import traceback
 from contextlib import redirect_stdout, redirect_stderr
+import os
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from Next.js
 
 VERSION = "1.0.4"
 
+# --- Premium Emerald Theme for Plotly ---
+emerald_template = go.layout.Template(
+    layout=go.Layout(
+        colorway=['#059669', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'],
+        paper_bgcolor='white',
+        plot_bgcolor='rgba(248, 250, 252, 0.5)',
+        font=dict(family="Inter, -apple-system, sans-serif", color="#475569", size=12),
+        title=dict(font=dict(size=18, color="#1e293b", weight='bold'), x=0.05, y=0.95),
+        margin=dict(l=50, r=40, t=80, b=50),
+        xaxis=dict(
+            gridcolor="#e2e8f0", 
+            zerolinecolor="#cbd5e1", 
+            tickfont=dict(size=10),
+            title=dict(font=dict(size=12, color="#64748b"))
+        ),
+        yaxis=dict(
+            gridcolor="#e2e8f0", 
+            zerolinecolor="#cbd5e1", 
+            tickfont=dict(size=10),
+            title=dict(font=dict(size=12, color="#64748b"))
+        ),
+        hoverlabel=dict(bgcolor="white", font_size=12, font_family="Inter"),
+        legend=dict(bgcolor="rgba(255,255,255,0.8)", bordercolor="#e2e8f0", borderwidth=1)
+    )
+)
+pio.templates["emerald"] = emerald_template
+pio.templates.default = "emerald"
+
+# --- Premium Emerald Theme for Matplotlib ---
+try:
+    plt.rcParams.update({
+        'figure.facecolor': 'white',
+        'axes.facecolor': 'white',
+        'axes.edgecolor': '#cbd5e1',
+        'axes.grid': True,
+        'grid.color': '#f1f5f9',
+        'grid.linestyle': '-',
+        'axes.labelcolor': '#64748b',
+        'axes.titleweight': 'bold',
+        'axes.titlesize': 14,
+        'axes.titlecolor': '#111827',
+        'axes.spines.top': False,
+        'axes.spines.right': False,
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Inter', 'Arial', 'sans-serif'],
+        'xtick.color': '#94a3b8',
+        'ytick.color': '#94a3b8',
+        'axes.prop_cycle': plt.cycler(color=['#059669', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'])
+    })
+except:
+    pass
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok', 'version': VERSION})
+
+@app.route('/download-excel', methods=['POST'])
+def download_excel():
+    try:
+        data = request.get_json().get('data', [])
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        df = pd.DataFrame(data)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='DataPreview')
+        
+        output.seek(0)
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='preview_data.xlsx'
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/execute', methods=['POST'])
 def execute_python():
@@ -60,7 +136,30 @@ def execute_python():
                 
                 if i == 0 or table_name == 'df':
                     ns['df'] = df_table
-                    print(f"   - 'df' mapped to '{table_name}'")
+                    ns['data'] = df_table # Alias 'data' for the first table
+                    print(f"   - 'df' & 'data' mapped to '{table_name}'")
+
+        
+        # --- Prevent blocking calls ---
+        def no_op_show(*args, **kwargs):
+            print("⚠️ [EXECUTE] 'show()' call ignored to prevent blocking. The figure is captured automatically.")
+
+        # Monkey-patch plt.show in the namespace
+        # (We can't easily replace the module 'plt' passed in 'ns' if it's the real module, 
+        # so we wrap it or assign the function to the module instance locally if possible, 
+        # but better to just shadow 'plt' in the dict with a wrapper)
+        class PltWrapper:
+            def __init__(self, original_plt):
+                self._original_plt = original_plt
+            def __getattr__(self, name):
+                if name == 'show':
+                    return no_op_show
+                return getattr(self._original_plt, name)
+        
+        ns['plt'] = PltWrapper(plt)
+        
+        # Disable Plotly browser renderer
+        pio.renderers.default = "json" # or None, but json is safe
 
         print(f"🐍 [v{VERSION}] Executing script...")
         
@@ -96,16 +195,37 @@ def execute_python():
         # Discovery: try to find the best result in the namespace
         res_val = None
         
-        # Priority 1: Common result names
-        search_order = ['result', 'output', 'data', 'fig', 'df']
-        for key in search_order:
-            if key in ns and ns[key] is not None:
-                # If we injected an empty 'df' and it's still empty, skip it unless no inputs were provided
-                if key == 'df' and isinstance(ns[key], pd.DataFrame) and ns[key].empty and len(input_data) == 0:
-                    continue
-                res_val = ns[key]
-                print(f"✅ [EXECUTE] Found result in variable: '{key}'")
-                break
+        # Priority 1: Common result names (ordered by most likely output)
+        # Priority 1: Common result names (ordered by most likely output)
+        if output_type == 'chart':
+            search_order = ['fig', 'chart', 'result', 'output']
+            # Filter: we strictly want a chart object if possible
+            for key in search_order:
+                if key in ns:
+                    val = ns[key]
+                    if hasattr(val, 'to_json') or isinstance(val, (plt.Figure, go.Figure)):
+                        res_val = val
+                        print(f"✅ [EXECUTE] Found chart result in variable: '{key}'")
+                        break
+            
+            # Fallback: look for ANY chart object if none of the priority names matched
+            if res_val is None:
+                for key, val in reversed(list(ns.items())):
+                    if key not in ['plt', 'px', 'go', 'pd', 'np', 'data', 'df'] and \
+                       (hasattr(val, 'to_json') or isinstance(val, (plt.Figure, go.Figure))):
+                        res_val = val
+                        print(f"✅ [EXECUTE] Found chart result in generic variable: '{key}'")
+                        break
+        else:
+            search_order = ['result', 'output', 'df', 'data']
+            for key in search_order:
+                if key in ns and ns[key] is not None:
+                    # If we injected an empty 'df' and it's still empty, skip it unless no inputs were provided
+                    if key in ['df', 'data'] and isinstance(ns[key], pd.DataFrame) and ns[key].empty and len(input_data) == 0:
+                        continue
+                    res_val = ns[key]
+                    print(f"✅ [EXECUTE] Found result in variable: '{key}'")
+                    break
         
         # Priority 2: Last line expression (heuristic)
         # In current implementation, if no P1 found, we just use None
@@ -146,13 +266,26 @@ def execute_python():
                 })
         
         elif output_type == 'chart':
-            # Matplotlib Figure
+            # 1. Plotly Figure (Check this first for interactivity)
+            if hasattr(res_val, 'to_json') or isinstance(res_val, go.Figure) or hasattr(res_val, 'to_image'):
+                try:
+                    # Return HTML for interactivity if it's a Plotly figure
+                    chart_html = pio.to_html(res_val, full_html=False, include_plotlyjs='cdn')
+                    return jsonify({
+                        'success': True,
+                        'chartHtml': chart_html,
+                        'stdout': stdout_val
+                    })
+                except Exception as pe:
+                    print(f"⚠️ [EXECUTE] Plotly HTML conversion failed, falling back to PNG: {str(pe)}")
+            
+            # 2. Matplotlib Figure
             if isinstance(res_val, plt.Figure):
                 buf = io.BytesIO()
                 res_val.savefig(buf, format='png', dpi=150, bbox_inches='tight')
                 buf.seek(0)
                 img_base64 = base64.b64encode(buf.read()).decode('utf-8')
-                plt.close(res_val)  # Clean up
+                plt.close(res_val)
                 
                 return jsonify({
                     'success': True,
@@ -160,18 +293,8 @@ def execute_python():
                     'stdout': stdout_val
                 })
             
-            # Plotly Figure
-            elif hasattr(res_val, 'to_image'):
-                img_bytes = res_val.to_image(format="png")
-                img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-                return jsonify({
-                    'success': True,
-                    'chartBase64': img_base64,
-                    'stdout': stdout_val
-                })
-            
+            # 3. Fallback: current matplotlib figure
             else:
-                # Try to get the current figure as fallback
                 try:
                     curr_fig = plt.gcf()
                     if curr_fig and len(curr_fig.get_axes()) > 0:

@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ArrowUpDown, ArrowUp, ArrowDown, Filter, X } from "lucide-react"
+import { ArrowUpDown, ArrowUp, ArrowDown, Filter, X, Download, ChevronRight } from "lucide-react"
 import {
     Popover,
     PopoverContent,
@@ -60,7 +60,15 @@ export function DataTable<TData extends Record<string, any>>({
 
                 if (aValue === bValue) return 0
 
-                const comparison = aValue > bValue ? 1 : -1
+                // Better sort for numbers/strings
+                const isANumber = typeof aValue === 'number'
+                const isBNumber = typeof bValue === 'number'
+
+                if (isANumber && isBNumber) {
+                    return sortDirection === 'asc' ? (aValue as number) - (bValue as number) : (bValue as number) - (aValue as number)
+                }
+
+                const comparison = String(aValue).localeCompare(String(bValue))
                 return sortDirection === 'asc' ? comparison : -comparison
             })
         }
@@ -84,7 +92,7 @@ export function DataTable<TData extends Record<string, any>>({
             if (sortDirection === 'asc') {
                 setSortDirection('desc')
             } else {
-                setSortColumn(null) // toggle off
+                setSortColumn(null)
                 setSortDirection('asc')
             }
         } else {
@@ -105,111 +113,151 @@ export function DataTable<TData extends Record<string, any>>({
         })
     }
 
+    const downloadExcel = async () => {
+        if (filteredData.length === 0) return
+        try {
+            const response = await fetch('http://localhost:5005/download-excel', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ data: filteredData }),
+            })
+
+            if (!response.ok) throw new Error('Download failed')
+
+            const blob = await response.blob()
+            const url = window.URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = url
+            link.setAttribute('download', 'preview_data.xlsx')
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            window.URL.revokeObjectURL(url)
+        } catch (error) {
+            console.error('Excel download error:', error)
+            alert('Errore durante il download dell\'Excel')
+        }
+    }
+
     if (!data || data.length === 0) {
-        return <div className="p-4 text-center text-sm text-muted-foreground">Nessun dato da visualizzare.</div>
+        return <div className="p-4 text-center text-sm text-muted-foreground italic">Nessun dato da visualizzare.</div>
     }
 
     return (
-        <div className={`space-y-4 ${className} w-full max-w-full`}>
-            <div className="rounded-md border max-h-[400px] overflow-auto relative w-full max-w-full">
-                <table className="w-max min-w-full caption-bottom text-sm">
-                    <TableHeader className="bg-muted sticky top-0 z-10 shadow-sm">
-                        <TableRow>
+        <div className={cn("flex flex-col h-full w-full max-w-full bg-white dark:bg-zinc-900 border rounded-lg overflow-hidden", className)}>
+            {/* Top Toolbar */}
+            <div className="flex items-center justify-between p-2 bg-muted/30 border-b gap-4">
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-muted-foreground px-2 py-1 bg-white dark:bg-zinc-800 rounded border shadow-sm">
+                        {filteredData.length} righe
+                    </span>
+                    {Object.keys(filters).length > 0 && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setFilters({})}
+                            className="h-7 text-[10px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                            <X className="h-3 w-3 mr-1" /> Rimuovi Filtri
+                        </Button>
+                    )}
+                </div>
+                <Button variant="outline" size="sm" onClick={downloadExcel} className="h-7 text-[10px] gap-1.5 font-bold">
+                    <Download className="h-3 w-3" /> Esporta Excel
+                </Button>
+            </div>
+
+            {/* Table Container */}
+            <div className="flex-1 overflow-auto relative">
+                <table className="w-max min-w-full text-sm border-separate border-spacing-0">
+                    <thead className="sticky top-0 z-20 bg-muted/80 backdrop-blur-sm">
+                        <tr>
                             {columns.map((column) => (
-                                <TableHead key={column} className="min-w-[150px] whitespace-nowrap">
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-semibold text-xs uppercase text-muted-foreground">{column}</span>
-
-                                        {/* Sort Button */}
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className={`h-6 w-6 p-0 hover:bg-transparent ${sortColumn === column ? 'text-primary' : 'text-muted-foreground/50'}`}
-                                            onClick={() => handleSort(column)}
-                                        >
+                                <th
+                                    key={`head-${column}`}
+                                    className="px-4 py-2 border-b border-r last:border-r-0 text-left align-middle transition-colors group cursor-pointer hover:bg-muted/50"
+                                    onClick={() => handleSort(column)}
+                                >
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="font-bold text-[10px] uppercase text-slate-500 dark:text-slate-400 tracking-wider transition-colors group-hover:text-primary">
+                                            {column}
+                                        </span>
+                                        <div className="flex items-center gap-1">
                                             {sortColumn === column ? (
-                                                sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                                sortDirection === 'asc' ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
                                             ) : (
-                                                <ArrowUpDown className="h-3 w-3" />
+                                                <ArrowUpDown className="h-3 w-3 text-muted-foreground/30 opacity-0 group-hover:opacity-100" />
                                             )}
-                                        </Button>
-
-                                        {/* Filter Popover */}
-                                        <Popover>
-                                            <PopoverTrigger asChild>
-                                                <Button variant="ghost" size="sm" className={`h-6 w-6 p-0 hover:bg-transparent ${filters[column] ? 'text-primary' : 'text-muted-foreground/50'}`}>
-                                                    <Filter className="h-3 w-3" />
-                                                </Button>
-                                            </PopoverTrigger>
-                                            <PopoverContent className="w-60 p-2" align="start">
-                                                <div className="space-y-2">
-                                                    <h4 className="font-medium leading-none text-xs mb-2">Filtra {column}</h4>
-                                                    <div className="flex gap-2">
-                                                        <Input
-                                                            placeholder={`Cerca in ${column}...`}
-                                                            value={filters[column] || ''}
-                                                            onChange={(e) => handleFilterChange(column, e.target.value)}
-                                                            className="h-8 text-xs"
-                                                            autoFocus
-                                                        />
-                                                        {filters[column] && (
-                                                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleFilterChange(column, '')}>
-                                                                <X className="h-4 w-4" />
-                                                            </Button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </PopoverContent>
-                                        </Popover>
-
+                                        </div>
                                     </div>
-                                </TableHead>
+                                </th>
                             ))}
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                        </tr>
+                        {/* Persistent Filter Row */}
+                        <tr className="bg-white/50 dark:bg-zinc-900/50 backdrop-blur shadow-inner">
+                            {columns.map((column) => (
+                                <th key={`filter-${column}`} className="px-2 py-1.5 border-b border-r last:border-r-0">
+                                    <div className="relative">
+                                        <Input
+                                            placeholder={`Filtra...`}
+                                            value={filters[column] || ''}
+                                            onChange={(e) => handleFilterChange(column, e.target.value)}
+                                            className="h-7 text-[10px] bg-white/30 dark:bg-zinc-900/30 border-none shadow-none focus-visible:ring-1 focus-visible:ring-primary/30 pl-6"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <Filter className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/40" />
+                                    </div>
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
                         {paginatedData.length > 0 ? (
                             paginatedData.map((row, i) => (
-                                <TableRow key={i}>
+                                <tr key={i} className="hover:bg-muted/20 transition-colors even:bg-zinc-50/50 dark:even:bg-zinc-800/10">
                                     {columns.map((column) => (
-                                        <TableCell key={column} className="py-2 px-4 text-xs font-mono whitespace-nowrap">
+                                        <td key={column} className="py-2 px-4 text-xs font-mono border-r last:border-r-0 text-foreground/80">
                                             {row[column] !== null && row[column] !== undefined ? String(row[column]) : <span className="text-muted-foreground/40 italic">null</span>}
-                                        </TableCell>
+                                        </td>
                                     ))}
-                                </TableRow>
+                                </tr>
                             ))
                         ) : (
-                            <TableRow>
-                                <TableCell colSpan={columns.length} className="h-24 text-center">
-                                    Nessun risultato trovato con i filtri correnti.
-                                </TableCell>
-                            </TableRow>
+                            <tr>
+                                <td colSpan={columns.length} className="h-32 text-center text-muted-foreground italic">
+                                    Nessun risultato trovato.
+                                </td>
+                            </tr>
                         )}
-                    </TableBody>
+                    </tbody>
                 </table>
             </div>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <div>
-                    Pagina {currentPage} di {totalPages} ({filteredData.length} record)
+
+            {/* Pagination Row */}
+            <div className="flex items-center justify-between p-2 bg-muted/40 border-t">
+                <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-tight">
+                    Pagina {currentPage} di {totalPages}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-1">
                     <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                         disabled={currentPage === 1}
-                        className="h-8 px-2"
+                        className="h-7 w-7 p-0"
                     >
-                        Precedente
+                        <ChevronRight className="h-4 w-4 rotate-180" />
                     </Button>
                     <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                         disabled={currentPage === totalPages}
-                        className="h-8 px-2"
+                        className="h-7 w-7 p-0"
                     >
-                        Successivo
+                        <ChevronRight className="h-4 w-4" />
                     </Button>
                 </div>
             </div>

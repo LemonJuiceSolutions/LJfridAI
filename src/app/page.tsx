@@ -8,7 +8,7 @@ import { PlusCircle, Loader2, ListTree, Download, Bot, Database, Trash2, Search,
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { deleteAllTreesAction, deleteTreeAction, getTreesAction } from './actions';
+import { deleteAllTreesAction, deleteTreeAction, getTreesAction, importTreeFromJsonAction } from './actions';
 import type { StoredTree } from '@/lib/types';
 import { BrainCircuit, MessageSquareText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -34,6 +34,7 @@ export default function Home() {
   const [dialogState, setDialogState] = useState<'delete-single' | 'delete-all' | null>(null);
   const [treeToDelete, setTreeToDelete] = useState<StoredTree | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const fetchTrees = async () => {
@@ -164,6 +165,86 @@ export default function Home() {
     setTreeToDelete(null);
   }
 
+  const handleImportClick = () => {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.json';
+    fileInput.onchange = handleFileChange;
+    fileInput.click();
+  };
+
+  const handleFileChange = async (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      try {
+        const text = e.target?.result;
+        if (typeof text !== 'string') throw new Error('Impossibile leggere il file.');
+
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch (err) {
+          throw new Error('Il file non è un JSON valido.');
+        }
+
+        // Handle array (if multiple trees exported) or single object
+        let treeData = Array.isArray(json) ? json[0] : json;
+
+        if (!treeData) {
+          throw new Error("Il file JSON è vuoto o non contiene dati validi.");
+        }
+
+        // Check if this is a raw tree structure (from single tree export via code-block.tsx)
+        // Raw trees have 'question' at root but no 'name' property
+        if (!treeData.name && treeData.question) {
+          // Wrap raw tree into the format expected by importTreeFromJsonAction
+          const fileName = file.name.replace(/\.json$/i, '');
+          treeData = {
+            name: fileName || 'Albero Importato',
+            description: 'Importato da file JSON',
+            jsonDecisionTree: treeData,
+            type: 'RULE'
+          };
+        }
+
+        if (!treeData.name) {
+          throw new Error("Il file JSON non contiene dati validi per un albero (manca il nome o la struttura).");
+        }
+
+        const result = await importTreeFromJsonAction(treeData);
+
+        if (result.success && result.treeId) {
+          toast({
+            title: "Importazione Riuscita",
+            description: `L'albero "${treeData.name}" è stato importato.`
+          });
+          // Redirect to the new tree
+          window.location.href = `/view/${result.treeId}`;
+        } else {
+          throw new Error(result.error || "Importazione fallita.");
+        }
+
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Errore sconosciuto durante l'importazione.";
+        toast({
+          variant: "destructive",
+          title: "Errore di Importazione",
+          description: message
+        });
+      } finally {
+        setIsImporting(false);
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
   const filteredTrees = trees.filter(tree => {
     const query = searchQuery.toLowerCase();
     if (!query) return true;
@@ -192,6 +273,14 @@ export default function Home() {
                       Nuovo Flusso
                     </Button>
                   </Link>
+                  <Button
+                    variant="outline"
+                    onClick={handleImportClick}
+                    disabled={isLoading || isImporting}
+                  >
+                    {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                    Importa
+                  </Button>
                   <Button
                     variant="outline"
                     className="border-[#ff2800] text-[#ff2800] hover:bg-red-50 hover:text-[#ff2800]"

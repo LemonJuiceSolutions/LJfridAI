@@ -15,8 +15,8 @@ import Link from 'next/link';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { cn } from '@/lib/utils';
 import { DataTable } from '@/components/ui/data-table';
-import { executeSqlPreviewAction } from '@/app/actions';
-import { Database } from 'lucide-react';
+import { Database, Code, LineChart } from 'lucide-react';
+import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
 
 
 interface InteractiveGuideProps {
@@ -34,7 +34,7 @@ type HistoryFrame = {
 type HistoryItem = DecisionOptionChild;
 
 // Helper component for SQL Preview
-function SqlDataPreview({ connectorId, query }: { connectorId: string, query: string }) {
+function SqlDataPreview({ connectorId, query, pipelineDependencies }: { connectorId: string, query: string, pipelineDependencies?: { tableName: string, query: string }[] }) {
     const [data, setData] = useState<any[] | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -45,7 +45,8 @@ function SqlDataPreview({ connectorId, query }: { connectorId: string, query: st
             if (!connectorId || !query) return;
             setLoading(true);
             try {
-                const result = await executeSqlPreviewAction(query, connectorId);
+                // Pass pipelineDependencies to backend for cascading execution
+                const result = await executeSqlPreviewAction(query, connectorId, pipelineDependencies);
                 if (mounted) {
                     if (result.data) {
                         setData(result.data);
@@ -61,7 +62,7 @@ function SqlDataPreview({ connectorId, query }: { connectorId: string, query: st
         };
         fetchData();
         return () => { mounted = false; };
-    }, [connectorId, query]);
+    }, [connectorId, query, pipelineDependencies]);
 
     if (!connectorId || !query) return null;
 
@@ -82,6 +83,114 @@ function SqlDataPreview({ connectorId, query }: { connectorId: string, query: st
             ) : data ? (
                 <div className="max-h-[300px] overflow-auto w-full max-w-full">
                     <DataTable data={data} className="border-0" />
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+// Helper component for Python Preview
+function PythonDataPreview({
+    code,
+    outputType,
+    selectedPipelines,
+    pipelineDependencies
+}: {
+    code: string,
+    outputType: 'table' | 'variable' | 'chart',
+    selectedPipelines?: string[],
+    pipelineDependencies: { tableName: string, query: string, connectorId?: string }[]
+}) {
+    const [result, setResult] = useState<any>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let mounted = true;
+        const execute = async () => {
+            if (!code) return;
+            setLoading(true);
+            try {
+                // Construct dependencies for Python execution
+                const dependencies = (selectedPipelines || []).map(pName => {
+                    const found = pipelineDependencies.find(d => d.tableName === pName);
+                    if (found) {
+                        return {
+                            tableName: pName,
+                            connectorId: found.connectorId,
+                            query: found.query,
+                            pipelineDependencies: pipelineDependencies // Pass full history for cascading
+                        };
+                    }
+                    return null;
+                }).filter(Boolean) as any[];
+
+                const res = await executePythonPreviewAction(code, outputType, {}, dependencies);
+
+                if (mounted) {
+                    if (res.success) {
+                        setResult({
+                            type: outputType,
+                            data: res.data,
+                            variables: res.variables,
+                            chartBase64: res.chartBase64,
+                            chartHtml: res.chartHtml
+                        });
+                    } else {
+                        setError(res.error || "Errore esecuzione Python");
+                    }
+                }
+            } catch (e) {
+                if (mounted) setError("Errore di connessione");
+            } finally {
+                if (mounted) setLoading(false);
+            }
+        };
+        execute();
+        return () => { mounted = false; };
+    }, [code, outputType, selectedPipelines, pipelineDependencies]);
+
+    if (!code) return null;
+
+    return (
+        <div className="mt-4 border rounded-md overflow-hidden w-full max-w-full min-w-0 grid grid-cols-1">
+            <div className="bg-muted px-3 py-2 border-b flex items-center gap-2">
+                <Code className="h-4 w-4 text-emerald-600" />
+                <span className="text-xs font-semibold uppercase tracking-wider">Analisi Python ({outputType})</span>
+            </div>
+            {loading ? (
+                <div className="p-8 flex justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+            ) : error ? (
+                <div className="p-4 text-sm text-destructive bg-destructive/10">
+                    {error}
+                </div>
+            ) : result ? (
+                <div className="w-full max-w-full bg-white dark:bg-zinc-950">
+                    {result.type === 'table' && result.data && (
+                        <div className="max-h-[300px] overflow-auto">
+                            <DataTable data={result.data} className="border-0" />
+                        </div>
+                    )}
+                    {result.type === 'variable' && result.variables && (
+                        <pre className="p-3 text-xs overflow-auto max-h-48">{JSON.stringify(result.variables, null, 2)}</pre>
+                    )}
+                    {result.type === 'chart' && (
+                        <div className="w-full h-[500px] border-none overflow-hidden relative">
+                            {result.chartHtml ? (
+                                <iframe
+                                    srcDoc={`<html><head><style>body{margin:0;padding:0;background:transparent;overflow:hidden;}</style></head><body>${result.chartHtml}</body></html>`}
+                                    className="w-full h-full border-none"
+                                    title="Chart"
+                                />
+                            ) : result.chartBase64 ? (
+                                <img src={`data:image/png;base64,${result.chartBase64}`} alt="Chart" className="max-w-full h-full object-contain mx-auto" />
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground text-xs italic">Nessun grafico generato</div>
+                            )}
+                        </div>
+                    )}
                 </div>
             ) : null}
         </div>
@@ -515,9 +624,44 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
         );
     };
 
+    const getAccumulatedDependencies = (history: HistoryItem[], currentNode?: DecisionNode | DecisionLeaf | string | null) => {
+        const deps: { tableName: string, query: string, connectorId?: string }[] = [];
+
+        // Helper to add unique deps
+        const addDep = (node: any) => {
+            if (node && typeof node === 'object' && node.sqlQuery && node.sqlResultName) {
+                // Avoid duplicates
+                if (!deps.find(d => d.tableName === node.sqlResultName)) {
+                    deps.push({
+                        tableName: node.sqlResultName,
+                        query: node.sqlQuery,
+                        connectorId: node.sqlConnectorId
+                    });
+                }
+            }
+        };
+
+        // 1. Add from Stack (parent trees)
+        treeStack.forEach(frame => {
+            frame.path.forEach(node => addDep(node));
+        });
+
+        // 2. Add from current history
+        history.forEach(node => addDep(node));
+
+        // 3. Add current node itself IF it has deps (not needed for itself, but keeping logic consistent)
+        // Actually, we need deps that come BEFORE the current query.
+
+        return deps;
+    };
+
     const renderLeafNode = (node: DecisionLeaf | string, index?: number) => {
         const decisionText = typeof node === 'string' ? node : node.decision;
         const isLeafObject = typeof node === 'object' && node !== null;
+
+        // Calculate dependencies UP TO this node
+        // In renderLeaf, 'node' IS the current node. We need ancestors.
+        const dependencies = getAccumulatedDependencies(nodeHistory);
 
         return (
             <div key={index} className={cn("w-full mb-4", index !== undefined && "border-b pb-4 last:border-0 last:pb-0")}>
@@ -533,8 +677,20 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                         <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground mb-0.5 opacity-70">Decisione Finale</p>
                         <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{decisionText}</p>
                         {isLeafObject && renderAttachments(node)}
+                        {isLeafObject && 'pythonCode' in node && (node as any).pythonCode && (
+                            <PythonDataPreview
+                                code={(node as any).pythonCode}
+                                outputType={(node as any).pythonOutputType || 'table'}
+                                selectedPipelines={(node as any).pythonSelectedPipelines}
+                                pipelineDependencies={dependencies}
+                            />
+                        )}
                         {isLeafObject && 'sqlConnectorId' in node && 'sqlQuery' in node && (node as any).sqlConnectorId && (
-                            <SqlDataPreview connectorId={(node as any).sqlConnectorId} query={(node as any).sqlQuery} />
+                            <SqlDataPreview
+                                connectorId={(node as any).sqlConnectorId}
+                                query={(node as any).sqlQuery}
+                                pipelineDependencies={dependencies}
+                            />
                         )}
                     </div>
                 </div>
@@ -607,8 +763,20 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                                     )}
                                                     <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">{(node as DecisionNode).question}</p>
                                                     {renderAttachments(node as DecisionNode)}
+                                                    {'pythonCode' in node && (node as any).pythonCode && (
+                                                        <PythonDataPreview
+                                                            code={(node as any).pythonCode}
+                                                            outputType={(node as any).pythonOutputType || 'table'}
+                                                            selectedPipelines={(node as any).pythonSelectedPipelines}
+                                                            pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
+                                                        />
+                                                    )}
                                                     {'sqlConnectorId' in node && 'sqlQuery' in node && (node as any).sqlConnectorId && (
-                                                        <SqlDataPreview connectorId={(node as any).sqlConnectorId} query={(node as any).sqlQuery} />
+                                                        <SqlDataPreview
+                                                            connectorId={(node as any).sqlConnectorId}
+                                                            query={(node as any).sqlQuery}
+                                                            pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
+                                                        />
                                                     )}
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                                                         {Object.entries((node as DecisionNode).options!).map(([key, value]) => (
@@ -772,8 +940,20 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                     )}
 
                                     {renderAttachments(currentNode as DecisionNode)}
+                                    {'pythonCode' in currentNode && (currentNode as any).pythonCode && (
+                                        <PythonDataPreview
+                                            code={(currentNode as any).pythonCode}
+                                            outputType={(currentNode as any).pythonOutputType || 'table'}
+                                            selectedPipelines={(currentNode as any).pythonSelectedPipelines}
+                                            pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
+                                        />
+                                    )}
                                     {'sqlConnectorId' in currentNode && 'sqlQuery' in currentNode && (currentNode as any).sqlConnectorId && (
-                                        <SqlDataPreview connectorId={(currentNode as any).sqlConnectorId} query={(currentNode as any).sqlQuery} />
+                                        <SqlDataPreview
+                                            connectorId={(currentNode as any).sqlConnectorId}
+                                            query={(currentNode as any).sqlQuery}
+                                            pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
+                                        />
                                     )}
                                 </div>
                             </div>
