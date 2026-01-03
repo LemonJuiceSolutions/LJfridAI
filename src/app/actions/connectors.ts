@@ -601,15 +601,15 @@ export async function sendTestEmailWithDataAction(params: {
                 fullHtml += `<div class="table-title">🐍 ${pyResult.name}</div>`;
 
                 if (pyResult.type === 'chart') {
-                    // Embed interactive HTML chart
-                    if (pyResult.chartHtml) {
-                        fullHtml += `<div style="padding: 20px;">`;
-                        fullHtml += pyResult.chartHtml; // Directly embed the HTML chart
-                        fullHtml += `</div>`;
-                    } else if (pyResult.chartBase64) {
-                        // Fallback to base64 image if no HTML available
+                    // Email clients block JavaScript, so use static image in body
+                    if (pyResult.chartBase64) {
                         fullHtml += `<div style="text-align: center; padding: 20px;">`;
                         fullHtml += `<img src="data:image/png;base64,${pyResult.chartBase64}" alt="${pyResult.name}" style="max-width: 100%; height: auto;" />`;
+                        fullHtml += `</div>`;
+                    } else if (pyResult.chartHtml) {
+                        // Fallback: try embedding HTML (may not work in all email clients)
+                        fullHtml += `<div style="padding: 20px;">`;
+                        fullHtml += `<p style="color: #666; font-size: 12px; font-style: italic;">Nota: Grafico interattivo disponibile in allegato. Anteprima statica non disponibile.</p>`;
                         fullHtml += `</div>`;
                     }
                 } else if (pyResult.type === 'table' && pyResult.data && pyResult.data.length > 0) {

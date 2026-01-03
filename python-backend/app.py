@@ -269,13 +269,28 @@ def execute_python():
             # 1. Plotly Figure (Check this first for interactivity)
             if hasattr(res_val, 'to_json') or isinstance(res_val, go.Figure) or hasattr(res_val, 'to_image'):
                 try:
-                    # Return HTML for interactivity if it's a Plotly figure
+                    # Return HTML for interactivity
                     chart_html = pio.to_html(res_val, full_html=False, include_plotlyjs='cdn')
-                    return jsonify({
+                    
+                    # Also generate PNG for email body compatibility
+                    chart_base64 = None
+                    try:
+                        # Try to generate static image using kaleido
+                        img_bytes = pio.to_image(res_val, format='png', width=800, height=600)
+                        chart_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                        print(f"✅ [EXECUTE] Generated both HTML and PNG for Plotly chart")
+                    except Exception as img_err:
+                        print(f"⚠️ [EXECUTE] Could not generate PNG (kaleido might not be installed): {str(img_err)}")
+                    
+                    response = {
                         'success': True,
                         'chartHtml': chart_html,
                         'stdout': stdout_val
-                    })
+                    }
+                    if chart_base64:
+                        response['chartBase64'] = chart_base64
+                    
+                    return jsonify(response)
                 except Exception as pe:
                     print(f"⚠️ [EXECUTE] Plotly HTML conversion failed, falling back to PNG: {str(pe)}")
             
