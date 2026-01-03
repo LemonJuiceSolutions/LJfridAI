@@ -2122,8 +2122,55 @@ export default function EditNodeDialog({
                                 }
                               }
 
-                              if (selectedTables.length === 0 && !emailConfig.body) {
-                                toast({ variant: 'destructive', title: 'Nessun contenuto', description: 'Aggiungi del testo nel corpo o seleziona almeno una tabella.' });
+                              // Build selectedPythonOutputs from user selections
+                              const selectedPythonOutputs: Array<{
+                                name: string;
+                                code: string;
+                                outputType: 'table' | 'variable' | 'chart';
+                                connectorId?: string;
+                                inBody: boolean;
+                                asAttachment: boolean;
+                                dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
+                              }> = [];
+
+                              // Add current node Python output if selected
+                              if (pythonResultName && pythonCode) {
+                                const inBody = safeEmailAttachments.pythonOutputsInBody.includes(pythonResultName);
+                                const asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(pythonResultName);
+                                if (inBody || asAttachment) {
+                                  // Prepare dependencies for Python execution
+                                  const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }> = [];
+                                  if (availableInputTables) {
+                                    pythonSelectedPipelines.forEach(pName => {
+                                      const table = availableInputTables.find(t => t.name === pName);
+                                      if (table) {
+                                        dependencies.push({
+                                          tableName: pName,
+                                          connectorId: table.connectorId,
+                                          query: table.sqlQuery,
+                                          pipelineDependencies: table.pipelineDependencies
+                                        });
+                                      }
+                                    });
+                                  }
+
+                                  selectedPythonOutputs.push({
+                                    name: pythonResultName,
+                                    code: pythonCode,
+                                    outputType: pythonOutputType,
+                                    connectorId: pythonConnectorId !== 'none' ? pythonConnectorId : undefined,
+                                    inBody,
+                                    asAttachment,
+                                    dependencies: dependencies.length > 0 ? dependencies : undefined
+                                  });
+                                }
+                              }
+
+                              console.log('[FRONTEND EMAIL DEBUG] selectedPythonOutputs:', selectedPythonOutputs);
+                              console.log('[FRONTEND EMAIL DEBUG] pythonResultName:', pythonResultName, 'pythonCode length:', pythonCode?.length || 0);
+
+                              if (selectedTables.length === 0 && selectedPythonOutputs.length === 0 && !emailConfig.body) {
+                                toast({ variant: 'destructive', title: 'Nessun contenuto', description: 'Aggiungi del testo nel corpo o seleziona almeno una tabella/output Python.' });
                                 setIsSendingTestEmail(false);
                                 return;
                               }
@@ -2136,7 +2183,8 @@ export default function EditNodeDialog({
                                 bcc: emailConfig.bcc,
                                 subject: `[TEST] ${emailConfig.subject}`,
                                 bodyHtml: emailConfig.body || '',
-                                selectedTables
+                                selectedTables,
+                                selectedPythonOutputs
                               });
 
                               if (result.success) {

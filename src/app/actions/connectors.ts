@@ -273,7 +273,7 @@ export async function sendEmailWithConnectorAction(params: {
     }
 }
 
-// Send test email with actual data from selected tables
+// Send test email with actual data from selected tables and Python outputs
 export async function sendTestEmailWithDataAction(params: {
     connectorId: string;  // SMTP connector
     sqlConnectorId: string; // SQL connector for queries
@@ -289,6 +289,15 @@ export async function sendTestEmailWithDataAction(params: {
         asExcel: boolean;
         pipelineDependencies?: Array<{ tableName: string; query: string }>;
     }>;
+    selectedPythonOutputs?: Array<{
+        name: string;
+        code: string;
+        outputType: 'table' | 'variable' | 'chart';
+        connectorId?: string;
+        inBody: boolean;
+        asAttachment: boolean;
+        dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
+    }>;
 }) {
     console.log('[EMAIL DEBUG] sendTestEmailWithDataAction called with:', {
         connectorId: params.connectorId,
@@ -296,6 +305,7 @@ export async function sendTestEmailWithDataAction(params: {
         to: params.to,
         subject: params.subject,
         selectedTablesCount: params.selectedTables?.length || 0,
+        selectedPythonOutputsCount: params.selectedPythonOutputs?.length || 0,
     });
 
     const user = await getAuthenticatedUser();
@@ -461,6 +471,69 @@ export async function sendTestEmailWithDataAction(params: {
         await transaction.commit();
         await pool.close();
 
+        // Execute Python outputs if any
+        const pythonResults: Array<{
+            name: string;
+            inBody: boolean;
+            asAttachment: boolean;
+            data?: any[];
+            chartBase64?: string;
+            chartHtml?: string;
+            variables?: Record<string, any>;
+            type: 'table' | 'variable' | 'chart';
+        }> = [];
+
+        if (params.selectedPythonOutputs && params.selectedPythonOutputs.length > 0) {
+            console.log('[EMAIL DEBUG] Executing Python outputs...');
+            const { executePythonPreviewAction } = await import('@/app/actions');
+
+            for (const pyOutput of params.selectedPythonOutputs) {
+                try {
+                    console.log(`[EMAIL DEBUG] Executing Python for ${pyOutput.name} (type: ${pyOutput.outputType})...`);
+
+                    // Execute Python script
+                    const result = await executePythonPreviewAction(
+                        pyOutput.code,
+                        pyOutput.outputType,
+                        {},
+                        pyOutput.dependencies || []
+                    );
+
+                    if (result.success) {
+                        pythonResults.push({
+                            name: pyOutput.name,
+                            inBody: pyOutput.inBody,
+                            asAttachment: pyOutput.asAttachment,
+                            data: result.data,
+                            chartBase64: result.chartBase64,
+                            chartHtml: result.chartHtml,
+                            variables: result.variables,
+                            type: pyOutput.outputType
+                        });
+                        console.log(`[EMAIL DEBUG] Python ${pyOutput.name} executed successfully`);
+                    } else {
+                        console.error(`[EMAIL DEBUG] Python ${pyOutput.name} failed:`, result.error);
+                        pythonResults.push({
+                            name: pyOutput.name,
+                            inBody: pyOutput.inBody,
+                            asAttachment: pyOutput.asAttachment,
+                            data: [{ error: result.error }],
+                            type: pyOutput.outputType
+                        });
+                    }
+                } catch (err: any) {
+                    console.error(`[EMAIL DEBUG] Error executing Python ${pyOutput.name}:`, err.message);
+                    pythonResults.push({
+                        name: pyOutput.name,
+                        inBody: pyOutput.inBody,
+                        asAttachment: pyOutput.asAttachment,
+                        data: [{ error: err.message }],
+                        type: pyOutput.outputType
+                    });
+                }
+            }
+        }
+
         // Build HTML body with tables
         let fullHtml = `
 <!DOCTYPE html>
@@ -521,6 +594,62 @@ export async function sendTestEmailWithDataAction(params: {
             }
         }
 
+        // Add Python outputs to body
+        for (const pyResult of pythonResults) {
+            if (pyResult.inBody) {
+                fullHtml += `<div class="table-section">`;
+                fullHtml += `<div class="table-title">🐍 ${pyResult.name}</div>`;
+
+                if (pyResult.type === 'chart') {
+                    // Embed interactive HTML chart
+                    if (pyResult.chartHtml) {
+                        fullHtml += `<div style="padding: 20px;">`;
+                        fullHtml += pyResult.chartHtml; // Directly embed the HTML chart
+                        fullHtml += `</div>`;
+                    } else if (pyResult.chartBase64) {
+                        // Fallback to base64 image if no HTML available
+                        fullHtml += `<div style="text-align: center; padding: 20px;">`;
+                        fullHtml += `<img src="data:image/png;base64,${pyResult.chartBase64}" alt="${pyResult.name}" style="max-width: 100%; height: auto;" />`;
+                        fullHtml += `</div>`;
+                    }
+                } else if (pyResult.type === 'table' && pyResult.data && pyResult.data.length > 0) {
+                    // Render table
+                    const MAX_ROWS_IN_EMAIL = 100;
+                    const totalRows = pyResult.data.length;
+                    const displayRows = pyResult.data.slice(0, MAX_ROWS_IN_EMAIL);
+
+                    if (totalRows > MAX_ROWS_IN_EMAIL) {
+                        fullHtml += `<p style="color: #666; font-size: 11px; margin: 5px 0;">Mostrando prime ${MAX_ROWS_IN_EMAIL} righe di ${totalRows.toLocaleString()} totali.</p>`;
+                    }
+
+                    fullHtml += `<table><thead><tr>`;
+                    const columns = Object.keys(pyResult.data[0]);
+                    columns.forEach(col => {
+                        fullHtml += `<th>${col}</th>`;
+                    });
+                    fullHtml += `</tr></thead><tbody>`;
+
+                    displayRows.forEach(row => {
+                        fullHtml += `<tr>`;
+                        columns.forEach(col => {
+                            let val = row[col];
+                            if (val === null || val === undefined) val = '';
+                            else if (typeof val === 'object' && val instanceof Date) val = val.toLocaleString('it-IT');
+                            else if (typeof val === 'object') val = JSON.stringify(val);
+                            fullHtml += `<td>${val}</td>`;
+                        });
+                        fullHtml += `</tr>`;
+                    });
+                    fullHtml += `</tbody></table>`;
+                } else if (pyResult.type === 'variable' && pyResult.variables) {
+                    // Render variables as JSON
+                    fullHtml += `<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto;">${JSON.stringify(pyResult.variables, null, 2)}</pre>`;
+                }
+
+                fullHtml += `</div>`;
+            }
+        }
+
         fullHtml += `</body></html>`;
 
         // Generate Excel attachments (with row limit to prevent size issues)
@@ -548,6 +677,64 @@ export async function sendTestEmailWithDataAction(params: {
                     content: buffer,
                     contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 });
+            }
+        }
+
+        // Add Python output attachments
+        for (const pyResult of pythonResults) {
+            if (pyResult.asAttachment) {
+                if (pyResult.type === 'chart') {
+                    if (pyResult.chartHtml) {
+                        // Attach chart as interactive HTML file
+                        const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>${pyResult.name}</title>
+</head>
+<body>
+    <h1 style="font-family: Arial, sans-serif; color: #333;">${pyResult.name}</h1>
+    ${pyResult.chartHtml}
+</body>
+</html>
+                        `.trim();
+                        const buffer = Buffer.from(htmlContent, 'utf8');
+                        console.log(`[EMAIL DEBUG] Chart HTML file ${pyResult.name}.html size: ${(buffer.length / 1024).toFixed(2)} KB`);
+
+                        attachments.push({
+                            filename: `${pyResult.name}.html`,
+                            content: buffer,
+                            contentType: 'text/html'
+                        });
+                    } else if (pyResult.chartBase64) {
+                        // Fallback: Attach as PNG if no HTML available
+                        const buffer = Buffer.from(pyResult.chartBase64, 'base64');
+                        console.log(`[EMAIL DEBUG] Chart PNG file ${pyResult.name}.png size: ${(buffer.length / 1024).toFixed(2)} KB`);
+
+                        attachments.push({
+                            filename: `${pyResult.name}.png`,
+                            content: buffer,
+                            contentType: 'image/png'
+                        });
+                    }
+                } else if (pyResult.type === 'table' && pyResult.data && pyResult.data.length > 0) {
+                    // Attach table as Excel
+                    const MAX_EXCEL_ROWS = 5000;
+                    const excelData = pyResult.data.slice(0, MAX_EXCEL_ROWS);
+                    const ws = XLSX.utils.json_to_sheet(excelData);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, pyResult.name.substring(0, 31));
+                    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+                    console.log(`[EMAIL DEBUG] Python Excel file ${pyResult.name}.xlsx size: ${(buffer.length / 1024).toFixed(2)} KB`);
+
+                    attachments.push({
+                        filename: `${pyResult.name}.xlsx`,
+                        content: buffer,
+                        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    });
+                }
             }
         }
 
@@ -589,7 +776,7 @@ export async function sendTestEmailWithDataAction(params: {
 
         return {
             success: true,
-            message: `Email inviata a ${params.to} con ${tableResults.length} tabelle (${attachments.length} allegati Excel)`,
+            message: `Email inviata a ${params.to} con ${tableResults.length} tabelle SQL e ${pythonResults.length} output Python (${attachments.length} allegati)`,
             messageId: info.messageId
         };
 
