@@ -322,10 +322,11 @@ Task:
 1. Use the variables and values from the variables table to construct a detailed and highly-branched decision tree.
 2. Each node must have a 'question' and 'options'. The 'options' should lead to another node or a final 'decision'.
 3. Each leaf of the tree must be a 'decision' string, or an object with a 'decision' key.
-4. Provide three outputs:
-   a) "naturalLanguageDecisionTree": A version in natural language.
-   b) "jsonDecisionTree": A structured JSON representation (stringified or object).
-   c) "questionsScript": A script of questions.
+4. Provide FOUR outputs:
+   a) "suggestedName": A short, descriptive name (2-5 words) for this pipeline/tree based on its main topic (e.g., "Garanzia Dispositivi", "Triage Supporto Tecnico", "Valutazione Rischio Creditizio").
+   b) "naturalLanguageDecisionTree": A version in natural language.
+   c) "jsonDecisionTree": A structured JSON representation (stringified or object).
+   d) "questionsScript": A script of questions.
 
 **CRITICAL RULE FOR 'jsonDecisionTree'**:
 The value for the 'jsonDecisionTree' field MUST be a valid JSON structure (not a stringified JSON string inside JSON, but the actual object).
@@ -342,7 +343,7 @@ Example of 'jsonDecisionTree' structure:
   }
 }
 
-**OUTPUT FORMAT**: Return ONLY a valid JSON object with keys: "naturalLanguageDecisionTree", "jsonDecisionTree", "questionsScript".`;
+**OUTPUT FORMAT**: Return ONLY a valid JSON object with keys: "suggestedName", "naturalLanguageDecisionTree", "jsonDecisionTree", "questionsScript".`;
 
     const treePrompt = `Input Text:
 ${textDescription}
@@ -370,6 +371,7 @@ ${variablesTable}`;
 
     return {
         variables,
+        suggestedName: treeResult.suggestedName || '',
         naturalLanguageDecisionTree: naturalLanguageTreeStr,
         jsonDecisionTree: jsonDecisionTreeStr,
         questionsScript: questionsScriptStr,
@@ -399,10 +401,12 @@ export async function processDescriptionAction(
         let decisionTreeResult;
         let extractedVariables = [];
         let debugInfo = null;
+        let suggestedName = '';
 
         if (openRouterConfig && openRouterConfig.apiKey) {
             const result = await processDescriptionWithOpenRouter(textDescription, openRouterConfig);
             extractedVariables = result.variables;
+            suggestedName = result.suggestedName || '';
             decisionTreeResult = {
                 naturalLanguageDecisionTree: result.naturalLanguageDecisionTree,
                 jsonDecisionTree: result.jsonDecisionTree,
@@ -453,7 +457,10 @@ export async function processDescriptionAction(
             return { data: null, error: "L'IA ha generato un albero decisionale JSON non valido. Prova a riformulare la tua input o a riprovare." };
         }
 
-        const name = `Albero-${Date.now().toString().slice(-6)}`;
+        // Use AI-suggested name if available, otherwise fallback to generic
+        const name = suggestedName
+            ? suggestedName
+            : `Pipeline-${Date.now().toString().slice(-6)}`;
 
         const newTreeData = {
             name,

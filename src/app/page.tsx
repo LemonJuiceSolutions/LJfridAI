@@ -206,7 +206,7 @@ export default function Home() {
           // Wrap raw tree into the format expected by importTreeFromJsonAction
           const fileName = file.name.replace(/\.json$/i, '');
           treeData = {
-            name: fileName || 'Albero Importato',
+            name: fileName || 'Pipeline Importata',
             description: 'Importato da file JSON',
             jsonDecisionTree: treeData,
             type: 'RULE'

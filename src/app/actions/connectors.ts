@@ -195,3 +195,406 @@ export async function testConnectorAction(type: string, config: string) {
         return { error: `Errore generico test: ${e.message}` };
     }
 }
+
+// Email sending action using SMTP connector
+export async function sendEmailWithConnectorAction(params: {
+    connectorId: string;
+    to: string;
+    cc?: string;
+    bcc?: string;
+    subject: string;
+    htmlBody: string;
+    attachments?: Array<{
+        filename: string;
+        content: Buffer | string;
+        contentType?: string;
+    }>;
+}) {
+    const user = await getAuthenticatedUser();
+    if (!user) return { error: 'Non autorizzato' };
+
+    try {
+        // Get the connector
+        const connector = await db.connector.findFirst({
+            where: { id: params.connectorId, companyId: user.companyId, type: 'SMTP' }
+        });
+
+        if (!connector) {
+            return { success: false, error: 'Connettore SMTP non trovato' };
+        }
+
+        let conf;
+        try {
+            conf = JSON.parse(connector.config);
+        } catch {
+            return { success: false, error: 'Configurazione connettore non valida' };
+        }
+
+        // Create transporter
+        const transporter = nodemailer.createTransport({
+            host: conf.host,
+            port: parseInt(conf.port) || 587,
+            secure: (parseInt(conf.port) === 465),
+            auth: {
+                user: conf.user,
+                pass: conf.password,
+            },
+            tls: {
+                rejectUnauthorized: false
+            }
+        });
+
+        // Build mail options
+        const mailOptions: any = {
+            from: conf.from || conf.user,
+            to: params.to,
+            subject: params.subject,
+            html: params.htmlBody,
+        };
+
+        if (params.cc) mailOptions.cc = params.cc;
+        if (params.bcc) mailOptions.bcc = params.bcc;
+        if (params.attachments && params.attachments.length > 0) {
+            mailOptions.attachments = params.attachments;
+        }
+
+        // Send email
+        const info = await transporter.sendMail(mailOptions);
+
+        return {
+            success: true,
+            message: `Email inviata con successo a ${params.to}`,
+            messageId: info.messageId
+        };
+
+    } catch (e: any) {
+        console.error('Send Email Error:', e);
+        return { success: false, error: `Errore invio email: ${e.message}` };
+    }
+}
+
+// Send test email with actual data from selected tables
+export async function sendTestEmailWithDataAction(params: {
+    connectorId: string;  // SMTP connector
+    sqlConnectorId: string; // SQL connector for queries
+    to: string;
+    cc?: string;
+    bcc?: string;
+    subject: string;
+    bodyHtml: string;
+    selectedTables: Array<{
+        name: string;
+        query: string;
+        inBody: boolean;
+        asExcel: boolean;
+        pipelineDependencies?: Array<{ tableName: string; query: string }>;
+    }>;
+}) {
+    console.log('[EMAIL DEBUG] sendTestEmailWithDataAction called with:', {
+        connectorId: params.connectorId,
+        sqlConnectorId: params.sqlConnectorId,
+        to: params.to,
+        subject: params.subject,
+        selectedTablesCount: params.selectedTables?.length || 0,
+    });
+
+    const user = await getAuthenticatedUser();
+    if (!user) return { error: 'Non autorizzato' };
+
+    try {
+        // Get SMTP connector
+        const smtpConnector = await db.connector.findFirst({
+            where: { id: params.connectorId, companyId: user.companyId, type: 'SMTP' }
+        });
+        if (!smtpConnector) {
+            return { success: false, error: 'Connettore SMTP non trovato' };
+        }
+
+        // Get SQL connector
+        const sqlConnector = await db.connector.findFirst({
+            where: { id: params.sqlConnectorId, companyId: user.companyId, type: 'SQL' }
+        });
+        if (!sqlConnector) {
+            return { success: false, error: 'Connettore SQL non trovato' };
+        }
+
+        const smtpConf = JSON.parse(smtpConnector.config);
+        const sqlConf = JSON.parse(sqlConnector.config);
+
+        // Connect to SQL
+        const sqlConfig: any = {
+            user: sqlConf.user,
+            password: sqlConf.password,
+            server: sqlConf.host,
+            database: sqlConf.database,
+            options: {
+                encrypt: sqlConf.host?.includes('database.windows.net'),
+                trustServerCertificate: true,
+                connectTimeout: 30000,
+                requestTimeout: 120000
+            }
+        };
+        if (sqlConf.port) sqlConfig.port = parseInt(sqlConf.port);
+
+        const pool = new sql.ConnectionPool(sqlConfig);
+        await pool.connect();
+
+        // IMPORTANT: Use a Transaction to ensure ALL queries run on the SAME connection
+        // This is required for temp tables to be visible across multiple queries
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+        const request = new sql.Request(transaction);
+
+        // Execute queries and collect results
+        // First, we need to execute ALL dependencies in order to create temp tables
+        // This allows queries to reference previous query results (e.g., HR2 references HR1)
+        const tableResults: { name: string; data: any[]; inBody: boolean; asExcel: boolean }[] = [];
+        const executedTables = new Set<string>(); // Track which tables have been executed
+
+        console.log('[EMAIL DEBUG] Executing queries in order with temp table creation (using TRANSACTION for same connection)...');
+
+        // Helper function to execute a query and create temp table
+        const executeAndCreateTempTable = async (tableName: string, query: string): Promise<any[]> => {
+            if (executedTables.has(tableName)) {
+                console.log(`[EMAIL DEBUG] Table ${tableName} already executed, skipping`);
+                return [];
+            }
+
+            console.log(`[EMAIL DEBUG] Executing dependency query for ${tableName}: ${query.substring(0, 100)}...`);
+
+            try {
+                // Execute the original query
+                const result = await request.query(query);
+                const data = result.recordset || [];
+                executedTables.add(tableName);
+
+                // Create a temp table with the results so subsequent queries can reference it
+                if (data.length > 0) {
+                    try {
+                        const columns = Object.keys(data[0]);
+                        const colDefs = columns.map(col => {
+                            const sampleVal = data[0][col];
+                            let sqlType = 'NVARCHAR(MAX)';
+                            if (typeof sampleVal === 'number') {
+                                sqlType = Number.isInteger(sampleVal) ? 'INT' : 'FLOAT';
+                            } else if (sampleVal instanceof Date) {
+                                sqlType = 'DATETIME';
+                            }
+                            return `[${col}] ${sqlType}`;
+                        }).join(', ');
+
+                        // Create table with exact name the queries expect (without # prefix)
+                        const tempTableName = tableName; // Use exact name: HR1, HR2, etc.
+
+                        // Create temp table using the SAME request (same connection)
+                        // Drop if exists, then create
+                        await request.query(`
+                            IF OBJECT_ID('${tempTableName}', 'U') IS NOT NULL DROP TABLE [${tempTableName}];
+                            CREATE TABLE [${tempTableName}] (${colDefs});
+                        `);
+
+                        // Insert data into temp table (in batches for performance)
+                        const batchSize = 100;
+                        for (let i = 0; i < data.length; i += batchSize) {
+                            const batch = data.slice(i, i + batchSize);
+                            const values = batch.map(row => {
+                                return '(' + columns.map(col => {
+                                    const val = row[col];
+                                    if (val === null || val === undefined) return 'NULL';
+                                    if (typeof val === 'number') return val.toString();
+                                    if (val instanceof Date) return `'${val.toISOString()}'`;
+                                    return `N'${String(val).replace(/'/g, "''")}'`;
+                                }).join(', ') + ')';
+                            }).join(', ');
+                            await request.query(`INSERT INTO ${tempTableName} (${columns.map(c => `[${c}]`).join(', ')}) VALUES ${values}`);
+                        }
+                        console.log(`[EMAIL DEBUG] Created temp table ${tempTableName} with ${data.length} rows`);
+                    } catch (tempErr: any) {
+                        console.error(`[EMAIL DEBUG] Failed to create temp table for ${tableName}:`, tempErr.message);
+                    }
+                }
+                return data;
+            } catch (err: any) {
+                console.error(`[EMAIL DEBUG] Error executing query for ${tableName}:`, err.message);
+                return [{ error: err.message }];
+            }
+        };
+
+        // First, execute all pipelineDependencies from all selected tables (in order)
+        for (const table of params.selectedTables) {
+            if (table.pipelineDependencies && table.pipelineDependencies.length > 0) {
+                console.log(`[EMAIL DEBUG] Executing ${table.pipelineDependencies.length} dependencies for ${table.name}`);
+                for (const dep of table.pipelineDependencies) {
+                    await executeAndCreateTempTable(dep.tableName, dep.query);
+                }
+            }
+        }
+
+        // Now execute the selected tables and collect their results
+        for (const table of params.selectedTables) {
+            try {
+                console.log(`[EMAIL DEBUG] Executing query for ${table.name}: ${table.query.substring(0, 100)}...`);
+
+                // Execute the query using the SAME request (same connection)
+                const result = await request.query(table.query);
+                const data = result.recordset || [];
+                executedTables.add(table.name);
+
+                tableResults.push({
+                    name: table.name,
+                    data: data,
+                    inBody: table.inBody,
+                    asExcel: table.asExcel
+                });
+            } catch (err: any) {
+                console.error(`Error executing query for ${table.name}:`, err.message);
+                tableResults.push({
+                    name: table.name,
+                    data: [{ error: err.message }],
+                    inBody: table.inBody,
+                    asExcel: table.asExcel
+                });
+            }
+        }
+
+        // Commit the transaction before closing
+        await transaction.commit();
+        await pool.close();
+
+        // Build HTML body with tables
+        let fullHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; }
+        .user-content { margin-bottom: 30px; }
+        .table-section { margin: 20px 0; }
+        .table-title { font-size: 16px; font-weight: bold; color: #333; margin-bottom: 10px; background: #f0f0f0; padding: 8px; border-radius: 4px; }
+        table { border-collapse: collapse; width: 100%; font-size: 12px; }
+        th { background-color: #4a5568; color: white; padding: 8px; text-align: left; }
+        td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+        tr:nth-child(even) { background-color: #f7fafc; }
+        tr:hover { background-color: #edf2f7; }
+    </style>
+</head>
+<body>
+    <div class="user-content">${params.bodyHtml || ''}</div>
+`;
+
+        // Add tables to body
+        for (const tr of tableResults) {
+            if (tr.inBody && tr.data.length > 0) {
+                fullHtml += `<div class="table-section">`;
+                fullHtml += `<div class="table-title">📊 ${tr.name}</div>`;
+
+                // Limit rows in email body to prevent size limit errors
+                const MAX_ROWS_IN_EMAIL = 100;
+                const totalRows = tr.data.length;
+                const displayRows = tr.data.slice(0, MAX_ROWS_IN_EMAIL);
+
+                if (totalRows > MAX_ROWS_IN_EMAIL) {
+                    fullHtml += `<p style="color: #666; font-size: 11px; margin: 5px 0;">Mostrando prime ${MAX_ROWS_IN_EMAIL} righe di ${totalRows.toLocaleString()} totali. Vedi allegato Excel per dati completi.</p>`;
+                }
+
+                fullHtml += `<table><thead><tr>`;
+
+                const columns = Object.keys(tr.data[0]);
+                columns.forEach(col => {
+                    fullHtml += `<th>${col}</th>`;
+                });
+                fullHtml += `</tr></thead><tbody>`;
+
+                displayRows.forEach(row => {
+                    fullHtml += `<tr>`;
+                    columns.forEach(col => {
+                        let val = row[col];
+                        if (val === null || val === undefined) val = '';
+                        else if (typeof val === 'object' && val instanceof Date) val = val.toLocaleString('it-IT');
+                        else if (typeof val === 'object') val = JSON.stringify(val);
+                        fullHtml += `<td>${val}</td>`;
+                    });
+                    fullHtml += `</tr>`;
+                });
+                fullHtml += `</tbody></table></div>`;
+            }
+        }
+
+        fullHtml += `</body></html>`;
+
+        // Generate Excel attachments (with row limit to prevent size issues)
+        const attachments: any[] = [];
+        const XLSX = await import('xlsx');
+        const MAX_EXCEL_ROWS = 5000; // Limit Excel to 5K rows to keep file size reasonable
+
+        console.log('[EMAIL DEBUG] Generating Excel attachments...');
+
+        for (const tr of tableResults) {
+            if (tr.asExcel && tr.data.length > 0) {
+                console.log(`[EMAIL DEBUG] Creating Excel for ${tr.name} (${tr.data.length} total rows, limiting to ${MAX_EXCEL_ROWS})...`);
+
+                // Limit Excel data to prevent huge files
+                const excelData = tr.data.slice(0, MAX_EXCEL_ROWS);
+                const ws = XLSX.utils.json_to_sheet(excelData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, tr.name.substring(0, 31)); // Excel sheet name max 31 chars
+                const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+                console.log(`[EMAIL DEBUG] Excel file ${tr.name}.xlsx size: ${(buffer.length / 1024).toFixed(2)} KB`);
+
+                attachments.push({
+                    filename: `${tr.name}.xlsx`,
+                    content: buffer,
+                    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                });
+            }
+        }
+
+        // Send email
+        const transporter = nodemailer.createTransport({
+            host: smtpConf.host,
+            port: parseInt(smtpConf.port) || 587,
+            secure: parseInt(smtpConf.port) === 465,
+            auth: { user: smtpConf.user, pass: smtpConf.password },
+            tls: { rejectUnauthorized: false }
+        });
+
+        const mailOptions: any = {
+            from: smtpConf.from || smtpConf.user,
+            to: params.to,
+            subject: params.subject,
+            html: fullHtml,
+            attachments
+        };
+        if (params.cc) mailOptions.cc = params.cc;
+        if (params.bcc) mailOptions.bcc = params.bcc;
+
+        // Log email size info
+        const htmlSizeKB = (Buffer.byteLength(fullHtml, 'utf8') / 1024).toFixed(2);
+        const totalAttachmentSizeKB = attachments.reduce((sum, att) => sum + att.content.length, 0) / 1024;
+        const totalEmailSizeMB = ((Buffer.byteLength(fullHtml, 'utf8') + attachments.reduce((sum, att) => sum + att.content.length, 0)) / 1024 / 1024).toFixed(2);
+
+        console.log('[EMAIL DEBUG] ===== EMAIL SIZE INFO =====');
+        console.log(`[EMAIL DEBUG] HTML body size: ${htmlSizeKB} KB`);
+        console.log(`[EMAIL DEBUG] Total attachments size: ${totalAttachmentSizeKB.toFixed(2)} KB`);
+        console.log(`[EMAIL DEBUG] TOTAL email size: ${totalEmailSizeMB} MB`);
+        console.log(`[EMAIL DEBUG] Number of attachments: ${attachments.length}`);
+        console.log('[EMAIL DEBUG] Sending email now...');
+
+        const info = await transporter.sendMail(mailOptions);
+
+        console.log('[EMAIL DEBUG] ✅ Email sent successfully!');
+        console.log(`[EMAIL DEBUG] MessageId: ${info.messageId}`);
+
+        return {
+            success: true,
+            message: `Email inviata a ${params.to} con ${tableResults.length} tabelle (${attachments.length} allegati Excel)`,
+            messageId: info.messageId
+        };
+
+    } catch (e: any) {
+        console.error('Send Test Email With Data Error:', e);
+        return { success: false, error: `Errore: ${e.message}` };
+    }
+}

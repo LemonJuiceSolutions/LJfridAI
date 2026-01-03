@@ -32,13 +32,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play, Download, LineChart } from 'lucide-react';
+import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play, Download, LineChart, Mail, Send } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
-import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem } from '@/lib/types';
+import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig } from '@/lib/types';
 import { Input } from '../ui/input';
 import _ from 'lodash';
 import { useToast } from '@/hooks/use-toast';
 import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction } from '@/app/actions';
+import { sendEmailWithConnectorAction, sendTestEmailWithDataAction } from '@/app/actions/connectors';
 import { uploadFile } from '@/lib/storage-client';
 import Image from 'next/image';
 import { ScrollArea } from '../ui/scroll-area';
@@ -202,6 +203,34 @@ export default function EditNodeDialog({
   const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
   const [pythonDebugLogs, setPythonDebugLogs] = useState<string[]>([]);
 
+  // Email Action State
+  const defaultEmailConfig: EmailActionConfig = {
+    enabled: false,
+    connectorId: '',
+    to: '',
+    cc: '',
+    bcc: '',
+    subject: '',
+    body: '',
+    attachments: {
+      tablesInBody: [],
+      tablesAsExcel: [],
+      pythonOutputsInBody: [],
+      pythonOutputsAsAttachment: [],
+    }
+  };
+  const [emailConfig, setEmailConfig] = useState<EmailActionConfig>(defaultEmailConfig);
+  const [smtpConnectors, setSmtpConnectors] = useState<{ id: string, name: string }[]>([]);
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+
+  // Safe accessors for email attachments (prevent undefined errors)
+  const safeEmailAttachments = {
+    tablesInBody: emailConfig.attachments?.tablesInBody || [],
+    tablesAsExcel: emailConfig.attachments?.tablesAsExcel || [],
+    pythonOutputsInBody: emailConfig.attachments?.pythonOutputsInBody || [],
+    pythonOutputsAsAttachment: emailConfig.attachments?.pythonOutputsAsAttachment || [],
+  };
+
   const isExecutingRef = useRef(false);
 
   // State for inline editing links
@@ -345,6 +374,22 @@ export default function EditNodeDialog({
       setPythonSelectedPipelines((node as any).pythonSelectedPipelines || []);
       setPythonPreviewResult(null);
 
+      // Load Email Action Config with safe defaults merge
+      if ((node as any).emailAction) {
+        const loadedConfig = (node as any).emailAction;
+        // Merge with defaults to ensure all properties exist
+        setEmailConfig({
+          ...defaultEmailConfig,
+          ...loadedConfig,
+          attachments: {
+            ...defaultEmailConfig.attachments,
+            ...(loadedConfig.attachments || {}),
+          }
+        });
+      } else {
+        setEmailConfig(defaultEmailConfig);
+      }
+
     }
   }, [isOpen, initialNode, nodeType, availableInputTables]);
 
@@ -352,13 +397,12 @@ export default function EditNodeDialog({
   useEffect(() => {
     if (isOpen) {
       const loadConnectors = async () => {
-        // const { getConnectorsAction } = await import('@/app/actions'); // Refactored to static
-
         const res = await getConnectorsAction();
         if (res.data) {
           const sqls = res.data.filter((c: any) => c.type === 'SQL').map((c: any) => ({ id: c.id, name: c.name }));
           setSqlConnectors(sqls);
-          // If no connector selected but we have some, maybe select first? No, explicit is better.
+          const smtps = res.data.filter((c: any) => c.type === 'SMTP').map((c: any) => ({ id: c.id, name: c.name }));
+          setSmtpConnectors(smtps);
         }
       };
       loadConnectors();
@@ -659,6 +703,15 @@ export default function EditNodeDialog({
       } else if ('option' in initialNode) {
         // Option node, no type switch allowed
         newNodeData = { option: optionText };
+      }
+
+      // Email Action (applies to all node types except options)
+      if (!('option' in initialNode)) {
+        if (emailConfig.enabled && emailConfig.connectorId && emailConfig.to && emailConfig.subject) {
+          newNodeData.emailAction = emailConfig;
+        } else {
+          delete newNodeData.emailAction;
+        }
       }
 
       onSave(nodePath, newNodeData);
@@ -1763,6 +1816,349 @@ export default function EditNodeDialog({
 
                 </div>
               </CollapsibleSection>
+
+              {/* Email Action Section */}
+              {!('option' in initialNode) && (
+                <CollapsibleSection
+                  title="Invio Email"
+                  count={emailConfig.enabled ? 1 : 0}
+                  storageKey={`collapse-email-${treeId}-${nodePath}`}
+                  icon={Mail}
+                >
+                  <div className="grid gap-4 pt-3">
+                    {/* Enable Toggle */}
+                    <div className="flex items-center justify-between">
+                      <Label className="flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        Abilita Invio Email
+                      </Label>
+                      <Button
+                        type="button"
+                        variant={emailConfig.enabled ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setEmailConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
+                        className={emailConfig.enabled ? "bg-primary" : ""}
+                      >
+                        {emailConfig.enabled ? "Attivo" : "Disattivo"}
+                      </Button>
+                    </div>
+
+                    {emailConfig.enabled && (
+                      <>
+                        {/* SMTP Connector Selection */}
+                        <div className="grid gap-2">
+                          <Label>Connettore SMTP</Label>
+                          <Select
+                            value={emailConfig.connectorId}
+                            onValueChange={(v) => setEmailConfig(prev => ({ ...prev, connectorId: v }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Seleziona un connettore SMTP..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {smtpConnectors.length === 0 ? (
+                                <SelectItem value="none" disabled>Nessun connettore SMTP configurato</SelectItem>
+                              ) : (
+                                smtpConnectors.map((c) => (
+                                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                          {smtpConnectors.length === 0 && (
+                            <p className="text-[10px] text-amber-600">⚠️ Configura un connettore SMTP nelle Impostazioni per abilitare l'invio email.</p>
+                          )}
+                        </div>
+
+                        {/* Recipients */}
+                        <div className="grid gap-3">
+                          <div className="grid gap-2">
+                            <Label>A (Destinatari)</Label>
+                            <Input
+                              value={emailConfig.to}
+                              onChange={(e) => setEmailConfig(prev => ({ ...prev, to: e.target.value }))}
+                              placeholder="email@esempio.com, altro@esempio.com"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="grid gap-2">
+                              <Label>CC</Label>
+                              <Input
+                                value={emailConfig.cc || ''}
+                                onChange={(e) => setEmailConfig(prev => ({ ...prev, cc: e.target.value }))}
+                                placeholder="copia@esempio.com"
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label>CCN (BCC)</Label>
+                              <Input
+                                value={emailConfig.bcc || ''}
+                                onChange={(e) => setEmailConfig(prev => ({ ...prev, bcc: e.target.value }))}
+                                placeholder="nascosto@esempio.com"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Subject */}
+                        <div className="grid gap-2">
+                          <Label>Oggetto</Label>
+                          <Input
+                            value={emailConfig.subject}
+                            onChange={(e) => setEmailConfig(prev => ({ ...prev, subject: e.target.value }))}
+                            placeholder="Oggetto dell'email..."
+                          />
+                        </div>
+
+                        {/* Body */}
+                        <div className="grid gap-2">
+                          <Label>Corpo Email (HTML)</Label>
+                          <Textarea
+                            value={emailConfig.body}
+                            onChange={(e) => setEmailConfig(prev => ({ ...prev, body: e.target.value }))}
+                            placeholder="Scrivi il contenuto dell'email. Puoi usare HTML per la formattazione."
+                            rows={5}
+                          />
+                          <p className="text-[10px] text-muted-foreground">Supporta HTML. I dati SQL/Python verranno inseriti automaticamente se selezionati.</p>
+                        </div>
+
+                        {/* Attachments Configuration */}
+                        <div className="grid gap-3 p-3 bg-muted/30 rounded-lg border">
+                          <Label className="font-semibold text-xs uppercase text-muted-foreground">Allegati e Contenuti</Label>
+
+                          {/* Available Parent Tables */}
+                          {availableInputTables && availableInputTables.length > 0 && (
+                            <div className="space-y-3">
+                              <p className="text-xs font-medium flex items-center gap-1"><Database className="h-3 w-3" /> Tabelle Disponibili (da nodi precedenti)</p>
+                              <div className="space-y-2 max-h-48 overflow-y-auto">
+                                {availableInputTables.map((table) => (
+                                  <div key={table.name} className="flex items-center justify-between bg-background/50 p-2 rounded border text-xs">
+                                    <span className="font-medium truncate flex-1">{table.name}</span>
+                                    <div className="flex items-center gap-3">
+                                      <label className="flex items-center gap-1.5 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={safeEmailAttachments.tablesInBody.includes(table.name)}
+                                          onChange={(e) => {
+                                            setEmailConfig(prev => ({
+                                              ...prev,
+                                              attachments: {
+                                                ...prev.attachments,
+                                                tablesInBody: e.target.checked
+                                                  ? [...prev.attachments.tablesInBody, table.name]
+                                                  : prev.attachments.tablesInBody.filter(t => t !== table.name)
+                                              }
+                                            }));
+                                          }}
+                                          className="rounded"
+                                        />
+                                        <span className="text-muted-foreground">Nel corpo</span>
+                                      </label>
+                                      <label className="flex items-center gap-1.5 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={safeEmailAttachments.tablesAsExcel.includes(table.name)}
+                                          onChange={(e) => {
+                                            setEmailConfig(prev => ({
+                                              ...prev,
+                                              attachments: {
+                                                ...prev.attachments,
+                                                tablesAsExcel: e.target.checked
+                                                  ? [...prev.attachments.tablesAsExcel, table.name]
+                                                  : prev.attachments.tablesAsExcel.filter(t => t !== table.name)
+                                              }
+                                            }));
+                                          }}
+                                          className="rounded"
+                                        />
+                                        <span className="text-muted-foreground">Excel</span>
+                                      </label>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Current Node SQL Output */}
+                          {sqlResultName && (
+                            <div className="space-y-2 border-t pt-2">
+                              <p className="text-xs font-medium flex items-center gap-1"><Table className="h-3 w-3" /> Output SQL di questo nodo: <span className="font-bold text-primary">{sqlResultName}</span></p>
+                              <div className="flex items-center gap-3 text-xs">
+                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={safeEmailAttachments.tablesInBody.includes(sqlResultName)}
+                                    onChange={(e) => {
+                                      setEmailConfig(prev => ({
+                                        ...prev,
+                                        attachments: {
+                                          ...prev.attachments,
+                                          tablesInBody: e.target.checked
+                                            ? [...prev.attachments.tablesInBody, sqlResultName]
+                                            : prev.attachments.tablesInBody.filter(t => t !== sqlResultName)
+                                        }
+                                      }));
+                                    }}
+                                    className="rounded"
+                                  />
+                                  Nel corpo
+                                </label>
+                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={safeEmailAttachments.tablesAsExcel.includes(sqlResultName)}
+                                    onChange={(e) => {
+                                      setEmailConfig(prev => ({
+                                        ...prev,
+                                        attachments: {
+                                          ...prev.attachments,
+                                          tablesAsExcel: e.target.checked
+                                            ? [...prev.attachments.tablesAsExcel, sqlResultName]
+                                            : prev.attachments.tablesAsExcel.filter(t => t !== sqlResultName)
+                                        }
+                                      }));
+                                    }}
+                                    className="rounded"
+                                  />
+                                  Excel
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Current Node Python Output */}
+                          {pythonResultName && (
+                            <div className="space-y-2 border-t pt-2">
+                              <p className="text-xs font-medium flex items-center gap-1"><Code className="h-3 w-3" /> Output Python di questo nodo: <span className="font-bold text-primary">{pythonResultName}</span></p>
+                              <div className="flex items-center gap-3 text-xs">
+                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={safeEmailAttachments.pythonOutputsInBody.includes(pythonResultName)}
+                                    onChange={(e) => {
+                                      setEmailConfig(prev => ({
+                                        ...prev,
+                                        attachments: {
+                                          ...prev.attachments,
+                                          pythonOutputsInBody: e.target.checked
+                                            ? [...prev.attachments.pythonOutputsInBody, pythonResultName]
+                                            : prev.attachments.pythonOutputsInBody.filter(t => t !== pythonResultName)
+                                        }
+                                      }));
+                                    }}
+                                    className="rounded"
+                                  />
+                                  Nel corpo
+                                </label>
+                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={safeEmailAttachments.pythonOutputsAsAttachment.includes(pythonResultName)}
+                                    onChange={(e) => {
+                                      setEmailConfig(prev => ({
+                                        ...prev,
+                                        attachments: {
+                                          ...prev.attachments,
+                                          pythonOutputsAsAttachment: e.target.checked
+                                            ? [...prev.attachments.pythonOutputsAsAttachment, pythonResultName]
+                                            : prev.attachments.pythonOutputsAsAttachment.filter(t => t !== pythonResultName)
+                                        }
+                                      }));
+                                    }}
+                                    className="rounded"
+                                  />
+                                  Allegato
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {(!availableInputTables || availableInputTables.length === 0) && !sqlResultName && !pythonResultName && (
+                            <p className="text-xs text-muted-foreground italic">Nessuna tabella o output disponibile. Configura query SQL o script Python nei nodi.</p>
+                          )}
+                        </div>
+
+                        {/* Test Email Button */}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="gap-2"
+                          disabled={!emailConfig.connectorId || !emailConfig.to || !emailConfig.subject || isSendingTestEmail || !sqlConnectorId}
+                          onClick={async () => {
+                            setIsSendingTestEmail(true);
+                            try {
+                              // Build selectedTables from user selections
+                              const selectedTables: Array<{ name: string; query: string; inBody: boolean; asExcel: boolean; pipelineDependencies?: Array<{ tableName: string; query: string }> }> = [];
+
+                              // Add tables from parent nodes
+                              if (availableInputTables && availableInputTables.length > 0) {
+                                for (const table of availableInputTables) {
+                                  const inBody = safeEmailAttachments.tablesInBody.includes(table.name);
+                                  const asExcel = safeEmailAttachments.tablesAsExcel.includes(table.name);
+                                  if (inBody || asExcel) {
+                                    selectedTables.push({
+                                      name: table.name,
+                                      query: table.sqlQuery || `SELECT * FROM ${table.name}`,
+                                      inBody,
+                                      asExcel,
+                                      pipelineDependencies: table.pipelineDependencies // Include dependencies for cascading execution
+                                    });
+                                  }
+                                }
+                              }
+
+                              // Add current node SQL output if selected
+                              if (sqlResultName && sqlQuery) {
+                                const inBody = safeEmailAttachments.tablesInBody.includes(sqlResultName);
+                                const asExcel = safeEmailAttachments.tablesAsExcel.includes(sqlResultName);
+                                if (inBody || asExcel) {
+                                  selectedTables.push({
+                                    name: sqlResultName,
+                                    query: sqlQuery,
+                                    inBody,
+                                    asExcel
+                                  });
+                                }
+                              }
+
+                              if (selectedTables.length === 0 && !emailConfig.body) {
+                                toast({ variant: 'destructive', title: 'Nessun contenuto', description: 'Aggiungi del testo nel corpo o seleziona almeno una tabella.' });
+                                setIsSendingTestEmail(false);
+                                return;
+                              }
+
+                              const result = await sendTestEmailWithDataAction({
+                                connectorId: emailConfig.connectorId,
+                                sqlConnectorId: sqlConnectorId,
+                                to: emailConfig.to,
+                                cc: emailConfig.cc,
+                                bcc: emailConfig.bcc,
+                                subject: `[TEST] ${emailConfig.subject}`,
+                                bodyHtml: emailConfig.body || '',
+                                selectedTables
+                              });
+
+                              if (result.success) {
+                                toast({ title: 'Email di test inviata!', description: result.message });
+                              } else {
+                                toast({ variant: 'destructive', title: 'Errore invio', description: result.error });
+                              }
+                            } catch (e: any) {
+                              toast({ variant: 'destructive', title: 'Errore', description: e.message });
+                            } finally {
+                              setIsSendingTestEmail(false);
+                            }
+                          }}
+                        >
+                          {isSendingTestEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                          Invia Email di Test
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </CollapsibleSection>
+              )}
             </div>
 
           </ScrollArea>

@@ -40,6 +40,28 @@ export interface TriggerItem {
   path: string;
 }
 
+export interface EmailActionConfig {
+  enabled: boolean;
+  connectorId: string; // SMTP connector ID
+
+  // Recipients
+  to: string;         // Comma-separated or dynamic from variables
+  cc?: string;
+  bcc?: string;
+
+  // Content
+  subject: string;
+  body: string;       // HTML content
+
+  // Attachments configuration - arrays of selected table names
+  attachments: {
+    tablesInBody: string[];          // Names of tables to show in email body
+    tablesAsExcel: string[];         // Names of tables to attach as Excel
+    pythonOutputsInBody: string[];   // Names of Python outputs in body
+    pythonOutputsAsAttachment: string[]; // Names of Python outputs as attachments
+  };
+}
+
 export interface DecisionLeaf {
   id?: string;
   decision: string;
@@ -54,6 +76,7 @@ export interface DecisionLeaf {
   pythonResultName?: string;
   pythonConnectorId?: string;
   pythonSelectedPipelines?: string[];
+  emailAction?: EmailActionConfig;
 }
 
 export type SingleDecisionOptionChild = DecisionNode | DecisionLeaf | string | { ref: string, id?: string } | { subTreeRef: string, id?: string };
@@ -83,6 +106,7 @@ export interface DecisionNode {
   pythonResultName?: string;
   pythonConnectorId?: string;
   pythonSelectedPipelines?: string[];
+  emailAction?: EmailActionConfig;
 }
 
 export interface StoredTree extends AnalysisResult {
