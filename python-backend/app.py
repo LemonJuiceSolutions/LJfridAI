@@ -14,6 +14,8 @@ import sys
 import traceback
 from contextlib import redirect_stdout, redirect_stderr
 import os
+import json
+import re
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from Next.js
@@ -118,6 +120,7 @@ def execute_python():
             'px': px,
             'go': go,
             '__builtins__': __builtins__,
+            '__name__': '__main__',
             'df': pd.DataFrame(),
             'result': None,
             'data': None,
@@ -166,10 +169,15 @@ def execute_python():
         raw_stdout = io.StringIO()
         raw_stderr = io.StringIO()
         safe_code = code.replace('plt.show()', '# plt.show() removed')
+        
+        env_vars = data.get('env', {}) # Receive env vars
+        from unittest.mock import patch
 
         try:
             with redirect_stdout(raw_stdout), redirect_stderr(raw_stderr):
-                exec(safe_code, ns, ns) # Use ns for both globals and locals
+                # Patch os.environ for the duration of execution
+                with patch.dict(os.environ, env_vars):
+                    exec(safe_code, ns, ns) # Use ns for both globals and locals
         except Exception as e:
             error_details = traceback.format_exc()
             error_msg = str(e)
@@ -227,8 +235,80 @@ def execute_python():
                     print(f"✅ [EXECUTE] Found result in variable: '{key}'")
                     break
         
-        # Priority 2: Last line expression (heuristic)
-        # In current implementation, if no P1 found, we just use None
+        
+        # Priority 2: JSON in stdout (heuristic fallback)
+        if res_val is None and stdout_val.strip():
+            try:
+                # Naive rfind fails on nested structures (finds inner dict instead of outer list).
+                # New strategy: Try specific candidate indices that are likely starts of the main JSON.
+                
+                candidates = []
+                # 1. First '[' (Likely start of a list output if logs are minimal)
+                p1 = stdout_val.find('[')
+                if p1 != -1: candidates.append(p1)
+                
+                # 2. First '{' (Likely start of a dict/wrapper)
+                p2 = stdout_val.find('{')
+                if p2 != -1: candidates.append(p2)
+                
+                # 3. Last '[' (Dangerous for nested, but maybe valid if flat)
+                p3 = stdout_val.rfind('[')
+                if p3 != -1 and p3 != p1: candidates.append(p3)
+                
+                # 4. Last '{' (Dangerous, but maybe valid)
+                p4 = stdout_val.rfind('{')
+                if p4 != -1 and p4 != p2: candidates.append(p4)
+                
+                # Sort candidates to try from beginning to end? 
+                # Or maybe reversed to find the "result" at the end?
+                # Usually we want the *largest* structure or the one that parses successfully.
+                # Let's try them all and pick the one that looks like a DataFrame data source (List of Dicts).
+                
+                candidates = sorted(list(set(candidates)))
+                
+                best_parsed = None
+                
+                for start_idx in candidates:
+                    try:
+                        potential_json = stdout_val[start_idx:]
+                        parsed = json.loads(potential_json)
+                        
+                        # Apply heavy heuristic: We want a List of Dicts or a specific Dict wrapper
+                        if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
+                            best_parsed = parsed
+                            print(f"✅ [EXECUTE] Found valid List[Dict] JSON at index {start_idx}")
+                            break # High confidence
+                        
+                        if isinstance(parsed, dict) and ('rows' in parsed or 'cols' in parsed):
+                             best_parsed = parsed
+                             print(f"✅ [EXECUTE] Found valid Table Dict JSON at index {start_idx}")
+                             break
+                             
+                        # Keep it as fallback
+                        if best_parsed is None:
+                            best_parsed = parsed
+                            
+                    except json.JSONDecodeError:
+                        continue
+                
+                if best_parsed is not None:
+                     res_val = best_parsed
+                     # Convert to DataFrame if needed (logic below handles it)
+                     if output_type == 'table':
+                        if isinstance(best_parsed, list):
+                            res_val = pd.DataFrame(best_parsed)
+                        elif isinstance(best_parsed, dict):
+                             # ... existing dict handling ...
+                             if 'rows' in best_parsed and isinstance(best_parsed['rows'], list):
+                                 res_val = pd.DataFrame(best_parsed['rows'])
+                             else:
+                                 res_val = pd.DataFrame([best_parsed]) if not isinstance(best_parsed, pd.DataFrame) else best_parsed
+
+            except Exception as e:
+                print(f"⚠️ [EXECUTE] Error parsing stdout JSON: {e}")
+
+        # Priority 3: Last line expression (heuristic - NOT IMPLEMENTED for safety/complexity)
+        # Process result based on requested output type
         
         # If result is Plotly/Matplotlib and we want a table or variable, we might need adjustment
         # but usually user picks the right outputType.
@@ -244,9 +324,16 @@ def execute_python():
                     'stdout': stdout_val
                 })
             else:
+                # DEBUG: Show what we captured
+                debug_hint = f" [Stdout len: {len(stdout_val)}]"
+                if len(stdout_val) > 100:
+                    debug_hint += f" Last 100: {stdout_val[-100:]}"
+                else:
+                    debug_hint += f" Content: {stdout_val}"
+
                 return jsonify({
                     'success': False,
-                    'error': f'Expected DataFrame result for output type "table", but got {type(res_val).__name__}',
+                    'error': f'Expected DataFrame result for output type "table", but got {type(res_val).__name__}.{debug_hint}',
                     'stdout': stdout_val
                 })
         

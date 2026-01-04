@@ -1402,13 +1402,47 @@ export async function executePythonPreviewAction(
     code: string,
     outputType: 'table' | 'variable' | 'chart',
     inputData: Record<string, any[]> = {},
-    dependencies?: { tableName: string; connectorId?: string; query?: string; pipelineDependencies?: { tableName: string; query: string }[] }[]
+    dependencies?: { tableName: string; connectorId?: string; query?: string; pipelineDependencies?: { tableName: string; query: string }[] }[],
+    connectorId?: string
 ): Promise<{ success: boolean; data?: any[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
     const debugLogs: string[] = [];
     const tStart = performance.now();
 
     try {
         const user = await getAuthenticatedUser();
+        let envVars: Record<string, string> = {};
+
+        // Fetch connector config if provided
+        if (connectorId && connectorId !== 'none') {
+            const connector = await db.connector.findUnique({
+                where: { id: connectorId, companyId: user.companyId }
+            });
+            if (connector && connector.config) {
+                let config: any = connector.config;
+                if (typeof config === 'string') {
+                    try {
+                        config = JSON.parse(config);
+                    } catch (e) {
+                        console.error('[Python] Failed to parse connector config JSON:', e);
+                        config = {};
+                    }
+                }
+                // Map common keys to uppercase ENVS
+                if (config.accessToken) envVars['HUBSPOT_TOKEN'] = config.accessToken;
+                if (config.token) envVars['HUBSPOT_TOKEN'] = config.token; // Fallback
+                if (config.apiKey) envVars['HUBSPOT_API_KEY'] = config.apiKey;
+
+                // Generic mapping for other potential keys
+                if (config.password) envVars['DB_PASSWORD'] = config.password;
+                if (config.username) envVars['DB_USERNAME'] = config.username;
+
+                console.log(`[Python] Injected env vars from connector ${connector.name} (ID: ${connectorId})`);
+                console.log(`[Python] Config keys known: ${Object.keys(config).join(', ')}`);
+                console.log(`[Python] Env vars set: ${Object.keys(envVars).join(', ')}`);
+            } else {
+                console.log(`[Python] Connector ${connectorId} found but no config or invalid`);
+            }
+        }
 
         // If there are dependencies (SQL queries from parent nodes), fetch them first
         if (dependencies && dependencies.length > 0) {
@@ -1484,7 +1518,8 @@ export async function executePythonPreviewAction(
             body: JSON.stringify({
                 code,
                 outputType,
-                inputData
+                inputData,
+                env: envVars // Pass env vars
             }),
             signal: AbortSignal.timeout(300000) // 5 minutes timeout
         });

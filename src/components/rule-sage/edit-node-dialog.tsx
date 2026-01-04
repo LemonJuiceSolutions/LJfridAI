@@ -189,6 +189,7 @@ export default function EditNodeDialog({
   const [selectedPipelines, setSelectedPipelines] = useState<string[]>([]);
   const [agentStatus, setAgentStatus] = useState<string | null>(null);
   const [sqlConnectors, setSqlConnectors] = useState<{ id: string, name: string }[]>([]);
+  const [dataConnectors, setDataConnectors] = useState<{ id: string, name: string }[]>([]);
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
 
   // Python State
@@ -412,6 +413,11 @@ export default function EditNodeDialog({
         if (res.data) {
           const sqls = res.data.filter((c: any) => c.type === 'SQL').map((c: any) => ({ id: c.id, name: c.name }));
           setSqlConnectors(sqls);
+
+          // Data Connectors for Python (SQL + HubSpot + etc) - exclude SMTP
+          const dataConns = res.data.filter((c: any) => c.type !== 'SMTP').map((c: any) => ({ id: c.id, name: c.name }));
+          setDataConnectors(dataConns);
+
           const smtps = res.data.filter((c: any) => c.type === 'SMTP').map((c: any) => ({ id: c.id, name: c.name }));
           setSmtpConnectors(smtps);
         }
@@ -1475,7 +1481,7 @@ export default function EditNodeDialog({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Nessuno</SelectItem>
-                        {sqlConnectors.map((c: any) => (
+                        {dataConnectors.map((c: any) => (
                           <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1663,7 +1669,7 @@ export default function EditNodeDialog({
                           });
                         }
 
-                        executePythonPreviewAction(pythonCode, pythonOutputType, {}, dependencies).then((res: any) => {
+                        executePythonPreviewAction(pythonCode, pythonOutputType, {}, dependencies, pythonConnectorId).then((res: any) => {
                           isExecutingRef.current = false;
                           setPythonAgentStatus(null);
                           setPythonProgressStep(0); // Reset on finish
