@@ -1,10 +1,10 @@
 
 
 'use client';
-import type { DecisionNode, StoredTree, DecisionLeaf, Variable, VariableOption } from '@/lib/types';
+import type { DecisionNode, StoredTree, DecisionLeaf, Variable, VariableOption, LinkItem, TriggerItem } from '@/lib/types';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code } from 'lucide-react';
+import { Mail, AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code, FileCode } from 'lucide-react';
 import _ from 'lodash';
 import EditNodeDialog from './edit-node-dialog';
 import AddNodeDialog from './add-node-dialog';
@@ -1080,6 +1080,59 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         };
     }, [flatTree]);
 
+    const getAncestorMedia = useMemo(() => {
+        return (currentPath: string): any[] => {
+            const ancestorMedia: any[] = [];
+
+            flatTree.forEach((item: any) => {
+                const actualNode = item.node;
+                if (actualNode && typeof actualNode === 'object' && actualNode.media && Array.isArray(actualNode.media)) {
+                    const nodePath = item.path;
+                    const isAncestor =
+                        currentPath !== nodePath &&
+                        currentPath.startsWith(nodePath) &&
+                        currentPath.charAt(nodePath.length) === '.';
+
+                    if (isAncestor) {
+                        ancestorMedia.push(...actualNode.media);
+                    }
+                }
+            });
+
+            return ancestorMedia;
+        };
+    }, [flatTree]);
+
+    const getAncestorLinks = useMemo(() => {
+        return (currentPath: string): LinkItem[] => {
+            const ancestorLinks: LinkItem[] = [];
+            flatTree.forEach((item: any) => {
+                const actualNode = item.node;
+                if (actualNode && typeof actualNode === 'object' && actualNode.links && Array.isArray(actualNode.links)) {
+                    const nodePath = item.path;
+                    const isAncestor = currentPath !== nodePath && currentPath.startsWith(nodePath) && currentPath.charAt(nodePath.length) === '.';
+                    if (isAncestor) ancestorLinks.push(...actualNode.links);
+                }
+            });
+            return ancestorLinks;
+        };
+    }, [flatTree]);
+
+    const getAncestorTriggers = useMemo(() => {
+        return (currentPath: string): TriggerItem[] => {
+            const ancestorTriggers: TriggerItem[] = [];
+            flatTree.forEach((item: any) => {
+                const actualNode = item.node;
+                if (actualNode && typeof actualNode === 'object' && actualNode.triggers && Array.isArray(actualNode.triggers)) {
+                    const nodePath = item.path;
+                    const isAncestor = currentPath !== nodePath && currentPath.startsWith(nodePath) && currentPath.charAt(nodePath.length) === '.';
+                    if (isAncestor) ancestorTriggers.push(...actualNode.triggers);
+                }
+            });
+            return ancestorTriggers;
+        };
+    }, [flatTree]);
+
     if (!tree) {
         return (
             <Card>
@@ -1228,8 +1281,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                                     {item.node && typeof item.node === 'object' && 'sqlConnectorId' in item.node && (item.node as any).sqlConnectorId && (
                                                         <Database className="h-3 w-3 text-blue-600" />
                                                     )}
+                                                    {actualNode && typeof actualNode === 'object' && (actualNode as any).emailAction?.enabled && (
+                                                        <Mail className="h-3 w-3 text-sky-500" />
+                                                    )}
                                                     {actualNode && typeof actualNode === 'object' && 'pythonCode' in actualNode && (actualNode as any).pythonCode && (
-                                                        <PythonIcon className="h-3 w-3 text-emerald-600" />
+                                                        <FileCode className="h-3 w-3 text-emerald-600" />
                                                     )}
                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'image') && <ImageIcon className="h-3 w-3 text-muted-foreground" />}
                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'video') && <Video className="h-3 w-3 text-muted-foreground" />}
@@ -1347,6 +1403,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     treeId={treeData.id}
                     isSaving={isSaving}
                     availableInputTables={getAncestorInputTables(editingNodeInfo.path)}
+                    availableParentMedia={getAncestorMedia(editingNodeInfo.path)}
+                    availableParentLinks={getAncestorLinks(editingNodeInfo.path)}
+                    availableParentTriggers={getAncestorTriggers(editingNodeInfo.path)}
                 />
             )}
 

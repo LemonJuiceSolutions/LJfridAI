@@ -59,6 +59,7 @@ export interface EmailActionConfig {
     tablesAsExcel: string[];         // Names of tables to attach as Excel
     pythonOutputsInBody: string[];   // Names of Python outputs in body
     pythonOutputsAsAttachment: string[]; // Names of Python outputs as attachments
+    mediaAsAttachment: string[];     // Filenames or URLs of media to attach
   };
 }
 

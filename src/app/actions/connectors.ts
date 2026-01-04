@@ -4,6 +4,11 @@ import { db } from '@/lib/db';
 import { getAuthenticatedUser } from '../actions';
 import sql from 'mssql';
 import nodemailer from 'nodemailer';
+import fs from 'fs/promises';
+import path from 'path';
+import type { MediaItem, LinkItem, TriggerItem } from '@/lib/types';
+
+// ... (existing functions)
 
 export async function getConnectorsAction() {
     const user = await getAuthenticatedUser();
@@ -20,6 +25,10 @@ export async function getConnectorsAction() {
         return { error: 'Errore durante il recupero connettori' };
     }
 }
+
+// Send test email with actual data from selected tables and Python outputs
+
+
 
 export async function createConnectorAction(data: { name: string, type: string, config: string }) {
     const user = await getAuthenticatedUser();
@@ -298,6 +307,10 @@ export async function sendTestEmailWithDataAction(params: {
         asAttachment: boolean;
         dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
     }>;
+    availableMedia?: MediaItem[];
+    availableLinks?: LinkItem[];
+    availableTriggers?: TriggerItem[];
+    mediaAttachments?: string[];
 }) {
     console.log('[EMAIL DEBUG] sendTestEmailWithDataAction called with:', {
         connectorId: params.connectorId,
@@ -306,6 +319,7 @@ export async function sendTestEmailWithDataAction(params: {
         subject: params.subject,
         selectedTablesCount: params.selectedTables?.length || 0,
         selectedPythonOutputsCount: params.selectedPythonOutputs?.length || 0,
+        mediaAttachmentsCount: params.mediaAttachments?.length || 0
     });
 
     const user = await getAuthenticatedUser();
@@ -541,128 +555,195 @@ export async function sendTestEmailWithDataAction(params: {
 <head>
     <meta charset="utf-8">
     <style>
-        body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; }
-        .user-content { margin-bottom: 30px; }
-        .table-section { margin: 20px 0; }
-        .table-title { font-size: 16px; font-weight: bold; color: #333; margin-bottom: 10px; background: #f0f0f0; padding: 8px; border-radius: 4px; }
-        table { border-collapse: collapse; width: 100%; font-size: 12px; }
-        th { background-color: #4a5568; color: white; padding: 8px; text-align: left; }
-        td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
-        tr:nth-child(even) { background-color: #f7fafc; }
-        tr:hover { background-color: #edf2f7; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 950px; margin: 0 auto; padding: 15px; color: #374151; font-size: 12px; }
+        .user-content { margin-bottom: 15px; line-height: 1.5; }
+        .table-section { margin: 15px 0; }
+        .table-title { font-size: 12px; font-weight: 600; color: #1f2937; margin-bottom: 6px; padding: 6px 10px; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 4px; border-left: 3px solid #3b82f6; }
+        .row-info { color: #6b7280; font-size: 9px; margin: 4px 0 8px 0; }
+        table { border-collapse: collapse; width: 100%; font-size: 10px; border: 1px solid #d1d5db; }
+        th { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: #f1f5f9; padding: 5px 7px; text-align: left; font-weight: 500; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; border: 1px solid #475569; white-space: nowrap; }
+        td { padding: 4px 7px; border: 1px solid #d1d5db; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        tr:nth-child(even) { background-color: #f9fafb; }
+        tr:hover { background-color: #f3f4f6; }
+        .chart-container { text-align: center; padding: 10px; margin: 15px 0; }
+        h1, h2, h3 { color: #1f2937; margin: 10px 0; }
+        p { line-height: 1.5; margin: 8px 0; }
+        a { color: #2563eb; }
     </style>
 </head>
 <body>
-    <div class="user-content">${params.bodyHtml || ''}</div>
 `;
 
-        // Add tables to body
-        for (const tr of tableResults) {
-            if (tr.inBody && tr.data.length > 0) {
-                fullHtml += `<div class="table-section">`;
-                fullHtml += `<div class="table-title">📊 ${tr.name}</div>`;
+        // Helper function to generate table HTML
+        const generateTableHtml = (name: string, data: any[], maxRows = 50) => {
+            if (!data || data.length === 0) return `<p><em>Nessun dato per ${name}</em></p>`;
 
-                // Limit rows in email body to prevent size limit errors
-                const MAX_ROWS_IN_EMAIL = 100;
-                const totalRows = tr.data.length;
-                const displayRows = tr.data.slice(0, MAX_ROWS_IN_EMAIL);
+            const totalRows = data.length;
+            const displayRows = data.slice(0, maxRows);
+            const columns = Object.keys(data[0]);
 
-                if (totalRows > MAX_ROWS_IN_EMAIL) {
-                    fullHtml += `<p style="color: #666; font-size: 11px; margin: 5px 0;">Mostrando prime ${MAX_ROWS_IN_EMAIL} righe di ${totalRows.toLocaleString()} totali. Vedi allegato Excel per dati completi.</p>`;
-                }
+            let html = `<div class="table-section">`;
+            html += `<div class="table-title">${name}</div>`;
 
-                fullHtml += `<table><thead><tr>`;
-
-                const columns = Object.keys(tr.data[0]);
-                columns.forEach(col => {
-                    fullHtml += `<th>${col}</th>`;
-                });
-                fullHtml += `</tr></thead><tbody>`;
-
-                displayRows.forEach(row => {
-                    fullHtml += `<tr>`;
-                    columns.forEach(col => {
-                        let val = row[col];
-                        if (val === null || val === undefined) val = '';
-                        else if (typeof val === 'object' && val instanceof Date) val = val.toLocaleString('it-IT');
-                        else if (typeof val === 'object') val = JSON.stringify(val);
-                        fullHtml += `<td>${val}</td>`;
-                    });
-                    fullHtml += `</tr>`;
-                });
-                fullHtml += `</tbody></table></div>`;
+            if (totalRows > maxRows) {
+                html += `<p class="row-info">Mostrando prime ${maxRows} righe di ${totalRows.toLocaleString()} totali.</p>`;
             }
-        }
+
+            html += `<table><thead><tr>`;
+            columns.forEach(col => { html += `<th>${col}</th>`; });
+            html += `</tr></thead><tbody>`;
+
+            displayRows.forEach(row => {
+                html += `<tr>`;
+                columns.forEach(col => {
+                    let val = row[col];
+                    if (val === null || val === undefined) val = '';
+                    else if (typeof val === 'object' && val instanceof Date) val = val.toLocaleString('it-IT');
+                    else if (typeof val === 'object') val = JSON.stringify(val);
+                    html += `<td>${val}</td>`;
+                });
+                html += `</tr>`;
+            });
+            html += `</tbody></table></div>`;
+            return html;
+        };
+
+        // Process body HTML - replace placeholders with actual content
+        let processedBody = params.bodyHtml || '';
 
         // Collect inline chart attachments for CID references
         const inlineAttachments: Array<{ filename: string; content: Buffer; contentType: string; cid: string }> = [];
 
-        // Add Python outputs to body
-        for (const pyResult of pythonResults) {
-            if (pyResult.inBody) {
-                fullHtml += `<div class="table-section">`;
-                fullHtml += `<div class="table-title">🐍 ${pyResult.name}</div>`;
+        // Process inline media placeholders (Async)
+        const mediaMatches = [...(params.bodyHtml || '').matchAll(/\{\{ALLEGATO:([^}]+)\}\}/g)];
+        if (mediaMatches.length > 0 && params.availableMedia) {
+            console.log(`[EMAIL DEBUG] Found ${mediaMatches.length} inline media placeholders`);
+            for (const match of mediaMatches) {
+                const mediaName = match[1];
+                // Check if already processed (avoid duplicates)
+                if (inlineAttachments.some(a => a.filename === mediaName)) continue;
 
-                if (pyResult.type === 'chart') {
-                    console.log(`[EMAIL DEBUG] Chart ${pyResult.name}: chartBase64=${pyResult.chartBase64 ? `${(pyResult.chartBase64.length / 1024).toFixed(0)}KB` : 'null'}, chartHtml=${pyResult.chartHtml ? 'present' : 'null'}`);
+                const mediaItem = params.availableMedia.find(m => (m.name || m.url.split('/').pop() || 'file') === mediaName);
+                if (mediaItem) {
+                    try {
+                        let content: Buffer;
+                        let contentType = 'application/octet-stream';
+                        if (mediaItem.type === 'image' || mediaItem.url.match(/\.(jpg|jpeg|png|gif)$/i)) {
+                            contentType = 'image/png'; // Default fall back, or generic image
+                            if (mediaItem.url.endsWith('.jpg') || mediaItem.url.endsWith('.jpeg')) contentType = 'image/jpeg';
+                            if (mediaItem.url.endsWith('.gif')) contentType = 'image/gif';
+                        }
 
-                    // Use CID attachment for reliable image embedding in email clients
-                    if (pyResult.chartBase64) {
-                        const cid = `chart_${pyResult.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
-                        console.log(`[EMAIL DEBUG] Adding chart as CID attachment: ${cid}`);
+                        if (mediaItem.url.startsWith('http')) {
+                            const res = await fetch(mediaItem.url);
+                            const arrayBuffer = await res.arrayBuffer();
+                            content = Buffer.from(arrayBuffer);
+                        } else {
+                            const filePath = path.join(process.cwd(), 'public', mediaItem.url.startsWith('/') ? mediaItem.url.substring(1) : mediaItem.url);
+                            content = await fs.readFile(filePath);
+                        }
 
-                        // Add to inline attachments array for CID reference
+                        const cid = `media_${mediaName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
                         inlineAttachments.push({
-                            filename: `${pyResult.name}.png`,
-                            content: Buffer.from(pyResult.chartBase64, 'base64'),
-                            contentType: 'image/png',
-                            cid: cid  // Content-ID for inline reference
+                            filename: mediaName,
+                            content: content,
+                            contentType: contentType,
+                            cid: cid
                         });
-
-                        fullHtml += `<div style="text-align: center; padding: 20px;">`;
-                        fullHtml += `<img src="cid:${cid}" alt="${pyResult.name}" style="max-width: 100%; height: auto;" />`;
-                        fullHtml += `</div>`;
-                    } else if (pyResult.chartHtml) {
-                        console.log(`[EMAIL DEBUG] No chartBase64, showing fallback message`);
-                        fullHtml += `<div style="padding: 20px;">`;
-                        fullHtml += `<p style="color: #666; font-size: 12px; font-style: italic;">Nota: Grafico interattivo disponibile in allegato. Anteprima statica non disponibile.</p>`;
-                        fullHtml += `</div>`;
-                    }
-                } else if (pyResult.type === 'table' && pyResult.data && pyResult.data.length > 0) {
-                    // Render table
-                    const MAX_ROWS_IN_EMAIL = 100;
-                    const totalRows = pyResult.data.length;
-                    const displayRows = pyResult.data.slice(0, MAX_ROWS_IN_EMAIL);
-
-                    if (totalRows > MAX_ROWS_IN_EMAIL) {
-                        fullHtml += `<p style="color: #666; font-size: 11px; margin: 5px 0;">Mostrando prime ${MAX_ROWS_IN_EMAIL} righe di ${totalRows.toLocaleString()} totali.</p>`;
-                    }
-
-                    fullHtml += `<table><thead><tr>`;
-                    const columns = Object.keys(pyResult.data[0]);
-                    columns.forEach(col => {
-                        fullHtml += `<th>${col}</th>`;
-                    });
-                    fullHtml += `</tr></thead><tbody>`;
-
-                    displayRows.forEach(row => {
-                        fullHtml += `<tr>`;
-                        columns.forEach(col => {
-                            let val = row[col];
-                            if (val === null || val === undefined) val = '';
-                            else if (typeof val === 'object' && val instanceof Date) val = val.toLocaleString('it-IT');
-                            else if (typeof val === 'object') val = JSON.stringify(val);
-                            fullHtml += `<td>${val}</td>`;
-                        });
-                        fullHtml += `</tr>`;
-                    });
-                    fullHtml += `</tbody></table>`;
-                } else if (pyResult.type === 'variable' && pyResult.variables) {
-                    // Render variables as JSON
-                    fullHtml += `<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto;">${JSON.stringify(pyResult.variables, null, 2)}</pre>`;
+                        console.log(`[EMAIL DEBUG] Processed inline media: ${mediaName}`);
+                    } catch (e: any) { console.error(`[EMAIL DEBUG] Failed to process inline media ${mediaName}:`, e.message); }
                 }
+            }
+        }
 
-                fullHtml += `</div>`;
+        // Replace Media placeholders: {{ALLEGATO:nome}}
+        processedBody = processedBody.replace(/\{\{ALLEGATO:([^}]+)\}\}/g, (match, mediaName) => {
+            const attachment = inlineAttachments.find(a => a.filename === mediaName);
+            if (attachment && attachment.contentType.startsWith('image/')) {
+                return `<img src="cid:${attachment.cid}" style="max-width: 100%; height: auto;" alt="${mediaName}" />`;
+            }
+            // If not an image or failed, maybe link?
+            return match;
+        });
+
+        // Replace Link placeholders: {{LINK:nome}}
+        processedBody = processedBody.replace(/\{\{LINK:([^}]+)\}\}/g, (match, linkName) => {
+            const link = params.availableLinks?.find(l => l.name === linkName);
+            if (link) {
+                return `<a href="${link.url}" target="_blank" style="color: #2563eb; text-decoration: underline;">${link.name}</a>`;
+            }
+            return match;
+        });
+
+        // Replace Trigger placeholders: {{TRIGGER:nome}}
+        processedBody = processedBody.replace(/\{\{TRIGGER:([^}]+)\}\}/g, (match, triggerName) => {
+            // Return a highlighted span for now
+            return `<span style="background-color: #fffbeb; color: #d97706; padding: 2px 4px; border-radius: 4px; border: 1px solid #fcd34d; font-size: 0.9em;">⚡ ${triggerName}</span>`;
+        });
+
+        // Replace table placeholders: {{TABELLA:nome}}
+        processedBody = processedBody.replace(/\{\{TABELLA:([^}]+)\}\}/g, (match, tableName) => {
+            const tableData = tableResults.find(t => t.name === tableName);
+            if (tableData && tableData.data.length > 0) {
+                console.log(`[EMAIL DEBUG] Replacing placeholder {{TABELLA:${tableName}}} with table HTML`);
+                return generateTableHtml(tableName, tableData.data);
+            }
+            return `<p><em>Tabella ${tableName} non trovata</em></p>`;
+        });
+
+
+
+        // Replace chart placeholders: {{GRAFICO:nome}}
+        processedBody = processedBody.replace(/\{\{GRAFICO:([^}]+)\}\}/g, (match, chartName) => {
+            const chartResult = pythonResults.find(p => p.name === chartName && p.type === 'chart');
+            if (chartResult && chartResult.chartBase64) {
+                const cid = `chart_${chartName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
+                console.log(`[EMAIL DEBUG] Replacing placeholder {{GRAFICO:${chartName}}} with CID image: ${cid}`);
+
+                inlineAttachments.push({
+                    filename: `${chartName}.png`,
+                    content: Buffer.from(chartResult.chartBase64, 'base64'),
+                    contentType: 'image/png',
+                    cid: cid
+                });
+
+                return `<div class="chart-container"><div class="table-title">${chartName}</div><img src="cid:${cid}" alt="${chartName}" style="max-width: 100%; height: auto;" /></div>`;
+            }
+            return `<p><em>Grafico ${chartName} non trovato</em></p>`;
+        });
+
+        // Add the processed body to the HTML
+        fullHtml += `<div class="user-content">${processedBody}</div>`;
+
+        // Also add any tables/charts marked inBody but not inserted via placeholder
+        // (backwards compatibility with old checkbox-based selection)
+        for (const tr of tableResults) {
+            // Only add if marked inBody AND not already inserted via placeholder
+            if (tr.inBody && tr.data.length > 0 && !params.bodyHtml?.includes(`{{TABELLA:${tr.name}}}`)) {
+                fullHtml += generateTableHtml(tr.name, tr.data);
+            }
+        }
+
+        // Add Python outputs marked inBody but not inserted via placeholder
+        for (const pyResult of pythonResults) {
+            if (pyResult.inBody && !params.bodyHtml?.includes(`{{GRAFICO:${pyResult.name}}}`)) {
+                if (pyResult.type === 'chart' && pyResult.chartBase64) {
+                    const cid = `chart_fallback_${pyResult.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
+                    console.log(`[EMAIL DEBUG] Adding fallback chart ${pyResult.name} as CID: ${cid}`);
+
+                    inlineAttachments.push({
+                        filename: `${pyResult.name}.png`,
+                        content: Buffer.from(pyResult.chartBase64, 'base64'),
+                        contentType: 'image/png',
+                        cid: cid
+                    });
+
+                    fullHtml += `<div class="chart-container"><div class="table-title">${pyResult.name}</div><img src="cid:${cid}" alt="${pyResult.name}" style="max-width: 100%; height: auto;" /></div>`;
+                } else if (pyResult.type === 'table' && pyResult.data && pyResult.data.length > 0) {
+                    fullHtml += generateTableHtml(pyResult.name, pyResult.data);
+                } else if (pyResult.type === 'variable' && pyResult.variables) {
+                    fullHtml += `<div class="table-section"><div class="table-title">${pyResult.name}</div><pre style="background: #f8fafc; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px; border: 1px solid #e5e7eb;">${JSON.stringify(pyResult.variables, null, 2)}</pre></div>`;
+                }
             }
         }
 
@@ -670,6 +751,39 @@ export async function sendTestEmailWithDataAction(params: {
 
         // Generate Excel attachments (with row limit to prevent size issues)
         const attachments: any[] = [...inlineAttachments]; // Start with inline chart attachments
+
+        // Process Media Attachments
+        if (params.mediaAttachments && params.mediaAttachments.length > 0 && params.availableMedia) {
+            console.log(`[EMAIL DEBUG] Processing ${params.mediaAttachments.length} media attachments...`);
+            for (const mediaName of params.mediaAttachments) {
+                const mediaItem = params.availableMedia.find(m =>
+                    (m.name || m.url.split('/').pop() || 'file') === mediaName
+                );
+
+                if (mediaItem) {
+                    try {
+                        let content: Buffer;
+                        if (mediaItem.url.startsWith('http')) {
+                            const res = await fetch(mediaItem.url);
+                            const arrayBuffer = await res.arrayBuffer();
+                            content = Buffer.from(arrayBuffer);
+                        } else {
+                            // Assume local path relative to public
+                            const filePath = path.join(process.cwd(), 'public', mediaItem.url.startsWith('/') ? mediaItem.url.substring(1) : mediaItem.url);
+                            content = await fs.readFile(filePath);
+                        }
+
+                        attachments.push({
+                            filename: mediaItem.name || mediaItem.url.split('/').pop() || 'file',
+                            content: content,
+                        });
+                        console.log(`[EMAIL DEBUG] Attached media: ${mediaName}`);
+                    } catch (err: any) {
+                        console.error(`[EMAIL DEBUG] Failed to attach media ${mediaName}:`, err.message);
+                    }
+                }
+            }
+        }
         const XLSX = await import('xlsx');
         const MAX_EXCEL_ROWS = 5000; // Limit Excel to 5K rows to keep file size reasonable
 
