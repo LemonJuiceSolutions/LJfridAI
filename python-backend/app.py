@@ -275,10 +275,29 @@ def execute_python():
                     # Also generate PNG for email body compatibility
                     chart_base64 = None
                     try:
-                        # Try to generate static image using kaleido
-                        img_bytes = pio.to_image(res_val, format='png', width=800, height=600)
+                        # Extract dimensions from figure layout, or use sensible defaults
+                        fig_width = res_val.layout.width if res_val.layout.width else 1200
+                        fig_height = res_val.layout.height if res_val.layout.height else 800
+                        
+                        # For figures with many subplots, ensure minimum height per row
+                        # Check if it's a subplots figure by counting rows
+                        try:
+                            annotations = res_val.layout.annotations or []
+                            # Count unique y positions to estimate subplot rows
+                            if len(annotations) > 0:
+                                subplot_count = len(set(a.y for a in annotations if hasattr(a, 'y')))
+                                min_height_per_subplot = 200
+                                fig_height = max(fig_height, subplot_count * min_height_per_subplot)
+                        except:
+                            pass
+                        
+                        # Use 2x scale for high definition (retina quality)
+                        scale = 2
+                        
+                        print(f"📊 [EXECUTE] Generating PNG: {fig_width}x{fig_height} @ {scale}x scale")
+                        img_bytes = pio.to_image(res_val, format='png', width=fig_width, height=fig_height, scale=scale)
                         chart_base64 = base64.b64encode(img_bytes).decode('utf-8')
-                        print(f"✅ [EXECUTE] Generated both HTML and PNG for Plotly chart")
+                        print(f"✅ [EXECUTE] Generated both HTML and PNG for Plotly chart ({len(img_bytes)//1024} KB)")
                     except Exception as img_err:
                         print(f"⚠️ [EXECUTE] Could not generate PNG (kaleido might not be installed): {str(img_err)}")
                     

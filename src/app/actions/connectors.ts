@@ -594,6 +594,9 @@ export async function sendTestEmailWithDataAction(params: {
             }
         }
 
+        // Collect inline chart attachments for CID references
+        const inlineAttachments: Array<{ filename: string; content: Buffer; contentType: string; cid: string }> = [];
+
         // Add Python outputs to body
         for (const pyResult of pythonResults) {
             if (pyResult.inBody) {
@@ -601,13 +604,26 @@ export async function sendTestEmailWithDataAction(params: {
                 fullHtml += `<div class="table-title">🐍 ${pyResult.name}</div>`;
 
                 if (pyResult.type === 'chart') {
-                    // Email clients block JavaScript, so use static image in body
+                    console.log(`[EMAIL DEBUG] Chart ${pyResult.name}: chartBase64=${pyResult.chartBase64 ? `${(pyResult.chartBase64.length / 1024).toFixed(0)}KB` : 'null'}, chartHtml=${pyResult.chartHtml ? 'present' : 'null'}`);
+
+                    // Use CID attachment for reliable image embedding in email clients
                     if (pyResult.chartBase64) {
+                        const cid = `chart_${pyResult.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
+                        console.log(`[EMAIL DEBUG] Adding chart as CID attachment: ${cid}`);
+
+                        // Add to inline attachments array for CID reference
+                        inlineAttachments.push({
+                            filename: `${pyResult.name}.png`,
+                            content: Buffer.from(pyResult.chartBase64, 'base64'),
+                            contentType: 'image/png',
+                            cid: cid  // Content-ID for inline reference
+                        });
+
                         fullHtml += `<div style="text-align: center; padding: 20px;">`;
-                        fullHtml += `<img src="data:image/png;base64,${pyResult.chartBase64}" alt="${pyResult.name}" style="max-width: 100%; height: auto;" />`;
+                        fullHtml += `<img src="cid:${cid}" alt="${pyResult.name}" style="max-width: 100%; height: auto;" />`;
                         fullHtml += `</div>`;
                     } else if (pyResult.chartHtml) {
-                        // Fallback: try embedding HTML (may not work in all email clients)
+                        console.log(`[EMAIL DEBUG] No chartBase64, showing fallback message`);
                         fullHtml += `<div style="padding: 20px;">`;
                         fullHtml += `<p style="color: #666; font-size: 12px; font-style: italic;">Nota: Grafico interattivo disponibile in allegato. Anteprima statica non disponibile.</p>`;
                         fullHtml += `</div>`;
@@ -653,10 +669,11 @@ export async function sendTestEmailWithDataAction(params: {
         fullHtml += `</body></html>`;
 
         // Generate Excel attachments (with row limit to prevent size issues)
-        const attachments: any[] = [];
+        const attachments: any[] = [...inlineAttachments]; // Start with inline chart attachments
         const XLSX = await import('xlsx');
         const MAX_EXCEL_ROWS = 5000; // Limit Excel to 5K rows to keep file size reasonable
 
+        console.log(`[EMAIL DEBUG] Inline chart attachments: ${inlineAttachments.length}`);
         console.log('[EMAIL DEBUG] Generating Excel attachments...');
 
         for (const tr of tableResults) {
