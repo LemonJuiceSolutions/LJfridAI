@@ -934,9 +934,10 @@ Diagnostica il prossimo passo.`;
 export async function executeSqlPreviewAction(
     query: string,
     connectorId?: string,
-    pipelineDependencies?: { tableName: string, query: string }[]
+    pipelineDependencies?: { tableName: string, query?: string, isPython?: boolean, pythonCode?: string, connectorId?: string, pipelineDependencies?: any[] }[]
 ): Promise<{ data: any[] | null; error: string | null }> {
     let pool: sql.ConnectionPool | null = null;
+    let transaction: sql.Transaction | null = null;
     const createdTempTables: string[] = [];
 
     try {
@@ -994,106 +995,173 @@ export async function executeSqlPreviewAction(
         pool = new sql.ConnectionPool(sqlConfig);
         await pool.connect();
 
+        // Use a Transaction to keep the session alive for Global Temp Tables (##)
+        // This ensures they are not dropped prematurely and are visible to Python scripts
+        transaction = new sql.Transaction(pool);
+        await transaction.begin();
+        const request = new sql.Request(transaction);
+
+        // Flatten all dependencies (including nested ones) to ensure all temp tables are created
+        const flattenDependencies = (deps: any[], result: any[] = [], seen: Set<string> = new Set()): any[] => {
+            for (const dep of deps) {
+                // First process nested dependencies (they need to be created BEFORE the current one)
+                if (dep.pipelineDependencies && dep.pipelineDependencies.length > 0) {
+                    flattenDependencies(dep.pipelineDependencies, result, seen);
+                }
+                // Add current dep if not already seen
+                if (!seen.has(dep.tableName)) {
+                    seen.add(dep.tableName);
+                    result.push(dep);
+                }
+            }
+            return result;
+        };
+
+        // Flatten and deduplicate all dependencies
+        const allDeps = pipelineDependencies ? flattenDependencies(pipelineDependencies) : [];
+
         // Execute Pipeline Dependencies in order
         const nameMap = new Map<string, string>();
 
-        if (pipelineDependencies && pipelineDependencies.length > 0) {
-            console.log(`[PIPELINE] Executing ${pipelineDependencies.length} dependencies...`);
+        if (allDeps.length > 0) {
+            console.log(`[PIPELINE] Executing ${allDeps.length} flattened dependencies: ${allDeps.map(d => d.tableName).join(', ')}`);
 
-            for (const dep of pipelineDependencies) {
+            // DEBUG: Log detailed info about each dependency
+            allDeps.forEach((dep, idx) => {
+                console.log(`[PIPELINE DEBUG] Dep #${idx}: ${dep.tableName}`);
+                console.log(`  - isPython: ${dep.isPython}`);
+                console.log(`  - pythonCode present: ${!!dep.pythonCode} (length: ${dep.pythonCode?.length || 0})`);
+                console.log(`  - query present: ${!!dep.query} (length: ${dep.query?.length || 0})`);
+                console.log(`  - connectorId: ${dep.connectorId || 'none'}`);
+                console.log(`  - nested pipelineDeps: ${dep.pipelineDependencies?.length || 0}`);
+            });
+
+            for (const dep of allDeps) {
                 // Use unique naming to prevent collisions
                 const uniqueId = new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 1000).toString(); // Add random for extra safety
                 const tempTableName = `##${dep.tableName}_${uniqueId}`;
                 nameMap.set(dep.tableName, tempTableName);
 
-                console.log(`[PIPELINE] Materializing: ${tempTableName}`);
+                console.log(`[PIPELINE] Materializing: ${tempTableName} (isPython: ${dep.isPython}, hasPythonCode: ${!!dep.pythonCode}, hasQuery: ${!!dep.query})`);
 
                 try {
-                    // Drop if exists (paranoid check)
-                    await pool.request().query(`IF OBJECT_ID('tempdb..${tempTableName}') IS NOT NULL DROP TABLE ${tempTableName};`);
+                    // Drop if exists (paranoid check) - Execute on Transaction
+                    await request.query(`IF OBJECT_ID('tempdb..${tempTableName}') IS NOT NULL DROP TABLE ${tempTableName};`);
 
-                    // Execute the source query and capture into temp table
-                    // For complex scripts with dynamic SQL, we wrap differently
-                    let sourceQuery = dep.query.trim();
+                    let rowsToInsert: any[] = [];
+                    let columns: string[] = [];
 
-                    // Replace usage of PREVIOUS dependencies with their unique temp names
-                    // Iterate over nameMap
-                    for (const [orig, temp] of nameMap.entries()) {
-                        // Avoid replacing itself if recursive (shouldn't happen in DAG)
-                        if (orig === dep.tableName) continue;
+                    if (dep.isPython && dep.pythonCode) {
+                        // --- PYTHON DEPENDENCY ---
+                        console.log(`[PIPELINE] >>> ENTERING PYTHON BRANCH for ${dep.tableName}`);
+                        console.log(`[PIPELINE] Executing Python dependency for ${dep.tableName}...`);
 
-                        const regex = new RegExp(`\\bFROM\\s+${orig}\\b`, 'gi');
-                        sourceQuery = sourceQuery.replace(regex, `FROM ${temp}`);
-                        const joinRegex = new RegExp(`\\bJOIN\\s+${orig}\\b`, 'gi');
-                        sourceQuery = sourceQuery.replace(joinRegex, `JOIN ${temp}`);
+                        // We need to pass dependencies TO the Python script too?
+                        // visual-tree.tsx constructs 'pipelineDependencies' for each node, containing its ancestors.
+                        // So we pass that recursively.
+                        const pythonResult = await executePythonPreviewAction(
+                            dep.pythonCode,
+                            'table',
+                            {}, // inputData (handled inside by dependencies?) No, executePythonPreviewAction handles dependencies param
+                            dep.pipelineDependencies, // Recursive dependencies
+                            dep.connectorId // Pass connector ID for HubSpot/other API tokens
+                        );
+
+                        if (!pythonResult.success) {
+                            throw new Error(`Python dependency error: ${pythonResult.error}`);
+                        }
+
+                        if (pythonResult.data && Array.isArray(pythonResult.data) && pythonResult.data.length > 0) {
+                            rowsToInsert = pythonResult.data;
+                            columns = Object.keys(rowsToInsert[0]);
+                        } else {
+                            console.warn(`[PIPELINE] Python dependency ${dep.tableName} returned no data.`);
+                        }
+
+                    } else if (dep.query) {
+                        // --- SQL DEPENDENCY ---
+                        console.log(`[PIPELINE] >>> ENTERING SQL BRANCH for ${dep.tableName}`);
+                        // Execute the source query and capture into temp table
+                        // For complex scripts with dynamic SQL, we wrap differently
+                        let sourceQuery = dep.query.trim();
+
+                        // Replace usage of PREVIOUS dependencies with their unique temp names
+                        for (const [orig, temp] of nameMap.entries()) {
+                            // Avoid replacing itself if recursive (shouldn't happen in DAG)
+                            if (orig === dep.tableName) continue;
+
+                            const regex = new RegExp(`\\bFROM\\s+${orig}\\b`, 'gi');
+                            sourceQuery = sourceQuery.replace(regex, `FROM ${temp}`);
+                            const joinRegex = new RegExp(`\\bJOIN\\s+${orig}\\b`, 'gi');
+                            sourceQuery = sourceQuery.replace(joinRegex, `JOIN ${temp}`);
+                        }
+
+                        // Execute script directly using POOL (Separate request/session for source data)
+                        // If dep.connectorId is different, we SHOULD technically use a different pool, but for now we assume same DB/Server
+                        // unless we implement multi-connector logic here.
+                        const result = await pool.request().query(sourceQuery);
+                        if (result.recordset && result.recordset.length > 0) {
+                            rowsToInsert = result.recordset;
+                            columns = Object.keys(rowsToInsert[0]);
+                        } else {
+                            console.warn(`[PIPELINE] SQL Source query for ${dep.tableName} returned no data.`);
+                        }
+                    } else {
+                        // --- NEITHER PYTHON NOR SQL ---
+                        console.error(`[PIPELINE] ⚠️ WARNING: ${dep.tableName} has isPython=${dep.isPython} but NO pythonCode and NO query! This node will produce no data.`);
                     }
 
-                    // Strategy: Execute the script, then SELECT INTO from the result
-                    // This requires wrapping in a way that captures the final SELECT
-                    // Simplest approach: Execute script, then use INSERT INTO from OPENROWSET
-                    // But that's complex. Instead, we modify the script to output into temp table.
-
-                    // For now, we execute the script directly. If it ends with a SELECT,
-                    // we should capture that. But complex scripts with sp_executesql are tricky.
-                    // Let's try a workaround: execute, then select into temp.
-
-                    // Actually, for dynamic SQL scripts, the cleanest way is to:
-                    // 1. Execute the script (which returns data)
-                    // 2. Use that result somehow
-
-                    // The limitation is SQL Server doesn't let us easily capture sp_executesql output.
-                    // For now, let's at least try executing it and see if it produces a recordset.
-
-                    // Better approach for scripts: Execute them in a way that the final SELECT
-                    // goes into the temp table. We can do this by injecting:
-                    // "SELECT * INTO ##TableName FROM (...final query...)"
-
-                    // For very complex scripts, suggest the user use a simpler pattern or VIEW.
-                    // But let's try executing directly first:
-
-                    const result = await pool.request().query(sourceQuery);
-
-                    if (result.recordset && result.recordset.length > 0) {
-                        // We got data! Now put it into a temp table
-                        // Create table structure from first row
-                        const columns = Object.keys(result.recordset[0]);
-
-                        // Build CREATE TABLE statement
+                    // --- MATERIALIZE INTO TEMP TABLE ---
+                    // Execute on TRANSACTION to keep checks alive
+                    if (rowsToInsert.length > 0) {
+                        // Build CREATE TABLE statement from actual data
                         const colDefs = columns.map(col => {
-                            const val = result.recordset[0][col];
+                            const val = rowsToInsert[0][col];
                             let colType = 'NVARCHAR(MAX)';
+                            // Simple type inference
                             if (typeof val === 'number') {
                                 colType = Number.isInteger(val) ? 'BIGINT' : 'DECIMAL(18,4)';
                             } else if (val instanceof Date) {
                                 colType = 'DATETIME';
+                            } else if (typeof val === 'boolean') {
+                                colType = 'BIT';
                             }
                             return `[${col}] ${colType}`;
                         }).join(', ');
 
-                        await pool.request().query(`CREATE TABLE ${tempTableName} (${colDefs});`);
+                        await request.query(`CREATE TABLE ${tempTableName} (${colDefs});`);
                         createdTempTables.push(tempTableName);
 
-                        // Insert data in batches
+                        // Insert data in batches to avoid query size limits
                         const batchSize = 100;
-                        for (let i = 0; i < result.recordset.length; i += batchSize) {
-                            const batch = result.recordset.slice(i, i + batchSize);
+                        for (let i = 0; i < rowsToInsert.length; i += batchSize) {
+                            const batch = rowsToInsert.slice(i, i + batchSize);
                             const values = batch.map(row => {
                                 const vals = columns.map(col => {
                                     const v = row[col];
                                     if (v === null || v === undefined) return 'NULL';
                                     if (typeof v === 'number') return v.toString();
+                                    if (typeof v === 'boolean') return v ? '1' : '0';
                                     if (v instanceof Date) return `'${v.toISOString()}'`;
+                                    // Escape single quotes for SQL
                                     return `N'${String(v).replace(/'/g, "''")}'`;
                                 }).join(', ');
                                 return `(${vals})`;
                             }).join(', ');
 
-                            await pool.request().query(`INSERT INTO ${tempTableName} VALUES ${values};`);
+                            // T-SQL INSERT can handle multiple values
+                            if (values.length > 0) {
+                                await request.query(`INSERT INTO ${tempTableName} VALUES ${values};`);
+                            }
                         }
 
-                        console.log(`[PIPELINE] Created ${tempTableName} with ${result.recordset.length} rows`);
+                        console.log(`[PIPELINE] Created ${tempTableName} with ${rowsToInsert.length} rows`);
                     } else {
-                        console.warn(`[PIPELINE] Source query for ${dep.tableName} returned no data.`);
+                        // Create an EMPTY temp table so queries referencing it don't fail
+                        // We use a generic schema since we don't have data to infer from
+                        console.log(`[PIPELINE] Creating EMPTY temp table ${tempTableName} (no data from source)`);
+                        await request.query(`CREATE TABLE ${tempTableName} ([_empty_placeholder] NVARCHAR(1));`);
+                        createdTempTables.push(tempTableName);
                     }
 
                 } catch (depError) {
@@ -1119,13 +1187,26 @@ export async function executeSqlPreviewAction(
         }
 
         console.log(`[PIPELINE] Executing main query...`);
-        const result = await pool.request().query(finalQuery);
+        // Use the Transaction Request for the Main Query too!
+        const result = await request.query(finalQuery);
+
+        // If successful, Commit the transaction (this might drop temp tables depending on driver, but we are done)
+        await transaction.commit();
 
         return { data: result.recordset, error: null };
 
     } catch (e) {
         const error = e instanceof Error ? e.message : "Errore durante l'esecuzione della query.";
         console.error("Execute SQL Preview Error:", e);
+
+        // Rollback transaction on error
+        if (transaction) {
+            try {
+                await transaction.rollback();
+            } catch (rbError) {
+                console.warn("Rollback error:", rbError);
+            }
+        }
         return { data: null, error };
     } finally {
         // Cleanup temp tables
@@ -1221,6 +1302,148 @@ export async function fetchTableSchemaAction(connectorId: string, tableNames: st
     } catch (err: any) {
         console.error("[FETCH-SCHEMA] Action Error:", err);
         return { schemaContext: null, error: err.message };
+    }
+}
+
+// --- SQL EXPORT ACTION ---
+export async function exportTableToSqlAction(
+    targetConnectorId: string,
+    targetTableName: string,
+    sourceData: any[],
+    createTableIfNotExists: boolean = true
+): Promise<{ success: boolean; error?: string; rowsInserted?: number }> {
+    let pool: sql.ConnectionPool | null = null;
+
+    try {
+        const user = await getAuthenticatedUser();
+
+        if (!targetConnectorId || !targetTableName) {
+            return { success: false, error: 'Connettore e nome tabella sono obbligatori.' };
+        }
+
+        if (!sourceData || sourceData.length === 0) {
+            return { success: false, error: 'Nessun dato da esportare.' };
+        }
+
+        // Fetch target connector
+        const connector = await db.connector.findFirst({
+            where: { id: targetConnectorId, companyId: user.companyId, type: 'SQL' }
+        });
+
+        if (!connector || !connector.config) {
+            return { success: false, error: 'Connettore SQL non trovato o non configurato.' };
+        }
+
+        let conf: any = connector.config;
+        if (typeof conf === 'string') {
+            try {
+                conf = JSON.parse(conf);
+            } catch (e) {
+                return { success: false, error: 'Configurazione connettore non valida.' };
+            }
+        }
+
+        // Build SQL config
+        const sqlConfig: sql.config = {
+            user: conf.user || conf.username,
+            password: conf.password,
+            server: conf.host || conf.server,
+            database: conf.database,
+            options: {
+                encrypt: conf.host && conf.host.includes('database.windows.net'),
+                trustServerCertificate: true,
+                connectTimeout: 30000,
+                requestTimeout: 120000
+            }
+        };
+
+        if (conf.port) {
+            const parsedPort = parseInt(conf.port);
+            if (!isNaN(parsedPort)) {
+                sqlConfig.port = parsedPort;
+            }
+        }
+
+        pool = new sql.ConnectionPool(sqlConfig);
+        await pool.connect();
+
+        // Get column names from first row
+        const columns = Object.keys(sourceData[0]);
+        const sanitizedTableName = targetTableName.replace(/[^a-zA-Z0-9_]/g, '_');
+
+        // Create table if requested
+        if (createTableIfNotExists) {
+            // Infer column types (simplified: everything is NVARCHAR(MAX) for safety)
+            const columnDefs = columns.map(col => {
+                const sanitizedCol = col.replace(/[^a-zA-Z0-9_ ]/g, '_')
+                    .toLowerCase()
+                    .replace(/(?:^|[\s_])(.)/g, (m) => m.toUpperCase());
+                return `[${sanitizedCol}] NVARCHAR(MAX)`;
+            }).join(', ');
+
+            // OVERWRITE MODE: Drop and Recreate
+            const dropTableSql = `
+                IF OBJECT_ID('[${sanitizedTableName}]', 'U') IS NOT NULL
+                    DROP TABLE [${sanitizedTableName}]
+            `;
+            await pool.request().query(dropTableSql);
+
+            const createTableSql = `CREATE TABLE [${sanitizedTableName}] (${columnDefs})`;
+            await pool.request().query(createTableSql);
+            console.log(`[SQL-EXPORT] Table ${sanitizedTableName} recreated.`);
+
+
+        }
+
+        // Insert data in batches (to avoid parameter limit)
+        const BATCH_SIZE = 100;
+        let totalInserted = 0;
+
+        for (let i = 0; i < sourceData.length; i += BATCH_SIZE) {
+            const batch = sourceData.slice(i, i + BATCH_SIZE);
+            const request = pool.request();
+
+            // Build multi-row INSERT using VALUES
+            const valueRows: string[] = [];
+
+            batch.forEach((row, batchIdx) => {
+                const rowValues: string[] = [];
+                columns.forEach((col, colIdx) => {
+                    const paramName = `p${batchIdx}_${colIdx}`;
+                    const value = row[col];
+                    request.input(paramName, value === null || value === undefined ? null : String(value));
+                    rowValues.push(`@${paramName}`);
+                });
+                valueRows.push(`(${rowValues.join(', ')})`);
+            });
+
+            const sanitizedColumns = columns.map(c => {
+                const safe = c.replace(/[^a-zA-Z0-9_ ]/g, '_')
+                    .toLowerCase()
+                    .replace(/(?:^|[\s_])(.)/g, (m) => m.toUpperCase());
+                return `[${safe}]`;
+            }).join(', ');
+            const insertSql = `INSERT INTO [${sanitizedTableName}] (${sanitizedColumns}) VALUES ${valueRows.join(', ')}`;
+
+            await request.query(insertSql);
+            totalInserted += batch.length;
+            console.log(`[SQL-EXPORT] Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}, total: ${totalInserted}`);
+        }
+
+        return { success: true, rowsInserted: totalInserted };
+
+    } catch (e) {
+        const error = e instanceof Error ? e.message : "Errore durante l'esportazione.";
+        console.error("[SQL-EXPORT] Error:", e);
+        return { success: false, error };
+    } finally {
+        if (pool) {
+            try {
+                await pool.close();
+            } catch (closeError) {
+                console.warn("[SQL-EXPORT] Pool close error:", closeError);
+            }
+        }
     }
 }
 
@@ -1402,9 +1625,9 @@ export async function executePythonPreviewAction(
     code: string,
     outputType: 'table' | 'variable' | 'chart',
     inputData: Record<string, any[]> = {},
-    dependencies?: { tableName: string; connectorId?: string; query?: string; pipelineDependencies?: { tableName: string; query: string }[] }[],
+    dependencies?: { tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[],
     connectorId?: string
-): Promise<{ success: boolean; data?: any[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
+): Promise<{ success: boolean; data?: any[]; columns?: string[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
     const debugLogs: string[] = [];
     const tStart = performance.now();
 
@@ -1545,6 +1768,7 @@ export async function executePythonPreviewAction(
             return {
                 success: true,
                 data: result.data,
+                columns: result.columns,
                 rowCount: result.rowCount,
                 stdout: result.stdout
             };

@@ -21,11 +21,13 @@ import { cn } from "@/lib/utils"
 interface DataTableProps<TData> {
     data: TData[]
     className?: string
+    columns?: string[]
 }
 
 export function DataTable<TData extends Record<string, any>>({
     data,
     className,
+    columns: explicitColumns,
 }: DataTableProps<TData>) {
     const [sortColumn, setSortColumn] = React.useState<keyof TData | null>(null)
     const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('asc')
@@ -34,9 +36,10 @@ export function DataTable<TData extends Record<string, any>>({
     const pageSize = 50
 
     const columns = React.useMemo(() => {
+        if (explicitColumns && explicitColumns.length > 0) return explicitColumns;
         if (!data || data.length === 0) return []
         return Object.keys(data[0])
-    }, [data])
+    }, [data, explicitColumns])
 
     const filteredData = React.useMemo(() => {
         let processData = [...data]

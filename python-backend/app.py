@@ -18,6 +18,7 @@ import json
 import re
 
 app = Flask(__name__)
+app.json.sort_keys = False
 CORS(app)  # Allow cross-origin requests from Next.js
 
 VERSION = "1.0.4"
@@ -301,6 +302,13 @@ def execute_python():
                              # ... existing dict handling ...
                              if 'rows' in best_parsed and isinstance(best_parsed['rows'], list):
                                  res_val = pd.DataFrame(best_parsed['rows'])
+                                 # Reorder columns if 'cols' is provided
+                                 if 'cols' in best_parsed and isinstance(best_parsed['cols'], list):
+                                     valid_cols = [c for c in best_parsed['cols'] if c in res_val.columns]
+                                     # Append any remaining columns not in 'cols'
+                                     remaining = [c for c in res_val.columns if c not in valid_cols]
+                                     res_val = res_val[valid_cols + remaining]
+
                              else:
                                  res_val = pd.DataFrame([best_parsed]) if not isinstance(best_parsed, pd.DataFrame) else best_parsed
 
@@ -320,6 +328,7 @@ def execute_python():
                 return jsonify({
                     'success': True,
                     'data': res_val.to_dict(orient='records'),
+                    'columns': list(res_val.columns),
                     'rowCount': len(res_val),
                     'stdout': stdout_val
                 })

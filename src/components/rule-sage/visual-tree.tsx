@@ -4,7 +4,7 @@
 import type { DecisionNode, StoredTree, DecisionLeaf, Variable, VariableOption, LinkItem, TriggerItem } from '@/lib/types';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Mail, AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code, FileCode } from 'lucide-react';
+import { Mail, AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code, FileCode, Upload } from 'lucide-react';
 import _ from 'lodash';
 import EditNodeDialog from './edit-node-dialog';
 import AddNodeDialog from './add-node-dialog';
@@ -1024,28 +1024,54 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     // Returns only pipeline tables from ancestor nodes of the given path
     // Each table includes its own ancestors as pipelineDependencies for cascading execution
     const getAncestorInputTables = useMemo(() => {
-        return (currentPath: string): { name: string, connectorId?: string, sqlQuery?: string, pipelineDependencies?: { tableName: string; query: string }[] }[] => {
+        return (currentPath: string): { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] => {
             // First, collect all ancestors with their paths for ordering
-            const ancestorItems: { path: string; name: string; connectorId?: string; sqlQuery?: string }[] = [];
+            const ancestorItems: { path: string; name: string; connectorId?: string; sqlQuery?: string; isPython?: boolean; pythonCode?: string }[] = [];
+
+            console.log(`[ANCESTOR DEBUG] Looking for ancestors of: "${currentPath}"`);
 
             flatTree.forEach((item: any) => {
                 const actualNode = item.node;
                 if (actualNode && typeof actualNode === 'object') {
-                    const resultName = actualNode.sqlResultName || actualNode.pythonResultName;
+                    const nodePath = item.path;
+                    const startsWithPath = currentPath.startsWith(nodePath);
+                    const charAfter = currentPath.charAt(nodePath.length);
+                    const isAncestor =
+                        currentPath !== nodePath &&
+                        startsWithPath &&
+                        charAfter === '.';
 
-                    if (resultName) {
-                        const nodePath = item.path;
-                        const isAncestor =
-                            currentPath !== nodePath &&
-                            currentPath.startsWith(nodePath) &&
-                            currentPath.charAt(nodePath.length) === '.';
+                    // Log for nodes with SQL or Python results
+                    if (actualNode.sqlResultName || actualNode.pythonResultName) {
+                        console.log(`[ANCESTOR DEBUG] Checking "${actualNode.sqlResultName || actualNode.pythonResultName}" at "${nodePath}"`);
+                        console.log(`  - currentPath.startsWith(nodePath): ${startsWithPath}`);
+                        console.log(`  - charAfter: "${charAfter}" (should be ".")`);
+                        console.log(`  - isAncestor: ${isAncestor}`);
+                    }
 
-                        if (isAncestor) {
+                    if (isAncestor) {
+                        // Check for SQL result (name is enough to list it, query might be empty)
+                        if (actualNode.sqlResultName) {
+                            console.log(`[ANCESTOR] Found SQL result "${actualNode.sqlResultName}" at "${nodePath}"`);
                             ancestorItems.push({
                                 path: nodePath,
-                                name: resultName,
-                                connectorId: actualNode.sqlConnectorId || actualNode.pythonConnectorId,
-                                sqlQuery: actualNode.sqlQuery
+                                name: actualNode.sqlResultName,
+                                connectorId: actualNode.sqlConnectorId,
+                                sqlQuery: actualNode.sqlQuery, // Can be undefined/empty
+                                isPython: false
+                            });
+                        }
+
+                        // Check for Python result (independently)
+                        if (actualNode.pythonResultName && actualNode.pythonCode) {
+                            console.log(`[ANCESTOR] Found Python result "${actualNode.pythonResultName}" at "${nodePath}"`);
+                            ancestorItems.push({
+                                path: nodePath,
+                                name: actualNode.pythonResultName,
+                                connectorId: actualNode.pythonConnectorId,
+                                sqlQuery: undefined,
+                                isPython: true,
+                                pythonCode: actualNode.pythonCode
                             });
                         }
                     }
@@ -1056,26 +1082,37 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             ancestorItems.sort((a, b) => a.path.length - b.path.length);
 
             // Build result with pipelineDependencies for each table
-            const tables: { name: string, connectorId?: string, sqlQuery?: string, pipelineDependencies?: { tableName: string; query: string }[] }[] = [];
+            const tables: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
 
             for (let i = 0; i < ancestorItems.length; i++) {
                 const item = ancestorItems[i];
                 // pipelineDependencies are all ancestors that come BEFORE this one
+                // Include ALL fields so nested dependencies can be fully materialized
+                // IMPORTANT: Filter out items from the SAME node (same path) - those are parallel integrations, not dependencies!
                 const pipelineDeps = ancestorItems.slice(0, i)
-                    .filter(dep => dep.sqlQuery) // Only include items with SQL queries
-                    .map(dep => ({ tableName: dep.name, query: dep.sqlQuery! }));
+                    .filter(dep => dep.path !== item.path) // <-- CRITICAL FIX: Exclude same-node results
+                    .filter(dep => dep.sqlQuery || (dep.isPython && dep.pythonCode)) // Include both SQL and Python
+                    .map(dep => ({
+                        tableName: dep.name,
+                        query: dep.sqlQuery,
+                        isPython: dep.isPython,
+                        pythonCode: dep.pythonCode,
+                        connectorId: dep.connectorId
+                    }));
 
                 tables.push({
                     name: item.name,
                     connectorId: item.connectorId,
                     sqlQuery: item.sqlQuery,
+                    isPython: item.isPython,
+                    pythonCode: item.pythonCode,
                     pipelineDependencies: pipelineDeps.length > 0 ? pipelineDeps : undefined
                 });
 
-                console.log(`[ANCESTOR] "${item.name}" has ${pipelineDeps.length} pipeline dependencies:`, pipelineDeps.map(d => d.tableName));
+                console.log(`[ANCESTOR] "${item.name}" (${item.isPython ? 'Python' : 'SQL'}) has ${pipelineDeps.length} pipeline dependencies:`, pipelineDeps.map(d => d.tableName));
             }
 
-            console.log('DEBUG: Ancestor Tables for path', currentPath, ':', tables.map(t => t.name));
+            console.log('DEBUG: Ancestor Tables for path', currentPath, ':', tables.map(t => `${t.name} (${t.isPython ? 'Python' : 'SQL'})`));
             return tables;
         };
     }, [flatTree]);
@@ -1278,7 +1315,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
                                                 {/* Mini indicators row */}
                                                 <div className="flex items-center gap-1 mt-1">
-                                                    {item.node && typeof item.node === 'object' && 'sqlConnectorId' in item.node && (item.node as any).sqlConnectorId && (
+                                                    {item.node && typeof item.node === 'object' && (('sqlConnectorId' in item.node && (item.node as any).sqlConnectorId) || ('selectedPipelines' in item.node && (item.node as any).selectedPipelines?.length > 0)) && (
                                                         <Database className="h-3 w-3 text-blue-600" />
                                                     )}
                                                     {actualNode && typeof actualNode === 'object' && (actualNode as any).emailAction?.enabled && (
@@ -1291,6 +1328,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'video') && <Video className="h-3 w-3 text-muted-foreground" />}
                                                     {linkItems && linkItems.length > 0 && <LinkIcon className="h-3 w-3 text-muted-foreground" />}
                                                     {triggerItems && triggerItems.length > 0 && <Zap className="h-3 w-3 text-amber-500" />}
+                                                    {actualNode && typeof actualNode === 'object' && 'sqlExportAction' in actualNode && (actualNode as any).sqlExportAction && (
+                                                        <Upload className="h-3 w-3 text-orange-600" />
+                                                    )}
                                                 </div>
                                             </div>
 

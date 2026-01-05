@@ -296,7 +296,7 @@ export async function sendTestEmailWithDataAction(params: {
         query: string;
         inBody: boolean;
         asExcel: boolean;
-        pipelineDependencies?: Array<{ tableName: string; query: string }>;
+        pipelineDependencies?: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }>;
     }>;
     selectedPythonOutputs?: Array<{
         name: string;
@@ -449,7 +449,10 @@ export async function sendTestEmailWithDataAction(params: {
             if (table.pipelineDependencies && table.pipelineDependencies.length > 0) {
                 console.log(`[EMAIL DEBUG] Executing ${table.pipelineDependencies.length} dependencies for ${table.name}`);
                 for (const dep of table.pipelineDependencies) {
-                    await executeAndCreateTempTable(dep.tableName, dep.query);
+                    // Only execute SQL dependencies (Python deps are handled separately)
+                    if (dep.query) {
+                        await executeAndCreateTempTable(dep.tableName, dep.query);
+                    }
                 }
             }
         }

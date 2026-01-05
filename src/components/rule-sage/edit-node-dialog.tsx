@@ -38,7 +38,7 @@ import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, Emai
 import { Input } from '../ui/input';
 import _ from 'lodash';
 import { useToast } from '@/hooks/use-toast';
-import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction } from '@/app/actions';
+import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction, exportTableToSqlAction } from '@/app/actions';
 import { sendEmailWithConnectorAction, sendTestEmailWithDataAction } from '@/app/actions/connectors';
 import { uploadFile } from '@/lib/storage-client';
 import Image from 'next/image';
@@ -85,7 +85,7 @@ const CollapsibleSection = ({
   if (!hasLoaded) return null; // Avoid hydration mismatch or flash
 
   return (
-    <Collapsible open={isOpen} onOpenChange={toggle} className="border border-border/50 rounded-lg overflow-hidden bg-white dark:bg-zinc-900/50">
+    <Collapsible open={isOpen} onOpenChange={toggle} className="border border-purple-500/40 rounded-lg overflow-hidden bg-white dark:bg-zinc-900/50">
       <CollapsibleTrigger asChild>
         <Button variant="ghost" className="w-full flex items-center justify-between p-3 h-auto hover:bg-muted/50 rounded-none">
           <div className="flex items-center gap-2">
@@ -119,7 +119,7 @@ interface EditNodeDialogProps {
   nodePath: string;
   treeId: string;
   isSaving: boolean;
-  availableInputTables?: { name: string, connectorId?: string, sqlQuery?: string, pipelineDependencies?: { tableName: string; query: string }[] }[];
+  availableInputTables?: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[];
   availableParentMedia?: MediaItem[];
   availableParentLinks?: LinkItem[];
   availableParentTriggers?: TriggerItem[];
@@ -202,6 +202,7 @@ export default function EditNodeDialog({
   const [pythonPreviewResult, setPythonPreviewResult] = useState<{
     type: 'table' | 'variable' | 'chart';
     data?: any[];
+    columns?: string[];
     variables?: Record<string, any>;
     chartBase64?: string;
     chartHtml?: string;
@@ -211,9 +212,18 @@ export default function EditNodeDialog({
   const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
   const [pythonDebugLogs, setPythonDebugLogs] = useState<string[]>([]);
 
+  // SQL Export State
+  const [sqlExportEnabled, setSqlExportEnabled] = useState(true);
+  const [sqlExportSourceTables, setSqlExportSourceTables] = useState<string[]>([]);
+  const [sqlExportTargetConnectorId, setSqlExportTargetConnectorId] = useState<string>('');
+  const [sqlExportTargetTableName, setSqlExportTargetTableName] = useState<string>('');
+  const [sqlExportStatus, setSqlExportStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+  const [sqlExportError, setSqlExportError] = useState<string | null>(null);
+  const [sqlExportRowCount, setSqlExportRowCount] = useState<number | null>(null);
+
   // Email Action State
   const defaultEmailConfig: EmailActionConfig = {
-    enabled: false,
+    enabled: true,
     connectorId: '',
     to: '',
     cc: '',
@@ -240,6 +250,8 @@ export default function EditNodeDialog({
     pythonOutputsAsAttachment: emailConfig.attachments?.pythonOutputsAsAttachment || [],
     mediaAsAttachment: emailConfig.attachments?.mediaAsAttachment || [],
   };
+
+
 
   const isExecutingRef = useRef(false);
 
@@ -400,6 +412,18 @@ export default function EditNodeDialog({
         });
       } else {
         setEmailConfig(defaultEmailConfig);
+      }
+
+      // Load SQL Export Config
+      if ((node as any).sqlExportAction) {
+        const loadedSqlConfig = (node as any).sqlExportAction;
+        setSqlExportSourceTables(loadedSqlConfig.sourceTables || []);
+        setSqlExportTargetConnectorId(loadedSqlConfig.targetConnectorId || '');
+        setSqlExportTargetTableName(loadedSqlConfig.targetTableName || '');
+      } else {
+        setSqlExportSourceTables([]);
+        setSqlExportTargetConnectorId('');
+        setSqlExportTargetTableName('');
       }
 
     }
@@ -590,6 +614,7 @@ export default function EditNodeDialog({
       toast({ title: 'Il testo della decisione è obbligatorio', variant: 'destructive' });
       return;
     }
+    // Option text is no longer mandatory for saving (as per user request)
 
     setInternalSaving(true);
 
@@ -608,127 +633,89 @@ export default function EditNodeDialog({
 
       let newNodeData: any = { ...initialNode };
 
-      // Handle Node Type Logic
-      if (currentNodeType === 'question') {
-        // Ensure it has question structure
-        // If converting from Decision, we need to add question and remove decision
+      // 1. Structure Updates (Type Switching & Core Text)
+      if (currentNodeType === 'question' && !('option' in initialNode)) {
+        // Question Node
         newNodeData.question = questionText;
         if ('decision' in newNodeData) delete newNodeData.decision;
-
         if (!newNodeData.options) newNodeData.options = {};
-
-        // Keep other fields
-        if (finalMedia.length > 0) newNodeData.media = finalMedia;
-        else delete newNodeData.media;
-
-        if (links.length > 0) newNodeData.links = links;
-        else delete newNodeData.links;
-
-        if (triggers.length > 0) newNodeData.triggers = triggers;
-        else delete newNodeData.triggers;
-
-        // SQL Data (Questions can have SQL generally, though usually Leaf has it? Actually prompts say questions can have dynamic data)
-        if (sqlQuery) {
-          newNodeData.sqlQuery = sqlQuery.trim();
-          newNodeData.sqlConnectorId = sqlConnectorId || undefined;
-          newNodeData.sqlResultName = sqlResultName.trim() || undefined;
-
-          if (selectedPipelines.length > 0) {
-            newNodeData.selectedPipelines = selectedPipelines;
-          } else {
-            delete newNodeData.selectedPipelines;
-          }
-        } else {
-          delete newNodeData.sqlQuery;
-          delete newNodeData.sqlConnectorId;
-          delete newNodeData.sqlResultName;
-          delete newNodeData.selectedPipelines;
-        }
-
-        // Python Data
-        if (pythonCode) {
-          newNodeData.pythonCode = pythonCode.trim();
-          newNodeData.pythonOutputType = pythonOutputType;
-          newNodeData.pythonResultName = pythonResultName.trim() || undefined;
-          newNodeData.pythonConnectorId = pythonConnectorId || undefined;
-          if (pythonSelectedPipelines.length > 0) {
-            newNodeData.pythonSelectedPipelines = pythonSelectedPipelines;
-          } else {
-            delete newNodeData.pythonSelectedPipelines;
-          }
-        } else {
-          delete newNodeData.pythonCode;
-          delete newNodeData.pythonOutputType;
-          delete newNodeData.pythonResultName;
-          delete newNodeData.pythonConnectorId;
-          delete newNodeData.pythonSelectedPipelines;
-        }
-
       } else if (currentNodeType === 'decision') {
-        // Ensure it has Decision structure
-        // If converting from Question, we remove question and OPTIONS (the destructive part)
+        // Decision Node
         newNodeData.decision = decisionText;
         if ('question' in newNodeData) delete newNodeData.question;
         if ('options' in newNodeData) delete newNodeData.options;
-
-        if (finalMedia.length > 0) newNodeData.media = finalMedia;
-        else delete newNodeData.media;
-
-        if (links.length > 0) newNodeData.links = links;
-        else delete newNodeData.links;
-
-        if (triggers.length > 0) newNodeData.triggers = triggers;
-        else delete newNodeData.triggers;
-
-        // SQL Data
-        if (sqlQuery) {
-          newNodeData.sqlQuery = sqlQuery.trim();
-          newNodeData.sqlConnectorId = sqlConnectorId || undefined;
-          newNodeData.sqlResultName = sqlResultName.trim() || undefined;
-
-          if (selectedPipelines.length > 0) {
-            newNodeData.selectedPipelines = selectedPipelines;
-          } else {
-            delete newNodeData.selectedPipelines;
-          }
-        } else {
-          delete newNodeData.sqlQuery;
-          delete newNodeData.sqlConnectorId;
-          delete newNodeData.sqlResultName;
-          delete newNodeData.selectedPipelines;
-        }
-
-        // Python Data
-        if (pythonCode) {
-          newNodeData.pythonCode = pythonCode.trim();
-          newNodeData.pythonOutputType = pythonOutputType;
-          newNodeData.pythonResultName = pythonResultName.trim() || undefined;
-          newNodeData.pythonConnectorId = pythonConnectorId || undefined;
-          if (pythonSelectedPipelines.length > 0) {
-            newNodeData.pythonSelectedPipelines = pythonSelectedPipelines;
-          } else {
-            delete newNodeData.pythonSelectedPipelines;
-          }
-        } else {
-          delete newNodeData.pythonCode;
-          delete newNodeData.pythonOutputType;
-          delete newNodeData.pythonResultName;
-          delete newNodeData.pythonConnectorId;
-          delete newNodeData.pythonSelectedPipelines;
-        }
-
       } else if ('option' in initialNode) {
-        // Option node, no type switch allowed
-        newNodeData = { option: optionText };
+        // Option Node (Edge)
+        newNodeData.option = optionText;
       }
 
-      // Email Action (applies to all node types except options)
-      if (!('option' in initialNode)) {
-        if (emailConfig.enabled && emailConfig.connectorId && emailConfig.to && emailConfig.subject) {
-          newNodeData.emailAction = emailConfig;
+      // 2. Common Properties (Apply to ALL node types: Question, Decision, Option)
+
+      // Media
+      if (finalMedia.length > 0) newNodeData.media = finalMedia;
+      else delete newNodeData.media;
+
+      // Links
+      if (links.length > 0) newNodeData.links = links;
+      else delete newNodeData.links;
+
+      // Triggers
+      if (triggers.length > 0) newNodeData.triggers = triggers;
+      else delete newNodeData.triggers;
+
+      // SQL Data
+      if (sqlQuery) {
+        newNodeData.sqlQuery = sqlQuery.trim();
+        newNodeData.sqlConnectorId = sqlConnectorId || undefined;
+        newNodeData.sqlResultName = sqlResultName.trim() || undefined;
+
+        if (selectedPipelines.length > 0) {
+          newNodeData.selectedPipelines = selectedPipelines;
         } else {
-          delete newNodeData.emailAction;
+          delete newNodeData.selectedPipelines;
         }
+      } else {
+        delete newNodeData.sqlQuery;
+        delete newNodeData.sqlConnectorId;
+        delete newNodeData.sqlResultName;
+        delete newNodeData.selectedPipelines;
+      }
+
+      // Python Data
+      if (pythonCode) {
+        newNodeData.pythonCode = pythonCode.trim();
+        newNodeData.pythonOutputType = pythonOutputType;
+        newNodeData.pythonResultName = pythonResultName.trim() || undefined;
+        newNodeData.pythonConnectorId = pythonConnectorId || undefined;
+        if (pythonSelectedPipelines.length > 0) {
+          newNodeData.pythonSelectedPipelines = pythonSelectedPipelines;
+        } else {
+          delete newNodeData.pythonSelectedPipelines;
+        }
+      } else {
+        delete newNodeData.pythonCode;
+        delete newNodeData.pythonOutputType;
+        delete newNodeData.pythonResultName;
+        delete newNodeData.pythonConnectorId;
+        delete newNodeData.pythonSelectedPipelines;
+      }
+
+      // Email Action (Apply to ALL node types, including Options)
+      if (emailConfig.enabled && emailConfig.connectorId && emailConfig.to && emailConfig.subject) {
+        newNodeData.emailAction = emailConfig;
+      } else {
+        delete newNodeData.emailAction;
+      }
+
+      // SQL Export Action
+      if (sqlExportSourceTables.length > 0 && sqlExportTargetConnectorId && sqlExportTargetTableName) {
+        newNodeData.sqlExportAction = {
+          sourceTables: sqlExportSourceTables,
+          targetConnectorId: sqlExportTargetConnectorId,
+          targetTableName: sqlExportTargetTableName,
+        };
+      } else {
+        delete newNodeData.sqlExportAction;
       }
 
       onSave(nodePath, newNodeData);
@@ -749,14 +736,12 @@ export default function EditNodeDialog({
   let title = 'Modifica Nodo';
   let description = "Apporta le modifiche al nodo qui sotto. Fai clic su Salva quando hai finito.";
 
-
-
   if (currentNodeType === 'question' && !('option' in initialNode)) {
     title = 'Modifica Domanda';
     description = "Modifica il testo della domanda e aggiungi eventuali media o link.";
   } else if (currentNodeType === 'question' && 'option' in initialNode) {
     title = 'Modifica Opzione';
-    description = "Modifica il testo dell'opzione di risposta.";
+    description = "Modifica il testo dell'opzione di risposta (facoltativo se usato solo come passaggio).";
   } else if (currentNodeType === 'decision') {
     title = 'Modifica Risultato Finale';
     description = "Specifica il risultato finale o l'azione da intraprendere.";
@@ -764,7 +749,7 @@ export default function EditNodeDialog({
 
   const canSave = !componentIsSaving && (
     (currentNodeType === 'question' && !('option' in initialNode) && questionText.trim() !== '') ||
-    (currentNodeType === 'question' && 'option' in initialNode && optionText.trim() !== '') ||
+    (currentNodeType === 'question' && 'option' in initialNode) || // Allow empty option text
     (currentNodeType === 'decision' && decisionText.trim() !== '')
   );
 
@@ -1364,21 +1349,40 @@ export default function EditNodeDialog({
                         setAgentStatus("Esecuzione Query...");
 
                         // Build Dependencies for Execution
-                        let pipelineDeps: { tableName: string, query: string }[] = [];
+                        let pipelineDeps: any[] = [];
                         if (availableInputTables && availableInputTables.length > 0) {
-                          // Include ALL available tables as dependencies if they are referenced
-                          // Or better, include active pipelines? 
-                          // Current logic: Include EVERYTHING so user can query it? 
-                          // Or better: Filter based on `selectedPipelines`? 
-                          // Usually `availableInputTables` ARE the dependencies.
-                          pipelineDeps = availableInputTables.map(table => ({
-                            tableName: table.name,
-                            query: table.sqlQuery || ''
-                          })).filter(d => d.query !== '' && selectedPipelines.includes(d.tableName));
+                          // Auto-detect which tables are referenced in the SQL query
+                          const referencedTables = new Set<string>();
 
-                          // If logic requires *all* previous nodes to be available regardless of selection (implicit context), 
-                          // then we might need to change this. But assuming explicit selection is better.
-                          // Actually the user screenshot shows they selected "HR1".
+                          // Parse the SQL query for table references (FROM, JOIN)
+                          const sqlUpper = sqlQuery.toUpperCase();
+                          availableInputTables.forEach(table => {
+                            const tableNameUpper = table.name.toUpperCase();
+                            // Check for FROM or JOIN references
+                            if (sqlUpper.includes(`FROM ${tableNameUpper}`) ||
+                              sqlUpper.includes(`FROM\n${tableNameUpper}`) ||
+                              sqlUpper.includes(`JOIN ${tableNameUpper}`) ||
+                              sqlUpper.includes(`JOIN\n${tableNameUpper}`)) {
+                              referencedTables.add(table.name);
+                            }
+                          });
+
+                          console.log('[SQL PREVIEW] Auto-detected referenced tables:', Array.from(referencedTables));
+
+                          // Include both selected tables AND auto-detected referenced tables
+                          const tablesToInclude = new Set([...selectedPipelines, ...referencedTables]);
+
+                          pipelineDeps = availableInputTables
+                            .filter(t => tablesToInclude.has(t.name))
+                            .map(table => ({
+                              tableName: table.name,
+                              query: table.sqlQuery || undefined,
+                              isPython: table.isPython,
+                              pythonCode: table.pythonCode,
+                              connectorId: table.connectorId, // Pass connector ID for HubSpot/API tokens
+                              pipelineDependencies: table.pipelineDependencies
+                            }))
+                            .filter(d => d.query || (d.isPython && d.pythonCode));
                         }
 
                         executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps).then((res) => {
@@ -1654,7 +1658,7 @@ export default function EditNodeDialog({
 
                         // Prepara i dati di input e le dipendenze dai nodi selezionati
                         // Include pipelineDependencies for cascading SQL execution
-                        const dependencies: { tableName: string; connectorId?: string; query?: string; pipelineDependencies?: { tableName: string; query: string }[] }[] = [];
+                        const dependencies: { tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
                         if (availableInputTables) {
                           pythonSelectedPipelines.forEach(pName => {
                             const table = availableInputTables.find(t => t.name === pName);
@@ -1663,6 +1667,8 @@ export default function EditNodeDialog({
                                 tableName: pName,
                                 connectorId: table.connectorId,
                                 query: table.sqlQuery,
+                                isPython: table.isPython,
+                                pythonCode: table.pythonCode,
                                 pipelineDependencies: table.pipelineDependencies // Pass ancestor queries
                               });
                             }
@@ -1776,7 +1782,7 @@ export default function EditNodeDialog({
                         </div>
                       </div>
                       {pythonPreviewResult.type === 'table' && pythonPreviewResult.data && (
-                        <DataTable data={pythonPreviewResult.data} />
+                        <DataTable data={pythonPreviewResult.data} columns={pythonPreviewResult.columns} />
                       )}
                       {pythonPreviewResult.type === 'variable' && pythonPreviewResult.variables && (
                         <pre className="p-3 text-xs overflow-auto max-h-48">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
@@ -1834,8 +1840,284 @@ export default function EditNodeDialog({
                 </div>
               </CollapsibleSection>
 
+              {/* SQL Export Section */}
+              {true && (
+                <CollapsibleSection
+                  title="Esporta in Database SQL"
+                  count={sqlExportEnabled ? sqlExportSourceTables.length : 0}
+                  storageKey={`collapse-sql-export-${treeId}-${nodePath}`}
+                  icon={Database}
+                >
+                  <div className="grid gap-4 pt-3">
+
+                    {/* Source Tables Selection */}
+                    <div className="grid gap-2">
+                      <Label>Tabelle da Esportare</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {/* Parent tables */}
+                        {availableInputTables?.map(t => (
+                          <div key={t.name} className="flex items-center space-x-2 bg-white dark:bg-zinc-800 p-1.5 px-2.5 rounded-full border shadow-sm">
+                            <Check
+                              className={`h-3 w-3 cursor-pointer ${sqlExportSourceTables.includes(t.name) ? 'text-emerald-600' : 'text-muted-foreground/30'}`}
+                              onClick={() => {
+                                if (sqlExportSourceTables.includes(t.name)) {
+                                  setSqlExportSourceTables(prev => prev.filter(p => p !== t.name));
+                                } else {
+                                  setSqlExportSourceTables(prev => [...prev, t.name]);
+                                }
+                              }}
+                            />
+                            <Label className="text-xs cursor-pointer" onClick={() => {
+                              if (sqlExportSourceTables.includes(t.name)) {
+                                setSqlExportSourceTables(prev => prev.filter(p => p !== t.name));
+                              } else {
+                                setSqlExportSourceTables(prev => [...prev, t.name]);
+                              }
+                            }}>{t.name} ({t.isPython ? 'Python' : 'SQL'})</Label>
+                          </div>
+                        ))}
+                        {/* Current SQL result */}
+                        {sqlResultName && (
+                          <div className="flex items-center space-x-2 bg-white dark:bg-zinc-800 p-1.5 px-2.5 rounded-full border shadow-sm">
+                            <Check
+                              className={`h-3 w-3 cursor-pointer ${sqlExportSourceTables.includes(sqlResultName) ? 'text-emerald-600' : 'text-muted-foreground/30'}`}
+                              onClick={() => {
+                                if (sqlExportSourceTables.includes(sqlResultName)) {
+                                  setSqlExportSourceTables(prev => prev.filter(p => p !== sqlResultName));
+                                } else {
+                                  setSqlExportSourceTables(prev => [...prev, sqlResultName]);
+                                }
+                              }}
+                            />
+                            <Label className="text-xs cursor-pointer" onClick={() => {
+                              if (sqlExportSourceTables.includes(sqlResultName)) {
+                                setSqlExportSourceTables(prev => prev.filter(p => p !== sqlResultName));
+                              } else {
+                                setSqlExportSourceTables(prev => [...prev, sqlResultName]);
+                              }
+                            }}>{sqlResultName} (Questo nodo)</Label>
+                          </div>
+                        )}
+                        {/* Current Python result if table */}
+                        {pythonResultName && pythonOutputType === 'table' && (
+                          <div className="flex items-center space-x-2 bg-white dark:bg-zinc-800 p-1.5 px-2.5 rounded-full border shadow-sm">
+                            <Check
+                              className={`h-3 w-3 cursor-pointer ${sqlExportSourceTables.includes(pythonResultName) ? 'text-emerald-600' : 'text-muted-foreground/30'}`}
+                              onClick={() => {
+                                if (sqlExportSourceTables.includes(pythonResultName)) {
+                                  setSqlExportSourceTables(prev => prev.filter(p => p !== pythonResultName));
+                                } else {
+                                  setSqlExportSourceTables(prev => [...prev, pythonResultName]);
+                                }
+                              }}
+                            />
+                            <Label className="text-xs cursor-pointer" onClick={() => {
+                              if (sqlExportSourceTables.includes(pythonResultName)) {
+                                setSqlExportSourceTables(prev => prev.filter(p => p !== pythonResultName));
+                              } else {
+                                setSqlExportSourceTables(prev => [...prev, pythonResultName]);
+                              }
+                            }}>{pythonResultName} (Python)</Label>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Target Connector Selection */}
+                    <div className="grid gap-2">
+                      <Label>Database Destinazione</Label>
+                      <Select value={sqlExportTargetConnectorId} onValueChange={setSqlExportTargetConnectorId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona un Database SQL..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sqlConnectors.map((c: any) => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Target Table Name */}
+                    <div className="grid gap-2">
+                      <Label>Nome Tabella Destinazione</Label>
+                      <Input
+                        value={sqlExportTargetTableName}
+                        onChange={(e) => setSqlExportTargetTableName(e.target.value)}
+                        placeholder="Es. ExportedDeals"
+                      />
+                      <p className="text-[10px] text-muted-foreground">La tabella verrà creata automaticamente se non esiste.</p>
+                    </div>
+
+                    {/* Execute Button */}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      disabled={sqlExportStatus === 'running' || sqlExportSourceTables.length === 0 || !sqlExportTargetConnectorId || !sqlExportTargetTableName}
+                      onClick={async () => {
+                        setSqlExportStatus('running');
+                        setSqlExportError(null);
+                        setSqlExportRowCount(null);
+
+                        try {
+                          // For now, we'll use sqlPreviewData or pythonPreviewResult as source
+                          // In a full implementation, we'd fetch data for each selected table
+                          let sourceData: any[] = [];
+
+                          for (const tableName of sqlExportSourceTables) {
+                            // 1. Check Current Node Results (Cache)
+                            if (tableName === sqlResultName && sqlPreviewData) {
+                              sourceData = sqlPreviewData;
+                              break;
+                            }
+                            if (tableName === pythonResultName && pythonPreviewResult?.data) {
+                              sourceData = pythonPreviewResult.data;
+                              break;
+                            }
+
+                            // 1b. Current Node - Fetch on demand if no cache
+                            if (tableName === sqlResultName && sqlQuery && !sqlPreviewData) {
+                              toast({ title: "Esecuzione SQL...", description: `Recupero dati da ${tableName}...` });
+                              // Build pipelineDeps for current node
+                              const pipelineDeps = availableInputTables
+                                ?.filter(t => t.sqlQuery || (t.isPython && t.pythonCode))
+                                .map(table => ({
+                                  tableName: table.name,
+                                  query: table.sqlQuery || undefined,
+                                  isPython: table.isPython,
+                                  pythonCode: table.pythonCode,
+                                  connectorId: table.connectorId,
+                                  pipelineDependencies: table.pipelineDependencies
+                                })) || [];
+                              const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps);
+                              if (res.data) {
+                                sourceData = res.data;
+                                break;
+                              } else {
+                                throw new Error(`Errore recupero dati SQL da ${tableName}: ${res.error}`);
+                              }
+                            }
+                            if (tableName === pythonResultName && pythonCode && !pythonPreviewResult?.data) {
+                              toast({ title: "Elaborazione Python...", description: `Esecuzione script per ${tableName}...` });
+                              const pipelineDeps = availableInputTables
+                                ?.filter(t => t.sqlQuery || (t.isPython && t.pythonCode))
+                                .map(table => ({
+                                  tableName: table.name,
+                                  query: table.sqlQuery || undefined,
+                                  isPython: table.isPython,
+                                  pythonCode: table.pythonCode,
+                                  connectorId: table.connectorId,
+                                  pipelineDependencies: table.pipelineDependencies
+                                })) || [];
+                              const res = await executePythonPreviewAction(pythonCode, 'table', {}, pipelineDeps, pythonConnectorId);
+                              if (res.success && Array.isArray(res.data)) {
+                                sourceData = res.data;
+                                break;
+                              } else {
+                                throw new Error(`Errore recupero dati Python da ${tableName}: ${res.error}`);
+                              }
+                            }
+
+                            // 2. Check Ancestor Tables (Fetch on demand)
+                            const ancestorTable = availableInputTables?.find(t => t.name === tableName);
+                            if (ancestorTable) {
+                              // Python Ancestor
+                              if (ancestorTable.isPython && ancestorTable.pythonCode) {
+                                toast({ title: "Elaborazione Python...", description: `Esecuzione script per ${tableName}...` });
+                                // Use executePythonPreviewAction to fetch data
+                                const res = await executePythonPreviewAction(
+                                  ancestorTable.pythonCode,
+                                  'table',
+                                  {},
+                                  (ancestorTable.pipelineDependencies || []).map(d => ({ tableName: d.tableName, query: d.query })),
+                                  ancestorTable.connectorId
+                                );
+                                if (res.success && Array.isArray(res.data)) {
+                                  sourceData = res.data;
+                                  break;
+                                } else {
+                                  throw new Error(`Errore recupero dati Python da ${tableName}: ${res.error}`);
+                                }
+                              }
+                              // SQL Ancestor
+                              else if (ancestorTable.sqlQuery) {
+                                toast({ title: "Esecuzione SQL...", description: `Recupero dati da ${tableName}...` });
+                                const res = await executeSqlPreviewAction(
+                                  ancestorTable.sqlQuery,
+                                  ancestorTable.connectorId || '',
+                                  ancestorTable.pipelineDependencies || []
+                                );
+                                if (res.data) {
+                                  sourceData = res.data;
+                                  break;
+                                } else {
+                                  throw new Error(`Errore recupero dati SQL da ${tableName}: ${res.error}`);
+                                }
+                              }
+                            }
+                          }
+
+                          if (sourceData.length === 0) {
+                            setSqlExportError('Nessun dato disponibile. Esegui prima l\'anteprima della query o dello script.');
+                            setSqlExportStatus('error');
+                            return;
+                          }
+
+                          const result = await exportTableToSqlAction(
+                            sqlExportTargetConnectorId,
+                            sqlExportTargetTableName,
+                            sourceData,
+                            true
+                          );
+
+                          if (result.success) {
+                            setSqlExportStatus('success');
+                            setSqlExportRowCount(result.rowsInserted || 0);
+                            toast({
+                              title: "Esportazione completata",
+                              description: `${result.rowsInserted} righe inserite in ${sqlExportTargetTableName}`,
+                            });
+                          } else {
+                            setSqlExportStatus('error');
+                            setSqlExportError(result.error || 'Errore sconosciuto');
+                          }
+                        } catch (e: any) {
+                          setSqlExportStatus('error');
+                          setSqlExportError(e.message || 'Errore durante l\'esportazione');
+                        }
+                      }}
+                    >
+                      {sqlExportStatus === 'running' ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Esportazione in corso...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="mr-2 h-4 w-4" />
+                          Salva in Database
+                        </>
+                      )}
+                    </Button>
+
+                    {/* Status Messages */}
+                    {sqlExportStatus === 'success' && (
+                      <div className="p-3 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 rounded-lg text-sm text-emerald-700 dark:text-emerald-300">
+                        ✅ Esportazione completata! {sqlExportRowCount} righe inserite.
+                      </div>
+                    )}
+                    {sqlExportStatus === 'error' && sqlExportError && (
+                      <div className="p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-300">
+                        ❌ Errore: {sqlExportError}
+                      </div>
+                    )}
+                  </div>
+                </CollapsibleSection>
+              )}
+
               {/* Email Action Section */}
-              {!('option' in initialNode) && (
+              {true && (
                 <CollapsibleSection
                   title="Invio Email"
                   count={emailConfig.enabled ? 1 : 0}
@@ -1843,489 +2125,469 @@ export default function EditNodeDialog({
                   icon={Mail}
                 >
                   <div className="grid gap-4 pt-3">
-                    {/* Enable Toggle */}
-                    <div className="flex items-center justify-between">
-                      <Label className="flex items-center gap-2">
-                        <Mail className="h-4 w-4" />
-                        Abilita Invio Email
-                      </Label>
-                      <Button
-                        type="button"
-                        variant={emailConfig.enabled ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setEmailConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
-                        className={emailConfig.enabled ? "bg-primary" : ""}
+
+                    {/* SMTP Connector Selection */}
+                    <div className="grid gap-2">
+                      <Label>Connettore SMTP</Label>
+                      <Select
+                        value={emailConfig.connectorId}
+                        onValueChange={(v) => setEmailConfig(prev => ({ ...prev, connectorId: v }))}
                       >
-                        {emailConfig.enabled ? "Attivo" : "Disattivo"}
-                      </Button>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona un connettore SMTP..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {smtpConnectors.length === 0 ? (
+                            <SelectItem value="none" disabled>Nessun connettore SMTP configurato</SelectItem>
+                          ) : (
+                            smtpConnectors.map((c) => (
+                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {smtpConnectors.length === 0 && (
+                        <p className="text-[10px] text-amber-600">⚠️ Configura un connettore SMTP nelle Impostazioni per abilitare l'invio email.</p>
+                      )}
                     </div>
 
-                    {emailConfig.enabled && (
-                      <>
-                        {/* SMTP Connector Selection */}
+                    {/* Recipients */}
+                    <div className="grid gap-3">
+                      <div className="grid gap-2">
+                        <Label>A (Destinatari)</Label>
+                        <Input
+                          value={emailConfig.to}
+                          onChange={(e) => setEmailConfig(prev => ({ ...prev, to: e.target.value }))}
+                          placeholder="email@esempio.com, altro@esempio.com"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
                         <div className="grid gap-2">
-                          <Label>Connettore SMTP</Label>
-                          <Select
-                            value={emailConfig.connectorId}
-                            onValueChange={(v) => setEmailConfig(prev => ({ ...prev, connectorId: v }))}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Seleziona un connettore SMTP..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {smtpConnectors.length === 0 ? (
-                                <SelectItem value="none" disabled>Nessun connettore SMTP configurato</SelectItem>
-                              ) : (
-                                smtpConnectors.map((c) => (
-                                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                          {smtpConnectors.length === 0 && (
-                            <p className="text-[10px] text-amber-600">⚠️ Configura un connettore SMTP nelle Impostazioni per abilitare l'invio email.</p>
-                          )}
-                        </div>
-
-                        {/* Recipients */}
-                        <div className="grid gap-3">
-                          <div className="grid gap-2">
-                            <Label>A (Destinatari)</Label>
-                            <Input
-                              value={emailConfig.to}
-                              onChange={(e) => setEmailConfig(prev => ({ ...prev, to: e.target.value }))}
-                              placeholder="email@esempio.com, altro@esempio.com"
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="grid gap-2">
-                              <Label>CC</Label>
-                              <Input
-                                value={emailConfig.cc || ''}
-                                onChange={(e) => setEmailConfig(prev => ({ ...prev, cc: e.target.value }))}
-                                placeholder="copia@esempio.com"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>CCN (BCC)</Label>
-                              <Input
-                                value={emailConfig.bcc || ''}
-                                onChange={(e) => setEmailConfig(prev => ({ ...prev, bcc: e.target.value }))}
-                                placeholder="nascosto@esempio.com"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Subject */}
-                        <div className="grid gap-2">
-                          <Label>Oggetto</Label>
+                          <Label>CC</Label>
                           <Input
-                            value={emailConfig.subject}
-                            onChange={(e) => setEmailConfig(prev => ({ ...prev, subject: e.target.value }))}
-                            placeholder="Oggetto dell'email..."
+                            value={emailConfig.cc || ''}
+                            onChange={(e) => setEmailConfig(prev => ({ ...prev, cc: e.target.value }))}
+                            placeholder="copia@esempio.com"
                           />
                         </div>
+                        <div className="grid gap-2">
+                          <Label>CCN (BCC)</Label>
+                          <Input
+                            value={emailConfig.bcc || ''}
+                            onChange={(e) => setEmailConfig(prev => ({ ...prev, bcc: e.target.value }))}
+                            placeholder="nascosto@esempio.com"
+                          />
+                        </div>
+                      </div>
+                    </div>
 
-                        {/* Body - Rich Text Editor */}
-                        <Label>Corpo Email & Allegati</Label>
-                        <div className="flex flex-col md:flex-row gap-4 h-[500px]">
-                          {/* Editor */}
-                          <div className="flex-1 min-w-0 flex flex-col">
-                            <EmailBodyEditor
-                              ref={editorRef}
-                              value={emailConfig.body}
-                              onChange={(html) => setEmailConfig(prev => ({ ...prev, body: html }))}
-                              availableTables={[
-                                ...(availableInputTables?.map(t => ({ name: t.name })) || []),
-                                ...(sqlResultName ? [{ name: sqlResultName }] : [])
-                              ]}
-                              availableCharts={pythonResultName && pythonOutputType === 'chart' ? [{ name: pythonResultName }] : []}
-                              availableAttachments={[
-                                ...availableParentMedia.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' })),
-                                ...media.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' }))
-                              ]}
-                            />
-                          </div>
+                    {/* Subject */}
+                    <div className="grid gap-2">
+                      <Label>Oggetto</Label>
+                      <Input
+                        value={emailConfig.subject}
+                        onChange={(e) => setEmailConfig(prev => ({ ...prev, subject: e.target.value }))}
+                        placeholder="Oggetto dell'email..."
+                      />
+                    </div>
 
-                          {/* Sidebar Resources */}
-                          <div className="w-full md:w-[300px] bg-muted/10 border rounded-lg flex flex-col overflow-hidden shadow-sm">
-                            <div className="p-2 border-b bg-muted/30">
-                              <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">Risorse Disponibili</h4>
-                            </div>
+                    {/* Body - Rich Text Editor */}
+                    <Label>Corpo Email & Allegati</Label>
+                    <div className="flex flex-col md:flex-row gap-4 h-[500px]">
+                      {/* Editor */}
+                      <div className="flex-1 min-w-0 flex flex-col">
+                        <EmailBodyEditor
+                          ref={editorRef}
+                          value={emailConfig.body}
+                          onChange={(html) => setEmailConfig(prev => ({ ...prev, body: html }))}
+                          availableTables={[
+                            ...(availableInputTables?.map(t => ({ name: t.name })) || []),
+                            ...(sqlResultName ? [{ name: sqlResultName }] : [])
+                          ]}
+                          availableCharts={pythonResultName && pythonOutputType === 'chart' ? [{ name: pythonResultName }] : []}
+                          availableAttachments={[
+                            ...availableParentMedia.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' })),
+                            ...media.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' }))
+                          ]}
+                        />
+                      </div>
 
-                            <div className="p-3 overflow-y-auto space-y-5 flex-1">
+                      {/* Sidebar Resources */}
+                      <div className="w-full md:w-[300px] bg-muted/10 border rounded-lg flex flex-col overflow-hidden shadow-sm">
+                        <div className="p-2 border-b bg-muted/30">
+                          <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">Risorse Disponibili</h4>
+                        </div>
 
-                              {/* Tables */}
-                              {((availableInputTables && availableInputTables.length > 0) || sqlResultName) && (
-                                <div className="space-y-2">
-                                  <p className="text-xs font-semibold flex items-center gap-1.5 text-primary"><Database className="h-3.5 w-3.5" /> Tabelle</p>
-                                  <div className="space-y-1.5">
-                                    {availableInputTables?.map((table) => (
-                                      <div key={table.name} className="bg-background border rounded p-2 text-xs hover:border-primary/50 transition-colors">
-                                        <div className="font-medium mb-1.5 truncate" title={table.name}>{table.name}</div>
-                                        <div className="flex items-center justify-between gap-2">
-                                          <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            className="h-6 text-[10px] px-2 h-6"
-                                            onClick={() => editorRef.current?.insertPlaceholder('TABELLA', table.name)}
-                                          >
-                                            <Download className="h-3 w-3 mr-1" /> Inserisci
-                                          </Button>
-                                          <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted">
-                                            <input
-                                              type="checkbox"
-                                              checked={safeEmailAttachments.tablesAsExcel.includes(table.name)}
-                                              onChange={(e) => {
-                                                setEmailConfig(prev => ({
-                                                  ...prev,
-                                                  attachments: {
-                                                    ...prev.attachments,
-                                                    tablesAsExcel: e.target.checked
-                                                      ? [...prev.attachments.tablesAsExcel, table.name]
-                                                      : prev.attachments.tablesAsExcel.filter(t => t !== table.name)
-                                                  }
-                                                }));
-                                              }}
-                                              className="rounded w-3.5 h-3.5"
-                                            />
-                                            <span className="text-muted-foreground text-[10px]">Excel</span>
-                                          </label>
-                                        </div>
-                                      </div>
-                                    ))}
-                                    {sqlResultName && (
-                                      <div className="bg-background border rounded p-2 text-xs hover:border-primary/50 transition-colors border-l-4 border-l-primary/30">
-                                        <div className="font-medium mb-1.5 truncate" title={sqlResultName}>Output: {sqlResultName}</div>
-                                        <div className="flex items-center justify-between gap-2">
-                                          <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            className="h-6 text-[10px] px-2"
-                                            onClick={() => editorRef.current?.insertPlaceholder('TABELLA', sqlResultName)}
-                                          >
-                                            <Download className="h-3 w-3 mr-1" /> Inserisci
-                                          </Button>
-                                          <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted">
-                                            <input
-                                              type="checkbox"
-                                              checked={safeEmailAttachments.tablesAsExcel.includes(sqlResultName)}
-                                              onChange={(e) => {
-                                                setEmailConfig(prev => ({
-                                                  ...prev,
-                                                  attachments: {
-                                                    ...prev.attachments,
-                                                    tablesAsExcel: e.target.checked
-                                                      ? [...prev.attachments.tablesAsExcel, sqlResultName]
-                                                      : prev.attachments.tablesAsExcel.filter(t => t !== sqlResultName)
-                                                  }
-                                                }));
-                                              }}
-                                              className="rounded w-3.5 h-3.5"
-                                            />
-                                            <span className="text-muted-foreground text-[10px]">Excel</span>
-                                          </label>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
+                        <div className="p-3 overflow-y-auto space-y-5 flex-1">
 
-                              {/* Python Outputs */}
-                              {pythonResultName && (
-                                <div className="space-y-2 pt-2 border-t">
-                                  <p className="text-xs font-semibold flex items-center gap-1.5 text-purple-600"><Code className="h-3.5 w-3.5" /> Output Python</p>
-                                  <div className="bg-background border rounded p-2 text-xs hover:border-purple-300 transition-colors border-l-4 border-l-purple-500/30">
-                                    <div className="font-medium mb-1.5 truncate" title={pythonResultName}>
-                                      {pythonResultName} <span className="opacity-70 text-[10px]">({pythonOutputType})</span>
-                                    </div>
-                                    <div className="flex items-center justify-between gap-2 overflow-x-auto">
-                                      {pythonOutputType === 'chart' && (
-                                        <Button
-                                          variant="secondary"
-                                          size="sm"
-                                          className="h-6 text-[10px] px-2 flex-shrink-0"
-                                          onClick={() => editorRef.current?.insertPlaceholder('GRAFICO', pythonResultName)}
-                                        >
-                                          <BarChart3 className="h-3 w-3 mr-1" /> Inserisci
-                                        </Button>
-                                      )}
-                                      <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
+                          {/* Tables */}
+                          {((availableInputTables && availableInputTables.length > 0) || sqlResultName) && (
+                            <div className="space-y-2">
+                              <p className="text-xs font-semibold flex items-center gap-1.5 text-primary"><Database className="h-3.5 w-3.5" /> Tabelle</p>
+                              <div className="space-y-1.5">
+                                {availableInputTables?.map((table) => (
+                                  <div key={table.name} className="bg-background border rounded p-2 text-xs hover:border-primary/50 transition-colors">
+                                    <div className="font-medium mb-1.5 truncate" title={table.name}>{table.name}</div>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        className="h-6 text-[10px] px-2 h-6"
+                                        onClick={() => editorRef.current?.insertPlaceholder('TABELLA', table.name)}
+                                      >
+                                        <Download className="h-3 w-3 mr-1" /> Inserisci
+                                      </Button>
+                                      <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted">
                                         <input
                                           type="checkbox"
-                                          checked={safeEmailAttachments.pythonOutputsAsAttachment.includes(pythonResultName)}
+                                          checked={safeEmailAttachments.tablesAsExcel.includes(table.name)}
                                           onChange={(e) => {
                                             setEmailConfig(prev => ({
                                               ...prev,
                                               attachments: {
                                                 ...prev.attachments,
-                                                pythonOutputsAsAttachment: e.target.checked
-                                                  ? [...prev.attachments.pythonOutputsAsAttachment, pythonResultName]
-                                                  : prev.attachments.pythonOutputsAsAttachment.filter(t => t !== pythonResultName)
+                                                tablesAsExcel: e.target.checked
+                                                  ? [...prev.attachments.tablesAsExcel, table.name]
+                                                  : prev.attachments.tablesAsExcel.filter(t => t !== table.name)
                                               }
                                             }));
                                           }}
                                           className="rounded w-3.5 h-3.5"
                                         />
-                                        <span className="text-muted-foreground text-[10px]">Allega File</span>
+                                        <span className="text-muted-foreground text-[10px]">Excel</span>
                                       </label>
                                     </div>
                                   </div>
-                                </div>
-                              )}
-
-                              {/* Media / Attachments (Parents + Current) */}
-                              {/* Media / Attachments (Parents + Current) */}
-                              {(availableParentMedia.length > 0 || media.length > 0) && (
-                                <div className="space-y-2 pt-2 border-t">
-                                  <p className="text-xs font-semibold flex items-center gap-1.5 text-blue-600"><Paperclip className="h-3.5 w-3.5" /> Media & Allegati</p>
-                                  <div className="space-y-1.5">
-                                    {[...availableParentMedia, ...media].map((item, idx) => {
-                                      const itemName = item.name || item.url.split('/').pop() || 'file';
-                                      return (
-                                        <div key={idx} className="bg-background border rounded p-2 text-xs hover:border-blue-300 transition-colors">
-                                          <div className="flex items-center gap-1.5 truncate mb-1.5">
-                                            {item.type === 'video' ? <Video className="h-3 w-3 text-blue-500" /> : <ImageIcon className="h-3 w-3 text-pink-500" />}
-                                            <span className="truncate" title={itemName}>{itemName}</span>
-                                          </div>
-                                          <div className="flex items-center justify-between gap-2 overflow-x-auto">
-                                            <Button
-                                              variant="secondary"
-                                              size="sm"
-                                              className="h-6 text-[10px] px-2 flex-shrink-0"
-                                              onClick={() => editorRef.current?.insertPlaceholder('ALLEGATO', itemName)}
-                                            >
-                                              <Download className="h-3 w-3 mr-1" /> Inserisci
-                                            </Button>
-                                            <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
-                                              <input
-                                                type="checkbox"
-                                                checked={safeEmailAttachments.mediaAsAttachment.includes(itemName)}
-                                                onChange={(e) => {
-                                                  setEmailConfig(prev => ({
-                                                    ...prev,
-                                                    attachments: {
-                                                      ...prev.attachments,
-                                                      mediaAsAttachment: e.target.checked
-                                                        ? [...(prev.attachments?.mediaAsAttachment || []), itemName]
-                                                        : (prev.attachments?.mediaAsAttachment || []).filter(t => t !== itemName)
-                                                    }
-                                                  }));
-                                                }}
-                                                className="rounded w-3.5 h-3.5"
-                                              />
-                                              <span className="text-muted-foreground text-[10px]">Allega</span>
-                                            </label>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
+                                ))}
+                                {sqlResultName && (
+                                  <div className="bg-background border rounded p-2 text-xs hover:border-primary/50 transition-colors border-l-4 border-l-primary/30">
+                                    <div className="font-medium mb-1.5 truncate" title={sqlResultName}>Output: {sqlResultName}</div>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        className="h-6 text-[10px] px-2"
+                                        onClick={() => editorRef.current?.insertPlaceholder('TABELLA', sqlResultName)}
+                                      >
+                                        <Download className="h-3 w-3 mr-1" /> Inserisci
+                                      </Button>
+                                      <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted">
+                                        <input
+                                          type="checkbox"
+                                          checked={safeEmailAttachments.tablesAsExcel.includes(sqlResultName)}
+                                          onChange={(e) => {
+                                            setEmailConfig(prev => ({
+                                              ...prev,
+                                              attachments: {
+                                                ...prev.attachments,
+                                                tablesAsExcel: e.target.checked
+                                                  ? [...prev.attachments.tablesAsExcel, sqlResultName]
+                                                  : prev.attachments.tablesAsExcel.filter(t => t !== sqlResultName)
+                                              }
+                                            }));
+                                          }}
+                                          className="rounded w-3.5 h-3.5"
+                                        />
+                                        <span className="text-muted-foreground text-[10px]">Excel</span>
+                                      </label>
+                                    </div>
                                   </div>
-                                </div>
-                              )}
-
-                              {/* Links */}
-                              {(availableParentLinks.length > 0 || links.length > 0) && (
-                                <div className="space-y-2 pt-2 border-t">
-                                  <p className="text-xs font-semibold flex items-center gap-1.5 text-indigo-600"><LinkIcon className="h-3.5 w-3.5" /> Link</p>
-                                  <div className="space-y-1.5">
-                                    {[...availableParentLinks, ...links].map((link, idx) => (
-                                      <div key={idx} className="bg-background border rounded p-2 text-xs flex items-center justify-between hover:border-indigo-300 transition-colors">
-                                        <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-                                          <span className="truncate" title={link.name}>{link.name}</span>
-                                        </div>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-6 w-6 p-0 hover:bg-indigo-100 text-indigo-600"
-                                          title="Inserisci testo link"
-                                          onClick={() => editorRef.current?.insertPlaceholder('LINK', link.name)}
-                                        >
-                                          <Download className="h-3.5 w-3.5" />
-                                        </Button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Triggers */}
-                              {(availableParentTriggers.length > 0 || triggers.length > 0) && (
-                                <div className="space-y-2 pt-2 border-t">
-                                  <p className="text-xs font-semibold flex items-center gap-1.5 text-amber-600"><Zap className="h-3.5 w-3.5" /> Trigger</p>
-                                  <div className="space-y-1.5">
-                                    {[...availableParentTriggers, ...triggers].map((trigger, idx) => (
-                                      <div key={idx} className="bg-background border rounded p-2 text-xs flex items-center justify-between hover:border-amber-300 transition-colors">
-                                        <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-                                          <span className="truncate" title={trigger.name}>{trigger.name}</span>
-                                        </div>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-6 w-6 p-0 hover:bg-amber-100 text-amber-600"
-                                          title="Inserisci trigger"
-                                          onClick={() => editorRef.current?.insertPlaceholder('TRIGGER', trigger.name)}
-                                        >
-                                          <Download className="h-3.5 w-3.5" />
-                                        </Button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Empty State */}
-                              {(!availableInputTables || availableInputTables.length === 0) && !sqlResultName && !pythonResultName && media.length === 0 && availableParentMedia.length === 0 && availableParentLinks.length === 0 && availableParentTriggers.length === 0 && (
-                                <div className="text-center py-8 text-muted-foreground px-4">
-                                  <p className="text-xs italic">Nessuna risorsa disponibile.</p>
-                                  <p className="text-[10px] opacity-70 mt-1">Configura tabelle, output Python o aggiungi media al nodo per vederli qui.</p>
-                                </div>
-                              )}
-
+                                )}
+                              </div>
                             </div>
-                          </div>
+                          )}
+
+                          {/* Python Outputs */}
+                          {pythonResultName && (
+                            <div className="space-y-2 pt-2 border-t">
+                              <p className="text-xs font-semibold flex items-center gap-1.5 text-purple-600"><Code className="h-3.5 w-3.5" /> Output Python</p>
+                              <div className="bg-background border rounded p-2 text-xs hover:border-purple-300 transition-colors border-l-4 border-l-purple-500/30">
+                                <div className="font-medium mb-1.5 truncate" title={pythonResultName}>
+                                  {pythonResultName} <span className="opacity-70 text-[10px]">({pythonOutputType})</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-2 overflow-x-auto">
+                                  {pythonOutputType === 'chart' && (
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      className="h-6 text-[10px] px-2 flex-shrink-0"
+                                      onClick={() => editorRef.current?.insertPlaceholder('GRAFICO', pythonResultName)}
+                                    >
+                                      <BarChart3 className="h-3 w-3 mr-1" /> Inserisci
+                                    </Button>
+                                  )}
+                                  <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
+                                    <input
+                                      type="checkbox"
+                                      checked={safeEmailAttachments.pythonOutputsAsAttachment.includes(pythonResultName)}
+                                      onChange={(e) => {
+                                        setEmailConfig(prev => ({
+                                          ...prev,
+                                          attachments: {
+                                            ...prev.attachments,
+                                            pythonOutputsAsAttachment: e.target.checked
+                                              ? [...prev.attachments.pythonOutputsAsAttachment, pythonResultName]
+                                              : prev.attachments.pythonOutputsAsAttachment.filter(t => t !== pythonResultName)
+                                          }
+                                        }));
+                                      }}
+                                      className="rounded w-3.5 h-3.5"
+                                    />
+                                    <span className="text-muted-foreground text-[10px]">Allega File</span>
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Media / Attachments (Parents + Current) */}
+                          {/* Media / Attachments (Parents + Current) */}
+                          {(availableParentMedia.length > 0 || media.length > 0) && (
+                            <div className="space-y-2 pt-2 border-t">
+                              <p className="text-xs font-semibold flex items-center gap-1.5 text-blue-600"><Paperclip className="h-3.5 w-3.5" /> Media & Allegati</p>
+                              <div className="space-y-1.5">
+                                {[...availableParentMedia, ...media].map((item, idx) => {
+                                  const itemName = item.name || item.url.split('/').pop() || 'file';
+                                  return (
+                                    <div key={idx} className="bg-background border rounded p-2 text-xs hover:border-blue-300 transition-colors">
+                                      <div className="flex items-center gap-1.5 truncate mb-1.5">
+                                        {item.type === 'video' ? <Video className="h-3 w-3 text-blue-500" /> : <ImageIcon className="h-3 w-3 text-pink-500" />}
+                                        <span className="truncate" title={itemName}>{itemName}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between gap-2 overflow-x-auto">
+                                        <Button
+                                          variant="secondary"
+                                          size="sm"
+                                          className="h-6 text-[10px] px-2 flex-shrink-0"
+                                          onClick={() => editorRef.current?.insertPlaceholder('ALLEGATO', itemName)}
+                                        >
+                                          <Download className="h-3 w-3 mr-1" /> Inserisci
+                                        </Button>
+                                        <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
+                                          <input
+                                            type="checkbox"
+                                            checked={safeEmailAttachments.mediaAsAttachment.includes(itemName)}
+                                            onChange={(e) => {
+                                              setEmailConfig(prev => ({
+                                                ...prev,
+                                                attachments: {
+                                                  ...prev.attachments,
+                                                  mediaAsAttachment: e.target.checked
+                                                    ? [...(prev.attachments?.mediaAsAttachment || []), itemName]
+                                                    : (prev.attachments?.mediaAsAttachment || []).filter(t => t !== itemName)
+                                                }
+                                              }));
+                                            }}
+                                            className="rounded w-3.5 h-3.5"
+                                          />
+                                          <span className="text-muted-foreground text-[10px]">Allega</span>
+                                        </label>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Links */}
+                          {(availableParentLinks.length > 0 || links.length > 0) && (
+                            <div className="space-y-2 pt-2 border-t">
+                              <p className="text-xs font-semibold flex items-center gap-1.5 text-indigo-600"><LinkIcon className="h-3.5 w-3.5" /> Link</p>
+                              <div className="space-y-1.5">
+                                {[...availableParentLinks, ...links].map((link, idx) => (
+                                  <div key={idx} className="bg-background border rounded p-2 text-xs flex items-center justify-between hover:border-indigo-300 transition-colors">
+                                    <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                                      <span className="truncate" title={link.name}>{link.name}</span>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0 hover:bg-indigo-100 text-indigo-600"
+                                      title="Inserisci testo link"
+                                      onClick={() => editorRef.current?.insertPlaceholder('LINK', link.name)}
+                                    >
+                                      <Download className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Triggers */}
+                          {(availableParentTriggers.length > 0 || triggers.length > 0) && (
+                            <div className="space-y-2 pt-2 border-t">
+                              <p className="text-xs font-semibold flex items-center gap-1.5 text-amber-600"><Zap className="h-3.5 w-3.5" /> Trigger</p>
+                              <div className="space-y-1.5">
+                                {[...availableParentTriggers, ...triggers].map((trigger, idx) => (
+                                  <div key={idx} className="bg-background border rounded p-2 text-xs flex items-center justify-between hover:border-amber-300 transition-colors">
+                                    <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                                      <span className="truncate" title={trigger.name}>{trigger.name}</span>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0 hover:bg-amber-100 text-amber-600"
+                                      title="Inserisci trigger"
+                                      onClick={() => editorRef.current?.insertPlaceholder('TRIGGER', trigger.name)}
+                                    >
+                                      <Download className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Empty State */}
+                          {(!availableInputTables || availableInputTables.length === 0) && !sqlResultName && !pythonResultName && media.length === 0 && availableParentMedia.length === 0 && availableParentLinks.length === 0 && availableParentTriggers.length === 0 && (
+                            <div className="text-center py-8 text-muted-foreground px-4">
+                              <p className="text-xs italic">Nessuna risorsa disponibile.</p>
+                              <p className="text-[10px] opacity-70 mt-1">Configura tabelle, output Python o aggiungi media al nodo per vederli qui.</p>
+                            </div>
+                          )}
+
                         </div>
+                      </div>
+                    </div>
 
-                        {/* Test Email Button */}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="gap-2"
-                          disabled={!emailConfig.connectorId || !emailConfig.to || !emailConfig.subject || isSendingTestEmail || !sqlConnectorId}
-                          onClick={async () => {
-                            setIsSendingTestEmail(true);
-                            try {
-                              // Build selectedTables from user selections
-                              const selectedTables: Array<{ name: string; query: string; inBody: boolean; asExcel: boolean; pipelineDependencies?: Array<{ tableName: string; query: string }> }> = [];
+                    {/* Test Email Button */}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="gap-2"
+                      disabled={!emailConfig.connectorId || !emailConfig.to || !emailConfig.subject || isSendingTestEmail || !sqlConnectorId}
+                      onClick={async () => {
+                        setIsSendingTestEmail(true);
+                        try {
+                          // Build selectedTables from user selections
+                          const selectedTables: Array<{ name: string; query: string; inBody: boolean; asExcel: boolean; pipelineDependencies?: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }> }> = [];
 
-                              // Extract table names referenced in placeholders from email body
-                              const bodyContent = emailConfig.body || '';
-                              const placeholderTableMatches = bodyContent.match(/\{\{TABELLA:([^}]+)\}\}/g) || [];
-                              const placeholderTableNames = placeholderTableMatches.map(m => m.replace(/\{\{TABELLA:|}\}/g, ''));
+                          // Extract table names referenced in placeholders from email body
+                          const bodyContent = emailConfig.body || '';
+                          const placeholderTableMatches = bodyContent.match(/\{\{TABELLA:([^}]+)\}\}/g) || [];
+                          const placeholderTableNames = placeholderTableMatches.map(m => m.replace(/\{\{TABELLA:|}\}/g, ''));
 
-                              // Add tables from parent nodes
-                              if (availableInputTables && availableInputTables.length > 0) {
-                                for (const table of availableInputTables) {
-                                  const inBody = safeEmailAttachments.tablesInBody.includes(table.name) || placeholderTableNames.includes(table.name);
-                                  const asExcel = safeEmailAttachments.tablesAsExcel.includes(table.name);
-                                  if (inBody || asExcel) {
-                                    selectedTables.push({
-                                      name: table.name,
-                                      query: table.sqlQuery || `SELECT * FROM ${table.name}`,
-                                      inBody,
-                                      asExcel,
-                                      pipelineDependencies: table.pipelineDependencies // Include dependencies for cascading execution
-                                    });
-                                  }
-                                }
+                          // Add tables from parent nodes
+                          if (availableInputTables && availableInputTables.length > 0) {
+                            for (const table of availableInputTables) {
+                              const inBody = safeEmailAttachments.tablesInBody.includes(table.name) || placeholderTableNames.includes(table.name);
+                              const asExcel = safeEmailAttachments.tablesAsExcel.includes(table.name);
+                              if (inBody || asExcel) {
+                                selectedTables.push({
+                                  name: table.name,
+                                  query: table.sqlQuery || `SELECT * FROM ${table.name}`,
+                                  inBody,
+                                  asExcel,
+                                  pipelineDependencies: table.pipelineDependencies // Include dependencies for cascading execution
+                                });
                               }
-
-                              // Add current node SQL output if selected OR referenced in placeholder
-                              if (sqlResultName && sqlQuery) {
-                                const inBody = safeEmailAttachments.tablesInBody.includes(sqlResultName) || placeholderTableNames.includes(sqlResultName);
-                                const asExcel = safeEmailAttachments.tablesAsExcel.includes(sqlResultName);
-                                if (inBody || asExcel) {
-                                  selectedTables.push({
-                                    name: sqlResultName,
-                                    query: sqlQuery,
-                                    inBody,
-                                    asExcel
-                                  });
-                                }
-                              }
-
-                              // Build selectedPythonOutputs from user selections
-                              const selectedPythonOutputs: Array<{
-                                name: string;
-                                code: string;
-                                outputType: 'table' | 'variable' | 'chart';
-                                connectorId?: string;
-                                inBody: boolean;
-                                asAttachment: boolean;
-                                dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
-                              }> = [];
-
-                              // Extract chart names referenced in placeholders from email body
-                              const placeholderChartMatches = bodyContent.match(/\{\{GRAFICO:([^}]+)\}\}/g) || [];
-                              const placeholderChartNames = placeholderChartMatches.map(m => m.replace(/\{\{GRAFICO:|}\}/g, ''));
-
-                              // Add current node Python output if selected OR referenced in placeholder
-                              if (pythonResultName && pythonCode) {
-                                const inBody = safeEmailAttachments.pythonOutputsInBody.includes(pythonResultName) || placeholderChartNames.includes(pythonResultName);
-                                const asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(pythonResultName);
-                                if (inBody || asAttachment) {
-                                  // Prepare dependencies for Python execution
-                                  const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }> = [];
-                                  if (availableInputTables) {
-                                    pythonSelectedPipelines.forEach(pName => {
-                                      const table = availableInputTables.find(t => t.name === pName);
-                                      if (table) {
-                                        dependencies.push({
-                                          tableName: pName,
-                                          connectorId: table.connectorId,
-                                          query: table.sqlQuery,
-                                          pipelineDependencies: table.pipelineDependencies
-                                        });
-                                      }
-                                    });
-                                  }
-
-                                  selectedPythonOutputs.push({
-                                    name: pythonResultName,
-                                    code: pythonCode,
-                                    outputType: pythonOutputType,
-                                    connectorId: pythonConnectorId !== 'none' ? pythonConnectorId : undefined,
-                                    inBody,
-                                    asAttachment,
-                                    dependencies: dependencies.length > 0 ? dependencies : undefined
-                                  });
-                                }
-                              }
-
-                              console.log('[FRONTEND EMAIL DEBUG] selectedPythonOutputs:', selectedPythonOutputs);
-                              console.log('[FRONTEND EMAIL DEBUG] pythonResultName:', pythonResultName, 'pythonCode length:', pythonCode?.length || 0);
-
-                              if (selectedTables.length === 0 && selectedPythonOutputs.length === 0 && !emailConfig.body) {
-                                toast({ variant: 'destructive', title: 'Nessun contenuto', description: 'Aggiungi del testo nel corpo o seleziona almeno una tabella/output Python.' });
-                                setIsSendingTestEmail(false);
-                                return;
-                              }
-
-                              const result = await sendTestEmailWithDataAction({
-                                connectorId: emailConfig.connectorId,
-                                sqlConnectorId: sqlConnectorId,
-                                to: emailConfig.to,
-                                cc: emailConfig.cc,
-                                bcc: emailConfig.bcc,
-                                subject: `[TEST] ${emailConfig.subject}`,
-                                bodyHtml: emailConfig.body || '',
-                                selectedTables,
-                                selectedPythonOutputs,
-                                availableMedia: [...(availableParentMedia || []), ...(media || [])],
-                                availableLinks: [...(availableParentLinks || []), ...(links || [])],
-                                availableTriggers: [...(availableParentTriggers || []), ...(triggers || [])],
-                                mediaAttachments: safeEmailAttachments.mediaAsAttachment
-                              });
-
-                              if (result.success) {
-                                toast({ title: 'Email di test inviata!', description: result.message });
-                              } else {
-                                toast({ variant: 'destructive', title: 'Errore invio', description: result.error });
-                              }
-                            } catch (e: any) {
-                              toast({ variant: 'destructive', title: 'Errore', description: e.message });
-                            } finally {
-                              setIsSendingTestEmail(false);
                             }
-                          }}
-                        >
-                          {isSendingTestEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                          Invia Email di Test
-                        </Button>
-                      </>
-                    )}
+                          }
+
+                          // Add current node SQL output if selected OR referenced in placeholder
+                          if (sqlResultName && sqlQuery) {
+                            const inBody = safeEmailAttachments.tablesInBody.includes(sqlResultName) || placeholderTableNames.includes(sqlResultName);
+                            const asExcel = safeEmailAttachments.tablesAsExcel.includes(sqlResultName);
+                            if (inBody || asExcel) {
+                              selectedTables.push({
+                                name: sqlResultName,
+                                query: sqlQuery,
+                                inBody,
+                                asExcel
+                              });
+                            }
+                          }
+
+                          // Build selectedPythonOutputs from user selections
+                          const selectedPythonOutputs: Array<{
+                            name: string;
+                            code: string;
+                            outputType: 'table' | 'variable' | 'chart';
+                            connectorId?: string;
+                            inBody: boolean;
+                            asAttachment: boolean;
+                            dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
+                          }> = [];
+
+                          // Extract chart names referenced in placeholders from email body
+                          const placeholderChartMatches = bodyContent.match(/\{\{GRAFICO:([^}]+)\}\}/g) || [];
+                          const placeholderChartNames = placeholderChartMatches.map(m => m.replace(/\{\{GRAFICO:|}\}/g, ''));
+
+                          // Add current node Python output if selected OR referenced in placeholder
+                          if (pythonResultName && pythonCode) {
+                            const inBody = safeEmailAttachments.pythonOutputsInBody.includes(pythonResultName) || placeholderChartNames.includes(pythonResultName);
+                            const asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(pythonResultName);
+                            if (inBody || asAttachment) {
+                              // Prepare dependencies for Python execution
+                              const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }> = [];
+                              if (availableInputTables) {
+                                pythonSelectedPipelines.forEach(pName => {
+                                  const table = availableInputTables.find(t => t.name === pName);
+                                  if (table) {
+                                    dependencies.push({
+                                      tableName: pName,
+                                      connectorId: table.connectorId,
+                                      query: table.sqlQuery,
+                                      pipelineDependencies: table.pipelineDependencies
+                                    });
+                                  }
+                                });
+                              }
+
+                              selectedPythonOutputs.push({
+                                name: pythonResultName,
+                                code: pythonCode,
+                                outputType: pythonOutputType,
+                                connectorId: pythonConnectorId !== 'none' ? pythonConnectorId : undefined,
+                                inBody,
+                                asAttachment,
+                                dependencies: dependencies.length > 0 ? dependencies : undefined
+                              });
+                            }
+                          }
+
+                          console.log('[FRONTEND EMAIL DEBUG] selectedPythonOutputs:', selectedPythonOutputs);
+                          console.log('[FRONTEND EMAIL DEBUG] pythonResultName:', pythonResultName, 'pythonCode length:', pythonCode?.length || 0);
+
+                          if (selectedTables.length === 0 && selectedPythonOutputs.length === 0 && !emailConfig.body) {
+                            toast({ variant: 'destructive', title: 'Nessun contenuto', description: 'Aggiungi del testo nel corpo o seleziona almeno una tabella/output Python.' });
+                            setIsSendingTestEmail(false);
+                            return;
+                          }
+
+                          const result = await sendTestEmailWithDataAction({
+                            connectorId: emailConfig.connectorId,
+                            sqlConnectorId: sqlConnectorId,
+                            to: emailConfig.to,
+                            cc: emailConfig.cc,
+                            bcc: emailConfig.bcc,
+                            subject: `[TEST] ${emailConfig.subject}`,
+                            bodyHtml: emailConfig.body || '',
+                            selectedTables,
+                            selectedPythonOutputs,
+                            availableMedia: [...(availableParentMedia || []), ...(media || [])],
+                            availableLinks: [...(availableParentLinks || []), ...(links || [])],
+                            availableTriggers: [...(availableParentTriggers || []), ...(triggers || [])],
+                            mediaAttachments: safeEmailAttachments.mediaAsAttachment
+                          });
+
+                          if (result.success) {
+                            toast({ title: 'Email di test inviata!', description: result.message });
+                          } else {
+                            toast({ variant: 'destructive', title: 'Errore invio', description: result.error });
+                          }
+                        } catch (e: any) {
+                          toast({ variant: 'destructive', title: 'Errore', description: e.message });
+                        } finally {
+                          setIsSendingTestEmail(false);
+                        }
+                      }}
+                    >
+                      {isSendingTestEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      Invia Email di Test
+                    </Button>
                   </div>
                 </CollapsibleSection>
               )}
