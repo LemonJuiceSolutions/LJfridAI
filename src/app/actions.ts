@@ -1096,10 +1096,11 @@ export async function executeSqlPreviewAction(
                             sourceQuery = sourceQuery.replace(joinRegex, `JOIN ${temp}`);
                         }
 
-                        // Execute script directly using POOL (Separate request/session for source data)
-                        // If dep.connectorId is different, we SHOULD technically use a different pool, but for now we assume same DB/Server
-                        // unless we implement multi-connector logic here.
-                        const result = await pool.request().query(sourceQuery);
+                        // 🔥 FIX: Use transaction request instead of pool.request() 
+                        // This ensures temp tables created in the transaction are visible
+                        console.log(`[PIPELINE] Executing SQL query for ${dep.tableName} (using transaction request)...`);
+                        const result = await request.query(sourceQuery);
+                        console.log(`[PIPELINE] SQL query completed for ${dep.tableName}, rows: ${result.recordset?.length || 0}`);
                         if (result.recordset && result.recordset.length > 0) {
                             rowsToInsert = result.recordset;
                             columns = Object.keys(rowsToInsert[0]);

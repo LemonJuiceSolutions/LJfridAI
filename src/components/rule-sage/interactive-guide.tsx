@@ -43,10 +43,13 @@ function SqlDataPreview({ connectorId, query, pipelineDependencies }: { connecto
         let mounted = true;
         const fetchData = async () => {
             if (!connectorId || !query) return;
+            console.log('[SqlDataPreview] Starting fetch, connectorId:', connectorId, 'query length:', query?.length);
+            console.log('[SqlDataPreview] pipelineDependencies:', JSON.stringify(pipelineDependencies));
             setLoading(true);
             try {
                 // Pass pipelineDependencies to backend for cascading execution
                 const result = await executeSqlPreviewAction(query, connectorId, pipelineDependencies);
+                console.log('[SqlDataPreview] Result received:', result?.data?.length || 0, 'rows, error:', result?.error);
                 if (mounted) {
                     if (result.data) {
                         setData(result.data);
@@ -94,12 +97,14 @@ function PythonDataPreview({
     code,
     outputType,
     selectedPipelines,
-    pipelineDependencies
+    pipelineDependencies,
+    pythonConnectorId
 }: {
     code: string,
     outputType: 'table' | 'variable' | 'chart',
     selectedPipelines?: string[],
-    pipelineDependencies: { tableName: string, query: string, connectorId?: string }[]
+    pipelineDependencies: { tableName: string, query: string, connectorId?: string }[],
+    pythonConnectorId?: string // HubSpot connector ID for token injection
 }) {
     const [result, setResult] = useState<any>(null);
     const [loading, setLoading] = useState(false);
@@ -109,23 +114,42 @@ function PythonDataPreview({
         let mounted = true;
         const execute = async () => {
             if (!code) return;
+            console.log('[PythonDataPreview] Starting execution, outputType:', outputType);
+            console.log('[PythonDataPreview] selectedPipelines:', selectedPipelines);
+            console.log('[PythonDataPreview] pipelineDependencies:', JSON.stringify(pipelineDependencies));
             setLoading(true);
             try {
                 // Construct dependencies for Python execution
                 const dependencies = (selectedPipelines || []).map(pName => {
                     const found = pipelineDependencies.find(d => d.tableName === pName);
                     if (found) {
-                        return {
-                            tableName: pName,
-                            connectorId: found.connectorId,
-                            query: found.query,
-                            pipelineDependencies: pipelineDependencies // Pass full history for cascading
-                        };
+                        if ((found as any).isPython) {
+                            // Python dependency
+                            return {
+                                tableName: pName,
+                                isPython: true,
+                                pythonCode: (found as any).pythonCode,
+                                pythonOutputType: (found as any).pythonOutputType,
+                                pipelineDependencies: pipelineDependencies // Pass full history for cascading
+                            };
+                        } else {
+                            // SQL dependency
+                            return {
+                                tableName: pName,
+                                connectorId: found.connectorId,
+                                query: found.query,
+                                pipelineDependencies: pipelineDependencies // Pass full history for cascading
+                            };
+                        }
                     }
                     return null;
                 }).filter(Boolean) as any[];
 
-                const res = await executePythonPreviewAction(code, outputType, {}, dependencies);
+                console.log('[PythonDataPreview] Constructed dependencies:', JSON.stringify(dependencies));
+
+                // Pass pythonConnectorId for HubSpot token injection
+                const res = await executePythonPreviewAction(code, outputType, {}, dependencies, pythonConnectorId);
+                console.log('[PythonDataPreview] Result received, success:', res?.success, 'error:', res?.error);
 
                 if (mounted) {
                     if (res.success) {
@@ -625,10 +649,22 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
     };
 
     const getAccumulatedDependencies = (history: HistoryItem[], currentNode?: DecisionNode | DecisionLeaf | string | null) => {
-        const deps: { tableName: string, query: string, connectorId?: string }[] = [];
+        const deps: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[] = [];
 
         // Helper to add unique deps
         const addDep = (node: any) => {
+            // Handle Python dependencies
+            if (node && typeof node === 'object' && node.pythonCode && node.pythonResultName) {
+                if (!deps.find(d => d.tableName === node.pythonResultName)) {
+                    deps.push({
+                        tableName: node.pythonResultName,
+                        isPython: true,
+                        pythonCode: node.pythonCode,
+                        pythonOutputType: node.pythonOutputType || 'table'
+                    });
+                }
+            }
+            // Handle SQL dependencies
             if (node && typeof node === 'object' && node.sqlQuery && node.sqlResultName) {
                 // Avoid duplicates
                 if (!deps.find(d => d.tableName === node.sqlResultName)) {
@@ -683,6 +719,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                 outputType={(node as any).pythonOutputType || 'table'}
                                 selectedPipelines={(node as any).pythonSelectedPipelines}
                                 pipelineDependencies={dependencies}
+                                pythonConnectorId={(node as any).pythonConnectorId}
                             />
                         )}
                         {isLeafObject && 'sqlConnectorId' in node && 'sqlQuery' in node && (node as any).sqlConnectorId && (
@@ -769,6 +806,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                                             outputType={(node as any).pythonOutputType || 'table'}
                                                             selectedPipelines={(node as any).pythonSelectedPipelines}
                                                             pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
+                                                            pythonConnectorId={(node as any).pythonConnectorId}
                                                         />
                                                     )}
                                                     {'sqlConnectorId' in node && 'sqlQuery' in node && (node as any).sqlConnectorId && (
@@ -946,6 +984,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                             outputType={(currentNode as any).pythonOutputType || 'table'}
                                             selectedPipelines={(currentNode as any).pythonSelectedPipelines}
                                             pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
+                                            pythonConnectorId={(currentNode as any).pythonConnectorId}
                                         />
                                     )}
                                     {'sqlConnectorId' in currentNode && 'sqlQuery' in currentNode && (currentNode as any).sqlConnectorId && (
