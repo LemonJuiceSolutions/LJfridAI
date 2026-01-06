@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, BrainCircuit } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import Image from 'next/image';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
@@ -90,8 +91,8 @@ export default function SignUpPage() {
             <Card className="w-full max-w-md">
                 <CardHeader className="space-y-4 text-center">
                     <div className="flex justify-center">
-                        <div className="rounded-full bg-primary/10 p-3">
-                            <BrainCircuit className="h-12 w-12 text-primary" />
+                        <div className="h-24 w-24 relative shrink-0">
+                            <Image src="/logo-custom.png" alt="Logo" fill className="object-contain" sizes="96px" priority unoptimized />
                         </div>
                     </div>
                     <CardTitle className="text-2xl">{token ? 'Unisciti al Team' : 'Crea Account'}</CardTitle>

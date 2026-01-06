@@ -13,7 +13,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Like AI Said',
+  title: 'FridAI',
   description: 'Transform natural language into decision logic with AI.',
 };
 

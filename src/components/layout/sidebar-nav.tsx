@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
+import Image from 'next/image';
 import {
     Home,
     PlusCircle,
@@ -39,10 +40,10 @@ export function SidebarNav() {
                 {/* Logo */}
                 <div className="flex h-14 items-center border-b border-slate-100 dark:border-zinc-800 px-4">
                     <Link href="/" className="flex items-center gap-2.5">
-                        <div className="h-7 w-7 rounded-md bg-violet-600 flex items-center justify-center">
-                            <BrainCircuit className="h-4 w-4 text-white" />
+                        <div className="h-7 w-7 relative shrink-0">
+                            <Image src="/logo-custom.png" alt="Logo" fill className="object-contain rounded-md" sizes="28px" />
                         </div>
-                        <span className="text-slate-900 dark:text-white text-sm font-semibold tracking-tight">Like AI Said</span>
+                        <span className="text-slate-900 dark:text-white text-sm font-semibold tracking-tight">FridAI</span>
                     </Link>
                 </div>
 

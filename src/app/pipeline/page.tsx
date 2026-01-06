@@ -268,7 +268,7 @@ export default function PipelinePage() {
             </main>
             <footer className="border-t">
                 <div className="container mx-auto flex h-14 items-center justify-center px-4 md:px-6">
-                    <p className="text-sm text-muted-foreground">Like AI Said &copy; {new Date().getFullYear()}</p>
+                    <p className="text-sm text-muted-foreground">FridAI &copy; {new Date().getFullYear()}</p>
                 </div>
             </footer>
 

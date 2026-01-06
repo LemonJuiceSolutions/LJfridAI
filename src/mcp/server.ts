@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * MCP Server for Like AI Said
+ * MCP Server for FridAI
  * 
  * Exposes decision tree functionality via Model Context Protocol
  * for use with AI assistants like Claude, Cursor, etc.
@@ -311,7 +311,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('Like AI Said MCP Server running on stdio');
+    console.error('FridAI MCP Server running on stdio');
 }
 
 main().catch(console.error);

@@ -32,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play, Download, LineChart, Mail, Send, Paperclip } from 'lucide-react';
+import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig } from '@/lib/types';
 import { Input } from '../ui/input';
@@ -191,6 +191,7 @@ export default function EditNodeDialog({
   const [sqlConnectors, setSqlConnectors] = useState<{ id: string, name: string }[]>([]);
   const [dataConnectors, setDataConnectors] = useState<{ id: string, name: string }[]>([]);
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
+  const [sqlChatHistory, setSqlChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number }[]>([]);
 
   // Python State
   const [pythonCode, setPythonCode] = useState('');
@@ -211,6 +212,7 @@ export default function EditNodeDialog({
   const [pythonConnectorId, setPythonConnectorId] = useState<string>('');
   const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
   const [pythonDebugLogs, setPythonDebugLogs] = useState<string[]>([]);
+  const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string } }[]>([]);
 
   // SQL Export State
   const [sqlExportEnabled, setSqlExportEnabled] = useState(true);
@@ -302,12 +304,12 @@ export default function EditNodeDialog({
       }
 
       const nodeMedia = ('media' in node && Array.isArray(node.media)) ? node.media : [];
-      setMedia(nodeMedia.map(m => ({ ...m, name: m.name || m.url.split('/').pop()?.split('?')[0] || "File" })));
+      setMedia(nodeMedia?.map(m => ({ ...m, name: m.name || m.url.split('/').pop()?.split('?')[0] || "File" })) || []);
 
 
       // Handle legacy string links and convert them to the new object format
       const normalizedLinks = ('links' in node && Array.isArray(node.links))
-        ? node.links.map(link => {
+        ? node.links?.map(link => {
           if (typeof link === 'string') {
             return { name: link, url: link }; // Legacy: use URL as name
           }
@@ -318,7 +320,7 @@ export default function EditNodeDialog({
 
       // Handle legacy string triggers and convert them
       const normalizedTriggers = ('triggers' in node && Array.isArray(node.triggers))
-        ? node.triggers.map(trigger => {
+        ? node.triggers?.map(trigger => {
           if (typeof trigger === 'string') {
             return { name: trigger, path: trigger };
           }
@@ -349,6 +351,8 @@ export default function EditNodeDialog({
       console.log('[EDIT-DIALOG] Loading node SQL data:', {
         query,
         connId,
+        sqlResultName: node.sqlResultName,
+        sqlChatHistory: node.sqlChatHistory,
         availableTablesCount: availableInputTables?.length || 0,
         availableTables: availableInputTables?.map(t => t.name) || [],
         hasRestoredPipeline: hasRestoredPipeline.current
@@ -389,6 +393,8 @@ export default function EditNodeDialog({
       } else {
         setSqlResultName('');
       }
+      setSqlChatHistory((initialNode as any).sqlChatHistory || []);
+
 
       // Load Python Script Data
       setPythonCode((node as any).pythonCode || '');
@@ -396,6 +402,7 @@ export default function EditNodeDialog({
       setPythonResultName((node as any).pythonResultName || '');
       setPythonConnectorId((node as any).pythonConnectorId || '');
       setPythonSelectedPipelines((node as any).pythonSelectedPipelines || []);
+      setPythonChatHistory((node as any).pythonChatHistory || []);
       setPythonPreviewResult(null);
 
       // Load Email Action Config with safe defaults merge
@@ -1118,7 +1125,7 @@ export default function EditNodeDialog({
               >
                 <div className='space-y-2 pt-2'>
                   <div className='space-y-1 max-h-48 overflow-y-auto bg-muted/50 rounded-md p-1'>
-                    {media.map((item, index) => (
+                    {media?.map((item, index) => (
                       <MediaListItem
                         key={`existing-${index}`}
                         item={item}
@@ -1170,7 +1177,7 @@ export default function EditNodeDialog({
                         <SelectValue placeholder="Seleziona un Database..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {sqlConnectors.map((c: any) => (
+                        {sqlConnectors?.map((c: any) => (
                           <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1182,7 +1189,7 @@ export default function EditNodeDialog({
                     <div className="grid gap-2 p-3 bg-muted/20 rounded-lg border border-dashed">
                       <Label className="text-xs font-semibold uppercase text-muted-foreground">Usa Risultati Da (Pipeline)</Label>
                       <div className="flex flex-wrap gap-2">
-                        {availableInputTables.map(t => (
+                        {availableInputTables?.map(t => (
                           <div key={t.name} className="flex items-center space-x-2 bg-white dark:bg-zinc-800 p-1.5 px-2.5 rounded-full border shadow-sm">
                             <Check
                               className={`h-3 w-3 cursor-pointer ${selectedPipelines.includes(t.name) ? 'text-primary' : 'text-muted-foreground/30'}`}
@@ -1208,12 +1215,12 @@ export default function EditNodeDialog({
                   )}
 
                   {/* Enhanced Chatbot UI for Generation */}
-                  <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col">
-                    {/* Chat Header */}
+                  {/* Enhanced Chatbot UI for Generation */}
+                  <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col transition-all duration-300 h-[300px] hover:h-[500px]">
                     <div className="bg-muted/50 p-2 px-3 border-b flex items-center justify-between">
                       <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                         <Bot className="h-3.5 w-3.5" />
-                        AI Data Assistant
+                        AI SQL Assistant
                       </span>
                       {agentStatus && (
                         <div className="bg-background text-[10px] h-5 gap-1 flex items-center px-2 rounded-full border">
@@ -1223,36 +1230,115 @@ export default function EditNodeDialog({
                       )}
                     </div>
 
-                    {/* Chat Body */}
-                    <div className="p-4 min-h-[100px] flex flex-col gap-3">
-                      {/* Intro */}
-                      <div className="flex gap-3">
-                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <Bot className="h-4 w-4 text-primary" />
-                        </div>
-                        <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
-                          <p>Ciao! Posso aiutarti a scrivere query SQL per i tuoi dati. Dimmi cosa ti serve estrarre.</p>
-                        </div>
-                      </div>
+                    <ScrollArea className="flex-1 p-4">
+                      <div className="flex flex-col gap-4">
+                        {/* Intro Message */}
+                        {sqlChatHistory.length === 0 && (
+                          <div className="flex gap-3">
+                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                              <Bot className="h-4 w-4 text-primary" />
+                            </div>
+                            <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
+                              <p>Ciao! Posso aiutarti a scrivere query SQL per i tuoi dati. Dimmi cosa ti serve estrarre.</p>
+                            </div>
+                          </div>
+                        )}
 
-                      {/* Active Status */}
-                      {agentStatus && (
-                        <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
-                          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                            <Bot className="h-4 w-4 text-primary" />
-                          </div>
-                          <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                              <span>{agentStatus}</span>
+                        {/* History Messages */}
+                        {sqlChatHistory?.map((msg, idx) => (
+                          <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''} group`}>
+                            {msg.role === 'assistant' && (
+                              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                <Bot className="h-4 w-4 text-primary" />
+                              </div>
+                            )}
+                            <div className={`${msg.role === 'user'
+                              ? 'bg-primary text-primary-foreground rounded-br-sm'
+                              : 'bg-white dark:bg-zinc-800 rounded-tl-sm border shadow-sm'
+                              } p-2.5 rounded-2xl text-sm max-w-[85%] space-y-2 relative`}>
+                              <p className="whitespace-pre-wrap">{msg.content}</p>
+
+                              {/* Insert Query Button for Assistant Messages with Code */}
+                              {msg.role === 'assistant' && (msg.content.includes('SELECT') || msg.content.includes('WITH')) && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="w-full h-7 text-[10px] gap-1 mt-2"
+                                  onClick={() => {
+                                    // Extract code from content
+                                    const codeBlockRegex = /```(?:sql|tsql|mssql)?\s*([\s\S]*?)```/i;
+                                    const match = msg.content.match(codeBlockRegex);
+                                    let queryToInsert = '';
+
+                                    if (match && match[1]) {
+                                      queryToInsert = match[1].trim();
+                                    } else {
+                                      // If no code block, try to find the SELECT statement
+                                      const selectIdx = msg.content.indexOf('SELECT');
+                                      if (selectIdx >= 0) {
+                                        queryToInsert = msg.content.substring(selectIdx);
+                                      } else {
+                                        queryToInsert = msg.content;
+                                      }
+                                    }
+
+                                    if (queryToInsert) {
+                                      setSqlQuery(queryToInsert);
+                                      toast({ title: "Query Inserita", description: "L'editor SQL è stato aggiornato." });
+                                    }
+                                  }}
+                                >
+                                  <ArrowDownToLine className="h-3 w-3" /> Inserisci nel Editor
+                                </Button>
+                              )}
                             </div>
-                            <div className="h-1 bg-muted rounded-full overflow-hidden w-32">
-                              <div className="h-full bg-primary animate-pulse w-2/3" />
+                            {msg.role === 'user' && (
+                              <div className="flex flex-col gap-1 items-end">
+                                <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-white font-bold text-xs">
+                                  U
+                                </div>
+                                {/* Undo / Rollback Button */}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Torna a questo punto (cancella i messaggi successivi)"
+                                  onClick={() => {
+                                    // Remove this message and all subsequent messages to "rewind" to the state BEFORE this message
+                                    // Actually, usually user wants to delete THIS prompt and try again, OR keep this prompts context but delete subsequent
+                                    // Let's implement: "Delete from here onwards" -> Effectively rewinds to state BEFORE this message was sent.
+                                    // Wait, if I delete my user message, I want to restart from the previous assistant message.
+                                    const newHistory = sqlChatHistory.slice(0, idx);
+                                    setSqlChatHistory(newHistory);
+                                    toast({ title: "Conversazione Riavvobolta", description: "Sei tornato a un punto precedente." });
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* Loading State */}
+                        {agentStatus && (
+                          <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
+                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                              <Bot className="h-4 w-4 text-primary" />
+                            </div>
+                            <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                <span>{agentStatus}</span>
+                              </div>
+                              <div className="h-1 bg-muted rounded-full overflow-hidden w-32">
+                                <div className="h-full bg-primary animate-pulse w-2/3" />
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    </ScrollArea>
 
                     {/* Input Area */}
                     <div className="p-2 border-t bg-background flex gap-2">
@@ -1278,6 +1364,12 @@ export default function EditNodeDialog({
                           if (!input || !input.value) return;
 
                           const userPrompt = input.value;
+                          input.value = ''; // Clear input immediately
+
+                          // Optimistic update
+                          const newHistory = [...sqlChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
+                          setSqlChatHistory(newHistory);
+
                           // Get API key and model from local storage
                           const apiKey = localStorage.getItem('openrouter_api_key') || '';
                           const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
@@ -1292,7 +1384,7 @@ export default function EditNodeDialog({
                           // Fetch Schema with array args
                           fetchTableSchemaAction(
                             sqlConnectorId || '', // connectorId (string)
-                            selectedPipelines.map(p => p.split(':')[1]) // tableNames (string[])
+                            selectedPipelines?.map(p => p.split(':')[1]) // tableNames (string[])
                           ).then((schemaRes) => {
                             let schemaContext = schemaRes.schemaContext;
 
@@ -1308,12 +1400,24 @@ export default function EditNodeDialog({
                               userPrompt, // userDescription
                               { apiKey, model }, // openRouterConfig
                               sqlConnectorId, // connectorId
-                              schemaContext || undefined // schemaContextArgs
+                              schemaContext || undefined, // schemaContextArgs
+                              newHistory // Pass history!
                             ).then((res) => {
                               if (res.sql) {
-                                setSqlQuery(res.sql);
-                                toast({ title: "SQL Generato!", description: "La query è stata scritta nell'editor." });
+                                // setSqlQuery(res.sql); // Don't auto-set, let user use button? Or maybe auto-set if empty?
+                                // Let's auto-set AND show in chat
+                                // Actually, consistent with Python, we DON'T auto-set, we just show code in chat
+                                // But legacy behavior was auto-set. Let's keep it but also show in chat.
+                                // Wait, the prompt returns ONLY SQL. So the message content IS the SQL.
+                                const assistantMsg = { role: 'assistant' as const, content: `Ecco la query:\n\`\`\`sql\n${res.sql}\n\`\`\``, timestamp: Date.now() };
+                                setSqlChatHistory([...newHistory, assistantMsg]);
+
+                                // Auto-fill editor if empty? No, use the button strictly to avoid overwriting.
+                                // setSqlQuery(res.sql); 
+                                // toast({ title: "SQL Generato!", description: "La query è stata scritta nell'editor." });
                               } else {
+                                const errorMsg = { role: 'assistant' as const, content: `Errore: ${res.error || "Errore sconosciuto"}`, timestamp: Date.now() };
+                                setSqlChatHistory([...newHistory, errorMsg]);
                                 toast({ variant: 'destructive', title: "Errore AI", description: res.error || "Errore sconosciuto" });
                               }
                               setAgentStatus(null);
@@ -1498,7 +1602,7 @@ export default function EditNodeDialog({
                     <div className="grid gap-2 p-3 bg-muted/20 rounded-lg border border-dashed">
                       <Label className="text-xs font-semibold uppercase text-muted-foreground">Usa Dati Da (Pipeline)</Label>
                       <div className="flex flex-wrap gap-2">
-                        {availableInputTables.map(t => (
+                        {availableInputTables?.map(t => (
                           <div key={t.name} className="flex items-center space-x-2 bg-white dark:bg-zinc-800 p-1.5 px-2.5 rounded-full border shadow-sm">
                             <Check
                               className={`h-3 w-3 cursor-pointer ${pythonSelectedPipelines.includes(t.name) ? 'text-yellow-600' : 'text-muted-foreground/30'}`}
@@ -1525,7 +1629,7 @@ export default function EditNodeDialog({
                   )}
 
                   {/* AI Chatbot for Python Generation */}
-                  <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col">
+                  <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col transition-all duration-300 h-[300px] hover:h-[500px]">
                     <div className="bg-muted/50 p-2 px-3 border-b flex items-center justify-between">
                       <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                         <Bot className="h-3.5 w-3.5" />
@@ -1539,30 +1643,138 @@ export default function EditNodeDialog({
                       )}
                     </div>
 
-                    <div className="p-4 min-h-[80px] flex flex-col gap-3">
-                      <div className="flex gap-3">
-                        <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
-                          <Bot className="h-4 w-4 text-yellow-600" />
-                        </div>
-                        <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
-                          <p>Ciao! Posso generare script Python per {pythonOutputType === 'table' ? 'tabelle' : pythonOutputType === 'variable' ? 'variabili' : 'grafici'}. Dimmi cosa ti serve.</p>
-                        </div>
-                      </div>
-
-                      {pythonAgentStatus && (
-                        <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
-                          <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
-                            <Bot className="h-4 w-4 text-yellow-600" />
-                          </div>
-                          <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                              <span>{pythonAgentStatus}</span>
+                    <ScrollArea className="flex-1 p-4">
+                      <div className="flex flex-col gap-4">
+                        {/* Intro Message */}
+                        {pythonChatHistory.length === 0 && (
+                          <div className="flex gap-3">
+                            <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
+                              <Bot className="h-4 w-4 text-yellow-600" />
+                            </div>
+                            <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
+                              <p>Ciao! Posso generare script Python per {pythonOutputType === 'table' ? 'tabelle' : pythonOutputType === 'variable' ? 'variabili' : 'grafici'}. Dimmi cosa ti serve.</p>
                             </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
+                        )}
+
+                        {/* History Messages */}
+                        {pythonChatHistory?.map((msg, idx) => (
+                          <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''} group`}>
+                            {msg.role === 'assistant' && (
+                              <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
+                                <Bot className="h-4 w-4 text-yellow-600" />
+                              </div>
+                            )}
+                            <div className={`${msg.role === 'user'
+                              ? 'bg-primary text-primary-foreground rounded-br-sm'
+                              : 'bg-white dark:bg-zinc-800 rounded-tl-sm border shadow-sm'
+                              } p-2.5 rounded-2xl text-sm max-w-[85%] space-y-2 relative`}>
+                              <p className="whitespace-pre-wrap">{msg.content}</p>
+                              {/* Insert Code Button for Assistant Messages with Code */}
+                              {msg.role === 'assistant' && msg.content.includes('```python') && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="w-full h-7 text-[10px] gap-1 mt-2"
+                                  onClick={() => {
+                                    // Extract code from content
+                                    const match = msg.content.match(/```python\s*([\s\S]*?)```/);
+                                    if (match && match[1]) {
+                                      setPythonCode(match[1]);
+                                      toast({ title: "Codice Inserito", description: "Lo script è stato aggiornato con questa versione." });
+                                    }
+                                  }}
+                                >
+                                  <ArrowDownToLine className="h-3 w-3" /> Inserisci nel Editor
+                                </Button>
+                              )}
+
+                              {/* --- PREVIEW IN CHAT --- */}
+                              {msg.preview && (
+                                <div className="mt-3 border-t pt-2">
+                                  <div className="text-[10px] font-semibold mb-2 text-muted-foreground flex items-center gap-1">
+                                    <Eye className="h-3 w-3" /> Anteprima Risultato
+                                  </div>
+
+                                  <div className="bg-background rounded-md border text-xs overflow-hidden">
+                                    {/* TABLE */}
+                                    {msg.preview.type === 'table' && msg.preview.data && msg.preview.columns && (
+                                      <div className="max-h-60 overflow-auto">
+                                        <DataTable data={msg.preview.data} columns={msg.preview.columns} />
+                                      </div>
+                                    )}
+
+                                    {/* VARIABLES */}
+                                    {msg.preview.type === 'variable' && msg.preview.variables && (
+                                      <div className="max-h-60 overflow-auto p-2">
+                                        <pre className="text-[10px]">{JSON.stringify(msg.preview.variables, null, 2)}</pre>
+                                      </div>
+                                    )}
+
+                                    {/* CHART */}
+                                    {msg.preview.type === 'chart' && (
+                                      <div className="h-60 w-full bg-white dark:bg-zinc-950 flex items-center justify-center">
+                                        {msg.preview.chartHtml ? (
+                                          <iframe
+                                            srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; }</style></head><body>${msg.preview.chartHtml}</body></html>`}
+                                            className="w-full h-full border-none"
+                                            title="Chat Chart Preview"
+                                          />
+                                        ) : msg.preview.chartBase64 ? (
+                                          <img
+                                            src={`data:image/png;base64,${msg.preview.chartBase64}`}
+                                            alt="Chart Preview"
+                                            className="max-h-full max-w-full"
+                                          />
+                                        ) : (
+                                          <span className="text-muted-foreground italic">Grafico vuoto</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            {msg.role === 'user' && (
+                              <div className="flex flex-col gap-1 items-end">
+                                <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-white font-bold text-xs">
+                                  U
+                                </div>
+                                {/* Undo / Rollback Button */}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Torna a questo punto (cancella i messaggi successivi)"
+                                  onClick={() => {
+                                    const newHistory = pythonChatHistory.slice(0, idx);
+                                    setPythonChatHistory(newHistory);
+                                    toast({ title: "Conversazione Riavvobolta", description: "Sei tornato a un punto precedente." });
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* Loading State */}
+                        {pythonAgentStatus && (
+                          <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
+                            <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
+                              <Bot className="h-4 w-4 text-yellow-600" />
+                            </div>
+                            <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                <span>{pythonAgentStatus}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </ScrollArea>
 
                     <div className="p-2 border-t bg-background flex gap-2">
                       <Input
@@ -1594,18 +1806,108 @@ export default function EditNodeDialog({
                             return;
                           }
 
+                          // Optimistic Update
+                          const newHistory = [...pythonChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
+                          setPythonChatHistory(newHistory);
+                          input.value = ''; // Clear Input
+
                           setPythonAgentStatus("Generazione Codice Python...");
 
-                          // Call generatePythonAction (to be created)
-                          generatePythonAction(userPrompt, { apiKey, model }, pythonOutputType).then((res) => {
-                            if (res.code) {
-                              setPythonCode(res.code);
-                              toast({ title: "Codice Generato!", description: "Lo script Python è stato inserito nell'editor." });
-                            } else {
-                              toast({ variant: 'destructive', title: "Errore AI", description: res.error || "Errore sconosciuto" });
+                          // Defined recursively for auto-healing
+                          const performGeneration = async (currentHistory: any[], retryCount = 0) => {
+                            try {
+                              const response = await generatePythonAction(
+                                userPrompt,
+                                { apiKey, model },
+                                pythonOutputType,
+                                pythonSelectedPipelines,
+                                currentHistory
+                              );
+
+                              if (response.code) {
+                                setPythonAgentStatus(retryCount > 0 ? `Correzione in corso (Tentativo ${retryCount}/3)...` : "Esecuzione Anteprima Automatica...");
+
+                                const previewRes = await executePythonPreviewAction(
+                                  response.code,
+                                  pythonOutputType,
+                                  {},
+                                  pythonSelectedPipelines.map(pName => {
+                                    const dep = availableInputTables?.find(t => t.name === pName);
+                                    return {
+                                      tableName: dep?.name || '',
+                                      query: dep?.sqlQuery,
+                                      connectorId: dep?.connectorId,
+                                      isPython: dep?.isPython,
+                                      pythonCode: dep?.pythonCode,
+                                      pipelineDependencies: dep?.pipelineDependencies
+                                    };
+                                  }),
+                                  pythonConnectorId
+                                );
+
+                                if (previewRes.success) {
+                                  setPythonCode(response.code);
+                                  setPythonPreviewResult({
+                                    type: pythonOutputType,
+                                    data: previewRes.data,
+                                    columns: previewRes.columns,
+                                    variables: previewRes.variables,
+                                    chartBase64: previewRes.chartBase64,
+                                    chartHtml: previewRes.chartHtml,
+                                    debugLogs: previewRes.debugLogs
+                                  });
+                                  setHasPythonCodeChanged(true);
+
+                                  const successMsg = retryCount > 0
+                                    ? `Ho corretto l'errore ed eseguito lo script con successo (al tentativo ${retryCount})!\n\n\`\`\`python\n${response.code}\n\`\`\``
+                                    : `Ho generato ed eseguito lo script con successo!\n\n\`\`\`python\n${response.code}\n\`\`\``;
+
+                                  setPythonChatHistory(prev => [...prev, {
+                                    role: 'assistant',
+                                    content: successMsg,
+                                    timestamp: Date.now(),
+                                    preview: {
+                                      type: pythonOutputType,
+                                      data: previewRes.data,
+                                      columns: previewRes.columns,
+                                      chartHtml: previewRes.chartHtml,
+                                      chartBase64: previewRes.chartBase64,
+                                      variables: previewRes.variables
+                                    }
+                                  }]);
+                                } else {
+                                  if (retryCount < 3) {
+                                    const errorFeedback = `The code failed execution with this error: ${previewRes.error}.
+                                    
+OUTPUT LOGS (STDOUT) - Use this to fix column names:
+${previewRes.stdout || "No output captured."}
+
+Please fix the code to resolve this error. Return ONLY the fixed python code.`;
+                                    const nextHistory = [
+                                      ...currentHistory,
+                                      { role: 'assistant', content: `\`\`\`python\n${response.code}\n\`\`\`` },
+                                      { role: 'user', content: errorFeedback }
+                                    ];
+                                    await performGeneration(nextHistory, retryCount + 1);
+                                  } else {
+                                    const errorMessage = `Non sono riuscito a correggere l'errore dopo 3 tentativi. Ultimo errore:\n${previewRes.error}\n\nUltimo codice:\n\`\`\`python\n${response.code}\n\`\`\``;
+                                    setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
+                                    toast({ variant: 'destructive', title: "Errore Irrisolvibile", description: "Impossibile correggere automaticamente lo script." });
+                                  }
+                                }
+                              } else {
+                                const errorMessage = `Errore generazione: ${response.error || "Sconosciuto"}`;
+                                setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
+                                toast({ variant: 'destructive', title: "Errore AI", description: response.error || "Errore sconosciuto" });
+                              }
+                            } catch (e: any) {
+                              const errorMessage = `Errore critico: ${e.message}`;
+                              setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
                             }
-                            setPythonAgentStatus(null);
-                          });
+                          };
+
+                          performGeneration(newHistory, 0).finally(() => setPythonAgentStatus(null));
+
                         }}
                       >
                         {pythonAgentStatus ? 'Elaborazione...' : 'Invia'}
@@ -2206,7 +2508,7 @@ export default function EditNodeDialog({
                           ]}
                           availableCharts={pythonResultName && pythonOutputType === 'chart' ? [{ name: pythonResultName }] : []}
                           availableAttachments={[
-                            ...availableParentMedia.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' })),
+                            ...(availableParentMedia?.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' })) || []),
                             ...media.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' }))
                           ]}
                         />
@@ -2342,11 +2644,11 @@ export default function EditNodeDialog({
 
                           {/* Media / Attachments (Parents + Current) */}
                           {/* Media / Attachments (Parents + Current) */}
-                          {(availableParentMedia.length > 0 || media.length > 0) && (
+                          {(availableParentMedia?.length > 0 || media?.length > 0) && (
                             <div className="space-y-2 pt-2 border-t">
                               <p className="text-xs font-semibold flex items-center gap-1.5 text-blue-600"><Paperclip className="h-3.5 w-3.5" /> Media & Allegati</p>
                               <div className="space-y-1.5">
-                                {[...availableParentMedia, ...media].map((item, idx) => {
+                                {[...(availableParentMedia || []), ...(media || [])].map((item, idx) => {
                                   const itemName = item.name || item.url.split('/').pop() || 'file';
                                   return (
                                     <div key={idx} className="bg-background border rounded p-2 text-xs hover:border-blue-300 transition-colors">
@@ -2395,7 +2697,7 @@ export default function EditNodeDialog({
                             <div className="space-y-2 pt-2 border-t">
                               <p className="text-xs font-semibold flex items-center gap-1.5 text-indigo-600"><LinkIcon className="h-3.5 w-3.5" /> Link</p>
                               <div className="space-y-1.5">
-                                {[...availableParentLinks, ...links].map((link, idx) => (
+                                {[...(availableParentLinks || []), ...(links || [])].map((link, idx) => (
                                   <div key={idx} className="bg-background border rounded p-2 text-xs flex items-center justify-between hover:border-indigo-300 transition-colors">
                                     <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
                                       <span className="truncate" title={link.name}>{link.name}</span>
@@ -2420,7 +2722,7 @@ export default function EditNodeDialog({
                             <div className="space-y-2 pt-2 border-t">
                               <p className="text-xs font-semibold flex items-center gap-1.5 text-amber-600"><Zap className="h-3.5 w-3.5" /> Trigger</p>
                               <div className="space-y-1.5">
-                                {[...availableParentTriggers, ...triggers].map((trigger, idx) => (
+                                {[...(availableParentTriggers || []), ...(triggers || [])].map((trigger, idx) => (
                                   <div key={idx} className="bg-background border rounded p-2 text-xs flex items-center justify-between hover:border-amber-300 transition-colors">
                                     <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
                                       <span className="truncate" title={trigger.name}>{trigger.name}</span>
@@ -2457,48 +2759,12 @@ export default function EditNodeDialog({
                       type="button"
                       variant="outline"
                       className="gap-2"
-                      disabled={!emailConfig.connectorId || !emailConfig.to || !emailConfig.subject || isSendingTestEmail || !sqlConnectorId}
+                      disabled={!emailConfig.connectorId || !emailConfig.to || !emailConfig.subject || isSendingTestEmail}
                       onClick={async () => {
                         setIsSendingTestEmail(true);
                         try {
                           // Build selectedTables from user selections
                           const selectedTables: Array<{ name: string; query: string; inBody: boolean; asExcel: boolean; pipelineDependencies?: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }> }> = [];
-
-                          // Extract table names referenced in placeholders from email body
-                          const bodyContent = emailConfig.body || '';
-                          const placeholderTableMatches = bodyContent.match(/\{\{TABELLA:([^}]+)\}\}/g) || [];
-                          const placeholderTableNames = placeholderTableMatches.map(m => m.replace(/\{\{TABELLA:|}\}/g, ''));
-
-                          // Add tables from parent nodes
-                          if (availableInputTables && availableInputTables.length > 0) {
-                            for (const table of availableInputTables) {
-                              const inBody = safeEmailAttachments.tablesInBody.includes(table.name) || placeholderTableNames.includes(table.name);
-                              const asExcel = safeEmailAttachments.tablesAsExcel.includes(table.name);
-                              if (inBody || asExcel) {
-                                selectedTables.push({
-                                  name: table.name,
-                                  query: table.sqlQuery || `SELECT * FROM ${table.name}`,
-                                  inBody,
-                                  asExcel,
-                                  pipelineDependencies: table.pipelineDependencies // Include dependencies for cascading execution
-                                });
-                              }
-                            }
-                          }
-
-                          // Add current node SQL output if selected OR referenced in placeholder
-                          if (sqlResultName && sqlQuery) {
-                            const inBody = safeEmailAttachments.tablesInBody.includes(sqlResultName) || placeholderTableNames.includes(sqlResultName);
-                            const asExcel = safeEmailAttachments.tablesAsExcel.includes(sqlResultName);
-                            if (inBody || asExcel) {
-                              selectedTables.push({
-                                name: sqlResultName,
-                                query: sqlQuery,
-                                inBody,
-                                asExcel
-                              });
-                            }
-                          }
 
                           // Build selectedPythonOutputs from user selections
                           const selectedPythonOutputs: Array<{
@@ -2511,6 +2777,94 @@ export default function EditNodeDialog({
                             dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
                           }> = [];
 
+                          // Extract table names referenced in placeholders from email body
+                          const bodyContent = emailConfig.body || '';
+                          const placeholderTableMatches = bodyContent.match(/\{\{TABELLA:([^}]+)\}\}/g) || [];
+                          const placeholderTableNames = placeholderTableMatches.map(m => m.replace(/\{\{TABELLA:|}\}/g, ''));
+
+                          // Add tables from parent nodes separating SQL from Python
+                          if (availableInputTables && availableInputTables.length > 0) {
+                            console.log('[EMAIL DEBUG] Available Tables:', availableInputTables);
+                            for (const table of availableInputTables) {
+                              console.log(`[EMAIL DEBUG] Processing table: ${table.name}, isPython: ${table.isPython}, code: ${!!table.pythonCode}`);
+                              const inBody = safeEmailAttachments.tablesInBody.includes(table.name) || placeholderTableNames.includes(table.name);
+                              const asExcel = safeEmailAttachments.tablesAsExcel.includes(table.name);
+
+                              if (inBody || asExcel) {
+                                if (table.isPython && table.pythonCode) {
+                                  // It's a Python table (e.g. from a previous node) -> Treat as Python Output
+                                  const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }> = [];
+                                  if (table.pipelineDependencies) {
+                                    table.pipelineDependencies.forEach(dep => {
+                                      dependencies.push({
+                                        tableName: dep.tableName,
+                                        connectorId: dep.connectorId,
+                                        query: dep.query,
+                                        pipelineDependencies: [] // recursive deps flattened/handled by backend usually
+                                      });
+                                    });
+                                  }
+
+                                  selectedPythonOutputs.push({
+                                    name: table.name,
+                                    code: table.pythonCode,
+                                    outputType: 'table',
+                                    connectorId: table.connectorId,
+                                    inBody,
+                                    asAttachment: asExcel, // Map 'asExcel' to 'asAttachment' for Python
+                                    dependencies: dependencies.length > 0 ? dependencies : undefined
+                                  });
+                                } else {
+                                  // It's a standard SQL table
+                                  selectedTables.push({
+                                    name: table.name,
+                                    query: table.sqlQuery || `SELECT * FROM ${table.name}`,
+                                    inBody,
+                                    asExcel,
+                                    pipelineDependencies: table.pipelineDependencies
+                                  });
+                                }
+                              }
+                            }
+                          }
+
+                          // Add current node SQL output if selected OR referenced in placeholder
+                          if (sqlResultName && sqlQuery) {
+                            const inBody = safeEmailAttachments.tablesInBody.includes(sqlResultName) || placeholderTableNames.includes(sqlResultName);
+                            const asExcel = safeEmailAttachments.tablesAsExcel.includes(sqlResultName);
+                            if (inBody || asExcel) {
+                              // Build pipelineDependencies from selectedPipelines and availableInputTables
+                              const currentNodeDeps: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[] }> = [];
+                              if (availableInputTables && selectedPipelines.length > 0) {
+                                for (const pName of selectedPipelines) {
+                                  const sourceTable = availableInputTables.find(t => t.name === pName);
+                                  if (sourceTable) {
+                                    currentNodeDeps.push({
+                                      tableName: sourceTable.name,
+                                      query: sourceTable.sqlQuery,
+                                      isPython: sourceTable.isPython,
+                                      pythonCode: sourceTable.pythonCode,
+                                      connectorId: sourceTable.connectorId,
+                                      pipelineDependencies: sourceTable.pipelineDependencies
+                                    });
+                                  }
+                                }
+                              }
+                              console.log('[EMAIL DEBUG] Current node SQL deps:', currentNodeDeps.map(d => ({ name: d.tableName, isPython: d.isPython })));
+
+                              selectedTables.push({
+                                name: sqlResultName,
+                                query: sqlQuery,
+                                inBody,
+                                asExcel,
+                                pipelineDependencies: currentNodeDeps.length > 0 ? currentNodeDeps : undefined
+                              });
+                            }
+                          }
+
+                          // Build selectedPythonOutputs from user selections
+
+
                           // Extract chart names referenced in placeholders from email body
                           const placeholderChartMatches = bodyContent.match(/\{\{GRAFICO:([^}]+)\}\}/g) || [];
                           const placeholderChartNames = placeholderChartMatches.map(m => m.replace(/\{\{GRAFICO:|}\}/g, ''));
@@ -2521,7 +2875,10 @@ export default function EditNodeDialog({
                             const asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(pythonResultName);
                             if (inBody || asAttachment) {
                               // Prepare dependencies for Python execution
-                              const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }> = [];
+                              // This includes BOTH ancestor tables AND the current node's SQL output (if any)
+                              const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: any[] }> = [];
+
+                              // Add ancestor table dependencies from pythonSelectedPipelines
                               if (availableInputTables) {
                                 pythonSelectedPipelines.forEach(pName => {
                                   const table = availableInputTables.find(t => t.name === pName);
@@ -2530,11 +2887,47 @@ export default function EditNodeDialog({
                                       tableName: pName,
                                       connectorId: table.connectorId,
                                       query: table.sqlQuery,
+                                      isPython: table.isPython,
+                                      pythonCode: table.pythonCode,
                                       pipelineDependencies: table.pipelineDependencies
                                     });
                                   }
                                 });
                               }
+
+                              // CRITICAL: If the current node has BOTH SQL and Python output,
+                              // the Python (chart) likely depends on the SQL output (table).
+                              // Include the current node's SQL as a dependency with its full chain.
+                              if (sqlResultName && sqlQuery) {
+                                // Build the SQL's dependencies (same as we do for selectedTables)
+                                const sqlDeps: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }> = [];
+                                if (availableInputTables && selectedPipelines.length > 0) {
+                                  for (const pName of selectedPipelines) {
+                                    const sourceTable = availableInputTables.find(t => t.name === pName);
+                                    if (sourceTable) {
+                                      sqlDeps.push({
+                                        tableName: sourceTable.name,
+                                        query: sourceTable.sqlQuery,
+                                        isPython: sourceTable.isPython,
+                                        pythonCode: sourceTable.pythonCode,
+                                        connectorId: sourceTable.connectorId
+                                      });
+                                    }
+                                  }
+                                }
+
+                                // Add the current node's SQL output as a dependency for the Python chart
+                                dependencies.push({
+                                  tableName: sqlResultName,
+                                  connectorId: sqlConnectorId || sqlExportTargetConnectorId,
+                                  query: sqlQuery,
+                                  isPython: false,
+                                  pipelineDependencies: sqlDeps.length > 0 ? sqlDeps : undefined
+                                });
+                                console.log('[EMAIL DEBUG] Added current SQL as Python dep:', { sqlResultName, sqlDeps: sqlDeps.map(d => d.tableName) });
+                              }
+
+                              console.log('[EMAIL DEBUG] Python chart dependencies:', dependencies.map(d => ({ name: d.tableName, isPython: d.isPython })));
 
                               selectedPythonOutputs.push({
                                 name: pythonResultName,
@@ -2557,19 +2950,62 @@ export default function EditNodeDialog({
                             return;
                           }
 
+                          // Infer SQL Connector ID if not explicitly set
+                          // Priority: 1) current node's SQL connector, 2) sqlExportTargetConnectorId (DB dest), 3) ancestor tables
+                          let effectiveSqlConnectorId = '';
+                          console.log('[EMAIL DEBUG] sqlConnectorId from current node:', sqlConnectorId);
+                          console.log('[EMAIL DEBUG] sqlExportTargetConnectorId (DB dest):', sqlExportTargetConnectorId);
+                          console.log('[EMAIL DEBUG] sqlResultName from current node:', sqlResultName);
+                          console.log('[EMAIL DEBUG] selectedTables:', selectedTables.map(t => ({ name: t.name })));
+                          console.log('[EMAIL DEBUG] availableInputTables:', availableInputTables?.map(t => ({ name: t.name, connectorId: t.connectorId, isPython: t.isPython })));
+
+                          if (selectedTables.length > 0) {
+                            for (const t of selectedTables) {
+                              console.log(`[EMAIL DEBUG] Looking for connector for table "${t.name}"...`);
+
+                              // First, check if this is the CURRENT NODE's SQL result
+                              if (t.name === sqlResultName) {
+                                // Priority 1: Use sqlConnectorId (the SQL query execution connector)
+                                if (sqlConnectorId) {
+                                  effectiveSqlConnectorId = sqlConnectorId;
+                                  console.log('[EMAIL DEBUG] Using CURRENT NODE sqlConnectorId:', effectiveSqlConnectorId, 'for table:', t.name);
+                                  break;
+                                }
+                                // Priority 2: Use sqlExportTargetConnectorId (the Database Destinazione selector)
+                                if (sqlExportTargetConnectorId) {
+                                  effectiveSqlConnectorId = sqlExportTargetConnectorId;
+                                  console.log('[EMAIL DEBUG] Using CURRENT NODE sqlExportTargetConnectorId (DB dest):', effectiveSqlConnectorId, 'for table:', t.name);
+                                  break;
+                                }
+                              }
+
+                              // Priority 3: Look in ancestor tables
+                              if (availableInputTables) {
+                                const sourceTable = availableInputTables.find(at => at.name === t.name);
+                                console.log(`[EMAIL DEBUG] Found in ancestors for "${t.name}":`, sourceTable ? { name: sourceTable.name, connectorId: sourceTable.connectorId } : 'NOT FOUND');
+                                if (sourceTable && sourceTable.connectorId) {
+                                  effectiveSqlConnectorId = sourceTable.connectorId;
+                                  console.log('[EMAIL DEBUG] Using ANCESTOR connector:', effectiveSqlConnectorId, 'from table:', t.name);
+                                  break;
+                                }
+                              }
+                            }
+                          }
+                          console.log('[EMAIL DEBUG] Final effectiveSqlConnectorId:', effectiveSqlConnectorId);
+
                           const result = await sendTestEmailWithDataAction({
                             connectorId: emailConfig.connectorId,
-                            sqlConnectorId: sqlConnectorId,
+                            sqlConnectorId: effectiveSqlConnectorId,
                             to: emailConfig.to,
                             cc: emailConfig.cc,
                             bcc: emailConfig.bcc,
-                            subject: `[TEST] ${emailConfig.subject}`,
-                            bodyHtml: emailConfig.body || '',
+                            subject: emailConfig.subject,
+                            bodyHtml: bodyContent,
                             selectedTables,
                             selectedPythonOutputs,
-                            availableMedia: [...(availableParentMedia || []), ...(media || [])],
-                            availableLinks: [...(availableParentLinks || []), ...(links || [])],
-                            availableTriggers: [...(availableParentTriggers || []), ...(triggers || [])],
+                            availableMedia: [...availableParentMedia, ...media],
+                            availableLinks: [...availableParentLinks, ...links],
+                            availableTriggers: [...availableParentTriggers, ...triggers],
                             mediaAttachments: safeEmailAttachments.mediaAsAttachment
                           });
 

@@ -9,6 +9,7 @@ import Link from 'next/link';
 import _ from 'lodash';
 
 import { getTreeAction, executeConsolidationAction, getStandardizationDataAction, updateTreeNodeAction, regenerateNaturalLanguageAction } from '@/app/actions';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -207,8 +208,10 @@ export default function ViewTreePage() {
         <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
           <div className="flex items-center gap-2">
             <Link href="/" className="flex items-center gap-2">
-              <BrainCircuit className="h-7 w-7 text-primary" />
-              <h1 className="text-xl font-bold">Like AI Said</h1>
+              <div className="h-7 w-7 relative shrink-0">
+                <Image src="/logo-custom.png" alt="Logo" fill className="object-contain rounded-md" sizes="28px" />
+              </div>
+              <h1 className="text-xl font-bold">FridAI</h1>
             </Link>
           </div>
           <Button variant="outline" onClick={handleExit} disabled={isExiting || isLoadingAction}>

@@ -85,6 +85,22 @@ export type SingleDecisionOptionChild = DecisionNode | DecisionLeaf | string | {
 export type DecisionOptionChild = SingleDecisionOptionChild | SingleDecisionOptionChild[];
 
 
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: number;
+  // Optional preview data to display charts/tables inline
+  preview?: {
+    type: 'table' | 'chart' | 'variable';
+    data?: any[];
+    columns?: any[];
+    chartHtml?: string;
+    chartBase64?: string;
+    variables?: any;
+    debugLogs?: string[];
+  };
+}
+
 export interface DecisionNode {
   id?: string;
   question?: string;
@@ -100,6 +116,7 @@ export interface DecisionNode {
   sqlQuery?: string;
   sqlConnectorId?: string;
   sqlResultName?: string;
+  sqlChatHistory?: ChatMessage[];
   ref?: string;
   subTreeRef?: string;
   pythonCode?: string;
@@ -107,6 +124,7 @@ export interface DecisionNode {
   pythonResultName?: string;
   pythonConnectorId?: string;
   pythonSelectedPipelines?: string[];
+  pythonChatHistory?: ChatMessage[];
   emailAction?: EmailActionConfig;
 }
 

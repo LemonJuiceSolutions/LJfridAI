@@ -334,66 +334,130 @@ export async function sendTestEmailWithDataAction(params: {
             return { success: false, error: 'Connettore SMTP non trovato' };
         }
 
-        // Get SQL connector
-        const sqlConnector = await db.connector.findFirst({
-            where: { id: params.sqlConnectorId, companyId: user.companyId, type: 'SQL' }
-        });
-        if (!sqlConnector) {
-            return { success: false, error: 'Connettore SQL non trovato' };
+        if (!smtpConnector) {
+            return { success: false, error: 'Connettore SMTP non trovato' };
         }
 
         const smtpConf = JSON.parse(smtpConnector.config);
-        const sqlConf = JSON.parse(sqlConnector.config);
 
-        // Connect to SQL
-        const sqlConfig: any = {
-            user: sqlConf.user,
-            password: sqlConf.password,
-            server: sqlConf.host,
-            database: sqlConf.database,
-            options: {
-                encrypt: sqlConf.host?.includes('database.windows.net'),
-                trustServerCertificate: true,
-                connectTimeout: 30000,
-                requestTimeout: 120000
-            }
-        };
-        if (sqlConf.port) sqlConfig.port = parseInt(sqlConf.port);
-
-        const pool = new sql.ConnectionPool(sqlConfig);
-        await pool.connect();
-
-        // IMPORTANT: Use a Transaction to ensure ALL queries run on the SAME connection
-        // This is required for temp tables to be visible across multiple queries
-        const transaction = new sql.Transaction(pool);
-        await transaction.begin();
-        const request = new sql.Request(transaction);
-
-        // Execute queries and collect results
-        // First, we need to execute ALL dependencies in order to create temp tables
-        // This allows queries to reference previous query results (e.g., HR2 references HR1)
+        // SQL Results Container
         const tableResults: { name: string; data: any[]; inBody: boolean; asExcel: boolean }[] = [];
-        const executedTables = new Set<string>(); // Track which tables have been executed
 
-        console.log('[EMAIL DEBUG] Executing queries in order with temp table creation (using TRANSACTION for same connection)...');
+        // --- SQL Execution Block (Optional) ---
+        if (params.sqlConnectorId) {
+            // Get SQL connector
+            const sqlConnector = await db.connector.findFirst({
+                where: { id: params.sqlConnectorId, companyId: user.companyId, type: 'SQL' }
+            });
 
-        // Helper function to execute a query and create temp table
-        const executeAndCreateTempTable = async (tableName: string, query: string): Promise<any[]> => {
-            if (executedTables.has(tableName)) {
-                console.log(`[EMAIL DEBUG] Table ${tableName} already executed, skipping`);
-                return [];
+            if (!sqlConnector) {
+                return { success: false, error: 'Connettore SQL non trovato' };
             }
 
-            console.log(`[EMAIL DEBUG] Executing dependency query for ${tableName}: ${query.substring(0, 100)}...`);
+            const sqlConf = JSON.parse(sqlConnector.config);
+
+            // Connect to SQL
+            const sqlConfig: any = {
+                user: sqlConf.user,
+                password: sqlConf.password,
+                server: sqlConf.host,
+                database: sqlConf.database,
+                options: {
+                    encrypt: sqlConf.host?.includes('database.windows.net'),
+                    trustServerCertificate: true,
+                    connectTimeout: 30000,
+                    requestTimeout: 120000
+                }
+            };
+            if (sqlConf.port) sqlConfig.port = parseInt(sqlConf.port);
+
+            const pool = new sql.ConnectionPool(sqlConfig);
+            await pool.connect();
+
+            // IMPORTANT: Use a Transaction to ensure ALL queries run on the SAME connection
+            const transaction = new sql.Transaction(pool);
+            await transaction.begin();
+            const request = new sql.Request(transaction);
 
             try {
-                // Execute the original query
-                const result = await request.query(query);
-                const data = result.recordset || [];
-                executedTables.add(tableName);
+                const executedTables = new Set<string>(); // Track which tables have been executed
 
-                // Create a temp table with the results so subsequent queries can reference it
-                if (data.length > 0) {
+                console.log('[EMAIL DEBUG] Executing queries in order with temp table creation (using TRANSACTION for same connection)...');
+
+                // Helper function to execute a query and create temp table
+                const executeAndCreateTempTable = async (tableName: string, query: string): Promise<any[]> => {
+                    if (executedTables.has(tableName)) {
+                        console.log(`[EMAIL DEBUG] Table ${tableName} already executed, skipping`);
+                        return [];
+                    }
+
+                    console.log(`[EMAIL DEBUG] Executing dependency query for ${tableName}: ${query.substring(0, 100)}...`);
+
+                    try {
+                        // Execute the original query
+                        const result = await request.query(query);
+                        const data = result.recordset || [];
+                        executedTables.add(tableName);
+
+                        // Create a temp table with the results so subsequent queries can reference it
+                        if (data.length > 0) {
+                            try {
+                                const columns = Object.keys(data[0]);
+                                const colDefs = columns.map(col => {
+                                    const sampleVal = data[0][col];
+                                    let sqlType = 'NVARCHAR(MAX)';
+                                    if (typeof sampleVal === 'number') {
+                                        sqlType = Number.isInteger(sampleVal) ? 'INT' : 'FLOAT';
+                                    } else if (sampleVal instanceof Date) {
+                                        sqlType = 'DATETIME';
+                                    }
+                                    return `[${col}] ${sqlType}`;
+                                }).join(', ');
+
+                                // Create table with exact name the queries expect (without # prefix)
+                                const tempTableName = tableName; // Use exact name: HR1, HR2, etc.
+
+                                // Create temp table using the SAME request (same connection)
+                                // Drop if exists, then create
+                                await request.query(`
+                                    IF OBJECT_ID('${tempTableName}', 'U') IS NOT NULL DROP TABLE [${tempTableName}];
+                                    CREATE TABLE [${tempTableName}] (${colDefs});
+                                `);
+
+                                // Insert data into temp table (in batches for performance)
+                                const batchSize = 100;
+                                for (let i = 0; i < data.length; i += batchSize) {
+                                    const batch = data.slice(i, i + batchSize);
+                                    const values = batch.map(row => {
+                                        return '(' + columns.map(col => {
+                                            const val = row[col];
+                                            if (val === null || val === undefined) return 'NULL';
+                                            if (typeof val === 'number') return val.toString();
+                                            if (val instanceof Date) return `'${val.toISOString()}'`;
+                                            return `N'${String(val).replace(/'/g, "''")}'`;
+                                        }).join(', ') + ')';
+                                    }).join(', ');
+                                    await request.query(`INSERT INTO ${tempTableName} (${columns.map(c => `[${c}]`).join(', ')}) VALUES ${values}`);
+                                }
+                                console.log(`[EMAIL DEBUG] Created temp table ${tempTableName} with ${data.length} rows`);
+                            } catch (tempErr: any) {
+                                console.error(`[EMAIL DEBUG] Failed to create temp table for ${tableName}:`, tempErr.message);
+                            }
+                        }
+                        return data;
+                    } catch (err: any) {
+                        console.error(`[EMAIL DEBUG] Error executing query for ${tableName}:`, err.message);
+                        return [{ error: err.message }];
+                    }
+                };
+
+                // Helper function to create temp table from data (for Python results)
+                const createTempTableFromData = async (tableName: string, data: any[]): Promise<void> => {
+                    if (executedTables.has(tableName) || data.length === 0) {
+                        console.log(`[EMAIL DEBUG] Table ${tableName} already exists or has no data, skipping temp table creation`);
+                        return;
+                    }
+
                     try {
                         const columns = Object.keys(data[0]);
                         const colDefs = columns.map(col => {
@@ -407,17 +471,13 @@ export async function sendTestEmailWithDataAction(params: {
                             return `[${col}] ${sqlType}`;
                         }).join(', ');
 
-                        // Create table with exact name the queries expect (without # prefix)
-                        const tempTableName = tableName; // Use exact name: HR1, HR2, etc.
-
-                        // Create temp table using the SAME request (same connection)
                         // Drop if exists, then create
                         await request.query(`
-                            IF OBJECT_ID('${tempTableName}', 'U') IS NOT NULL DROP TABLE [${tempTableName}];
-                            CREATE TABLE [${tempTableName}] (${colDefs});
+                            IF OBJECT_ID('${tableName}', 'U') IS NOT NULL DROP TABLE [${tableName}];
+                            CREATE TABLE [${tableName}] (${colDefs});
                         `);
 
-                        // Insert data into temp table (in batches for performance)
+                        // Insert data in batches
                         const batchSize = 100;
                         for (let i = 0; i < data.length; i += batchSize) {
                             const batch = data.slice(i, i + batchSize);
@@ -430,63 +490,102 @@ export async function sendTestEmailWithDataAction(params: {
                                     return `N'${String(val).replace(/'/g, "''")}'`;
                                 }).join(', ') + ')';
                             }).join(', ');
-                            await request.query(`INSERT INTO ${tempTableName} (${columns.map(c => `[${c}]`).join(', ')}) VALUES ${values}`);
+                            await request.query(`INSERT INTO ${tableName} (${columns.map(c => `[${c}]`).join(', ')}) VALUES ${values}`);
                         }
-                        console.log(`[EMAIL DEBUG] Created temp table ${tempTableName} with ${data.length} rows`);
+                        executedTables.add(tableName);
+                        console.log(`[EMAIL DEBUG] Created temp table from Python data: ${tableName} with ${data.length} rows`);
                     } catch (tempErr: any) {
-                        console.error(`[EMAIL DEBUG] Failed to create temp table for ${tableName}:`, tempErr.message);
+                        console.error(`[EMAIL DEBUG] Failed to create temp table for Python ${tableName}:`, tempErr.message);
+                    }
+                };
+
+                // First, execute all pipelineDependencies from all selected tables (in order)
+                // This includes BOTH Python and SQL dependencies
+                const { executePythonPreviewAction } = await import('@/app/actions');
+
+                for (const table of params.selectedTables) {
+                    if (table.pipelineDependencies && table.pipelineDependencies.length > 0) {
+                        console.log(`[EMAIL DEBUG] Executing ${table.pipelineDependencies.length} dependencies for ${table.name}`);
+                        for (const dep of table.pipelineDependencies) {
+                            // Check if already executed
+                            if (executedTables.has(dep.tableName)) {
+                                console.log(`[EMAIL DEBUG] Dependency ${dep.tableName} already executed, skipping`);
+                                continue;
+                            }
+
+                            // Execute Python dependencies first
+                            if (dep.isPython && dep.pythonCode) {
+                                console.log(`[EMAIL DEBUG] Executing PYTHON dependency: ${dep.tableName}`);
+                                try {
+                                    // Recursively pass nested dependencies if any
+                                    const nestedDeps = (dep as any).pipelineDependencies || [];
+                                    const pythonResult = await executePythonPreviewAction(
+                                        dep.pythonCode,
+                                        'table', // Assume table output for dependencies
+                                        {},
+                                        nestedDeps,
+                                        dep.connectorId
+                                    );
+
+                                    if (pythonResult.success && Array.isArray(pythonResult.data) && pythonResult.data.length > 0) {
+                                        console.log(`[EMAIL DEBUG] Python ${dep.tableName} returned ${pythonResult.data.length} rows`);
+                                        // Create temp SQL table from Python output
+                                        await createTempTableFromData(dep.tableName, pythonResult.data);
+                                    } else {
+                                        console.error(`[EMAIL DEBUG] Python ${dep.tableName} failed or returned no data:`, pythonResult.error);
+                                    }
+                                } catch (pyErr: any) {
+                                    console.error(`[EMAIL DEBUG] Error executing Python dependency ${dep.tableName}:`, pyErr.message);
+                                }
+                            }
+                            // Execute SQL dependencies
+                            else if (dep.query) {
+                                await executeAndCreateTempTable(dep.tableName, dep.query);
+                            }
+                        }
                     }
                 }
-                return data;
-            } catch (err: any) {
-                console.error(`[EMAIL DEBUG] Error executing query for ${tableName}:`, err.message);
-                return [{ error: err.message }];
-            }
-        };
 
-        // First, execute all pipelineDependencies from all selected tables (in order)
-        for (const table of params.selectedTables) {
-            if (table.pipelineDependencies && table.pipelineDependencies.length > 0) {
-                console.log(`[EMAIL DEBUG] Executing ${table.pipelineDependencies.length} dependencies for ${table.name}`);
-                for (const dep of table.pipelineDependencies) {
-                    // Only execute SQL dependencies (Python deps are handled separately)
-                    if (dep.query) {
-                        await executeAndCreateTempTable(dep.tableName, dep.query);
+                // Now execute the selected tables and collect their results
+                for (const table of params.selectedTables) {
+                    try {
+                        console.log(`[EMAIL DEBUG] Executing query for ${table.name}: ${table.query.substring(0, 100)}...`);
+
+                        // Execute the query using the SAME request (same connection)
+                        const result = await request.query(table.query);
+                        const data = result.recordset || [];
+                        executedTables.add(table.name);
+
+                        tableResults.push({
+                            name: table.name,
+                            data: data,
+                            inBody: table.inBody,
+                            asExcel: table.asExcel
+                        });
+                    } catch (err: any) {
+                        console.error(`Error executing query for ${table.name}:`, err.message);
+                        tableResults.push({
+                            name: table.name,
+                            data: [{ error: err.message }],
+                            inBody: table.inBody,
+                            asExcel: table.asExcel
+                        });
                     }
                 }
+
+                // Commit transaction
+                await transaction.commit();
+
+            } catch (sqlErr: any) {
+                await transaction.rollback();
+                throw sqlErr;
+            } finally {
+                await pool.close();
             }
+        } else if (params.selectedTables && params.selectedTables.length > 0) {
+            // If tables are selected but no SQL connector provided
+            return { success: false, error: 'Per includere tabelle SQL è necessario selezionare un connettore SQL.' };
         }
-
-        // Now execute the selected tables and collect their results
-        for (const table of params.selectedTables) {
-            try {
-                console.log(`[EMAIL DEBUG] Executing query for ${table.name}: ${table.query.substring(0, 100)}...`);
-
-                // Execute the query using the SAME request (same connection)
-                const result = await request.query(table.query);
-                const data = result.recordset || [];
-                executedTables.add(table.name);
-
-                tableResults.push({
-                    name: table.name,
-                    data: data,
-                    inBody: table.inBody,
-                    asExcel: table.asExcel
-                });
-            } catch (err: any) {
-                console.error(`Error executing query for ${table.name}:`, err.message);
-                tableResults.push({
-                    name: table.name,
-                    data: [{ error: err.message }],
-                    inBody: table.inBody,
-                    asExcel: table.asExcel
-                });
-            }
-        }
-
-        // Commit the transaction before closing
-        await transaction.commit();
-        await pool.close();
 
         // Execute Python outputs if any
         const pythonResults: Array<{

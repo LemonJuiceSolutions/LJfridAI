@@ -1447,7 +1447,13 @@ export async function exportTableToSqlAction(
     }
 }
 
-export async function generateSqlAction(userDescription: string, openRouterConfig?: { apiKey: string, model: string }, connectorId?: string, schemaContextArgs?: string): Promise<{ sql: string | null; error: string | null }> {
+export async function generateSqlAction(
+    userDescription: string,
+    openRouterConfig?: { apiKey: string, model: string },
+    connectorId?: string,
+    schemaContextArgs?: string,
+    history: { role: string, content: string }[] = []
+): Promise<{ sql: string | null; error: string | null }> {
 
     try {
         const user = await getAuthenticatedUser();
@@ -1473,8 +1479,6 @@ export async function generateSqlAction(userDescription: string, openRouterConfi
             }
         }
 
-
-
         const systemPrompt = `You are an expert SQL Data Analyst.
 Task: precise T-SQL query generation based on user request.
 Context: ${schemaContext}
@@ -1484,7 +1488,11 @@ Rules:
 3. Always use 'TOP 10' if checking data, unless specified otherwise.
 4. Output must be valid T-SQL.`;
 
-        const userPrompt = `Generate a SQL query for: ${userDescription}`;
+        const messages = [
+            { role: "system", content: systemPrompt },
+            ...history,
+            { role: "user", content: `Generate a SQL query for: ${userDescription}` }
+        ];
 
         if (openRouterConfig && openRouterConfig.apiKey) {
             const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -1495,10 +1503,7 @@ Rules:
                 },
                 body: JSON.stringify({
                     model: openRouterConfig.model,
-                    messages: [
-                        { role: "system", content: systemPrompt },
-                        { role: "user", content: userPrompt }
-                    ]
+                    messages: messages
                 })
             });
 
@@ -1538,7 +1543,9 @@ Rules:
 export async function generatePythonAction(
     userDescription: string,
     openRouterConfig?: { apiKey: string, model: string },
-    outputType: 'table' | 'variable' | 'chart' = 'table'
+    outputType: 'table' | 'variable' | 'chart' = 'table',
+    availableDataframes: string[] = [],
+    history: { role: string, content: string }[] = []
 ): Promise<{ code: string | null; error: string | null }> {
     try {
         if (!openRouterConfig?.apiKey) {
@@ -1570,14 +1577,28 @@ ${outputInstructions[outputType]}
 
 Available libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), plotly.express (px), plotly.graph_objects (go).
 
-RULES:
+Available Dataframes: ${availableDataframes.length > 0 ? availableDataframes.join(', ') : 'None'}.
+
+STRICT RULES:
 1. Output ONLY the Python code, no explanations.
 2. Wrap code in \`\`\`python ... \`\`\` code block.
 3. The LAST line must be the result variable only (no assignment, no print).
 4. Do NOT include print statements.
-5. All code must be safe to execute in a sandboxed environment.`;
+5. All code must be safe to execute in a sandboxed environment.
+6. **STRICT VARIABLE USAGE**: Use ONLY the variable names listed in 'Available Dataframes' (${availableDataframes.join(', ')}).
+   - **DO NOT** use generic names like 'df1', 'df2', or 'data' unless they are in the available list.
+   - **DO NOT** create mock data. Assume the variables are already loaded and available.
+   - **CONTEXT**: You are writing a script that will be executed in an environment where these variables are pre-loaded.
+7. **ALWAYS USE PLOTLY** (plotly.express or plotly.graph_objects) for charts unless specifically told otherwise. Do not use Matplotlib if possible.
+   - For charts, the last line MUST be the figure object 'fig'.
+   - Do NOT use fig.show().
+8. **ROBUST DATE PARSING**: When converting columns to datetime, ALWAYS use \`pd.to_datetime(..., dayfirst=True, errors='coerce')\` to correctly handle European formats (DD-MM-YYYY) and prevent crashes.`;
 
-        const userPrompt = `Generate Python code for: ${userDescription}`;
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            ...history,
+            { role: 'user', content: `Generate Python code for: ${userDescription}` }
+        ];
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -1587,10 +1608,7 @@ RULES:
             },
             body: JSON.stringify({
                 model: openRouterConfig.model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt }
-                ]
+                messages: messages
             })
         });
 
@@ -1717,6 +1735,33 @@ export async function executePythonPreviewAction(
                     } catch (err: any) {
                         console.error(`[Python] Execute SQL Preview Error:`, err);
                         debugLogs.push(`[ERROR] Exception fetching ${dep.tableName}: ${err.message}`);
+                    }
+                } else if (dep.isPython && dep.pythonCode) {
+                    // Recursive Python Execution
+                    console.log(`[Python] 🐍 Recursively executing Python dependency: ${dep.tableName}`);
+                    debugLogs.push(`[${new Date().toLocaleTimeString()}] 🐍 Recursively executing Python dependency: '${dep.tableName}'...`);
+
+                    try {
+                        const recursiveRes = await executePythonPreviewAction(
+                            dep.pythonCode,
+                            'table',
+                            {},
+                            dep.pipelineDependencies, // Pass its own dependencies!
+                            dep.connectorId
+                        );
+
+                        if (recursiveRes.success && recursiveRes.data) {
+                            inputData[dep.tableName] = recursiveRes.data;
+                            console.log(`[Python] ✅ Fetched ${recursiveRes.data.length} rows for ${dep.tableName} (Recursive)`);
+                            debugLogs.push(`[${new Date().toLocaleTimeString()}] ✅ Fetched ${recursiveRes.data.length} rows for '${dep.tableName}' (Recursive Python)`);
+                        } else {
+                            console.error(`[Python] Error in recursive execution for ${dep.tableName}: ${recursiveRes.error}`);
+                            debugLogs.push(`[ERROR] Recursive execution failed for ${dep.tableName}: ${recursiveRes.error}`);
+                        }
+
+                    } catch (err: any) {
+                        console.error(`[Python] Recursive Execution Exception:`, err);
+                        debugLogs.push(`[ERROR] Exception in recursive execution for ${dep.tableName}: ${err.message}`);
                     }
                 } else {
                     console.warn(`[Python] ⚠️ Skipping dependency ${dep.tableName} because query is missing.`);

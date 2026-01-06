@@ -48,7 +48,7 @@ export function ChatBotAgent() {
         } else {
             setMessages([{
                 role: 'assistant',
-                content: "Ciao! Sono il tuo assistente Like AI Said. Come posso aiutarti oggi con lo sviluppo del tuo Rules Engine?",
+                content: "Ciao! Sono il tuo assistente FridAI. Come posso aiutarti oggi con lo sviluppo del tuo Rules Engine?",
                 timestamp: Date.now()
             }]);
         }
@@ -99,7 +99,7 @@ export function ChatBotAgent() {
             // Add system context for "Agent" behavior
             const systemContext = {
                 role: 'system',
-                content: "Sei Like AI Said, un assistente IA esperto in coding e system design. Il tuo obiettivo è aiutare l'utente a sviluppare e migliorare 'Like AI Said', un Rules Engine avanzato basato su Next.js, Prisma e Genkit. Sii conciso, tecnico e proattivo."
+                content: "Sei FridAI, un assistente IA esperto in coding e system design. Il tuo obiettivo è aiutare l'utente a sviluppare e migliorare 'FridAI', un Rules Engine avanzato basato su Next.js, Prisma e Genkit. Sii conciso, tecnico e proattivo."
             };
 
             const result = await chatOpenRouterAction(apiKey, model, [systemContext, ...history]);
@@ -152,10 +152,10 @@ export function ChatBotAgent() {
                             <Sparkles className="h-5 w-5" />
                         </div>
                         <div>
-                            <h2 className="text-sm font-bold tracking-tight">Like AI Said Agent</h2>
-                            <div className="flex items-center gap-1.5">
-                                <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                                <span className="text-[10px] text-muted-foreground font-medium uppercase">Online</span>
+                            <h2 className="text-sm font-bold tracking-tight">FridAI Agent</h2>
+                            <div className="flex items-center gap-2 p-2 border-b bg-muted/50 rounded-t-lg">
+                                <Bot className="h-4 w-4 text-primary" />
+                                <span className="font-semibold text-sm">FridAI Chat</span>
                             </div>
                         </div>
                     </div>
@@ -210,7 +210,7 @@ export function ChatBotAgent() {
                                         {m.role === 'user' ? 'U' : 'A'}
                                     </div>
                                     <span className="text-[10px] font-medium text-muted-foreground">
-                                        {m.role === 'user' ? 'Tu' : 'Like AI Said'}
+                                        {m.role === 'user' ? 'Tu' : 'FridAI'}
                                     </span>
                                 </div>
                                 <div className={cn(
