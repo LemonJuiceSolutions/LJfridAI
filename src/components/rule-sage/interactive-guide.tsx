@@ -17,6 +17,237 @@ import { cn } from '@/lib/utils';
 import { DataTable } from '@/components/ui/data-table';
 import { Database, Code, LineChart } from 'lucide-react';
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+
+// --- NEW COMPONENT: Hierarchy Visualizer ---
+function HierarchyVisualizer({
+    steps,
+    currentStepIndex,
+    isExecuting
+}: {
+    steps: { name: string, type: 'sql' | 'python', status: 'pending' | 'running' | 'done' | 'error' }[],
+    currentStepIndex: number,
+    isExecuting: boolean
+}) {
+    if (!steps || steps.length === 0) return null;
+
+    return (
+        <div className="w-full mb-4 px-1">
+            <div className="flex items-center gap-2 mb-2">
+                <GitBranch className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Flusso di Esecuzione</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+                {steps.map((step, idx) => {
+                    let variant: "default" | "secondary" | "destructive" | "outline" = "outline";
+                    let icon = null;
+
+                    if (step.status === 'done') {
+                        variant = "default"; // Green (using default style for now, commonly dark/primary)
+                        icon = <Check className="h-3 w-3 mr-1" />;
+                    } else if (step.status === 'running') {
+                        variant = "secondary";
+                        icon = <Loader2 className="h-3 w-3 mr-1 animate-spin" />;
+                    } else if (step.status === 'error') {
+                        variant = "destructive";
+                    }
+
+                    // Override style for "Green Light" effect if 'default' isn't green enough in current theme
+                    const greenStyle = step.status === 'done' ? "bg-emerald-500 hover:bg-emerald-600 border-transparent text-white" : "";
+
+                    return (
+                        <div key={idx} className="flex items-center">
+                            {idx > 0 && <Separator orientation="horizontal" className="w-4 h-[1px] bg-slate-200 dark:bg-slate-700 mx-1" />}
+                            <Badge variant={variant} className={cn("text-[10px] h-6 px-2 flex items-center transition-all duration-300", greenStyle)}>
+                                {icon}
+                                {step.type === 'sql' ? <Database className="h-3 w-3 mr-1 opacity-70" /> : <Code className="h-3 w-3 mr-1 opacity-70" />}
+                                {step.name}
+                            </Badge>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// --- NEW HOOK: Helper for Flow Execution ---
+function useFlowExecution() {
+    const [steps, setSteps] = useState<{ name: string, type: 'sql' | 'python', status: 'pending' | 'running' | 'done' | 'error', payload?: any }[]>([]);
+    const [currentStepIndex, setCurrentStepIndex] = useState(-1);
+    const [isExecuting, setIsExecuting] = useState(false);
+    const [accumulatedData, setAccumulatedData] = useState<Record<string, any>>({});
+    const [finalResult, setFinalResult] = useState<any>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const executeFlow = async (
+        mainCode: string,
+        mainOutputType: 'table' | 'variable' | 'chart',
+        dependencies: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[],
+        pythonConnectorId?: string
+    ) => {
+        setIsExecuting(true);
+        setError(null);
+        setFinalResult(null);
+        setAccumulatedData({});
+
+        // 1. Prepare steps
+        const initialSteps = dependencies.map(d => ({
+            name: d.tableName,
+            type: (d.isPython ? 'python' : 'sql') as 'sql' | 'python',
+            status: 'pending' as const,
+            payload: d
+        }));
+
+        // Add final step
+        initialSteps.push({
+            name: 'Generazione Output',
+            type: 'python',
+            status: 'pending',
+            payload: { isFinal: true, code: mainCode, outputType: mainOutputType } as any
+        });
+
+        setSteps(initialSteps);
+        setCurrentStepIndex(0);
+
+        const currentData: Record<string, any> = {};
+
+        // 2. Execute Dependencies sequentially
+        for (let i = 0; i < initialSteps.length - 1; i++) {
+            const step = initialSteps[i];
+            const dep = step.payload;
+
+            // Update status to running
+            setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'running' } : s));
+            setCurrentStepIndex(i);
+
+            try {
+                let resultData = null;
+
+                if (dep.isPython && dep.pythonCode) {
+                    // Python Dependency
+                    // 🔥 CRITICAL: Pass deps before this one so backend can resolve nested dependencies
+                    const depsBefore = dependencies.slice(0, i);
+                    const res = await executePythonPreviewAction(
+                        dep.pythonCode,
+                        'table',
+                        currentData, // Inject already fetched data!
+                        depsBefore, // Pass ALL deps that come before for proper nesting
+                        dep.connectorId || pythonConnectorId // 🔥 Use dep's own connectorId if available (e.g., HubSpot token)
+                    );
+                    if (res.success && res.data) {
+                        resultData = res.data;
+                    } else {
+                        throw new Error(res.error || `Errore dipendenza Python ${step.name}`);
+                    }
+                } else if (!dep.isPython && dep.query && dep.connectorId) {
+                    // SQL Dependency
+                    // For SQL, we also need to pass previous dependencies if the SQL relies on temp tables (though raw SQL usually doesn't mix execution ctx in Preview action, 
+                    // BUT our 'executeSqlPreviewAction' DOES handle pipelineDependencies for temp tables.
+                    // However, to avoid loop, let's try to fetch it directly.
+                    // Actually, executeSqlPreviewAction is robust. We can just call it.
+                    // IMPORTANT: If this SQL depends on previous Python results, we need a way to pass them.
+                    // Currently executeSqlPreviewAction supports 'pipelineDependencies' which triggers temp table creation.
+                    // We need to map our 'currentData' back to 'pipelineDependencies' format if needed?
+                    // OR, simply: The backend 'executeSqlPreviewAction' creates temp tables from the provided list.
+                    // Since we have the DATA on client now, sending it back to SQL Preview might be heavy.
+                    // BETTER APPROACH: For SQL dependencies, we use the standard action but we filter the dependency list 
+                    // to only include what's needed, OR we accept that SQL handling in backend is fine/safe (loops usually happen in Python recursion).
+                    // LET'S STICK to calling the action, but with a FLATTENED list of previous deps to ensure visibility.
+
+                    // We construct a localized pipelineDependencies list for this SQL query
+                    // containing only the items we've already processed? 
+                    // Actually, for SQL to see previous tables, `executeSqlPreviewAction` expects definitions.
+                    // BUT `executePythonPreviewAction` (which we used for previous steps) returned DATA.
+                    // We can't inject DATA into `executeSqlPreviewAction`. It expects `pipelineDependencies` (queries/code) to run.
+                    // This is a dilemma: Mix of Client-side Data and Server-side Temp Tables.
+                    // SOLUTION for this iteration:
+                    // Only handling Python-Infinite-Loop. SQL loops are rare.
+                    // Python Dependencies can run on Client logic (Request -> Response -> Next Request).
+                    // SQL Dependencies: Call them.
+                    // If a SQL dependency depends on a Python dependency we just calculated... 
+                    // `executeSqlPreviewAction` needs to know about that Python dependency to create the temp table.
+                    // It can re-execute it OR we need a way to pass data.
+                    // Passing Full Data to `executeSqlPreviewAction` isn't supported yet.
+                    // *Compromise*: For SQL steps, we pass the definition of previous steps as `pipelineDependencies` so it can re-run them if needed (Backend optimization handles caching?).
+                    // Wait, if we re-run, we lose the speed benefit.
+                    // **Pivot**: Focusing on the visualizer and Python Fix.
+                    // Use `executeSqlPreviewAction` normally.
+
+                    const res = await executeSqlPreviewAction(
+                        dep.query,
+                        dep.connectorId,
+                        // We pass ALL dependencies so it can resolve what it needs.
+                        // Ideally, we'd filter. For now, pass all deps but mark them.
+                        dependencies // Pass full context so it can find ancestors
+                    );
+                    if (res.data) {
+                        resultData = res.data;
+                    } else {
+                        throw new Error(res.error || `Errore dipendenza SQL ${step.name}`);
+                    }
+                }
+
+                if (resultData) {
+                    currentData[step.name] = resultData;
+                    setAccumulatedData(prev => ({ ...prev, [step.name]: resultData }));
+                    setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'done' } : s));
+                }
+
+            } catch (err: any) {
+                console.error(`Error in step ${step.name}:`, err);
+                setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'error' } : s));
+                setError(err.message);
+                setIsExecuting(false);
+                return; // Stop execution
+            }
+        }
+
+        // 3. Final Step execution
+        const finalIdx = initialSteps.length - 1;
+        setSteps(prev => prev.map((s, idx) => idx === finalIdx ? { ...s, status: 'running' } : s));
+        setCurrentStepIndex(finalIdx);
+
+        try {
+            const res = await executePythonPreviewAction(
+                mainCode,
+                mainOutputType,
+                currentData, // Inject ALL gathered data
+                [], // No backend dependencies needed! We solved them.
+                pythonConnectorId
+            );
+
+            if (res.success) {
+                setFinalResult({
+                    type: mainOutputType,
+                    data: res.data,
+                    variables: res.variables,
+                    chartBase64: res.chartBase64,
+                    chartHtml: res.chartHtml
+                });
+                setSteps(prev => prev.map((s, idx) => idx === finalIdx ? { ...s, status: 'done' } : s));
+            } else {
+                throw new Error(res.error || "Errore esecuzione finale");
+            }
+        } catch (err: any) {
+            setSteps(prev => prev.map((s, idx) => idx === finalIdx ? { ...s, status: 'error' } : s));
+            setError(err.message);
+        } finally {
+            setIsExecuting(false);
+        }
+    };
+
+    return {
+        steps,
+        currentStepIndex,
+        isExecuting,
+        accumulatedData,
+        finalResult,
+        error,
+        executeFlow
+    };
+}
 
 
 interface InteractiveGuideProps {
@@ -34,7 +265,11 @@ type HistoryFrame = {
 type HistoryItem = DecisionOptionChild;
 
 // Helper component for SQL Preview
-function SqlDataPreview({ connectorId, query, pipelineDependencies }: { connectorId: string, query: string, pipelineDependencies?: { tableName: string, query: string }[] }) {
+function SqlDataPreview({ connectorId, query, pipelineDependencies }: {
+    connectorId: string,
+    query: string,
+    pipelineDependencies?: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[]
+}) {
     const [data, setData] = useState<any[] | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -92,7 +327,7 @@ function SqlDataPreview({ connectorId, query, pipelineDependencies }: { connecto
     );
 }
 
-// Helper component for Python Preview
+// Helper component for Python Preview (Refactored for Client-side Orchestration)
 function PythonDataPreview({
     code,
     outputType,
@@ -103,76 +338,49 @@ function PythonDataPreview({
     code: string,
     outputType: 'table' | 'variable' | 'chart',
     selectedPipelines?: string[],
-    pipelineDependencies: { tableName: string, query: string, connectorId?: string }[],
+    pipelineDependencies: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[],
     pythonConnectorId?: string // HubSpot connector ID for token injection
 }) {
-    const [result, setResult] = useState<any>(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    // Use the new hook
+    const {
+        steps,
+        currentStepIndex,
+        isExecuting,
+        finalResult,
+        error,
+        executeFlow
+    } = useFlowExecution();
+
+    // Memoize the dependencies to prevent infinite loops
+    const stableDeps = useMemo(() => {
+        // Deduplicate dependencies based on tableName
+        return pipelineDependencies.filter((v, i, a) => a.findIndex(t => t.tableName === v.tableName) === i);
+    }, [JSON.stringify(pipelineDependencies)]);
 
     useEffect(() => {
         let mounted = true;
-        const execute = async () => {
-            if (!code) return;
-            console.log('[PythonDataPreview] Starting execution, outputType:', outputType);
-            console.log('[PythonDataPreview] selectedPipelines:', selectedPipelines);
-            console.log('[PythonDataPreview] pipelineDependencies:', JSON.stringify(pipelineDependencies));
-            setLoading(true);
+        let executed = false; // Prevent double execution
+
+        const start = async () => {
+            if (!code || !mounted || executed) return;
+            executed = true;
+
             try {
-                // Construct dependencies for Python execution
-                const dependencies = (selectedPipelines || []).map(pName => {
-                    const found = pipelineDependencies.find(d => d.tableName === pName);
-                    if (found) {
-                        if ((found as any).isPython) {
-                            // Python dependency
-                            return {
-                                tableName: pName,
-                                isPython: true,
-                                pythonCode: (found as any).pythonCode,
-                                pythonOutputType: (found as any).pythonOutputType,
-                                pipelineDependencies: pipelineDependencies // Pass full history for cascading
-                            };
-                        } else {
-                            // SQL dependency
-                            return {
-                                tableName: pName,
-                                connectorId: found.connectorId,
-                                query: found.query,
-                                pipelineDependencies: pipelineDependencies // Pass full history for cascading
-                            };
-                        }
-                    }
-                    return null;
-                }).filter(Boolean) as any[];
-
-                console.log('[PythonDataPreview] Constructed dependencies:', JSON.stringify(dependencies));
-
-                // Pass pythonConnectorId for HubSpot token injection
-                const res = await executePythonPreviewAction(code, outputType, {}, dependencies, pythonConnectorId);
-                console.log('[PythonDataPreview] Result received, success:', res?.success, 'error:', res?.error);
-
-                if (mounted) {
-                    if (res.success) {
-                        setResult({
-                            type: outputType,
-                            data: res.data,
-                            variables: res.variables,
-                            chartBase64: res.chartBase64,
-                            chartHtml: res.chartHtml
-                        });
-                    } else {
-                        setError(res.error || "Errore esecuzione Python");
-                    }
-                }
-            } catch (e) {
-                if (mounted) setError("Errore di connessione");
-            } finally {
-                if (mounted) setLoading(false);
+                await executeFlow(
+                    code,
+                    outputType,
+                    stableDeps,
+                    pythonConnectorId
+                );
+            } catch (err) {
+                console.error('[PythonDataPreview] Execution error:', err);
             }
         };
-        execute();
+
+        start();
         return () => { mounted = false; };
-    }, [code, outputType, selectedPipelines, pipelineDependencies]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [code, outputType, stableDeps]); // Use memoized deps
 
     if (!code) return null;
 
@@ -182,41 +390,53 @@ function PythonDataPreview({
                 <Code className="h-4 w-4 text-emerald-600" />
                 <span className="text-xs font-semibold uppercase tracking-wider">Analisi Python ({outputType})</span>
             </div>
-            {loading ? (
-                <div className="p-8 flex justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-            ) : error ? (
-                <div className="p-4 text-sm text-destructive bg-destructive/10">
-                    {error}
-                </div>
-            ) : result ? (
-                <div className="w-full max-w-full bg-white dark:bg-zinc-950">
-                    {result.type === 'table' && result.data && (
-                        <div className="max-h-[300px] overflow-auto">
-                            <DataTable data={result.data} className="border-0" />
-                        </div>
-                    )}
-                    {result.type === 'variable' && result.variables && (
-                        <pre className="p-3 text-xs overflow-auto max-h-48">{JSON.stringify(result.variables, null, 2)}</pre>
-                    )}
-                    {result.type === 'chart' && (
-                        <div className="w-full h-[500px] border-none overflow-hidden relative">
-                            {result.chartHtml ? (
-                                <iframe
-                                    srcDoc={`<html><head><style>body{margin:0;padding:0;background:transparent;overflow:hidden;}</style></head><body>${result.chartHtml}</body></html>`}
-                                    className="w-full h-full border-none"
-                                    title="Chart"
-                                />
-                            ) : result.chartBase64 ? (
-                                <img src={`data:image/png;base64,${result.chartBase64}`} alt="Chart" className="max-w-full h-full object-contain mx-auto" />
-                            ) : (
-                                <div className="flex items-center justify-center h-full text-muted-foreground text-xs italic">Nessun grafico generato</div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            ) : null}
+
+            <div className="p-4 bg-white dark:bg-zinc-950">
+                {/* Visualization of the process */}
+                <HierarchyVisualizer
+                    steps={steps}
+                    currentStepIndex={currentStepIndex}
+                    isExecuting={isExecuting}
+                />
+
+                {isExecuting ? (
+                    <div className="py-8 flex flex-col items-center justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-emerald-500 mb-2" />
+                        <p className="text-xs text-muted-foreground animate-pulse">Elaborazione in corso...</p>
+                    </div>
+                ) : error ? (
+                    <div className="p-4 text-sm text-destructive bg-destructive/10 rounded-md border border-destructive/20">
+                        <p className="font-semibold mb-1">Errore esecuzione:</p>
+                        {error}
+                    </div>
+                ) : finalResult ? (
+                    <div className="w-full max-w-full">
+                        {finalResult.type === 'table' && finalResult.data && (
+                            <div className="max-h-[300px] overflow-auto">
+                                <DataTable data={finalResult.data} className="border-0" />
+                            </div>
+                        )}
+                        {finalResult.type === 'variable' && finalResult.variables && (
+                            <pre className="p-3 text-xs overflow-auto max-h-48 bg-slate-50 dark:bg-slate-900 rounded">{JSON.stringify(finalResult.variables, null, 2)}</pre>
+                        )}
+                        {finalResult.type === 'chart' && (
+                            <div className="w-full h-[70vh] border-none overflow-y-auto overflow-x-hidden">
+                                {finalResult.chartHtml ? (
+                                    <iframe
+                                        srcDoc={`<html><head><style>body{margin:0;padding:0;background:transparent;overflow:hidden;}</style></head><body>${finalResult.chartHtml}</body></html>`}
+                                        className="w-full h-full border-none"
+                                        title="Chart"
+                                    />
+                                ) : finalResult.chartBase64 ? (
+                                    <img src={`data:image/png;base64,${finalResult.chartBase64}`} alt="Chart" className="max-w-full block mx-auto py-4" />
+                                ) : (
+                                    <div className="flex items-center justify-center h-full text-muted-foreground text-xs italic">Nessun grafico generato</div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                ) : null}
+            </div>
         </div>
     );
 }
@@ -660,7 +880,8 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                         tableName: node.pythonResultName,
                         isPython: true,
                         pythonCode: node.pythonCode,
-                        pythonOutputType: node.pythonOutputType || 'table'
+                        pythonOutputType: node.pythonOutputType || 'table',
+                        connectorId: node.pythonConnectorId // 🔥 CRITICAL FIX: Propagate connector ID for HubSpot/API calls
                     });
                 }
             }

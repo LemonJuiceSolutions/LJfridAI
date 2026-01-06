@@ -1698,6 +1698,14 @@ export async function executePythonPreviewAction(
                 debugLogs.push(`[${new Date().toLocaleTimeString()}] Fetching SQL for table '${dep.tableName}' (with ${pipelineCount} ancestors)...`);
 
                 let queryResults: any[] = [];
+
+                // Check if data is already provided (Client-side orchestration)
+                if (inputData[dep.tableName]) {
+                    console.log(`[Python] Dependency ${dep.tableName} already provided in inputData. Skipping fetch.`);
+                    debugLogs.push(`[${new Date().toLocaleTimeString()}] Dependency '${dep.tableName}' provided by client. Skipping fetch.`);
+                    continue;
+                }
+
                 if (dep.query) {
                     try {
                         if (dep.connectorId) {
@@ -1771,69 +1779,95 @@ export async function executePythonPreviewAction(
             }
         }
 
-        const tPythonStart = performance.now();
-        console.log(`[executePythonPreviewAction] Calling Python backend at 5005...`);
-        debugLogs.push(`[${new Date().toLocaleTimeString()}] Sending data to Python backend...`);
 
-        console.log(`[executePythonPreviewAction] Input data keys:`, Object.keys(inputData));
-        for (const k in inputData) {
-            console.log(`  - ${k}: ${inputData[k]?.length} rows`);
+        // Call Flask backend with proper timeout handling
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+
+
+        try {
+            console.log(`[executePythonPreviewAction] Calling Python backend at 5005...`);
+            debugLogs.push(`[${new Date().toLocaleTimeString()}] Sending data to Python backend...`);
+
+            const response = await fetch('http://localhost:5005/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    code,
+                    outputType,
+                    inputData,
+                    env: envVars // Pass env vars
+                }),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                const errText = await response.text();
+                debugLogs.push(`[ERROR] Python backend HTTP ${response.status}: ${errText}`);
+                throw new Error(`Python backend error (${response.status}): ${errText}`);
+            }
+
+            const result = await response.json();
+
+            if (!result.success) {
+                return {
+                    success: false,
+                    error: result.error || 'Unknown error from Python backend',
+                    stdout: result.stdout
+                };
+            }
+
+            // Return the appropriate result based on output type
+            if (outputType === 'table') {
+                return {
+                    success: true,
+                    data: result.data,
+                    columns: result.columns,
+                    rowCount: result.rowCount,
+                    stdout: result.stdout
+                };
+            } else if (outputType === 'variable') {
+                return {
+                    success: true,
+                    variables: result.variables,
+                    stdout: result.stdout
+                };
+            } else if (outputType === 'chart') {
+                return {
+                    success: true,
+                    chartBase64: result.chartBase64,
+                    chartHtml: result.chartHtml,
+                    stdout: result.stdout
+                };
+            }
+
+            return { success: false, error: 'Unknown output type' };
+
+        } catch (fetchError: any) {
+            clearTimeout(timeoutId);
+
+            // Check if it's a timeout/abort error
+            if (fetchError.name === 'AbortError') {
+                return {
+                    success: false,
+                    error: 'Timeout: Il calcolo Python ha impiegato troppo tempo (>5 minuti). Verifica il codice per eventuali loop infiniti.'
+                };
+            }
+
+            const error = fetchError instanceof Error ? fetchError.message : "Error calling Python backend.";
+
+            // Check if it's a connection error
+            if (error.includes('ECONNREFUSED') || error.includes('fetch failed')) {
+                return {
+                    success: false,
+                    error: 'Python backend non raggiungibile. Assicurati che sia in esecuzione su porta 5005.'
+                };
+            }
+
+            return { success: false, error };
         }
-
-        // Call Flask backend
-        const response = await fetch('http://localhost:5005/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                code,
-                outputType,
-                inputData,
-                env: envVars // Pass env vars
-            }),
-            signal: AbortSignal.timeout(300000) // 5 minutes timeout
-        });
-
-        if (!response.ok) {
-            const errText = await response.text();
-            debugLogs.push(`[ERROR] Python backend HTTP ${response.status}: ${errText}`);
-            throw new Error(`Python backend error (${response.status}): ${errText}`);
-        }
-
-        const result = await response.json();
-
-        if (!result.success) {
-            return {
-                success: false,
-                error: result.error || 'Unknown error from Python backend',
-                stdout: result.stdout
-            };
-        }
-
-        // Return the appropriate result based on output type
-        if (outputType === 'table') {
-            return {
-                success: true,
-                data: result.data,
-                columns: result.columns,
-                rowCount: result.rowCount,
-                stdout: result.stdout
-            };
-        } else if (outputType === 'variable') {
-            return {
-                success: true,
-                variables: result.variables,
-                stdout: result.stdout
-            };
-        } else if (outputType === 'chart') {
-            return {
-                success: true,
-                chartBase64: result.chartBase64,
-                chartHtml: result.chartHtml,
-                stdout: result.stdout
-            };
-        }
-
-        return { success: false, error: 'Unknown output type' };
 
     } catch (e) {
         const error = e instanceof Error ? e.message : "Error executing Python code.";

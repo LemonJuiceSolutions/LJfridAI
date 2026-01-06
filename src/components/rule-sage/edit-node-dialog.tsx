@@ -1052,7 +1052,7 @@ export default function EditNodeDialog({
                                 value={editingTrigger.path}
                                 onChange={e => setEditingTrigger({ ...editingTrigger, path: e.target.value })}
                                 className="h-8 text-xs"
-                                placeholder="Path/ID trigger..."
+                                placeholder="Es: FIRESTORE_WRITE::commesse"
                                 disabled={componentIsSaving}
                               />
                             </div>
