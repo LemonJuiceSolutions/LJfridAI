@@ -20,13 +20,39 @@ import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actio
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 
+// 🚀 MODULE-LEVEL CACHE: Persists across component remounts
+const GLOBAL_EXECUTION_CACHE = new Map<string, any>();
+
+// 🔑 Generate cache key for a dependency - using hash for stability
+const generateCacheKey = (dep: any): string => {
+    const codeOrQuery = (dep.isPython ? dep.pythonCode : dep.query) || '';
+    const type = dep.isPython ? 'python' : 'sql';
+    const connector = dep.connectorId || 'none';
+    // Create a stable key using a simple hash of the code
+    const codeHash = hashCode(codeOrQuery);
+    const key = `${type}::${connector}::${dep.tableName}::${codeHash}`;
+    console.log(`[Cache] Key for "${dep.tableName}": ${key.substring(0, 80)}...`);
+    return key;
+};
+
+// Simple string hash function for stable cache keys
+const hashCode = (str: string): string => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString(16);
+};
+
 // --- NEW COMPONENT: Hierarchy Visualizer ---
 function HierarchyVisualizer({
     steps,
     currentStepIndex,
     isExecuting
 }: {
-    steps: { name: string, type: 'sql' | 'python', status: 'pending' | 'running' | 'done' | 'error' }[],
+    steps: { name: string, type: 'sql' | 'python', status: 'pending' | 'running' | 'done' | 'error' | 'cached' }[],
     currentStepIndex: number,
     isExecuting: boolean
 }) {
@@ -46,6 +72,9 @@ function HierarchyVisualizer({
                     if (step.status === 'done') {
                         variant = "default"; // Green (using default style for now, commonly dark/primary)
                         icon = <Check className="h-3 w-3 mr-1" />;
+                    } else if (step.status === 'cached') {
+                        variant = "secondary"; // Blue for cached
+                        icon = <Check className="h-3 w-3 mr-1" />;
                     } else if (step.status === 'running') {
                         variant = "secondary";
                         icon = <Loader2 className="h-3 w-3 mr-1 animate-spin" />;
@@ -53,13 +82,14 @@ function HierarchyVisualizer({
                         variant = "destructive";
                     }
 
-                    // Override style for "Green Light" effect if 'default' isn't green enough in current theme
+                    // Override style for visual differentiation: Green for new, Blue for cached
                     const greenStyle = step.status === 'done' ? "bg-emerald-500 hover:bg-emerald-600 border-transparent text-white" : "";
+                    const blueStyle = step.status === 'cached' ? "bg-sky-500 hover:bg-sky-600 border-transparent text-white" : "";
 
                     return (
                         <div key={idx} className="flex items-center">
                             {idx > 0 && <Separator orientation="horizontal" className="w-4 h-[1px] bg-slate-200 dark:bg-slate-700 mx-1" />}
-                            <Badge variant={variant} className={cn("text-[10px] h-6 px-2 flex items-center transition-all duration-300", greenStyle)}>
+                            <Badge variant={variant} className={cn("text-[10px] h-6 px-2 flex items-center transition-all duration-300", greenStyle, blueStyle)}>
                                 {icon}
                                 {step.type === 'sql' ? <Database className="h-3 w-3 mr-1 opacity-70" /> : <Code className="h-3 w-3 mr-1 opacity-70" />}
                                 {step.name}
@@ -74,23 +104,29 @@ function HierarchyVisualizer({
 
 // --- NEW HOOK: Helper for Flow Execution ---
 function useFlowExecution() {
-    const [steps, setSteps] = useState<{ name: string, type: 'sql' | 'python', status: 'pending' | 'running' | 'done' | 'error', payload?: any }[]>([]);
+    const [steps, setSteps] = useState<{ name: string, type: 'sql' | 'python', status: 'pending' | 'running' | 'done' | 'error' | 'cached', payload?: any }[]>([]);
     const [currentStepIndex, setCurrentStepIndex] = useState(-1);
     const [isExecuting, setIsExecuting] = useState(false);
     const [accumulatedData, setAccumulatedData] = useState<Record<string, any>>({});
     const [finalResult, setFinalResult] = useState<any>(null);
     const [error, setError] = useState<string | null>(null);
+    // 🚀 Using module-level GLOBAL_EXECUTION_CACHE for persistence
 
     const executeFlow = async (
         mainCode: string,
         mainOutputType: 'table' | 'variable' | 'chart',
         dependencies: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[],
-        pythonConnectorId?: string
+        pythonConnectorId?: string,
+        resultTableName?: string // NEW: Optional name to cache the final result with
     ) => {
         setIsExecuting(true);
         setError(null);
         setFinalResult(null);
         setAccumulatedData({});
+
+        // Log current cache state
+        console.log(`[Flow] 📦 Cache state at start: ${GLOBAL_EXECUTION_CACHE.size} entries`,
+            Array.from(GLOBAL_EXECUTION_CACHE.keys()).map(k => k.substring(0, 50)));
 
         // 1. Prepare steps
         const initialSteps = dependencies.map(d => ({
@@ -111,100 +147,177 @@ function useFlowExecution() {
         setSteps(initialSteps);
         setCurrentStepIndex(0);
 
-        const currentData: Record<string, any> = {};
 
-        // 2. Execute Dependencies sequentially
+        const currentData: Record<string, any> = {};
+        let cacheHitCount = 0; // Track cache hits for stats
+
+        // 2. 🚀 OPTIMIZED: Execute Dependencies with parallelization where possible
+        // Group dependencies by their dependency relationships
+        const totalFlowStartTime = performance.now();
+        console.log(`[Flow] 🚀 Starting optimized execution of ${initialSteps.length - 1} dependencies...`);
+
+        // Build dependency graph: which steps depend on which other steps
+        const dependencyGraph = new Map<number, Set<number>>(); // step index -> indices it depends on
+
         for (let i = 0; i < initialSteps.length - 1; i++) {
             const step = initialSteps[i];
             const dep = step.payload;
+            const depsSet = new Set<number>();
 
-            // Update status to running
-            setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'running' } : s));
-            setCurrentStepIndex(i);
-
-            try {
-                let resultData = null;
-
-                if (dep.isPython && dep.pythonCode) {
-                    // Python Dependency
-                    // 🔥 CRITICAL: Pass deps before this one so backend can resolve nested dependencies
-                    const depsBefore = dependencies.slice(0, i);
-                    const res = await executePythonPreviewAction(
-                        dep.pythonCode,
-                        'table',
-                        currentData, // Inject already fetched data!
-                        depsBefore, // Pass ALL deps that come before for proper nesting
-                        dep.connectorId || pythonConnectorId // 🔥 Use dep's own connectorId if available (e.g., HubSpot token)
-                    );
-                    if (res.success && res.data) {
-                        resultData = res.data;
-                    } else {
-                        throw new Error(res.error || `Errore dipendenza Python ${step.name}`);
-                    }
-                } else if (!dep.isPython && dep.query && dep.connectorId) {
-                    // SQL Dependency
-                    // For SQL, we also need to pass previous dependencies if the SQL relies on temp tables (though raw SQL usually doesn't mix execution ctx in Preview action, 
-                    // BUT our 'executeSqlPreviewAction' DOES handle pipelineDependencies for temp tables.
-                    // However, to avoid loop, let's try to fetch it directly.
-                    // Actually, executeSqlPreviewAction is robust. We can just call it.
-                    // IMPORTANT: If this SQL depends on previous Python results, we need a way to pass them.
-                    // Currently executeSqlPreviewAction supports 'pipelineDependencies' which triggers temp table creation.
-                    // We need to map our 'currentData' back to 'pipelineDependencies' format if needed?
-                    // OR, simply: The backend 'executeSqlPreviewAction' creates temp tables from the provided list.
-                    // Since we have the DATA on client now, sending it back to SQL Preview might be heavy.
-                    // BETTER APPROACH: For SQL dependencies, we use the standard action but we filter the dependency list 
-                    // to only include what's needed, OR we accept that SQL handling in backend is fine/safe (loops usually happen in Python recursion).
-                    // LET'S STICK to calling the action, but with a FLATTENED list of previous deps to ensure visibility.
-
-                    // We construct a localized pipelineDependencies list for this SQL query
-                    // containing only the items we've already processed? 
-                    // Actually, for SQL to see previous tables, `executeSqlPreviewAction` expects definitions.
-                    // BUT `executePythonPreviewAction` (which we used for previous steps) returned DATA.
-                    // We can't inject DATA into `executeSqlPreviewAction`. It expects `pipelineDependencies` (queries/code) to run.
-                    // This is a dilemma: Mix of Client-side Data and Server-side Temp Tables.
-                    // SOLUTION for this iteration:
-                    // Only handling Python-Infinite-Loop. SQL loops are rare.
-                    // Python Dependencies can run on Client logic (Request -> Response -> Next Request).
-                    // SQL Dependencies: Call them.
-                    // If a SQL dependency depends on a Python dependency we just calculated... 
-                    // `executeSqlPreviewAction` needs to know about that Python dependency to create the temp table.
-                    // It can re-execute it OR we need a way to pass data.
-                    // Passing Full Data to `executeSqlPreviewAction` isn't supported yet.
-                    // *Compromise*: For SQL steps, we pass the definition of previous steps as `pipelineDependencies` so it can re-run them if needed (Backend optimization handles caching?).
-                    // Wait, if we re-run, we lose the speed benefit.
-                    // **Pivot**: Focusing on the visualizer and Python Fix.
-                    // Use `executeSqlPreviewAction` normally.
-
-                    const res = await executeSqlPreviewAction(
-                        dep.query,
-                        dep.connectorId,
-                        // We pass ALL dependencies so it can resolve what it needs.
-                        // Ideally, we'd filter. For now, pass all deps but mark them.
-                        dependencies // Pass full context so it can find ancestors
-                    );
-                    if (res.data) {
-                        resultData = res.data;
-                    } else {
-                        throw new Error(res.error || `Errore dipendenza SQL ${step.name}`);
+            // Check if this step references any previous steps in its code/query
+            const codeOrQuery = dep.isPython ? dep.pythonCode : dep.query;
+            if (codeOrQuery) {
+                // Look for references to other step names
+                for (let j = 0; j < i; j++) {
+                    const prevStepName = initialSteps[j].name;
+                    if (codeOrQuery.includes(prevStepName)) {
+                        depsSet.add(j);
                     }
                 }
+            }
 
-                if (resultData) {
-                    currentData[step.name] = resultData;
-                    setAccumulatedData(prev => ({ ...prev, [step.name]: resultData }));
-                    setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'done' } : s));
+            dependencyGraph.set(i, depsSet);
+        }
+
+        // Execute in waves: steps with no dependencies first, then steps depending only on completed ones
+        const completed = new Set<number>();
+        const executing = new Set<number>();
+
+        while (completed.size < initialSteps.length - 1) {
+            // Find steps that can execute now (all dependencies completed)
+            const readyToExecute: number[] = [];
+
+            for (let i = 0; i < initialSteps.length - 1; i++) {
+                if (completed.has(i) || executing.has(i)) continue;
+
+                const deps = dependencyGraph.get(i) || new Set();
+                const allDepsCompleted = Array.from(deps).every(d => completed.has(d));
+
+                if (allDepsCompleted) {
+                    readyToExecute.push(i);
+                }
+            }
+
+            if (readyToExecute.length === 0 && executing.size === 0) {
+                console.error('[Flow] ❌ Deadlock detected in dependency graph!');
+                break;
+            }
+
+            // Execute all ready steps in parallel
+            if (readyToExecute.length > 0) {
+                console.log(`[Flow] ⚡ Executing ${readyToExecute.length} parallel step(s): ${readyToExecute.map(i => initialSteps[i].name).join(', ')}`);
+
+                readyToExecute.forEach(i => executing.add(i));
+
+                const parallelPromises = readyToExecute.map(async (i) => {
+                    const step = initialSteps[i];
+                    const dep = step.payload;
+
+                    // 🔍 Check cache first
+                    const cacheKey = generateCacheKey(dep);
+                    const cachedData = GLOBAL_EXECUTION_CACHE.get(cacheKey);
+
+                    if (cachedData) {
+                        // 🎯 Cache HIT!
+                        cacheHitCount++;
+                        console.log(`[Flow] 💙 [${i + 1}/${initialSteps.length - 1}] "${step.name}" - CACHE HIT (${cachedData.length || 0} rows)`);
+                        currentData[step.name] = cachedData;
+                        setAccumulatedData(prev => ({ ...prev, [step.name]: cachedData }));
+                        setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'cached' } : s));
+                        return { index: i, success: true, fromCache: true };
+                    }
+
+                    // 🔄 Cache MISS - Execute normally
+                    console.log(`[Flow] 🔍 [${i + 1}/${initialSteps.length - 1}] "${step.name}" - CACHE MISS, executing...`);
+                    setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'running' } : s));
+
+                    const stepStartTime = performance.now();
+
+                    try {
+                        let resultData = null;
+
+                        if (dep.isPython && dep.pythonCode) {
+                            // Python Dependency
+                            const depsBefore = dependencies.slice(0, i);
+                            const res = await executePythonPreviewAction(
+                                dep.pythonCode,
+                                'table',
+                                currentData,
+                                depsBefore,
+                                dep.connectorId || pythonConnectorId
+                            );
+                            if (res.success && res.data) {
+                                resultData = res.data;
+                            } else {
+                                throw new Error(res.error || `Errore dipendenza Python ${step.name}`);
+                            }
+                        } else if (!dep.isPython && dep.query && dep.connectorId) {
+                            // SQL Dependency
+                            const res = await executeSqlPreviewAction(
+                                dep.query,
+                                dep.connectorId,
+                                dependencies
+                            );
+                            if (res.data) {
+                                resultData = res.data;
+                            } else {
+                                throw new Error(res.error || `Errore dipendenza SQL ${step.name}`);
+                            }
+                        }
+
+                        if (resultData) {
+                            const stepDuration = ((performance.now() - stepStartTime) / 1000).toFixed(2);
+                            console.log(`[Flow] ✅ [${i + 1}/${initialSteps.length - 1}] "${step.name}" completed in ${stepDuration}s (${resultData.length || 0} rows)`);
+
+                            // 💾 Store in cache
+                            GLOBAL_EXECUTION_CACHE.set(cacheKey, resultData);
+                            console.log(`[Flow] 💾 Cached "${step.name}" (cache size: ${GLOBAL_EXECUTION_CACHE.size})`);
+
+                            currentData[step.name] = resultData;
+                            setAccumulatedData(prev => ({ ...prev, [step.name]: resultData }));
+                            setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'done' } : s));
+                        }
+
+                        return { index: i, success: true, fromCache: false };
+                    } catch (err: any) {
+                        console.error(`[Flow] ❌ Error in step "${step.name}":`, err);
+                        setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'error' } : s));
+                        setError(err.message);
+                        setIsExecuting(false);
+                        return { index: i, success: false, error: err.message };
+                    }
+                });
+
+                // Wait for all parallel executions to complete
+                const results = await Promise.all(parallelPromises);
+
+                // Check for errors
+                const failedStep = results.find(r => !r.success);
+                if (failedStep) {
+                    console.error(`[Flow] 🛑 Stopping execution due to error in step ${failedStep.index}`);
+                    return;
                 }
 
-            } catch (err: any) {
-                console.error(`Error in step ${step.name}:`, err);
-                setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'error' } : s));
-                setError(err.message);
-                setIsExecuting(false);
-                return; // Stop execution
+                // Mark as completed
+                readyToExecute.forEach(i => {
+                    completed.add(i);
+                    executing.delete(i);
+                });
             }
         }
 
+        const totalDependenciesDuration = ((performance.now() - totalFlowStartTime) / 1000).toFixed(2);
+        // Calculate cache stats using the counter
+        const totalDeps = initialSteps.length - 1;
+        const cacheHitRate = totalDeps > 0 ? ((cacheHitCount / totalDeps) * 100).toFixed(1) : '0';
+        console.log(`[Flow] 🎉 All ${totalDeps} dependencies completed in ${totalDependenciesDuration}s`);
+        console.log(`[Flow] 📊 Cache stats: ${cacheHitCount}/${totalDeps} hits (${cacheHitRate}%), cache size: ${GLOBAL_EXECUTION_CACHE.size}`);
+
+
+
         // 3. Final Step execution
+        console.log(`[Flow] 🎯 Starting final output generation...`);
+        const finalStepStartTime = performance.now();
         const finalIdx = initialSteps.length - 1;
         setSteps(prev => prev.map((s, idx) => idx === finalIdx ? { ...s, status: 'running' } : s));
         setCurrentStepIndex(finalIdx);
@@ -219,6 +332,20 @@ function useFlowExecution() {
             );
 
             if (res.success) {
+                // 💾 CACHE FINAL RESULT if tableName is provided
+                // This is critical: subsequent steps will look for this result using a key based on this tableName
+                if (resultTableName && res.data) {
+                    const finalResultKey = generateCacheKey({
+                        isPython: true,
+                        pythonCode: mainCode,
+                        connectorId: pythonConnectorId,
+                        tableName: resultTableName
+                    });
+                    GLOBAL_EXECUTION_CACHE.set(finalResultKey, res.data);
+                    console.log(`[Flow] 💾 Cached FINAL result for "${resultTableName}" (cache size: ${GLOBAL_EXECUTION_CACHE.size})`);
+                    console.log(`[Flow] 🔑 Key: ${finalResultKey.substring(0, 60)}...`);
+                }
+
                 setFinalResult({
                     type: mainOutputType,
                     data: res.data,
@@ -264,30 +391,101 @@ type HistoryFrame = {
 
 type HistoryItem = DecisionOptionChild;
 
-// Helper component for SQL Preview
-function SqlDataPreview({ connectorId, query, pipelineDependencies }: {
+// Helper component for SQL Preview - 🚀 NOW WITH CACHING!
+function SqlDataPreview({ connectorId, query, pipelineDependencies, tableName }: {
     connectorId: string,
     query: string,
-    pipelineDependencies?: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[]
+    pipelineDependencies?: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[],
+    tableName?: string // Optional: if provided, we use standard cache key for future deps
 }) {
     const [data, setData] = useState<any[] | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [fromCache, setFromCache] = useState(false);
+
+    // Memoize stable dependencies to prevent re-fetching/loops
+    const stableDeps = useMemo(() => {
+        if (!pipelineDependencies) return [];
+        return pipelineDependencies.filter((v, i, a) => a.findIndex(t => t.tableName === v.tableName) === i);
+    }, [JSON.stringify(pipelineDependencies)]);
+
+    // Construct steps for visualization
+    const steps = useMemo(() => {
+        const currentStatus = loading ? 'running' : data ? 'done' : error ? 'error' : 'pending';
+
+        if (!stableDeps.length) {
+            return [{
+                name: tableName || 'Query Corrente',
+                type: 'sql' as const,
+                status: currentStatus as 'pending' | 'running' | 'done' | 'error' | 'cached'
+            }];
+        }
+
+        const flowSteps: { name: string, type: 'sql' | 'python', status: 'pending' | 'running' | 'done' | 'error' | 'cached' }[] = stableDeps.map(d => ({
+            name: d.tableName,
+            type: (d.isPython ? 'python' : 'sql') as 'sql' | 'python',
+            status: 'cached'
+        }));
+
+        // Add current step
+        flowSteps.push({
+            name: tableName || 'Query Corrente',
+            type: 'sql',
+            status: currentStatus
+        });
+
+        return flowSteps;
+    }, [stableDeps, tableName, loading, data, error]);
 
     useEffect(() => {
         let mounted = true;
         const fetchData = async () => {
             if (!connectorId || !query) return;
-            console.log('[SqlDataPreview] Starting fetch, connectorId:', connectorId, 'query length:', query?.length);
-            console.log('[SqlDataPreview] pipelineDependencies:', JSON.stringify(pipelineDependencies));
+
+            // 🔑 Generate cache key
+            let cacheKey: string;
+
+            if (tableName) {
+                // Use standard key format akin to executeFlow dependencies
+                // This ensures that when this step is a dependency for a future step, it finds the data!
+                cacheKey = generateCacheKey({
+                    isPython: false,
+                    connectorId,
+                    tableName,
+                    query
+                });
+            } else {
+                // Fallback for standalone queries without a specific table name result
+                cacheKey = `sql::${connectorId}::direct::${hashCode(query)}`;
+            }
+
+            console.log(`[SqlDataPreview] 🔑 Cache key (${tableName ? 'std' : 'direct'}): ${cacheKey.substring(0, 60)}...`);
+
+            // 🎯 Check cache first!
+            const cachedData = GLOBAL_EXECUTION_CACHE.get(cacheKey);
+            if (cachedData) {
+                console.log(`[SqlDataPreview] 💙 CACHE HIT! Using cached data (${cachedData.length} rows)`);
+                if (mounted) {
+                    setData(cachedData);
+                    setFromCache(true);
+                }
+                return;
+            }
+
+            // 🔍 Cache miss - fetch from backend
+            console.log('[SqlDataPreview] 🔍 CACHE MISS, fetching from backend...');
             setLoading(true);
+            setFromCache(false);
+
             try {
                 // Pass pipelineDependencies to backend for cascading execution
-                const result = await executeSqlPreviewAction(query, connectorId, pipelineDependencies);
-                console.log('[SqlDataPreview] Result received:', result?.data?.length || 0, 'rows, error:', result?.error);
+                const result = await executeSqlPreviewAction(query, connectorId, stableDeps);
                 if (mounted) {
                     if (result.data) {
                         setData(result.data);
+                        // 💾 Store in global cache
+                        GLOBAL_EXECUTION_CACHE.set(cacheKey, result.data);
+                        console.log(`[SqlDataPreview] 💾 Cached result for "${tableName || 'direct'}" (cache size: ${GLOBAL_EXECUTION_CACHE.size})`);
                     } else {
                         setError(result.error || 'Errore esecuzione query');
                     }
@@ -300,15 +498,20 @@ function SqlDataPreview({ connectorId, query, pipelineDependencies }: {
         };
         fetchData();
         return () => { mounted = false; };
-    }, [connectorId, query, pipelineDependencies]);
+    }, [connectorId, query, stableDeps, tableName]);
 
     if (!connectorId || !query) return null;
 
     return (
         <div className="mt-4 border rounded-md overflow-hidden w-full max-w-full min-w-0 grid grid-cols-1">
+            {steps.length > 0 && (
+                <div className="bg-slate-50 border-b p-2">
+                    <HierarchyVisualizer steps={steps} currentStepIndex={steps.length - 1} isExecuting={loading} />
+                </div>
+            )}
             <div className="bg-muted px-3 py-2 border-b flex items-center gap-2">
                 <Database className="h-4 w-4 text-violet-600" />
-                <span className="text-xs font-semibold uppercase tracking-wider">Dati Correlati</span>
+                <span className="text-xs font-semibold uppercase tracking-wider">Dati Correlati {fromCache && '(Cached)'}</span>
             </div>
             {loading ? (
                 <div className="p-8 flex justify-center">
@@ -333,13 +536,15 @@ function PythonDataPreview({
     outputType,
     selectedPipelines,
     pipelineDependencies,
-    pythonConnectorId
+    pythonConnectorId,
+    tableName
 }: {
     code: string,
     outputType: 'table' | 'variable' | 'chart',
     selectedPipelines?: string[],
     pipelineDependencies: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[],
-    pythonConnectorId?: string // HubSpot connector ID for token injection
+    pythonConnectorId?: string, // HubSpot connector ID for token injection
+    tableName?: string // Optional: if provided, we cache the FINAL result for this table name
 }) {
     // Use the new hook
     const {
@@ -370,7 +575,8 @@ function PythonDataPreview({
                     code,
                     outputType,
                     stableDeps,
-                    pythonConnectorId
+                    pythonConnectorId,
+                    tableName // Pass tableName to allow caching of final result
                 );
             } catch (err) {
                 console.error('[PythonDataPreview] Execution error:', err);
@@ -420,7 +626,7 @@ function PythonDataPreview({
                             <pre className="p-3 text-xs overflow-auto max-h-48 bg-slate-50 dark:bg-slate-900 rounded">{JSON.stringify(finalResult.variables, null, 2)}</pre>
                         )}
                         {finalResult.type === 'chart' && (
-                            <div className="w-full h-[70vh] border-none overflow-y-auto overflow-x-hidden">
+                            <div className="w-full h-[70vh] border-none overflow-auto">
                                 {finalResult.chartHtml ? (
                                     <iframe
                                         srcDoc={`<html><head><style>body{margin:0;padding:0;background:transparent;overflow:hidden;}</style></head><body>${finalResult.chartHtml}</body></html>`}
@@ -941,6 +1147,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                 selectedPipelines={(node as any).pythonSelectedPipelines}
                                 pipelineDependencies={dependencies}
                                 pythonConnectorId={(node as any).pythonConnectorId}
+                                tableName={(node as any).pythonResultName}
                             />
                         )}
                         {isLeafObject && 'sqlConnectorId' in node && 'sqlQuery' in node && (node as any).sqlConnectorId && (
@@ -948,6 +1155,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                 connectorId={(node as any).sqlConnectorId}
                                 query={(node as any).sqlQuery}
                                 pipelineDependencies={dependencies}
+                                tableName={(node as any).sqlResultName}
                             />
                         )}
                     </div>
@@ -1028,6 +1236,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                                             selectedPipelines={(node as any).pythonSelectedPipelines}
                                                             pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
                                                             pythonConnectorId={(node as any).pythonConnectorId}
+                                                            tableName={(node as any).pythonResultName}
                                                         />
                                                     )}
                                                     {'sqlConnectorId' in node && 'sqlQuery' in node && (node as any).sqlConnectorId && (
@@ -1035,6 +1244,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                                             connectorId={(node as any).sqlConnectorId}
                                                             query={(node as any).sqlQuery}
                                                             pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
+                                                            tableName={(node as any).sqlResultName}
                                                         />
                                                     )}
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
@@ -1206,6 +1416,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                             selectedPipelines={(currentNode as any).pythonSelectedPipelines}
                                             pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
                                             pythonConnectorId={(currentNode as any).pythonConnectorId}
+                                            tableName={(currentNode as any).pythonResultName}
                                         />
                                     )}
                                     {'sqlConnectorId' in currentNode && 'sqlQuery' in currentNode && (currentNode as any).sqlConnectorId && (
@@ -1213,6 +1424,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                             connectorId={(currentNode as any).sqlConnectorId}
                                             query={(currentNode as any).sqlQuery}
                                             pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
+                                            tableName={(currentNode as any).sqlResultName}
                                         />
                                     )}
                                 </div>
