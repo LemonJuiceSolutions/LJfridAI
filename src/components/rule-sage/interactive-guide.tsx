@@ -12,6 +12,9 @@ import {
     getTreeAction,
     rephraseQuestionAction,
     resolveDependencyChainAction,
+    executeEmailAction,
+    executeSqlPreviewAction,
+    executePythonPreviewAction
 } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -22,7 +25,6 @@ import { cn } from '@/lib/utils';
 import { DataTable } from '@/components/ui/data-table';
 import { Database, Code, LineChart } from 'lucide-react';
 // import { useFlowExecution } from '@/ai/flows/client-executor'; // Removed broken import
-import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 
@@ -810,8 +812,7 @@ function PythonDataPreview({
                         </p>
                     </div>
                 ) : error ? (
-                    <div className="p-4 text-sm text-destructive bg-destructive/10 rounded-md border border-destructive/20">
-                        <p className="font-semibold mb-1">Errore esecuzione:</p>
+                    <div className="p-4 text-sm text-destructive bg-destructive/10">
                         {error}
                     </div>
                 ) : finalResult ? (
@@ -828,7 +829,7 @@ function PythonDataPreview({
                             <div className="w-full h-[70vh] border-none overflow-auto">
                                 {finalResult.chartHtml ? (
                                     <iframe
-                                        srcDoc={`<html><head><style>body{margin:0;padding:0;background:transparent;overflow:hidden;}</style></head><body>${finalResult.chartHtml}</body></html>`}
+                                        srcDoc={`<html><head><style>body{margin:0;padding:0;background:transparent;overflow:auto;}</style></head><body>${finalResult.chartHtml}</body></html>`}
                                         className="w-full h-full border-none"
                                         title="Chart"
                                     />
@@ -884,6 +885,10 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
     const [loadedSubTrees, setLoadedSubTrees] = useState<Map<string, { tree: DecisionNode, name: string }>>(new Map());
     const [loadingSubTreeIds, setLoadingSubTreeIds] = useState<Set<string>>(new Set());
 
+    // NEW: Automated Actions State
+    const [executedNodeIds, setExecutedNodeIds] = useState<Set<string>>(new Set());
+    const [autoSqlResult, setAutoSqlResult] = useState<{ data: any[], query: string } | null>(null);
+
     const initialTree = useMemo(() => {
         if (!jsonTree) return null;
         try {
@@ -934,12 +939,62 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
 
     useEffect(() => {
         if (currentNode && (typeof currentNode === 'object' && 'decision' in currentNode) && !('question' in currentNode)) {
-            const triggers = (currentNode as DecisionLeaf).triggers;
+            const leaf = currentNode as DecisionLeaf;
+            const triggers = leaf.triggers;
+            const nodeId = (leaf as any).id;
+
+            // Execute Triggers (Legacy)
             if (triggers && triggers.length > 0) {
                 handleExecuteTriggers(triggers);
             }
+
+            // NEW: Automated Actions (Email & SQL)
+            if (nodeId && !executedNodeIds.has(nodeId)) {
+                let actionExecuted = false;
+
+                // 1. Email Action
+                if ((leaf as any).emailAction?.enabled) {
+                    const action = (leaf as any).emailAction;
+                    console.log(`[InteractiveGuide] 📧 Executing Email Action for node ${nodeId}`);
+                    executeEmailAction(action.connectorId, action.to, action.subject, action.body)
+                        .then(res => {
+                            if (res.success) {
+                                toast({ title: "Email Inviata", description: res.message });
+                            } else {
+                                toast({ variant: 'destructive', title: "Errore Email", description: "Impossibile inviare l'email." });
+                            }
+                        });
+                    actionExecuted = true;
+                }
+
+                // 2. SQL Export (Leaf with sqlQuery)
+                if ((leaf as any).sqlQuery) {
+                    const query = (leaf as any).sqlQuery;
+                    const connectorId = (leaf as any).sqlConnectorId;
+                    console.log(`[InteractiveGuide] 💾 Executing SQL Export for node ${nodeId}`);
+
+                    executeSqlPreviewAction(query, connectorId)
+                        .then(res => {
+                            if (res.data) {
+                                setAutoSqlResult({ data: res.data, query });
+                                toast({ title: "Export SQL Eseguito", description: "I dati sono pronti per la visualizzazione." });
+                            } else if (res.error) {
+                                toast({ variant: 'destructive', title: "Errore Export SQL", description: res.error });
+                            }
+                        });
+                    actionExecuted = true;
+                }
+
+                if (actionExecuted) {
+                    setExecutedNodeIds(prev => new Set(prev).add(nodeId));
+                }
+            }
+        } else {
+            // Reset autoSqlResult when moving away from a leaf? 
+            // Or maybe keep it? Let's reset it if we navigate.
+            if (autoSqlResult) setAutoSqlResult(null);
         }
-    }, [currentNode, handleExecuteTriggers]);
+    }, [currentNode, handleExecuteTriggers, executedNodeIds, autoSqlResult, toast]);
 
     // Auto-load sub-trees when they appear in results
     useEffect(() => {
@@ -1255,7 +1310,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                             {actionWrapper(
                                 <>
                                     {icon}
-                                    <div className="w-6 h-6 rounded bg-secondary flex-shrink-0 overflow-hidden relative flex items-center justify-center">
+                                    <div className="flex-shrink-0 w-6 h-6 rounded bg-secondary overflow-hidden relative flex items-center justify-center">
                                         {type === 'media' && item.type === 'image' && (
                                             <Image src={item.url} alt={name} layout="fill" objectFit="cover" />
                                         )}
@@ -1269,6 +1324,22 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                         </div>
                     )
                 })}
+            </div>
+        );
+    };
+
+    // Helper to find a node by ID recursively in the tree
+    // Helper to render SQL Results if present
+    const renderAutoSqlResult = () => {
+        if (!autoSqlResult) return null;
+        return (
+            <div className="mt-4 border rounded-md overflow-hidden">
+                <div className="bg-muted px-3 py-2 border-b flex items-center gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider">Risultati Export SQL</span>
+                </div>
+                <div className="p-0 max-h-[300px] overflow-auto bg-white dark:bg-zinc-950">
+                    <DataTable data={autoSqlResult.data} className="border-0" />
+                </div>
             </div>
         );
     };
