@@ -77,6 +77,7 @@ export interface DecisionLeaf {
   pythonResultName?: string;
   pythonConnectorId?: string;
   pythonSelectedPipelines?: string[];
+  sqlSelectedPipelines?: string[];
   emailAction?: EmailActionConfig;
 }
 
@@ -116,6 +117,7 @@ export interface DecisionNode {
   sqlQuery?: string;
   sqlConnectorId?: string;
   sqlResultName?: string;
+  sqlSelectedPipelines?: string[];
   sqlChatHistory?: ChatMessage[];
   ref?: string;
   subTreeRef?: string;

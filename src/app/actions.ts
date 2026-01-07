@@ -2870,3 +2870,136 @@ export async function importTreeFromJsonAction(treeData: Partial<StoredTree>) {
         return { error: 'Errore interno durante il salvataggio dell\'albero.' };
     }
 }
+
+// Helper to find a node by its result name (SQL or Python) recursively in the tree
+// Server-side version
+function findNodeByResultName(node: any, targetName: string): any {
+    if (!node) return null;
+    const targetLower = targetName.toLowerCase();
+
+    // Check array (children)
+    if (Array.isArray(node)) {
+        for (const item of node) {
+            const found = findNodeByResultName(item, targetName);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    // Check object
+    if (typeof node === 'object') {
+        // Check current node properties (case-insensitive)
+        if ('pythonResultName' in node && typeof node.pythonResultName === 'string' && node.pythonResultName.toLowerCase() === targetLower) return node;
+        if ('sqlResultName' in node && typeof node.sqlResultName === 'string' && node.sqlResultName.toLowerCase() === targetLower) return node;
+
+        // Recursively check triggers
+        if ('triggers' in node && Array.isArray(node.triggers)) {
+            // (Triggers usually don't have results we depend on in this flow context)
+        }
+
+        // Recursively check options
+        if ('options' in node && node.options) {
+            for (const key in node.options) {
+                const found = findNodeByResultName(node.options[key], targetName);
+                if (found) return found;
+            }
+        }
+    }
+
+    return null;
+}
+
+export async function resolveDependencyChainAction(targetName: string): Promise<{ data: any[] | null, error: string | null }> {
+    try {
+        const user = await getAuthenticatedUser();
+
+        // Helper to find a node in ANY tree
+        const findNodeInDb = async (name: string) => {
+            // 1. Search for trees that MIGHT contain the definition (text search on JSON column)
+            const candidates = await db.tree.findMany({
+                where: {
+                    companyId: user.companyId,
+                    jsonDecisionTree: {
+                        contains: name,
+                    }
+                },
+                select: {
+                    id: true,
+                    jsonDecisionTree: true,
+                    name: true
+                }
+            });
+
+            // 2. Iterate and parse
+            for (const tree of candidates) {
+                try {
+                    const json = JSON.parse(tree.jsonDecisionTree);
+                    const node = findNodeByResultName(json, name);
+                    if (node) return node;
+                } catch (e) {
+                    continue;
+                }
+            }
+            return null;
+        };
+
+        const chain: any[] = [];
+        const visited = new Set<string>();
+        const resolving = new Set<string>(); // Cycle detection
+
+        const buildChain = async (currentName: string) => {
+            if (visited.has(currentName.toLowerCase())) return;
+            if (resolving.has(currentName.toLowerCase())) {
+                console.warn(`Circular dependency detected for ${currentName}. Breaking cycle.`);
+                return;
+            }
+            // Skip common keywords to avoid useless DB lookups
+            if (['print', 'len', 'range', 'list', 'dict', 'set', 'str', 'int', 'float', 'import', 'from', 'def', 'return', 'none', 'true', 'false', 'self'].includes(currentName.toLowerCase())) return;
+
+            resolving.add(currentName.toLowerCase());
+
+            const node = await findNodeInDb(currentName);
+
+            if (node) {
+                // Determine dependencies of THIS node
+                let potentialDeps: string[] = [];
+                if (node.pythonCode) {
+                    const matches = node.pythonCode.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [];
+                    potentialDeps = Array.from(new Set(matches));
+                } else if (node.sqlQuery) {
+                    // SQL parsing is harder, but maybe we assume SQL doesn't have cross-tree deps often?
+                    // Or maybe look for {{VarName}} patterns?
+                    // For now, let's stick to Python deps which are the main issue.
+                }
+
+                // Recursively resolve dependencies BEFORE adding this node (Post-Order)
+                for (const dep of potentialDeps) {
+                    // Optimization: Only resolve if it looks like a variable (length > 2)
+                    if (dep.length > 2 && dep !== currentName) {
+                        await buildChain(dep);
+                    }
+                }
+
+                // Add to chain if not already there (visited check handles duplicates, but chain order matters)
+                if (!visited.has(currentName.toLowerCase())) {
+                    chain.push(node);
+                    visited.add(currentName.toLowerCase());
+                }
+            }
+
+            resolving.delete(currentName.toLowerCase());
+        };
+
+        await buildChain(targetName);
+
+        if (chain.length === 0) {
+            return { data: null, error: 'Nessuna dipendenza trovata.' };
+        }
+
+        return { data: chain, error: null };
+
+    } catch (e) {
+        console.error("Error in resolveDependencyChainAction:", e);
+        return { data: null, error: e instanceof Error ? e.message : "Errore durante la risoluzione delle dipendenze." };
+    }
+}
