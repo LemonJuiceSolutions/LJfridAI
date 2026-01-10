@@ -14,7 +14,8 @@ import {
     resolveDependencyChainAction,
     executeEmailAction,
     executeSqlPreviewAction,
-    executePythonPreviewAction
+    executePythonPreviewAction,
+    exportTableToSqlAction
 } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -868,6 +869,423 @@ const findNodeById = (node: any, id: string): any => {
     return null;
 };
 
+// SQL Export Box Component - Interactive export UI with Pipeline Execution
+function SqlExportBox({
+    sqlExportAction,
+    pipelineDependencies,
+    currentNode
+}: {
+    sqlExportAction: { sourceTables: string[], targetConnectorId: string, targetTableName: string },
+    pipelineDependencies: any[],
+    currentNode: any
+}) {
+    const { toast } = useToast();
+    const [exportStatus, setExportStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+    const [rowsInserted, setRowsInserted] = useState<number | null>(null);
+    const [exportError, setExportError] = useState<string | null>(null);
+    const [hasAutoExecuted, setHasAutoExecuted] = useState(false);
+
+    // Use the flow execution hook for dependency pipeline
+    const {
+        steps,
+        currentStepIndex,
+        isExecuting: isPipelineExecuting,
+        finalResult,
+        error: pipelineError,
+        executeFlow
+    } = useFlowExecution();
+
+    // Build the dependencies list for the source tables
+    const sourceDeps = useMemo(() => {
+        const { sourceTables } = sqlExportAction;
+        const deps: any[] = [];
+
+        for (const tableName of sourceTables) {
+            // Check current node
+            if ((currentNode as any)?.sqlResultName === tableName && (currentNode as any)?.sqlQuery) {
+                deps.push({
+                    tableName,
+                    query: (currentNode as any).sqlQuery,
+                    connectorId: (currentNode as any).sqlConnectorId
+                });
+            } else if ((currentNode as any)?.pythonResultName === tableName && (currentNode as any)?.pythonCode) {
+                deps.push({
+                    tableName,
+                    isPython: true,
+                    pythonCode: (currentNode as any).pythonCode,
+                    pythonOutputType: (currentNode as any).pythonOutputType || 'table',
+                    connectorId: (currentNode as any).pythonConnectorId
+                });
+            } else {
+                // Find in pipeline dependencies
+                const dep = pipelineDependencies.find(d => d.tableName === tableName);
+                if (dep) {
+                    deps.push(dep);
+                }
+            }
+        }
+
+        return deps;
+    }, [sqlExportAction.sourceTables, currentNode, pipelineDependencies]);
+
+    // 🌍 Async Dependency Resolution for missing source tables (from linked nodes)
+    const [asyncResolvedDeps, setAsyncResolvedDeps] = useState<any[]>([]);
+    const [isResolvingDeps, setIsResolvingDeps] = useState(false);
+
+    useEffect(() => {
+        let mounted = true;
+        const resolveMissingDeps = async () => {
+            const { sourceTables } = sqlExportAction;
+
+            // Check which source tables are missing from pipelineDependencies
+            const existingNames = new Set([
+                ...pipelineDependencies.map(d => d.tableName.toLowerCase()),
+                ...asyncResolvedDeps.map(d => d.tableName.toLowerCase())
+            ]);
+
+            const missingTables = sourceTables.filter(t => {
+                // Not in current node
+                if ((currentNode as any)?.sqlResultName === t) return false;
+                if ((currentNode as any)?.pythonResultName === t) return false;
+                // Not in existing deps
+                return !existingNames.has(t.toLowerCase());
+            });
+
+            if (missingTables.length === 0) return;
+
+            console.log(`[SqlExportBox] 🌍 Resolving missing source tables: ${missingTables.join(', ')}`);
+            setIsResolvingDeps(true);
+
+            const newDeps: any[] = [];
+
+            for (const tableName of missingTables) {
+                try {
+                    console.log(`[SqlExportBox] 🌍 Fetching dependency chain for: ${tableName}`);
+                    const result = await resolveDependencyChainAction(tableName);
+
+                    if (result.data && Array.isArray(result.data)) {
+                        console.log(`[SqlExportBox] ✅ Server found chain of ${result.data.length} nodes for: ${tableName}`);
+
+                        for (const node of result.data) {
+                            const nodeTableName = node.pythonResultName || node.sqlResultName;
+
+                            // Skip if already added
+                            if (newDeps.some(d => d.tableName === nodeTableName)) continue;
+                            if (pipelineDependencies.some(d => d.tableName === nodeTableName)) continue;
+                            if (asyncResolvedDeps.some(d => d.tableName === nodeTableName)) continue;
+
+                            if ('sqlQuery' in node) {
+                                newDeps.push({
+                                    tableName: node.sqlResultName,
+                                    query: node.sqlQuery,
+                                    connectorId: node.sqlConnectorId
+                                });
+                            } else if ('pythonCode' in node) {
+                                newDeps.push({
+                                    tableName: node.pythonResultName,
+                                    isPython: true,
+                                    pythonCode: node.pythonCode,
+                                    pythonOutputType: node.pythonOutputType || 'table',
+                                    connectorId: node.pythonConnectorId
+                                });
+                            }
+                        }
+                    } else if (result.error) {
+                        console.warn(`[SqlExportBox] Server returned error for ${tableName}: ${result.error}`);
+                    }
+                } catch (e) {
+                    console.warn(`[SqlExportBox] Failed to resolve ${tableName}`, e);
+                }
+            }
+
+            if (mounted && newDeps.length > 0) {
+                console.log(`[SqlExportBox] ✅ Resolved ${newDeps.length} missing dependencies: ${newDeps.map(d => d.tableName).join(', ')}`);
+                setAsyncResolvedDeps(prev => [...prev, ...newDeps]);
+            }
+            if (mounted) setIsResolvingDeps(false);
+        };
+
+        resolveMissingDeps();
+
+        return () => { mounted = false; };
+    }, [sqlExportAction.sourceTables, pipelineDependencies.length, asyncResolvedDeps.length, currentNode]);
+
+    // Build full dependency chain (ancestors + source + async resolved)
+    const fullDependencyChain = useMemo(() => {
+        // Include all pipeline dependencies as ancestors, plus the source deps, plus async resolved
+        const allDeps = [...pipelineDependencies, ...asyncResolvedDeps];
+
+        // Add source deps that aren't already in allDeps
+        for (const srcDep of sourceDeps) {
+            if (!allDeps.find(d => d.tableName === srcDep.tableName)) {
+                allDeps.push(srcDep);
+            }
+        }
+
+        // Deduplicate
+        return allDeps.filter((v, i, a) => a.findIndex(t => t.tableName === v.tableName) === i);
+    }, [pipelineDependencies, sourceDeps, asyncResolvedDeps]);
+
+    // Execute the pipeline and then export
+    const handleExport = useCallback(async () => {
+        console.log('[SqlExportBox] 🚀 Starting pipeline execution for export...');
+        setExportStatus('running');
+        setExportError(null);
+        setRowsInserted(null);
+
+        try {
+            const { sourceTables, targetConnectorId, targetTableName } = sqlExportAction;
+
+            // Try to find the source dependency definition
+            // First look in our specific sourceDeps, then in the full chain (which includes async resolved)
+            let mainSourceDep = sourceDeps.find(d => sourceTables.includes(d.tableName));
+
+            if (!mainSourceDep) {
+                // Fallback: look in fullDependencyChain
+                mainSourceDep = fullDependencyChain.find(d => sourceTables.includes(d.tableName));
+            }
+
+            if (!mainSourceDep) {
+                // Wait... if we are here, maybe we are still resolving?
+                // But auto-execute logic should prevent this.
+                // If manual click, we might be here too early if resolution failed.
+                console.error('[SqlExportBox] Source deps:', sourceDeps);
+                console.error('[SqlExportBox] Full chain:', fullDependencyChain);
+                throw new Error(`Nessuna tabella sorgente trovata (${sourceTables.join(', ')})`);
+            }
+
+            // Get the ancestors (all deps except the main source)
+            const ancestors = fullDependencyChain.filter(d => d.tableName !== mainSourceDep.tableName);
+
+            console.log(`[SqlExportBox] 📦 Dependencies: ${ancestors.map(d => d.tableName).join(' → ')} → ${mainSourceDep.tableName}`);
+
+            // Execute the flow to get the source data
+            let sourceData: any[] = [];
+
+            // Execute all dependencies first using executeSqlPreviewAction or executePythonPreviewAction
+            // This will use/populate the global cache
+            if (mainSourceDep.isPython && mainSourceDep.pythonCode) {
+                console.log(`[SqlExportBox] 🐍 Executing Python: ${mainSourceDep.tableName}`);
+                const res = await executePythonPreviewAction(
+                    mainSourceDep.pythonCode,
+                    mainSourceDep.pythonOutputType || 'table',
+                    {}, // Pre-seeded data handled by deps
+                    ancestors.map(d => ({
+                        tableName: d.tableName,
+                        query: d.query,
+                        isPython: d.isPython,
+                        pythonCode: d.pythonCode,
+                        connectorId: d.connectorId
+                    })),
+                    mainSourceDep.connectorId
+                );
+                if (res.success && Array.isArray(res.data)) {
+                    sourceData = res.data;
+                } else {
+                    throw new Error(res.error || `Errore esecuzione Python per ${mainSourceDep.tableName}`);
+                }
+            } else if (mainSourceDep.query) {
+                console.log(`[SqlExportBox] 🗄️ Executing SQL: ${mainSourceDep.tableName}`);
+                const res = await executeSqlPreviewAction(
+                    mainSourceDep.query,
+                    mainSourceDep.connectorId || '',
+                    ancestors
+                );
+                if (res.data) {
+                    sourceData = res.data;
+                } else {
+                    throw new Error(res.error || `Errore esecuzione SQL per ${mainSourceDep.tableName}`);
+                }
+            }
+
+            if (sourceData.length === 0) {
+                throw new Error('Nessun dato disponibile per l\'export.');
+            }
+
+            console.log(`[SqlExportBox] 📊 Got ${sourceData.length} rows, exporting to ${targetTableName}...`);
+
+            // Execute the export
+            const result = await exportTableToSqlAction(targetConnectorId, targetTableName, sourceData, true);
+
+            if (result.success) {
+                setExportStatus('success');
+                setRowsInserted(result.rowsInserted || 0);
+                toast({ title: "Export SQL Completato", description: `${result.rowsInserted} righe inserite in ${targetTableName}` });
+            } else {
+                throw new Error(result.error || 'Errore sconosciuto');
+            }
+        } catch (e: any) {
+            console.error('[SqlExportBox] Export failed:', e);
+            setExportStatus('error');
+            setExportError(e.message);
+            toast({ variant: 'destructive', title: "Errore Export", description: e.message });
+        }
+    }, [sqlExportAction, sourceDeps, fullDependencyChain, toast]);
+
+    // 🚀 AUTO-EXECUTE: Wait for source data to be cached, then execute
+    useEffect(() => {
+        if (hasAutoExecuted) return;
+        if (exportStatus !== 'idle') return;
+        // Wait for async dependency resolution to complete first
+        if (isResolvingDeps) {
+            console.log('[SqlExportBox] ⏳ Waiting for dependency resolution...');
+            return;
+        }
+
+        const { sourceTables } = sqlExportAction;
+
+        // Function to check if ALL source tables are either in cache OR in fullDependencyChain
+        const checkSourceDataReady = (): boolean => {
+            for (const tableName of sourceTables) {
+                // First check if it's in our resolved dependency chain
+                const hasInDeps = fullDependencyChain.some(d => d.tableName.toLowerCase() === tableName.toLowerCase());
+                if (hasInDeps) {
+                    console.log(`[SqlExportBox] ✅ "${tableName}" found in dependency chain`);
+                    continue;
+                }
+
+                // Then check cache
+                let found = false;
+                for (const [key] of GLOBAL_EXECUTION_CACHE.entries()) {
+                    if (key.includes(`::${tableName}::`)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    console.log(`[SqlExportBox] ⏳ Waiting for "${tableName}" to be cached or resolved...`);
+                    return false;
+                }
+            }
+            console.log(`[SqlExportBox] ✅ All source tables ready: ${sourceTables.join(', ')}`);
+            return true;
+        };
+
+        // Execute if dependencies are resolved (either in chain or timeout)
+        const executeIfReady = () => {
+            if (fullDependencyChain.length > 0 || checkSourceDataReady()) {
+                if (!hasAutoExecuted && exportStatus === 'idle') {
+                    console.log('[SqlExportBox] 🚀 Dependencies resolved, auto-executing export...');
+                    setHasAutoExecuted(true);
+                    handleExport();
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        // Try immediately
+        if (executeIfReady()) return;
+
+        // Poll for cache/deps availability
+        let pollCount = 0;
+        const maxPolls = 30; // Max 60 seconds (30 * 2000ms)
+
+        const pollInterval = setInterval(() => {
+            pollCount++;
+
+            if (executeIfReady()) {
+                clearInterval(pollInterval);
+            } else if (pollCount >= maxPolls) {
+                console.warn('[SqlExportBox] ⚠️ Timeout waiting for dependencies, executing anyway...');
+                clearInterval(pollInterval);
+                if (!hasAutoExecuted && exportStatus === 'idle') {
+                    setHasAutoExecuted(true);
+                    handleExport();
+                }
+            }
+        }, 2000);
+
+        return () => clearInterval(pollInterval);
+    }, [hasAutoExecuted, exportStatus, sqlExportAction.sourceTables, handleExport, isResolvingDeps, fullDependencyChain]);
+
+    // Build steps for visualization
+    const visualSteps = useMemo(() => {
+        const depSteps: { name: string, type: 'sql' | 'python', status: 'pending' | 'running' | 'done' | 'error' | 'cached' }[] = fullDependencyChain.map(d => ({
+            name: d.tableName,
+            type: (d.isPython ? 'python' : 'sql') as 'sql' | 'python',
+            status: 'cached' as const // We assume ancestors are cached or will be executed
+        }));
+
+        // Add the export step
+        depSteps.push({
+            name: `Export → ${sqlExportAction.targetTableName}`,
+            type: 'sql' as const,
+            status: exportStatus === 'running' ? 'running' :
+                exportStatus === 'success' ? 'done' :
+                    exportStatus === 'error' ? 'error' : 'pending'
+        });
+
+        return depSteps;
+    }, [fullDependencyChain, sqlExportAction.targetTableName, exportStatus]);
+
+    return (
+        <div className="mt-4 border rounded-lg overflow-hidden bg-white dark:bg-zinc-900">
+            <div className="bg-gradient-to-r from-violet-500/10 to-indigo-500/10 px-4 py-3 border-b flex items-center gap-3">
+                <div className="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center">
+                    <Database className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                </div>
+                <div>
+                    <p className="text-sm font-semibold text-violet-700 dark:text-violet-300">Esporta in Database SQL</p>
+                    <p className="text-xs text-muted-foreground">
+                        Tabella destinazione: <code className="font-mono bg-muted px-1 rounded">{sqlExportAction.targetTableName}</code>
+                    </p>
+                </div>
+            </div>
+
+            <div className="p-4 space-y-3">
+                {/* Pipeline Visualization */}
+                <HierarchyVisualizer
+                    steps={visualSteps}
+                    currentStepIndex={visualSteps.length - 1}
+                    isExecuting={exportStatus === 'running'}
+                />
+
+                {/* Execute Button */}
+                <Button
+                    className="w-full"
+                    variant={exportStatus === 'success' ? 'outline' : 'default'}
+                    disabled={exportStatus === 'running'}
+                    onClick={handleExport}
+                >
+                    {exportStatus === 'running' ? (
+                        <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Esecuzione pipeline in corso...
+                        </>
+                    ) : exportStatus === 'success' ? (
+                        <>
+                            <Check className="mr-2 h-4 w-4 text-emerald-600" />
+                            Esporta di nuovo
+                        </>
+                    ) : (
+                        <>
+                            <Database className="mr-2 h-4 w-4" />
+                            Ri-esegui Export
+                        </>
+                    )}
+                </Button>
+
+                {/* Result */}
+                {exportStatus === 'success' && (
+                    <div className="flex items-center gap-2 p-3 rounded-md bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
+                        <Check className="h-5 w-5 text-emerald-600" />
+                        <span className="text-sm text-emerald-700 dark:text-emerald-300">
+                            ✅ {rowsInserted} righe inserite in <code className="font-mono">{sqlExportAction.targetTableName}</code>
+                        </span>
+                    </div>
+                )}
+                {exportStatus === 'error' && exportError && (
+                    <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 border border-destructive/30">
+                        <Database className="h-5 w-5 text-destructive" />
+                        <span className="text-sm text-destructive">{exportError}</span>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideProps) {
     const { toast } = useToast();
 
@@ -888,6 +1306,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
     // NEW: Automated Actions State
     const [executedNodeIds, setExecutedNodeIds] = useState<Set<string>>(new Set());
     const [autoSqlResult, setAutoSqlResult] = useState<{ data: any[], query: string } | null>(null);
+    const [sqlExportResult, setSqlExportResult] = useState<{ success: boolean, rowsInserted?: number, error?: string, tableName?: string } | null>(null);
 
     const initialTree = useMemo(() => {
         if (!jsonTree) return null;
@@ -967,21 +1386,132 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                     actionExecuted = true;
                 }
 
-                // 2. SQL Export (Leaf with sqlQuery)
+                // 2. SQL Query Execution (display results)
                 if ((leaf as any).sqlQuery) {
                     const query = (leaf as any).sqlQuery;
                     const connectorId = (leaf as any).sqlConnectorId;
-                    console.log(`[InteractiveGuide] 💾 Executing SQL Export for node ${nodeId}`);
+                    console.log(`[InteractiveGuide] 💾 Executing SQL Query for node ${nodeId}`);
 
-                    executeSqlPreviewAction(query, connectorId)
+                    // Get dependencies from history
+                    const deps = getAccumulatedDependencies(nodeHistory, leaf);
+
+                    executeSqlPreviewAction(query, connectorId, deps)
                         .then(res => {
                             if (res.data) {
                                 setAutoSqlResult({ data: res.data, query });
-                                toast({ title: "Export SQL Eseguito", description: "I dati sono pronti per la visualizzazione." });
+                                toast({ title: "Query SQL Eseguita", description: "I dati sono pronti per la visualizzazione." });
                             } else if (res.error) {
-                                toast({ variant: 'destructive', title: "Errore Export SQL", description: res.error });
+                                toast({ variant: 'destructive', title: "Errore Query SQL", description: res.error });
                             }
                         });
+                    actionExecuted = true;
+                }
+
+                // 3. SQL Export Action (export to destination database)
+                if ((leaf as any).sqlExportAction) {
+                    const exportAction = (leaf as any).sqlExportAction;
+                    const { sourceTables, targetConnectorId, targetTableName } = exportAction;
+                    console.log(`[InteractiveGuide] 📤 Executing SQL Export Action for node ${nodeId}`, exportAction);
+
+                    // Execute SQL Export with dependencies
+                    (async () => {
+                        try {
+                            setSqlExportResult(null); // Reset
+                            let sourceData: any[] = [];
+
+                            // Get accumulated dependencies from the path
+                            const deps = getAccumulatedDependencies(nodeHistory, leaf);
+
+                            // For each source table, find and execute the dependency
+                            for (const tableName of sourceTables) {
+                                // Find the dependency that produces this table
+                                const dep = deps.find(d => d.tableName === tableName);
+
+                                if (dep) {
+                                    if (dep.isPython && dep.pythonCode) {
+                                        // Execute Python dependency
+                                        console.log(`[InteractiveGuide] 🐍 Fetching Python data for ${tableName}`);
+                                        const pythonDeps = deps.filter(d => d.tableName !== tableName);
+                                        const res = await executePythonPreviewAction(
+                                            dep.pythonCode,
+                                            dep.pythonOutputType || 'table',
+                                            {},
+                                            pythonDeps.map(d => ({
+                                                tableName: d.tableName,
+                                                query: d.query,
+                                                isPython: d.isPython,
+                                                pythonCode: d.pythonCode,
+                                                connectorId: d.connectorId
+                                            })),
+                                            dep.connectorId
+                                        );
+                                        if (res.success && Array.isArray(res.data)) {
+                                            sourceData = res.data;
+                                            break;
+                                        }
+                                    } else if (dep.query) {
+                                        // Execute SQL dependency
+                                        console.log(`[InteractiveGuide] 🗄️ Fetching SQL data for ${tableName}`);
+                                        const sqlDeps = deps.filter(d => d.tableName !== tableName);
+                                        const res = await executeSqlPreviewAction(dep.query, dep.connectorId || '', sqlDeps);
+                                        if (res.data) {
+                                            sourceData = res.data;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // Also check if the current node produces this data
+                                if ((leaf as any).sqlResultName === tableName && (leaf as any).sqlQuery) {
+                                    const res = await executeSqlPreviewAction((leaf as any).sqlQuery, (leaf as any).sqlConnectorId || '', deps);
+                                    if (res.data) {
+                                        sourceData = res.data;
+                                        break;
+                                    }
+                                }
+                                if ((leaf as any).pythonResultName === tableName && (leaf as any).pythonCode) {
+                                    const res = await executePythonPreviewAction(
+                                        (leaf as any).pythonCode,
+                                        (leaf as any).pythonOutputType || 'table',
+                                        {},
+                                        deps.map(d => ({
+                                            tableName: d.tableName,
+                                            query: d.query,
+                                            isPython: d.isPython,
+                                            pythonCode: d.pythonCode,
+                                            connectorId: d.connectorId
+                                        })),
+                                        (leaf as any).pythonConnectorId
+                                    );
+                                    if (res.success && Array.isArray(res.data)) {
+                                        sourceData = res.data;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (sourceData.length === 0) {
+                                setSqlExportResult({ success: false, error: 'Nessun dato disponibile per l\'export.', tableName: targetTableName });
+                                toast({ variant: 'destructive', title: "Errore Export", description: "Nessun dato trovato per l'esportazione." });
+                                return;
+                            }
+
+                            // Execute the export
+                            const result = await exportTableToSqlAction(targetConnectorId, targetTableName, sourceData, true);
+
+                            if (result.success) {
+                                setSqlExportResult({ success: true, rowsInserted: result.rowsInserted, tableName: targetTableName });
+                                toast({ title: "Export SQL Completato", description: `${result.rowsInserted} righe inserite in ${targetTableName}` });
+                            } else {
+                                setSqlExportResult({ success: false, error: result.error, tableName: targetTableName });
+                                toast({ variant: 'destructive', title: "Errore Export SQL", description: result.error || 'Errore sconosciuto' });
+                            }
+                        } catch (e: any) {
+                            console.error('[InteractiveGuide] SQL Export failed:', e);
+                            setSqlExportResult({ success: false, error: e.message, tableName: targetTableName });
+                            toast({ variant: 'destructive', title: "Errore Export", description: e.message });
+                        }
+                    })();
                     actionExecuted = true;
                 }
 
@@ -990,11 +1520,11 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                 }
             }
         } else {
-            // Reset autoSqlResult when moving away from a leaf? 
-            // Or maybe keep it? Let's reset it if we navigate.
+            // Reset results when moving away from a leaf
             if (autoSqlResult) setAutoSqlResult(null);
+            if (sqlExportResult) setSqlExportResult(null);
         }
-    }, [currentNode, handleExecuteTriggers, executedNodeIds, autoSqlResult, toast]);
+    }, [currentNode, handleExecuteTriggers, executedNodeIds, autoSqlResult, sqlExportResult, toast]);
 
     // Auto-load sub-trees when they appear in results
     useEffect(() => {
@@ -1335,10 +1865,51 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
         return (
             <div className="mt-4 border rounded-md overflow-hidden">
                 <div className="bg-muted px-3 py-2 border-b flex items-center gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider">Risultati Export SQL</span>
+                    <Database className="h-4 w-4 text-blue-600" />
+                    <span className="text-xs font-semibold uppercase tracking-wider">Risultati Query SQL</span>
                 </div>
                 <div className="p-0 max-h-[300px] overflow-auto bg-white dark:bg-zinc-950">
                     <DataTable data={autoSqlResult.data} className="border-0" />
+                </div>
+            </div>
+        );
+    };
+
+    // Helper to render SQL Export Action result
+    const renderSqlExportResult = () => {
+        if (!sqlExportResult) return null;
+        return (
+            <div className={cn(
+                "mt-4 border rounded-md overflow-hidden",
+                sqlExportResult.success ? "border-emerald-500/50" : "border-destructive/50"
+            )}>
+                <div className={cn(
+                    "px-3 py-3 flex items-center gap-3",
+                    sqlExportResult.success ? "bg-emerald-50 dark:bg-emerald-950/20" : "bg-destructive/10"
+                )}>
+                    {sqlExportResult.success ? (
+                        <>
+                            <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
+                                <Check className="h-5 w-5 text-emerald-600" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Export SQL Completato</p>
+                                <p className="text-xs text-emerald-600/80 dark:text-emerald-400/80">
+                                    {sqlExportResult.rowsInserted} righe inserite in <code className="font-mono bg-emerald-100 dark:bg-emerald-900/50 px-1 rounded">{sqlExportResult.tableName}</code>
+                                </p>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="h-8 w-8 rounded-full bg-destructive/20 flex items-center justify-center">
+                                <Database className="h-5 w-5 text-destructive" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-destructive">Errore Export SQL</p>
+                                <p className="text-xs text-destructive/80">{sqlExportResult.error}</p>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
         );
@@ -1431,6 +2002,18 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                 selectedPipelines={(node as any).sqlSelectedPipelines}
                             />
                         )}
+                        {/* SQL Export Action Box */}
+                        {isLeafObject && 'sqlExportAction' in node && (node as any).sqlExportAction && (
+                            <SqlExportBox
+                                sqlExportAction={(node as any).sqlExportAction}
+                                pipelineDependencies={dependencies}
+                                currentNode={node}
+                            />
+                        )}
+                        {/* Automated SQL Query Results */}
+                        {renderAutoSqlResult()}
+                        {/* SQL Export Action Results */}
+                        {renderSqlExportResult()}
                     </div>
                 </div>
 
@@ -1521,6 +2104,14 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                                             pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
                                                             tableName={(node as any).sqlResultName}
                                                             selectedPipelines={(node as any).sqlSelectedPipelines}
+                                                        />
+                                                    )}
+                                                    {/* SQL Export Action Box for SubTree Question Nodes */}
+                                                    {'sqlExportAction' in node && (node as any).sqlExportAction && (
+                                                        <SqlExportBox
+                                                            sqlExportAction={(node as any).sqlExportAction}
+                                                            pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
+                                                            currentNode={node}
                                                         />
                                                     )}
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
@@ -1702,6 +2293,14 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                             pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
                                             tableName={(currentNode as any).sqlResultName}
                                             selectedPipelines={(currentNode as any).sqlSelectedPipelines}
+                                        />
+                                    )}
+                                    {/* SQL Export Action Box for Question Nodes */}
+                                    {'sqlExportAction' in currentNode && (currentNode as any).sqlExportAction && (
+                                        <SqlExportBox
+                                            sqlExportAction={(currentNode as any).sqlExportAction}
+                                            pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
+                                            currentNode={currentNode}
                                         />
                                     )}
                                 </div>

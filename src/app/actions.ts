@@ -1416,8 +1416,19 @@ export async function exportTableToSqlAction(
 
         }
 
-        // Insert data in batches (to avoid parameter limit)
-        const BATCH_SIZE = 100;
+        // Insert data in batches (to avoid parameter limit of 2100)
+        // Calculate safe batch size based on column count
+        // Max params = 2100. Let's use 2000 to be safe.
+        // BatchSize = 2000 / NumColumns
+
+        const MAX_PARAMS = 2000;
+        const numColumns = columns.length;
+        const calculatedBatchSize = Math.floor(MAX_PARAMS / (numColumns || 1));
+        // Clamp batch size between 1 and 1000 (standard limit for row-value constructor is usually 1000 rows too)
+        const BATCH_SIZE = Math.max(1, Math.min(1000, calculatedBatchSize));
+
+        console.log(`[SQL-EXPORT] Dynamic Batch Size: ${BATCH_SIZE} (Columns: ${numColumns})`);
+
         let totalInserted = 0;
 
         for (let i = 0; i < sourceData.length; i += BATCH_SIZE) {
