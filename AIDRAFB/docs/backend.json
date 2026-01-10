@@ -1,0 +1,959 @@
+{
+  "entities": {
+    "Tenant": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Tenant",
+      "type": "object",
+      "description": "Represents a tenant within the multi-tenant system. A tenant can be a company, a department, or any other organizational unit.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Tenant entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the tenant."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the tenant."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the tenant was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the tenant was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserAccount": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserAccount",
+      "type": "object",
+      "description": "Represents a user account within the system.  Does not store authentication data.  Links to Tenant for multi-tenancy.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the UserAccount entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N UserAccount)"
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address.",
+          "format": "email"
+        },
+        "firstName": {
+          "type": "string",
+          "description": "The user's first name."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "The user's last name."
+        },
+        "role": {
+          "type": "string",
+          "description": "The user's role within the system (e.g., production, warehouse, admin, sales)."
+        },
+        "permissions": {
+          "type": "array",
+          "description": "A list of permissions the user has.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the user account was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the user account was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "email",
+        "firstName",
+        "lastName",
+        "role",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Bom": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Bom",
+      "type": "object",
+      "description": "Bill of Materials defining the components needed for a finished product, including size and color variants.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Bom entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N Bom)"
+        },
+        "productId": {
+          "type": "string",
+          "description": "Reference to Product. (Relationship: Product 1:N Bom).  The finished product this BOM describes."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the Bill of Materials."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the Bill of Materials."
+        },
+        "version": {
+          "type": "string",
+          "description": "Version number of the BOM."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the BOM was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the BOM was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "productId",
+        "name",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Product": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Product",
+      "type": "object",
+      "description": "Represents a finished product in the textile manufacturing process.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Product entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N Product)"
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the product."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the product."
+        },
+        "styleNumber": {
+          "type": "string",
+          "description": "The style number of the product."
+        },
+        "variants": {
+          "type": "array",
+          "description": "Available variants for the product.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the product was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the product was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "name",
+        "styleNumber",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Material": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Material",
+      "type": "object",
+      "description": "Master data for materials, fabrics, accessories, and components used in production.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Material entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N Material)"
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the material."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the material."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of material (e.g., fabric, accessory, component)."
+        },
+        "unitOfMeasure": {
+          "type": "string",
+          "description": "The unit of measure for the material (e.g., meters, yards, pieces)."
+        },
+        "cost": {
+          "type": "number",
+          "description": "The cost of the material."
+        },
+        "leadTime": {
+          "type": "number",
+          "description": "The lead time for ordering the material (in days)."
+        },
+        "minimumOrderQuantity": {
+          "type": "number",
+          "description": "The minimum order quantity for the material."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the material was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the material was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "name",
+        "type",
+        "unitOfMeasure",
+        "cost",
+        "leadTime",
+        "minimumOrderQuantity",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Supplier": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Supplier",
+      "type": "object",
+      "description": "Information about the suppliers of materials and components.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Supplier entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N Supplier)"
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the supplier."
+        },
+        "contactName": {
+          "type": "string",
+          "description": "The name of the contact person at the supplier."
+        },
+        "contactEmail": {
+          "type": "string",
+          "description": "The email address of the contact person at the supplier.",
+          "format": "email"
+        },
+        "contactPhone": {
+          "type": "string",
+          "description": "The phone number of the contact person at the supplier."
+        },
+        "address": {
+          "type": "string",
+          "description": "The address of the supplier."
+        },
+        "leadTime": {
+          "type": "number",
+          "description": "The average lead time for the supplier (in days)."
+        },
+        "minimumOrderValue": {
+          "type": "number",
+          "description": "The minimum order value for the supplier."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the supplier was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the supplier was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "name",
+        "contactName",
+        "contactEmail",
+        "contactPhone",
+        "address",
+        "leadTime",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CustomerOrder": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CustomerOrder",
+      "type": "object",
+      "description": "Customer orders with size/color variations and status tracking.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the CustomerOrder entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N CustomerOrder)"
+        },
+        "customerId": {
+          "type": "string",
+          "description": "Reference to Customer. (Relationship: Customer 1:N CustomerOrder)"
+        },
+        "orderDate": {
+          "type": "string",
+          "description": "The date the order was placed.",
+          "format": "date-time"
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "The date the order is due.",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the order (e.g., open, processing, shipped, completed)."
+        },
+        "totalAmount": {
+          "type": "number",
+          "description": "The total amount of the order."
+        },
+        "shippingAddress": {
+          "type": "string",
+          "description": "The shipping address for the order."
+        },
+        "billingAddress": {
+          "type": "string",
+          "description": "The billing address for the order."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the customer order was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the customer order was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "customerId",
+        "orderDate",
+        "dueDate",
+        "status",
+        "totalAmount",
+        "shippingAddress",
+        "billingAddress",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Customer": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Customer",
+      "type": "object",
+      "description": "Represents a customer placing orders.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Customer entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N Customer)"
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the customer."
+        },
+        "contactName": {
+          "type": "string",
+          "description": "The name of the contact person at the customer."
+        },
+        "contactEmail": {
+          "type": "string",
+          "description": "The email address of the contact person at the customer.",
+          "format": "email"
+        },
+        "contactPhone": {
+          "type": "string",
+          "description": "The phone number of the contact person at the customer."
+        },
+        "address": {
+          "type": "string",
+          "description": "The address of the customer."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the customer was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the customer was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "name",
+        "contactName",
+        "contactEmail",
+        "contactPhone",
+        "address",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Inventory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Inventory",
+      "type": "object",
+      "description": "Tracks inventory levels by size, color, and lot.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Inventory entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N Inventory)"
+        },
+        "materialId": {
+          "type": "string",
+          "description": "Reference to Material. (Relationship: Material 1:N Inventory)."
+        },
+        "size": {
+          "type": "string",
+          "description": "The size of the item in inventory."
+        },
+        "color": {
+          "type": "string",
+          "description": "The color of the item in inventory."
+        },
+        "lotNumber": {
+          "type": "string",
+          "description": "The lot number of the item in inventory."
+        },
+        "quantityOnHand": {
+          "type": "number",
+          "description": "The quantity of the item currently in stock."
+        },
+        "quantityAllocated": {
+          "type": "number",
+          "description": "The quantity of the item allocated to orders or production."
+        },
+        "reorderPoint": {
+          "type": "number",
+          "description": "The reorder point for the item."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the inventory entry was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the inventory entry was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "materialId",
+        "size",
+        "color",
+        "lotNumber",
+        "quantityOnHand",
+        "quantityAllocated",
+        "reorderPoint",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ProductionOrder": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ProductionOrder",
+      "type": "object",
+      "description": "Represents a production order generated by the MRP system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ProductionOrder entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N ProductionOrder)"
+        },
+        "bomId": {
+          "type": "string",
+          "description": "Reference to Bom. (Relationship: Bom 1:N ProductionOrder)"
+        },
+        "orderDate": {
+          "type": "string",
+          "description": "The date the production order was created.",
+          "format": "date-time"
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "The date the production order is due.",
+          "format": "date-time"
+        },
+        "quantity": {
+          "type": "number",
+          "description": "The quantity to be produced."
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the production order (e.g., planned, released, in progress, completed)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Any notes or comments related to the production order."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the production order was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the production order was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "bomId",
+        "orderDate",
+        "dueDate",
+        "quantity",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BomMaterial": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "BomMaterial",
+      "type": "object",
+      "description": "Represents the many-to-many relationship between Bom and Material.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the BomMaterial entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N BomMaterial)"
+        },
+        "bomId": {
+          "type": "string",
+          "description": "Reference to Bom. (Relationship: Bom N:N Material)"
+        },
+        "materialId": {
+          "type": "string",
+          "description": "Reference to Material. (Relationship: Material N:N Bom)"
+        },
+        "quantity": {
+          "type": "number",
+          "description": "The quantity of the material required for the BOM."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The date and time when the BomMaterial record was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The date and time when the BomMaterial record was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "bomId",
+        "materialId",
+        "quantity",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+     "UserSettings": {
+      "title": "User Settings",
+      "description": "Stores user-specific settings and preferences, such as dashboard layout, navigation, and data pipeline configurations.",
+      "type": "object",
+      "properties": {
+        "navigation": {
+          "type": "object",
+          "description": "User's navigation menu configuration."
+        },
+        "dashboard": {
+          "type": "object",
+          "description": "User's dashboard configuration."
+        },
+        "orders": {
+          "type": "object",
+          "description": "User's orders page configuration."
+        },
+        "planning": {
+            "type": "object",
+            "description": "User's planning page configuration."
+        },
+        "acquisti": {
+            "type": "object",
+            "description": "User's purchasing page configuration."
+        },
+        "cutting": {
+            "type": "object",
+            "description": "User's cutting page configuration."
+        },
+        "sewing": {
+            "type": "object",
+            "description": "User's sewing page configuration."
+        },
+        "printing": {
+            "type": "object",
+            "description": "User's printing page configuration."
+        },
+        "embroidery": {
+            "type": "object",
+            "description": "User's embroidery page configuration."
+        },
+        "lavanderia": {
+            "type": "object",
+            "description": "User's laundry page configuration."
+        },
+        "stiro": {
+            "type": "object",
+            "description": "User's ironing page configuration."
+        },
+        "controllo-qualita": {
+            "type": "object",
+            "description": "User's quality control page configuration."
+        },
+        "packaging": {
+            "type": "object",
+            "description": "User's packaging page configuration."
+        },
+        "magazzino": {
+            "type": "object",
+            "description": "User's warehouse page configuration."
+        },
+        "setup": {
+            "type": "object",
+            "description": "User's setup page configuration."
+        },
+        "pipelines": {
+            "type": "object",
+            "description": "User's data pipeline configurations."
+        }
+      }
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "tenants/{tenantId}",
+        "definition": {
+          "entityName": "Tenant",
+          "schema": {
+            "$ref": "#/backend/entities/Tenant"
+          },
+          "description": "Represents a tenant in the system.  Top-level entity.  All other entities are scoped to a Tenant. Includes Tenant metadata.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            }
+          ]
+        }
+      },
+      {
+        "path": "tenants/{tenantId}/userAccounts/{userAccountId}",
+        "definition": {
+          "entityName": "UserAccount",
+          "schema": {
+            "$ref": "#/backend/entities/UserAccount"
+          },
+          "description": "Represents a user account within a tenant. The 'tenantId' is denormalized for authorization independence.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "userAccountId",
+              "description": "The unique identifier for the user account."
+            }
+          ]
+        }
+      },
+       {
+        "path": "tenants/{tenantId}/userSettings/{userId}",
+        "definition": {
+          "entityName": "UserSettings",
+          "schema": {
+            "$ref": "#/backend/entities/UserSettings"
+          },
+          "description": "Stores user-specific application settings like dashboard layouts, navigation preferences, and pipeline configurations.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "userId",
+              "description": "The user's unique ID, matching their Firebase Auth UID."
+            }
+          ]
+        }
+      },
+      {
+        "path": "tenants/{tenantId}/products/{productId}",
+        "definition": {
+          "entityName": "Product",
+          "schema": {
+            "$ref": "#/backend/entities/Product"
+          },
+          "description": "Represents a product within a tenant. The 'tenantId' is denormalized for authorization independence.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "productId",
+              "description": "The unique identifier for the product."
+            }
+          ]
+        }
+      },
+      {
+        "path": "tenants/{tenantId}/boms/{bomId}",
+        "definition": {
+          "entityName": "Bom",
+          "schema": {
+            "$ref": "#/backend/entities/Bom"
+          },
+          "description": "Represents a bill of materials within a tenant. The 'tenantId' is denormalized for authorization independence.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "bomId",
+              "description": "The unique identifier for the BOM."
+            }
+          ]
+        }
+      },
+      {
+        "path": "tenants/{tenantId}/materials/{materialId}",
+        "definition": {
+          "entityName": "Material",
+          "schema": {
+            "$ref": "#/backend/entities/Material"
+          },
+          "description": "Represents a material within a tenant. The 'tenantId' is denormalized for authorization independence.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "materialId",
+              "description": "The unique identifier for the material."
+            }
+          ]
+        }
+      },
+      {
+        "path": "tenants/{tenantId}/suppliers/{supplierId}",
+        "definition": {
+          "entityName": "Supplier",
+          "schema": {
+            "$ref": "#/backend/entities/Supplier"
+          },
+          "description": "Represents a supplier within a tenant. The 'tenantId' is denormalized for authorization independence.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "supplierId",
+              "description": "The unique identifier for the supplier."
+            }
+          ]
+        }
+      },
+      {
+        "path": "tenants/{tenantId}/customerOrders/{customerOrderId}",
+        "definition": {
+          "entityName": "CustomerOrder",
+          "schema": {
+            "$ref": "#/backend/entities/CustomerOrder"
+          },
+          "description": "Represents a customer order within a tenant. The 'tenantId' is denormalized for authorization independence.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "customerOrderId",
+              "description": "The unique identifier for the customer order."
+            }
+          ]
+        }
+      },
+      {
+        "path": "tenants/{tenantId}/customers/{customerId}",
+        "definition": {
+          "entityName": "Customer",
+          "schema": {
+            "$ref": "#/backend/entities/Customer"
+          },
+          "description": "Represents a customer within a tenant. The 'tenantId' is denormalized for authorization independence.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "customerId",
+              "description": "The unique identifier for the customer."
+            }
+          ]
+        }
+      },
+      {
+        "path": "tenants/{tenantId}/inventories/{inventoryId}",
+        "definition": {
+          "entityName": "Inventory",
+          "schema": {
+            "$ref": "#/backend/entities/Inventory"
+          },
+          "description": "Represents an inventory item within a tenant. The 'tenantId' is denormalized for authorization independence.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "inventoryId",
+              "description": "The unique identifier for the inventory item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "tenants/{tenantId}/productionOrders/{productionOrderId}",
+        "definition": {
+          "entityName": "ProductionOrder",
+          "schema": {
+            "$ref": "#/backend/entities/ProductionOrder"
+          },
+          "description": "Represents a production order within a tenant. The 'tenantId' is denormalized for authorization independence.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "productionOrderId",
+              "description": "The unique identifier for the production order."
+            }
+          ]
+        }
+      },
+      {
+        "path": "tenants/{tenantId}/bomMaterials/{bomMaterialId}",
+        "definition": {
+          "entityName": "BomMaterial",
+          "schema": {
+            "$ref": "#/backend/entities/BomMaterial"
+          },
+          "description": "Represents the relationship between a BOM and a Material within a tenant. The 'tenantId' is denormalized for authorization independence.",
+          "params": [
+            {
+              "name": "tenantId",
+              "description": "The unique identifier for the tenant."
+            },
+            {
+              "name": "bomMaterialId",
+              "description": "The unique identifier for the BomMaterial relationship."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "This Firestore structure is designed for a multi-tenant MRP system for a textile company, focusing on security, scalability, and debuggability. It adheres to the principles of Authorization Independence (denormalization), Structural Segregation (homogeneous security posture), Access Modeling (standardization), and Data Clarity. Each tenant's data is isolated under the `tenants/{tenantId}` path, and authorization relies on the user's `tenantId` and role within that tenant. All timestamps are strings conforming to date-time format. Ids are strings. \n\n**Authorization Independence:**\n*   The `tenantId` is denormalized into every document, eliminating the need for `get()` calls to parent documents for authorization. Security rules can directly verify if `request.auth.uid` has access to a specific tenant.\n*   User roles and permissions are stored within the `UserAccount` document. While there is no explicit user role collection, role-based access control is achieved through the `role` field in the `UserAccount` and can be used in the rules.\n\n**Structural Segregation:**\n*   All collections are tenant-specific. This ensures that data with different access requirements is not mixed within the same collection.\n\n**Access Modeling:**\n*   Tenant-owned data is stored under the `tenants/{tenantId}` path. This path-based ownership simplifies security rules.\n*   User-owned data (UserAccounts) is stored under `tenants/{tenantId}/userAccounts/{userAccountId}`.\n\n**QAPs (Rules are not Filters):**\n*   The structure enables secure `list` operations by requiring that all documents in a collection share the same security requirements. Rules can easily filter list operations based on the `tenantId` and user roles within that tenant.\n\n\n**Invariants:**\n*   Ownership is enforced by the `tenantId` field in each document.\n*   Timestamps (`createdAt`, `updatedAt`) can be enforced through rules using server timestamps.\n*   Denormalized data (e.g., `tenantId` in all subcollections) can be validated via rules to ensure consistency.\n\nThis design promotes clear, robust, and easily debuggable security rules while supporting the core features of the TextileFlow MRP system."
+  }
+}
