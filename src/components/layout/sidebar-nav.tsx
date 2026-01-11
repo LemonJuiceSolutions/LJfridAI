@@ -91,7 +91,7 @@ export function SidebarNav() {
                 <ScrollArea className="flex-1 px-3 py-3">
                     <nav className="space-y-0.5">
                         {/* Production Section (Dynamic) */}
-                        <p className="px-2.5 py-1.5 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Produzione</p>
+                        <p className="px-2.5 py-1.5 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Aidra</p>
                         {isLoading ? (
                             <div className="px-2.5 py-2 text-sm text-slate-400">Caricamento...</div>
                         ) : (
@@ -144,42 +144,11 @@ export function SidebarNav() {
                                 </Link>
                             );
                         })}
-
-                        {/* Settings Section (Dynamic) */}
-                        <Separator className="my-2" />
-                        <p className="px-2.5 py-1.5 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Impostazioni</p>
-                        {isLoading ? (
-                            <div className="px-2.5 py-2 text-sm text-slate-400">Caricamento...</div>
-                        ) : (
-                            settingsNavItems.map((item) => {
-                                const isActive = pathname === item.href;
-                                // Cast LucideIcons to any to index it with string key
-                                const IconComponent = (LucideIcons as any)[item.icon] || LucideIcons.HelpCircle;
-                                return (
-                                    <Link
-                                        key={item.label}
-                                        href={item.href}
-                                        className={cn(
-                                            "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
-                                            isActive
-                                                ? "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
-                                                : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-900 hover:text-slate-900 dark:hover:text-white"
-                                        )}
-                                    >
-                                        <IconComponent className={cn(
-                                            "h-4 w-4",
-                                            isActive ? "text-violet-600 dark:text-violet-400" : "text-slate-400 dark:text-slate-500"
-                                        )} />
-                                        <span>{item.label}</span>
-                                    </Link>
-                                );
-                            })
-                        )}
                     </nav>
                 </ScrollArea>
 
                 {/* Footer */}
-                <div className="border-t border-slate-100 dark:border-zinc-800 p-3 space-y-2">
+                <div className="border-t border-slate-100 dark:border-zinc-800 p-3 space-y-1">
                     <Link
                         href="/settings"
                         className={cn(
@@ -192,9 +161,21 @@ export function SidebarNav() {
                         <Settings className={cn("h-4 w-4", pathname === '/settings' ? "text-violet-600 dark:text-violet-400" : "text-slate-400 dark:text-slate-500")} />
                         <span>Impostazioni</span>
                     </Link>
+                    <Link
+                        href="/settings/navigation"
+                        className={cn(
+                            "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
+                            pathname === '/settings/navigation'
+                                ? "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
+                                : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-900 hover:text-slate-900 dark:hover:text-white"
+                        )}
+                    >
+                        <Compass className={cn("h-4 w-4", pathname === '/settings/navigation' ? "text-violet-600 dark:text-violet-400" : "text-slate-400 dark:text-slate-500")} />
+                        <span>Navigation</span>
+                    </Link>
 
                     {session?.user && (
-                        <div className="rounded-md bg-slate-50 dark:bg-zinc-900 px-2.5 py-2 space-y-1.5">
+                        <div className="rounded-md bg-slate-50 dark:bg-zinc-900 px-2.5 py-2 space-y-1.5 mt-2">
                             <div>
                                 <p className="text-[12px] font-medium text-slate-700 dark:text-slate-300 truncate">{session.user.name || 'Utente'}</p>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-500 truncate">{session.user.email}</p>

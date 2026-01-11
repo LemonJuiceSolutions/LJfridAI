@@ -17,8 +17,6 @@ export const navItems = [
 ];
 
 export const settingsNavItems = [
-    { href: '/setup', icon: 'Plug', label: 'Setup' },
-    { href: '/pipelines', icon: 'GitCommitHorizontal', label: 'Pipelines' },
     { href: '/settings/navigation', icon: 'Compass', label: 'Navigation' },
     { href: '/settings', icon: 'Settings', label: 'Settings' }
 ];
@@ -30,10 +28,10 @@ const yearForecast = 688000;
 const prevYearRevenue = 650000;
 
 export const kpiData = [
-  { title: 'Fatturato Reale (YTD)', value: `€${(ytdRevenue/1000).toFixed(0)}k`, change: `${((ytdRevenue-ytdBudget)/ytdBudget * 100).toFixed(1)}%`, period: 'vs Budget YTD' },
-  { title: 'Budget (YTD)', value: `€${(ytdBudget/1000).toFixed(0)}k`, change: '', period: '' },
-  { title: 'Forecast (Anno)', value: `€${(yearForecast/1000).toFixed(0)}k`, change: `${((yearForecast-prevYearRevenue)/prevYearRevenue * 100).toFixed(1)}%`, period: 'vs Anno Precedente' },
-  { title: 'Fatturato Anno Prec.', value: `€${(prevYearRevenue/1000).toFixed(0)}k`, change: '', period: '' },
+    { title: 'Fatturato Reale (YTD)', value: `€${(ytdRevenue / 1000).toFixed(0)}k`, change: `${((ytdRevenue - ytdBudget) / ytdBudget * 100).toFixed(1)}%`, period: 'vs Budget YTD' },
+    { title: 'Budget (YTD)', value: `€${(ytdBudget / 1000).toFixed(0)}k`, change: '', period: '' },
+    { title: 'Forecast (Anno)', value: `€${(yearForecast / 1000).toFixed(0)}k`, change: `${((yearForecast - prevYearRevenue) / prevYearRevenue * 100).toFixed(1)}%`, period: 'vs Anno Precedente' },
+    { title: 'Fatturato Anno Prec.', value: `€${(prevYearRevenue / 1000).toFixed(0)}k`, change: '', period: '' },
 ];
 
 export const overviewChartData = [
@@ -85,11 +83,11 @@ export const capacityChartData = [
 ];
 
 export const recentOrdersData = [
-  { order: '#3210', customer: 'Olivia Martin', date: 'Feb 20, 2024', status: 'Shipped', total: '$42.50' },
-  { order: '#3209', customer: 'Ava Johnson', date: 'Feb 18, 2024', status: 'Processing', total: '$75.00' },
-  { order: '#3208', customer: 'Liam Smith', date: 'Feb 15, 2024', status: 'Shipped', total: '$120.00' },
-  { order: '#3207', customer: 'Noah Williams', date: 'Feb 14, 2024', status: 'Delivered', total: '$250.00' },
-  { order: '#3206', customer: 'Emma Brown', date: 'Feb 12, 2024', status: 'Cancelled', total: '$55.00' },
+    { order: '#3210', customer: 'Olivia Martin', date: 'Feb 20, 2024', status: 'Shipped', total: '$42.50' },
+    { order: '#3209', customer: 'Ava Johnson', date: 'Feb 18, 2024', status: 'Processing', total: '$75.00' },
+    { order: '#3208', customer: 'Liam Smith', date: 'Feb 15, 2024', status: 'Shipped', total: '$120.00' },
+    { order: '#3207', customer: 'Noah Williams', date: 'Feb 14, 2024', status: 'Delivered', total: '$250.00' },
+    { order: '#3206', customer: 'Emma Brown', date: 'Feb 12, 2024', status: 'Cancelled', total: '$55.00' },
 ];
 
 export const bomData = [
@@ -199,13 +197,13 @@ const scarfBom = {
 };
 
 export const productionStages = [
-    'Pending', 
-    'Planning', 
-    'Procurement', 
-    'Cutting', 
-    'Sewing', 
-    'Printing', 
-    'Embroidery', 
+    'Pending',
+    'Planning',
+    'Procurement',
+    'Cutting',
+    'Sewing',
+    'Printing',
+    'Embroidery',
     'Lavanderia',
     'Stiro',
     'Finishing',
@@ -218,57 +216,57 @@ export const productionStages = [
 const generateStages = (status: string, quantity: number) => {
     const currentIndex = productionStages.indexOf(status);
     let stages = productionStages.map((stageName, index) => {
-      let stageQuantity: number | null = null;
-  
-      if (index <= currentIndex) {
-        stageQuantity = quantity - Math.floor(index * 2);
-      }
-      
-      // Specific logic to create discrepancies
-      if (stageName === 'Procurement' && index <= currentIndex) {
-        stageQuantity = quantity - 2; // Simulate a fixed procurement discrepancy
-      }
-      
-      if (stageName === 'Sewing' && status === 'Finishing') {
-        stageQuantity = quantity - 10; // Simulate drop-off at sewing
-      }
-  
-      if (status === 'Pending' || (status === 'Planning' && stageName !== 'Planning')) {
-        stageQuantity = null;
-      }
-      if(status === 'Planning' && stageName === 'Planning') {
-        stageQuantity = quantity;
-      }
+        let stageQuantity: number | null = null;
 
-      if (status === 'Shipped') {
-        stageQuantity = quantity - 15 - (index * 2);
-      }
-  
-      return { name: stageName, quantity: stageQuantity };
+        if (index <= currentIndex) {
+            stageQuantity = quantity - Math.floor(index * 2);
+        }
+
+        // Specific logic to create discrepancies
+        if (stageName === 'Procurement' && index <= currentIndex) {
+            stageQuantity = quantity - 2; // Simulate a fixed procurement discrepancy
+        }
+
+        if (stageName === 'Sewing' && status === 'Finishing') {
+            stageQuantity = quantity - 10; // Simulate drop-off at sewing
+        }
+
+        if (status === 'Pending' || (status === 'Planning' && stageName !== 'Planning')) {
+            stageQuantity = null;
+        }
+        if (status === 'Planning' && stageName === 'Planning') {
+            stageQuantity = quantity;
+        }
+
+        if (status === 'Shipped') {
+            stageQuantity = quantity - 15 - (index * 2);
+        }
+
+        return { name: stageName, quantity: stageQuantity };
     });
 
     if (status === 'Pending') {
         stages = productionStages.map(stageName => ({ name: stageName, quantity: null }));
     }
-  
+
     return stages;
 };
 
 export const customerOrdersData = [
-    { 
+    {
         id: 'ORD5001', customer: 'Modern Apparel', date: '2024-05-10', items: 2, total: 6250,
         lines: [
             { jobId: 'JOB7001', product: 'Men\'s Classic T-Shirt', sku: 'TS-M-BLK-L', quantity: 100, price: 25, color: 'Black', size: 'L', status: 'Sewing', bom: tShirtBom, stages: generateStages('Sewing', 100), imageUrl: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHx0JTIwc2hpcnR8ZW58MHx8fHwxNzYzMjAwMTg5fDA&ixlib=rb-4.1.0&q=80&w=1080' },
             { jobId: 'JOB7002', product: 'Men\'s Classic T-Shirt', sku: 'TS-M-WHT-L', quantity: 150, price: 25, color: 'White', size: 'L', status: 'Cutting', bom: tShirtBom, stages: generateStages('Cutting', 150), imageUrl: 'https://images.unsplash.com/photo-1618354691373-d851c5c3a990?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHx0JTIwc2hpcnR8ZW58MHx8fHwxNzYzMjAwMTg5fDA&ixlib=rb-4.1.0&q=80&w=1080' },
         ]
     },
-    { 
+    {
         id: 'ORD5002', customer: 'Chic Boutique', date: '2024-05-12', items: 1, total: 3000,
         lines: [
             { jobId: 'JOB7003', product: 'Women\'s Skinny Jeans', sku: 'JN-W-BLU-28', quantity: 50, price: 60, color: 'Blue', size: '28', status: 'Finishing', bom: jeansBom, stages: generateStages('Finishing', 50), imageUrl: 'https://images.unsplash.com/photo-1604176354204-9268737828e4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxqZWFuc3xlbnwwfHx8fDE3NjMyMDAyMDZ8MA&ixlib=rb-4.1.0&q=80&w=1080' },
         ]
     },
-    { 
+    {
         id: 'ORD5003', customer: 'The Style Hub', date: '2024-05-15', items: 2, total: 20000,
         lines: [
             { jobId: 'JOB7004', product: 'Summer Floral Dress', sku: 'DR-S-FLO-M', quantity: 200, price: 75, color: 'Floral', size: 'M', status: 'Procurement', bom: dressBom, stages: generateStages('Procurement', 200), imageUrl: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxkcmVzc3xlbnwwfHx8fDE3NjMyMDAyMjR8MA&ixlib=rb-4.1.0&q=80&w=1080' },
@@ -276,13 +274,13 @@ export const customerOrdersData = [
 
         ]
     },
-    { 
+    {
         id: 'ORD5004', customer: 'Urban Threads', date: '2024-05-18', items: 1, total: 4000,
         lines: [
             { jobId: 'JOB7005', product: 'Men\'s Leather Belt', sku: 'BLT-M-BRN-32', quantity: 100, price: 40, color: 'Brown', size: '32', status: 'Controllo Qualità', bom: beltBom, stages: generateStages('Controllo Qualità', 100), imageUrl: 'https://images.unsplash.com/photo-1619085985207-6f1351111667?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxiZWx0fGVufDB8fHx8MTc2MzIwMDIzN3ww&ixlib=rb-4.1.0&q=80&w=1080' },
         ]
     },
-    { 
+    {
         id: 'ORD5005', customer: 'Classic Wear', date: '2024-05-20', items: 1, total: 1500,
         lines: [
             { jobId: 'JOB7006', product: 'Silk Scarf', sku: 'SCRF-U-MLT-OS', quantity: 50, price: 30, color: 'Multicolor', size: 'One Size', status: 'Shipped', bom: scarfBom, stages: generateStages('Shipped', 50), imageUrl: 'https://images.unsplash.com/photo-1529068133543-859b4d4a7c15?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxzY2FyZnxlbnwwfHx8fDE3NjMyMDAyNDZ8MA&ixlib=rb-4.1.0&q=80&w=1080' },
@@ -420,58 +418,58 @@ export const costCenterData = [
     { month: 'Ott', budget: { materials: 32000, hours: 22000, external: 7500 }, actual: { materials: null, hours: null, external: null } },
     { month: 'Nov', budget: { materials: 35000, hours: 24000, external: 8000 }, actual: { materials: null, hours: null, external: null } },
     { month: 'Dic', budget: { materials: 25000, hours: 18000, external: 6000 }, actual: { materials: null, hours: null, external: null } },
-  ];
+];
 
-  export const mockPipelines = [
+export const mockPipelines = [
     {
         id: 'pipe_sales_analysis',
         name: 'Analisi Vendite per Prodotto',
         description: 'Estrae e aggrega i dati di vendita per prodotto.',
         nodes: {
-          'start': { id: 'start', name: 'Start', icon: 'Play', type: 'start', schedule: { frequency: 'daily', time: '09:00' }, outputs: [{ name: 'Trigger', type: 'trigger' }] },
-          'get-orders': { id: 'get-orders', name: 'Estrai Ordini (da mock)', icon: 'Database', iconColor: 'blue-500', script: 'SELECT * FROM customerOrdersData;', previewType: 'table', outputs: [{ name: 'Raw Order Data', type: 'table' }] },
-          'group-by-product': { id: 'group-by-product', name: 'Raggruppa per Prodotto (SQL)', icon: 'Sigma', iconColor: 'green-500', script: 'SELECT product, SUM(quantity) as total_quantity FROM ? GROUP BY product;', outputs: [{ name: 'Grouped Data', type: 'table'}] },
-          'end-table': { id: 'end-table', name: 'Tabella Risultati', icon: 'Table2', iconColor: 'purple-500', type: 'end', previewType: 'table', outputs: [] }
+            'start': { id: 'start', name: 'Start', icon: 'Play', type: 'start', schedule: { frequency: 'daily', time: '09:00' }, outputs: [{ name: 'Trigger', type: 'trigger' }] },
+            'get-orders': { id: 'get-orders', name: 'Estrai Ordini (da mock)', icon: 'Database', iconColor: 'blue-500', script: 'SELECT * FROM customerOrdersData;', previewType: 'table', outputs: [{ name: 'Raw Order Data', type: 'table' }] },
+            'group-by-product': { id: 'group-by-product', name: 'Raggruppa per Prodotto (SQL)', icon: 'Sigma', iconColor: 'green-500', script: 'SELECT product, SUM(quantity) as total_quantity FROM ? GROUP BY product;', outputs: [{ name: 'Grouped Data', type: 'table' }] },
+            'end-table': { id: 'end-table', name: 'Tabella Risultati', icon: 'Table2', iconColor: 'purple-500', type: 'end', previewType: 'table', outputs: [] }
         },
         edges: [
-          { from: 'start', to: 'get-orders', fromPort: 0 },
-          { from: 'get-orders', to: 'group-by-product', fromPort: 0 },
-          { from: 'group-by-product', to: 'end-table', fromPort: 0 },
+            { from: 'start', to: 'get-orders', fromPort: 0 },
+            { from: 'get-orders', to: 'group-by-product', fromPort: 0 },
+            { from: 'group-by-product', to: 'end-table', fromPort: 0 },
         ]
-      },
-      {
+    },
+    {
         id: 'pipe_kpi_discount',
         name: 'Calcolo Sconto Medio',
         description: 'Calcola lo sconto medio applicato agli ordini.',
         nodes: {
-          'start': { id: 'start', name: 'Start', icon: 'Play', type: 'start', schedule: { frequency: 'manual' }, outputs: [{ name: 'Trigger', type: 'trigger' }] },
-          'get-discounts': { id: 'get-discounts', name: 'Estrai Sconti', icon: 'Database', iconColor: 'blue-500', script: 'SELECT discount_percentage FROM orders WHERE discount_percentage > 0;', outputs: [{ name: 'Discount List', type: 'table' }] },
-          'calc-avg': { id: 'calc-avg', name: 'Calcola Media', icon: 'Sigma', iconColor: 'green-500', script: 'SELECT AVG(discount_percentage) as avg_discount FROM ?;', outputs: [{ name: 'Average Discount', type: 'variable' }] },
-          'end-kpi': { id: 'end-kpi', name: 'KPI Sconto Medio', icon: 'Sigma', iconColor: 'yellow-500', type: 'end', previewType: 'kpi', outputs: [] }
+            'start': { id: 'start', name: 'Start', icon: 'Play', type: 'start', schedule: { frequency: 'manual' }, outputs: [{ name: 'Trigger', type: 'trigger' }] },
+            'get-discounts': { id: 'get-discounts', name: 'Estrai Sconti', icon: 'Database', iconColor: 'blue-500', script: 'SELECT discount_percentage FROM orders WHERE discount_percentage > 0;', outputs: [{ name: 'Discount List', type: 'table' }] },
+            'calc-avg': { id: 'calc-avg', name: 'Calcola Media', icon: 'Sigma', iconColor: 'green-500', script: 'SELECT AVG(discount_percentage) as avg_discount FROM ?;', outputs: [{ name: 'Average Discount', type: 'variable' }] },
+            'end-kpi': { id: 'end-kpi', name: 'KPI Sconto Medio', icon: 'Sigma', iconColor: 'yellow-500', type: 'end', previewType: 'kpi', outputs: [] }
         },
         edges: [
-          { from: 'start', to: 'get-discounts', fromPort: 0 },
-          { from: 'get-discounts', to: 'calc-avg', fromPort: 0 },
-          { from: 'calc-avg', to: 'end-kpi', fromPort: 0 },
+            { from: 'start', to: 'get-discounts', fromPort: 0 },
+            { from: 'get-discounts', to: 'calc-avg', fromPort: 0 },
+            { from: 'calc-avg', to: 'end-kpi', fromPort: 0 },
         ]
-      },
-      {
+    },
+    {
         id: 'pipe_chart_orders',
         name: 'Trend Ordini Mensili',
         description: 'Visualizza il numero di ordini per mese.',
         nodes: {
-          'start': { id: 'start', name: 'Start', icon: 'Play', type: 'start', schedule: { frequency: 'weekly', dayOfWeek: '1', time: '02:00' }, outputs: [{ name: 'Trigger', type: 'trigger' }] },
-          'get-orders-date': { id: 'get-orders-date', name: 'Estrai Ordini con Data', icon: 'Database', iconColor: 'blue-500', script: "SELECT STRFTIME('%Y-%m', order_date) as month, COUNT(id) as order_count FROM orders GROUP BY 1;", outputs: [{ name: 'Monthly Orders', type: 'table' }] },
-          'end-chart': { id: 'end-chart', name: 'Grafico Trend', icon: 'BarChart2', iconColor: 'red-500', type: 'end', previewType: 'chart', outputs: [] }
+            'start': { id: 'start', name: 'Start', icon: 'Play', type: 'start', schedule: { frequency: 'weekly', dayOfWeek: '1', time: '02:00' }, outputs: [{ name: 'Trigger', type: 'trigger' }] },
+            'get-orders-date': { id: 'get-orders-date', name: 'Estrai Ordini con Data', icon: 'Database', iconColor: 'blue-500', script: "SELECT STRFTIME('%Y-%m', order_date) as month, COUNT(id) as order_count FROM orders GROUP BY 1;", outputs: [{ name: 'Monthly Orders', type: 'table' }] },
+            'end-chart': { id: 'end-chart', name: 'Grafico Trend', icon: 'BarChart2', iconColor: 'red-500', type: 'end', previewType: 'chart', outputs: [] }
         },
         edges: [
-          { from: 'start', to: 'get-orders-date', fromPort: 0 },
-          { from: 'get-orders-date', to: 'end-chart', fromPort: 0 },
+            { from: 'start', to: 'get-orders-date', fromPort: 0 },
+            { from: 'get-orders-date', to: 'end-chart', fromPort: 0 },
         ]
-      }
-  ];
+    }
+];
 
-  export const mockSalesData = [
+export const mockSalesData = [
     { id: 1, product: 'T-Shirt', sales: 150, month: 'January' },
     { id: 2, product: 'Jeans', sales: 250, month: 'January' },
     { id: 3, product: 'Jacket', sales: 80, month: 'January' },
@@ -479,5 +477,5 @@ export const costCenterData = [
     { id: 5, product: 'Jeans', sales: 300, month: 'February' },
     { id: 6, product: 'Jacket', sales: 120, month: 'February' },
     { id: 7, product: 'Scarf', sales: 500, month: 'February' },
-  ];
-    
+];
+

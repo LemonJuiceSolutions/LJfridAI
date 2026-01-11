@@ -38,6 +38,7 @@ export function ChatBotAgent() {
     const [isLoading, setIsLoading] = useState(false);
     const [model, setModel] = useState('google/gemini-2.0-flash-001');
     const [availableModels, setAvailableModels] = useState<any[]>([]);
+    const [modelFilter, setModelFilter] = useState('');
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Persistence and initialization
@@ -169,7 +170,13 @@ export function ChatBotAgent() {
                     </div>
                 </div>
 
-                <div className="p-3 border-b bg-muted/10">
+                <div className="p-3 border-b bg-muted/10 space-y-2">
+                    <Input
+                        placeholder="Cerca modello..."
+                        value={modelFilter}
+                        onChange={(e) => setModelFilter(e.target.value)}
+                        className="h-8 text-xs"
+                    />
                     <Select value={model} onValueChange={(val) => {
                         setModel(val);
                         localStorage.setItem('agent_preferred_model', val);
@@ -178,13 +185,29 @@ export function ChatBotAgent() {
                             <Bot className="h-3.5 w-3.5 mr-2 text-primary" />
                             <SelectValue placeholder="Seleziona Modello" />
                         </SelectTrigger>
-                        <SelectContent className="max-h-[300px]">
+                        <SelectContent className="max-h-[400px]">
                             {availableModels.length > 0 ? (
-                                availableModels.map(m => (
-                                    <SelectItem key={m.id} value={m.id} className="text-xs">
-                                        {m.name || m.id}
-                                    </SelectItem>
-                                ))
+                                availableModels
+                                    .filter(m => {
+                                        const search = modelFilter.toLowerCase();
+                                        return (m.name?.toLowerCase().includes(search) || m.id?.toLowerCase().includes(search));
+                                    })
+                                    .slice(0, 50) // Limit to prevent performance issues
+                                    .map(m => {
+                                        const promptPrice = parseFloat(m.pricing?.prompt || 0) * 1000000;
+                                        const completionPrice = parseFloat(m.pricing?.completion || 0) * 1000000;
+                                        return (
+                                            <SelectItem key={m.id} value={m.id} className="text-xs py-2">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className="font-medium">{m.name || m.id}</span>
+                                                    <span className="text-[10px] text-muted-foreground">
+                                                        ${promptPrice.toFixed(2)}/$1M in • ${completionPrice.toFixed(2)}/$1M out
+                                                        {m.context_length && ` • ${(m.context_length / 1000).toFixed(0)}k ctx`}
+                                                    </span>
+                                                </div>
+                                            </SelectItem>
+                                        );
+                                    })
                             ) : (
                                 <SelectItem value={model} className="text-xs">{model}</SelectItem>
                             )}
