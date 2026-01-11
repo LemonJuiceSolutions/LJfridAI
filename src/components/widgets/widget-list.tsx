@@ -23,9 +23,9 @@ import MagazzinoWidget from './magazzino/MagazzinoWidget';
 import SetupWidget from './setup/SetupWidget';
 import PipelinesWidget from './pipelines/PipelinesWidget';
 import SqlTestTable from '../dashboard/sql-test-table';
-import { useUser, useFirestore, useMemoFirebase } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import PipelineOutputWidget from './pipelines/PipelineOutputWidget';
+import { getPipelines } from '@/actions/pipelines';
+import { useSession } from 'next-auth/react';
 
 export type Widget = {
     id: string;
@@ -64,43 +64,39 @@ const staticWidgets: Record<string, Widget> = {
 
 export const useAvailableWidgets = () => {
     const [availableWidgets, setAvailableWidgets] = useState<Record<string, Widget>>(staticWidgets);
-    const { user, isUserLoading } = useUser();
-    const firestore = useFirestore();
-
-    const userSettingsRef = useMemoFirebase(() => {
-        if (!user || !firestore) return null;
-        return doc(firestore, 'tenants', user.uid, 'userSettings', user.uid);
-    }, [user, firestore]);
+    const { data: session, status } = useSession();
 
     useEffect(() => {
+        if (status === 'loading') return;
+
         const fetchPipelineWidgets = async () => {
-            if (!userSettingsRef || isUserLoading) return;
-            
+            if (!session?.user) return;
+
             try {
-                const docSnap = await getDoc(userSettingsRef);
+                const loadedPipelines = await getPipelines();
                 const dynamicWidgets: Record<string, Widget> = {};
 
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    const pipelinesData = data.pipelines || [];
-                    const pipelines = Array.isArray(pipelinesData) ? pipelinesData : Object.values(pipelinesData);
-                    
-                    if (Array.isArray(pipelines)) {
-                        pipelines.forEach((pipeline: any) => {
-                            if (pipeline.nodes) {
-                                Object.values(pipeline.nodes).forEach((node: any) => {
-                                    if (node.type === 'end' && node.isPublished) {
-                                        const widgetId = `pipeline-${pipeline.id}-${node.id}`;
-                                        dynamicWidgets[widgetId] = {
-                                            id: widgetId,
-                                            name: node.name,
-                                            component: <PipelineOutputWidget pipelineId={pipeline.id} nodeId={node.id} />,
-                                        };
-                                    }
-                                });
-                            }
-                        });
-                    }
+                if (loadedPipelines) {
+                    loadedPipelines.forEach((rawPipeline: any) => {
+                        // Parse fields
+                        const pipeline = {
+                            ...rawPipeline,
+                            nodes: typeof rawPipeline.nodes === 'string' ? JSON.parse(rawPipeline.nodes) : rawPipeline.nodes
+                        };
+
+                        if (pipeline.nodes) {
+                            Object.values(pipeline.nodes).forEach((node: any) => {
+                                if (node.type === 'end' && node.isPublished) {
+                                    const widgetId = `pipeline-${pipeline.id}-${node.id}`;
+                                    dynamicWidgets[widgetId] = {
+                                        id: widgetId,
+                                        name: node.name,
+                                        component: <PipelineOutputWidget pipelineId={pipeline.id} nodeId={node.id} />,
+                                    };
+                                }
+                            });
+                        }
+                    });
                 }
                 setAvailableWidgets({ ...staticWidgets, ...dynamicWidgets });
 
@@ -111,7 +107,7 @@ export const useAvailableWidgets = () => {
         };
 
         fetchPipelineWidgets();
-    }, [userSettingsRef, isUserLoading]);
+    }, [status, session]);
 
     return availableWidgets;
 };

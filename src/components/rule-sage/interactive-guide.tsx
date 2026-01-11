@@ -1434,7 +1434,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                         const pythonDeps = deps.filter(d => d.tableName !== tableName);
                                         const res = await executePythonPreviewAction(
                                             dep.pythonCode,
-                                            dep.pythonOutputType || 'table',
+                                            (dep.pythonOutputType as "table" | "variable" | "chart") || 'table',
                                             {},
                                             pythonDeps.map(d => ({
                                                 tableName: d.tableName,

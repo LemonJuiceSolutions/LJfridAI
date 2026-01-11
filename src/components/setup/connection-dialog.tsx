@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Save, TestTube2 } from 'lucide-react';
-import type { Connection } from '@/app/(app)/setup/page';
+import type { Connection } from '@/components/widgets/setup/SetupWidget';
 import { useToast } from '@/hooks/use-toast';
 
 type ConnectionDialogProps = {
@@ -56,21 +56,21 @@ export function ConnectionDialog({ isOpen, setIsOpen, onSave, connection }: Conn
     onSave({ id: connection?.id, name, type, ...details });
     setIsOpen(false);
     toast({
-        title: "Connessione Salvata!",
-        description: `La connessione "${name}" è stata salvata con successo.`,
+      title: "Connessione Salvata!",
+      description: `La connessione "${name}" è stata salvata con successo.`,
     });
   };
-  
+
   const handleTestConnection = () => {
     toast({
-        title: "Test Connessione...",
-        description: "Simulazione del test di connessione in corso...",
+      title: "Test Connessione...",
+      description: "Simulazione del test di connessione in corso...",
     });
     setTimeout(() => {
-        toast({
-            title: "Connessione Riuscita!",
-            description: `La connessione al ${type} funziona correttamente.`,
-        });
+      toast({
+        title: "Connessione Riuscita!",
+        description: `La connessione al ${type} funziona correttamente.`,
+      });
     }, 2000);
   };
 
@@ -104,7 +104,7 @@ export function ConnectionDialog({ isOpen, setIsOpen, onSave, connection }: Conn
               <Label htmlFor="siteUrl" className="text-right">URL Sito</Label>
               <Input id="siteUrl" placeholder="https://contoso.sharepoint.com/sites/..." className="col-span-3" />
             </div>
-             <div className="grid grid-cols-4 items-center gap-4">
+            <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="clientId" className="text-right">Client ID</Label>
               <Input id="clientId" placeholder="GUID dell'app" className="col-span-3" />
             </div>
@@ -145,16 +145,16 @@ export function ConnectionDialog({ isOpen, setIsOpen, onSave, connection }: Conn
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="type" className="text-right">Tipo</Label>
             <div className='col-span-3'>
-                <Select value={type} onValueChange={(value) => setType(value as ConnectionType)} disabled={!!connection}>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Seleziona tipo..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="SQL Database">Database SQL</SelectItem>
-                        <SelectItem value="SharePoint">SharePoint</SelectItem>
-                        <SelectItem value="HubSpot">HubSpot</SelectItem>
-                    </SelectContent>
-                </Select>
+              <Select value={type} onValueChange={(value) => setType(value as ConnectionType)} disabled={!!connection}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleziona tipo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SQL Database">Database SQL</SelectItem>
+                  <SelectItem value="SharePoint">SharePoint</SelectItem>
+                  <SelectItem value="HubSpot">HubSpot</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           {renderFieldsForType()}
@@ -167,8 +167,8 @@ export function ConnectionDialog({ isOpen, setIsOpen, onSave, connection }: Conn
           <div>
             <Button variant="ghost" onClick={() => setIsOpen(false)}>Annulla</Button>
             <Button onClick={handleSave}>
-                <Save className="mr-2 h-4 w-4" />
-                Salva Connessione
+              <Save className="mr-2 h-4 w-4" />
+              Salva Connessione
             </Button>
           </div>
         </DialogFooter>

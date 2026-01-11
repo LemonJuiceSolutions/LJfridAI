@@ -6,13 +6,9 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { useEditMode } from '@/hooks/use-edit-mode';
 import { cn } from '@/lib/utils';
-import { GripVertical, Plus, Trash2, LayoutGrid } from 'lucide-react';
+import { GripVertical, Plus, Trash2, LayoutGrid, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TextWidget from '@/components/dashboard/text-widget';
-import { useUser, useFirestore, useMemoFirebase } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-import { Loader2 } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -20,6 +16,9 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAvailableWidgets } from '../widgets/widget-list';
+import { getPageLayout, savePageLayout } from '@/actions/dashboard';
+import { useSession } from 'next-auth/react';
+import { useToast } from '@/hooks/use-toast';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
@@ -37,16 +36,10 @@ export type Item = {
     nodeId?: string;
 };
 
-type DashboardState = {
-    layouts?: ReactGridLayouts,
-    items: Item[],
-}
-
 export type Layouts = ReactGridLayouts;
 
 type DynamicGridPageProps = {
     pageId: string;
-    // availableWidgets is now a hook
     defaultLayouts: Layouts;
     defaultItems: Item[];
 };
@@ -101,71 +94,59 @@ const generateLayouts = (items: Item[], defaultLayouts: Layouts) => {
 
 export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: DynamicGridPageProps) {
     const { editMode } = useEditMode();
-    const { user, isUserLoading } = useUser();
-    const firestore = useFirestore();
+    const { data: session, status } = useSession();
     const availableWidgets = useAvailableWidgets();
+    const { toast } = useToast();
 
     const [layouts, setLayouts] = useState<any>(generateLayouts(defaultItems, defaultLayouts));
     const [items, setItems] = useState<Item[]>(defaultItems);
     const [isComponentMounted, setIsComponentMounted] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
-    const userSettingsRef = useMemoFirebase(() => {
-        if (!user || !firestore) return null;
-        return doc(firestore, 'tenants', user.uid, 'userSettings', user.uid);
-    }, [user, firestore]);
-
     useEffect(() => {
         setIsComponentMounted(true);
     }, []);
 
     useLayoutEffect(() => {
-        if (isUserLoading || !isComponentMounted) return;
+        if (status === 'loading' || !isComponentMounted) return;
 
         const loadDashboardState = async () => {
             setIsLoading(true);
             try {
-                if (userSettingsRef) {
-                    const docSnap = await getDoc(userSettingsRef);
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        const pageData = data[pageId];
-                        const loadedItems = pageData?.items || defaultItems;
-                        const loadedLayouts = pageData?.layouts || generateLayouts(loadedItems, defaultLayouts);
-
-                        setItems(loadedItems);
-                        setLayouts(loadedLayouts);
-                    } else {
-                        setItems(defaultItems);
-                        setLayouts(generateLayouts(defaultItems, defaultLayouts));
-                    }
+                const data = await getPageLayout(pageId);
+                if (data) {
+                    // Cast JSON back to types if necessary, mostly implicit
+                    const loadedItems = data.items as Item[] || defaultItems;
+                    const loadedLayouts = data.layouts as any || generateLayouts(loadedItems, defaultLayouts);
+                    setItems(loadedItems);
+                    setLayouts(loadedLayouts);
                 } else {
                     setItems(defaultItems);
                     setLayouts(generateLayouts(defaultItems, defaultLayouts));
                 }
             } catch (error) {
-                console.error(`Error loading ${pageId} state from Firestore:`, error);
+                console.error(`Error loading ${pageId} state:`, error);
                 setItems(defaultItems);
                 setLayouts(generateLayouts(defaultItems, defaultLayouts));
             } finally {
-                setTimeout(() => setIsLoading(false), 50);
+                setIsLoading(false);
             }
         };
 
         loadDashboardState();
-    }, [userSettingsRef, isUserLoading, isComponentMounted, pageId, defaultItems, defaultLayouts]);
+    }, [status, isComponentMounted, pageId, defaultItems, defaultLayouts]);
 
-    const saveDashboardState = useCallback((newLayouts: any, newItems: any) => {
-        if (userSettingsRef && isComponentMounted && !isLoading) {
+    const saveDashboardState = useCallback(async (newLayouts: any, newItems: any) => {
+        if (session?.user && isComponentMounted && !isLoading) {
             const cleanedLayouts = removeUndefinedFields(newLayouts);
-            setDocumentNonBlocking(userSettingsRef, {
-                [pageId]: {
-                    layouts: cleanedLayouts,
-                    items: newItems
-                }
-            }, { merge: true });
+            try {
+                await savePageLayout(pageId, cleanedLayouts, newItems);
+            } catch (e) {
+                console.error("Failed to save layout", e);
+                toast({ variant: "destructive", title: "Error", description: "Could not save layout" });
+            }
         }
-    }, [userSettingsRef, isComponentMounted, isLoading, pageId]);
+    }, [session, isComponentMounted, isLoading, pageId, toast]);
 
     const handleLayoutChange = (layout: Layout[], allLayouts: ReactGridLayouts) => {
         if (isComponentMounted && !isLoading) {
@@ -218,12 +199,13 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     const handleTextChange = (id: string, content: string) => {
         const newItems = items.map(item => item.id === id ? { ...item, content } : item);
         setItems(newItems);
+        // Debounce saving for text changes? For now direct save
         saveDashboardState(layouts, newItems);
     };
 
     const currentWidgetIds = useMemo(() => new Set(items.map(i => i.id)), [items]);
 
-    if (isLoading || isUserLoading || !isComponentMounted) {
+    if (isLoading || status === 'loading' || !isComponentMounted) {
         return (
             <div className="flex h-full w-full items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin" />

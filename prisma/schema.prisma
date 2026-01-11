@@ -25,6 +25,21 @@ model Company {
   invitations Invitation[]
   connectors  Connector[]
   tokenCaches TokenCache[]
+  
+  // Navigation & Permissions
+  navigationItems NavigationItem[]
+  roles           Role[]
+
+  // AIDRAFB Data
+  products        Product[]
+  materials       Material[]
+  suppliers       Supplier[]
+  boms            BOM[]
+  inventoryItems  InventoryItem[]
+  orders          Order[]
+  pageLayouts     PageLayout[]
+  pipelines       Pipeline[]
+  connections     Connection[]
 }
 
 model Department {
@@ -59,8 +74,12 @@ model User {
   departmentId  String?
   department    Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   
+  roleId        String?
+  userRole      Role?        @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  
   accounts      Account[]
   sessions      Session[]
+  pageLayouts   PageLayout[]
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -189,4 +208,235 @@ model TokenCache {
   
   @@unique([companyId, provider])
   @@index([companyId])
+}
+// ============================================
+// NAVIGATION & PERMISSIONS
+// ============================================
+
+model NavigationItem {
+  id          String   @id @default(cuid())
+  label       String
+  href        String
+  icon        String
+  group       String   // 'main' or 'settings'
+  order       Int      @default(0)
+  
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  requiredPermission String? // e.g., "view:dashboard"
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  name        String
+  companyId   String
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  permissions Permission[]
+  users       User[]
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([companyId, name])
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  action      String   // e.g., "view", "create", "edit", "delete"
+  resource    String   // e.g., "dashboard", "orders", "users"
+  
+  roleId      String
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, action, resource])
+}
+
+// ============================================
+// AIDRAFB MANUFACTURING MODELS
+// ============================================
+
+model Product {
+  id          String   @id @default(cuid())
+  sku         String   
+  name        String
+  category    String?
+  price       Float
+  imageUrl    String?
+  
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  inventory   InventoryItem[]
+  orderLines  OrderItem[]
+  boms        BOM[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, sku])
+}
+
+model Material {
+  id          String   @id @default(cuid())
+  code        String
+  name        String
+  unit        String
+  costPerUnit Float?
+  
+  supplierId  String?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  bomComponents BOMComponent[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, code])
+}
+
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  rating      Float?
+  leadTime    String?
+  minOrder    Int?
+  
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  materials   Material[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BOM {
+  id          String   @id @default(cuid())
+  name        String
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  
+  components  BOMComponent[]
+  
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BOMComponent {
+  id          String   @id @default(cuid())
+  bomId       String
+  bom         BOM      @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  
+  materialId  String
+  material    Material @relation(fields: [materialId], references: [id])
+  
+  quantity    Float
+}
+
+model InventoryItem {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  
+  quantity    Int
+  location    String?
+  size        String?
+  color       String?
+
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  updatedAt   DateTime @updatedAt
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  externalId  String?  // e.g. ORD5001
+  customerName String
+  date        DateTime
+  status      String   @default("Pending")
+  total       Float
+  
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  items       OrderItem[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  
+  quantity    Int
+  price       Float
+  status      String? // For production tracking per item (e.g. Cutting, Sewing)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PageLayout {
+  id          String   @id @default(cuid())
+  pageId      String   // e.g. "dashboard", "/001"
+  
+  layouts     Json
+  items       Json
+
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  userId      String?  // Optional: if specific to a user
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, pageId, userId]) // Unique layout per page per user (or company if user null)
+}
+
+model Pipeline {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  nodes       Json
+  edges       Json
+  
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Connection {
+  id          String   @id @default(cuid())
+  name        String   // e.g. "Production DB"
+  type        String   // e.g. "postgres", "mysql", "api"
+  config      Json     // Encrypted connection details? For now plain text or handled by env.
+  
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

@@ -11,6 +11,11 @@ const DynamicGridPage = dynamic(
     { ssr: false }
 );
 
+// Define default layouts/items OUTSIDE the component to prevent new object references on each render
+// This fixes the infinite re-render loop caused by useLayoutEffect dependencies
+const defaultLayouts = { lg: [], md: [], sm: [] };
+const defaultItems: any[] = [];
+
 export default function NumberedPage() {
     const params = useParams();
     const pageId = params?.pageId as string;
@@ -29,20 +34,14 @@ export default function NumberedPage() {
         notFound();
     }
 
-    // Define default layouts/items for these new blank pages
-    // We start clean.
-    const defaultLayouts = { lg: [], md: [], sm: [] };
-    const defaultItems: any[] = [];
-
     return (
         <div className="h-[calc(100vh-3.5rem)] w-full">
             <DynamicGridPage
-                pageId={`page-${pageId}`} // Unique ID for Firestore persistence
-                title={`Pagina ${pageId}`}
-                description={`Questa è una pagina personalizzabile. Attiva la modalità modifica per aggiungere widget.`}
+                pageId={`page-${pageId}`}
                 defaultLayouts={defaultLayouts}
                 defaultItems={defaultItems}
             />
         </div>
     );
 }
+
