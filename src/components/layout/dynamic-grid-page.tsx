@@ -139,12 +139,12 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     const saveDashboardState = useCallback(async (newLayouts: any, newItems: any) => {
         if (session?.user && isComponentMounted && !isLoading) {
             const cleanedLayouts = removeUndefinedFields(newLayouts);
-            try {
-                await savePageLayout(pageId, cleanedLayouts, newItems);
-            } catch (e) {
-                console.error("Failed to save layout", e);
-                toast({ variant: "destructive", title: "Error", description: "Could not save layout" });
+            const result = await savePageLayout(pageId, cleanedLayouts, newItems);
+            // Only show error for auth issues, not for database unavailable (to avoid spamming)
+            if (!result.success && result.error === "Unauthorized") {
+                toast({ variant: "destructive", title: "Error", description: "Session expired. Please refresh." });
             }
+            // Silent fail for database issues - layout will be retried on next change
         }
     }, [session, isComponentMounted, isLoading, pageId, toast]);
 

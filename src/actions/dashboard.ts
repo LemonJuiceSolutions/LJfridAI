@@ -39,10 +39,10 @@ export async function getPageLayout(pageId: string) {
     }
 }
 
-export async function savePageLayout(pageId: string, layouts: any, items: any) {
+export async function savePageLayout(pageId: string, layouts: any, items: any): Promise<{ success: boolean; error?: string }> {
     const session = await getSession();
     if (!session?.user || !(session.user as any).companyId) {
-        throw new Error("Unauthorized");
+        return { success: false, error: "Unauthorized" };
     }
 
     const companyId = (session.user as any).companyId;
@@ -74,9 +74,10 @@ export async function savePageLayout(pageId: string, layouts: any, items: any) {
         });
 
         revalidatePath(`/${pageId}`);
+        return { success: true };
     } catch (error) {
         console.error("Failed to save page layout:", error);
-        // We can throw or return an error object. Returning ensures client doesn't crash.
-        throw new Error("Failed to save layout");
+        // Return error instead of throwing to prevent client crash
+        return { success: false, error: "Database unavailable" };
     }
 }

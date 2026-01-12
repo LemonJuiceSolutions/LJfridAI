@@ -13,16 +13,32 @@ import {
     Settings2,
     Sparkles,
     MessageSquare,
-    Command
+    Command as CommandIcon,
+    ChevronsUpDown,
+    Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { chatOpenRouterAction, fetchOpenRouterModelsAction } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
+import { useOpenRouterSettings } from '@/hooks/use-openrouter';
+import { getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction } from '@/actions/openrouter';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "@/components/ui/command";
 
 type Message = {
     role: 'user' | 'assistant';
@@ -38,8 +54,11 @@ export function ChatBotAgent() {
     const [isLoading, setIsLoading] = useState(false);
     const [model, setModel] = useState('google/gemini-2.0-flash-001');
     const [availableModels, setAvailableModels] = useState<any[]>([]);
-    const [modelFilter, setModelFilter] = useState('');
+    const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+    const [isSavingModel, setIsSavingModel] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const { apiKey: dbApiKey } = useOpenRouterSettings();
+    const [agentModelLoading, setAgentModelLoading] = useState(true);
 
     // Persistence and initialization
     useEffect(() => {
@@ -54,12 +73,15 @@ export function ChatBotAgent() {
             }]);
         }
 
-        const savedModel = localStorage.getItem('agent_preferred_model');
-        if (savedModel) setModel(savedModel);
-
         // Fetch models
         fetchOpenRouterModelsAction().then(res => {
             if (res.data) setAvailableModels(res.data);
+        });
+
+        // Fetch agent model separately
+        getOpenRouterAgentModelAction().then(res => {
+            if (res.model) setModel(res.model);
+            setAgentModelLoading(false);
         });
     }, []);
 
@@ -75,11 +97,27 @@ export function ChatBotAgent() {
         }
     }, [messages, isLoading]);
 
+    const handleModelChange = async (newModel: string) => {
+        setModel(newModel);
+        setModelSelectorOpen(false);
+
+        // Auto-save to database (agent model only)
+        setIsSavingModel(true);
+        const result = await saveOpenRouterAgentModelAction(newModel);
+        setIsSavingModel(false);
+
+        if (result.success) {
+            toast({
+                title: "Modello salvato",
+                description: `Modello aggiornato a ${newModel.split('/').pop()}`,
+            });
+        }
+    };
+
     const handleSend = async () => {
         if (!input.trim() || isLoading) return;
 
-        const apiKey = localStorage.getItem('openrouter_api_key');
-        if (!apiKey) {
+        if (!dbApiKey) {
             toast({
                 title: "API Key mancante",
                 description: "Configura la tua OpenRouter API Key nelle impostazioni.",
@@ -103,7 +141,7 @@ export function ChatBotAgent() {
                 content: "Sei FridAI, un assistente IA esperto in coding e system design. Il tuo obiettivo è aiutare l'utente a sviluppare e migliorare 'FridAI', un Rules Engine avanzato basato su Next.js, Prisma e Genkit. Sii conciso, tecnico e proattivo."
             };
 
-            const result = await chatOpenRouterAction(apiKey, model, [systemContext, ...history]);
+            const result = await chatOpenRouterAction(dbApiKey, model, [systemContext, ...history]);
 
             if (result.success) {
                 setMessages(prev => [...prev, { role: 'assistant', content: result.message, timestamp: Date.now() }]);
@@ -131,6 +169,9 @@ export function ChatBotAgent() {
         setMessages(initial);
         localStorage.removeItem('agent_chat_history');
     };
+
+    const selectedModelData = availableModels.find(m => m.id === model);
+    const selectedModelName = selectedModelData?.name || model.split('/').pop();
 
     if (!isOpen) {
         return (
@@ -170,49 +211,64 @@ export function ChatBotAgent() {
                     </div>
                 </div>
 
-                <div className="p-3 border-b bg-muted/10 space-y-2">
-                    <Input
-                        placeholder="Cerca modello..."
-                        value={modelFilter}
-                        onChange={(e) => setModelFilter(e.target.value)}
-                        className="h-8 text-xs"
-                    />
-                    <Select value={model} onValueChange={(val) => {
-                        setModel(val);
-                        localStorage.setItem('agent_preferred_model', val);
-                    }}>
-                        <SelectTrigger className="h-8 text-xs font-medium border-none bg-transparent hover:bg-muted/50 transition-colors">
-                            <Bot className="h-3.5 w-3.5 mr-2 text-primary" />
-                            <SelectValue placeholder="Seleziona Modello" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[400px]">
-                            {availableModels.length > 0 ? (
-                                availableModels
-                                    .filter(m => {
-                                        const search = modelFilter.toLowerCase();
-                                        return (m.name?.toLowerCase().includes(search) || m.id?.toLowerCase().includes(search));
-                                    })
-                                    .slice(0, 50) // Limit to prevent performance issues
-                                    .map(m => {
-                                        const promptPrice = parseFloat(m.pricing?.prompt || 0) * 1000000;
-                                        const completionPrice = parseFloat(m.pricing?.completion || 0) * 1000000;
-                                        return (
-                                            <SelectItem key={m.id} value={m.id} className="text-xs py-2">
-                                                <div className="flex flex-col gap-0.5">
-                                                    <span className="font-medium">{m.name || m.id}</span>
-                                                    <span className="text-[10px] text-muted-foreground">
-                                                        ${promptPrice.toFixed(2)}/$1M in • ${completionPrice.toFixed(2)}/$1M out
-                                                        {m.context_length && ` • ${(m.context_length / 1000).toFixed(0)}k ctx`}
-                                                    </span>
-                                                </div>
-                                            </SelectItem>
-                                        );
-                                    })
-                            ) : (
-                                <SelectItem value={model} className="text-xs">{model}</SelectItem>
-                            )}
-                        </SelectContent>
-                    </Select>
+                <div className="p-3 border-b bg-muted/10">
+                    <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={modelSelectorOpen}
+                                className="w-full justify-between h-10 text-xs font-medium"
+                                disabled={isSavingModel}
+                            >
+                                <div className="flex items-center gap-2 truncate">
+                                    <Bot className="h-4 w-4 text-primary shrink-0" />
+                                    <span className="truncate">{selectedModelName}</span>
+                                </div>
+                                {isSavingModel ? (
+                                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                                ) : (
+                                    <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+                                )}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[360px] p-0" align="start">
+                            <Command>
+                                <CommandInput placeholder="Cerca modello..." className="h-9" />
+                                <CommandList>
+                                    <CommandEmpty>Nessun modello trovato.</CommandEmpty>
+                                    <CommandGroup>
+                                        {availableModels.slice(0, 100).map((m) => {
+                                            const promptPrice = parseFloat(m.pricing?.prompt || 0) * 1000000;
+                                            const completionPrice = parseFloat(m.pricing?.completion || 0) * 1000000;
+                                            return (
+                                                <CommandItem
+                                                    key={m.id}
+                                                    value={m.name || m.id}
+                                                    onSelect={() => handleModelChange(m.id)}
+                                                    className="flex items-start gap-2 py-2"
+                                                >
+                                                    <Check
+                                                        className={cn(
+                                                            "h-4 w-4 shrink-0 mt-0.5",
+                                                            model === m.id ? "opacity-100" : "opacity-0"
+                                                        )}
+                                                    />
+                                                    <div className="flex flex-col gap-0.5 min-w-0">
+                                                        <span className="font-medium text-sm truncate">{m.name || m.id}</span>
+                                                        <span className="text-[10px] text-muted-foreground">
+                                                            ${promptPrice.toFixed(2)}/$1M in • ${completionPrice.toFixed(2)}/$1M out
+                                                            {m.context_length && ` • ${(m.context_length / 1000).toFixed(0)}k ctx`}
+                                                        </span>
+                                                    </div>
+                                                </CommandItem>
+                                            );
+                                        })}
+                                    </CommandGroup>
+                                </CommandList>
+                            </Command>
+                        </PopoverContent>
+                    </Popover>
                 </div>
 
                 <ScrollArea className="flex-1 p-6" ref={scrollRef}>
@@ -281,10 +337,10 @@ export function ChatBotAgent() {
                             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                         </Button>
                     </div>
-                    <p className="mt-3 text-[10px] text-center text-muted-foreground flex items-center justify-center gap-1.5 uppercase font-medium tracking-widest">
-                        <Command className="h-2.5 w-2.5" />
+                    <div className="mt-3 text-[10px] text-center text-muted-foreground flex items-center justify-center gap-1.5 uppercase font-medium tracking-widest">
+                        <CommandIcon className="h-2.5 w-2.5" />
                         Premi Invio per inviare
-                    </p>
+                    </div>
                 </div>
             </div>
         </div>

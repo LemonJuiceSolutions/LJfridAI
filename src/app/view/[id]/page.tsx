@@ -19,6 +19,7 @@ import ResultsDisplay from '@/components/rule-sage/results-display';
 import { Input } from '@/components/ui/input';
 import ConsolidateVariablesDialog from '@/components/rule-sage/consolidate-variables-dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 
 
 export default function ViewTreePage() {
@@ -39,6 +40,7 @@ export default function ViewTreePage() {
 
 
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
+  const { apiKey: dbApiKey, model: dbModel } = useOpenRouterSettings();
 
   const handleExit = async () => {
     if (!id) {
@@ -47,9 +49,7 @@ export default function ViewTreePage() {
     }
     setIsExiting(true);
     try {
-      const apiKey = localStorage.getItem('openrouter_api_key');
-      const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
-      const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+      const openRouterConfig = dbApiKey ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
 
       toast({ title: 'Salvataggio in corso...', description: 'Sto rigenerando la descrizione e salvando le modifiche.' });
 
@@ -169,9 +169,7 @@ export default function ViewTreePage() {
     if (!id) return;
     setIsRegenerating(true);
     try {
-      const apiKey = localStorage.getItem('openrouter_api_key');
-      const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
-      const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+      const openRouterConfig = dbApiKey ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
 
       const result = await regenerateNaturalLanguageAction(id, openRouterConfig);
       if (result.error) {
@@ -273,27 +271,14 @@ export default function ViewTreePage() {
                 </CardHeader>
               </Card>
 
-              {/* Natural Language Description Card */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <div className="flex justify-between items-center">
-                    <CardTitle className="text-lg">Descrizione Processo</CardTitle>
-                    <Button size="sm" variant="outline" onClick={handleRegenerateDescription} disabled={isRegenerating || isLoadingAction}>
-                      {isRegenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                      Rigenera
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                    {renderHighlightedText(tree.naturalLanguageDecisionTree || tree.description)}
-                  </p>
-                </CardContent>
-              </Card>
+
               <ResultsDisplay
                 result={tree}
                 onDataRefresh={fetchTree}
                 isSaving={isSaving}
+                descriptionContent={tree.naturalLanguageDecisionTree || tree.description}
+                isRegenerating={isRegenerating}
+                onRegenerate={handleRegenerateDescription}
               />
             </div>
           )}
@@ -312,7 +297,7 @@ export default function ViewTreePage() {
       </main>
       <footer className="border-t">
         <div className="container mx-auto flex h-14 items-center justify-center px-4 md:px-6">
-          <p className="text-sm text-muted-foreground">Like AI Said &copy; {new Date().getFullYear()}</p>
+          <p className="text-sm text-muted-foreground">FridAI &copy; {new Date().getFullYear()}</p>
         </div>
       </footer>
 

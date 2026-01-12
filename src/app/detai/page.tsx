@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import type { DetaiInput } from '@/ai/flows/detai-flow';
 import { Badge } from '@/components/ui/badge';
+import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 
 
 type Message = {
@@ -58,6 +59,7 @@ export default function DetaiPage() {
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const scrollAreaRef = useRef<HTMLDivElement>(null);
+    const { apiKey: dbApiKey, model: dbModel } = useOpenRouterSettings();
 
     const scrollToBottom = () => {
         if (scrollAreaRef.current) {
@@ -73,9 +75,7 @@ export default function DetaiPage() {
         setIsLoading(true);
 
         try {
-            const apiKey = localStorage.getItem('openrouter_api_key');
-            const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
-            const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+            const openRouterConfig = dbApiKey ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
 
             // Map local message state to the format expected by the AI flow
             const history: DetaiInput['messages'] = currentMessages

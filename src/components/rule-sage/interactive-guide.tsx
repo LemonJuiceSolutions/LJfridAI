@@ -28,6 +28,7 @@ import { Database, Code, LineChart } from 'lucide-react';
 // import { useFlowExecution } from '@/ai/flows/client-executor'; // Removed broken import
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 
 // 🚀 MODULE-LEVEL CACHE: Persists across component remounts
 const GLOBAL_EXECUTION_CACHE = new Map<string, any>();
@@ -1288,6 +1289,7 @@ function SqlExportBox({
 
 export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideProps) {
     const { toast } = useToast();
+    const { apiKey: openRouterApiKey, model: openRouterModel } = useOpenRouterSettings();
 
     const [treeStack, setTreeStack] = useState<HistoryFrame[]>([]);
     const [currentTree, setCurrentTree] = useState<DecisionNode | null>(null);
@@ -1750,9 +1752,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
             setRephrasedQuestion(null);
             const context = `L'utente si trova in un processo decisionale. I passaggi precedenti sono: ${nodeHistory.map(h => typeof h === 'object' && 'question' in h && h.question ? h.question : '').join(' -> ')}`;
 
-            const apiKey = localStorage.getItem('openrouter_api_key');
-            const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
-            const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+            const openRouterConfig = openRouterApiKey ? { apiKey: openRouterApiKey, model: openRouterModel || 'google/gemini-2.0-flash-001' } : undefined;
 
             const result = await rephraseQuestionAction(currentNode.question, context, openRouterConfig);
             if (result.error) {

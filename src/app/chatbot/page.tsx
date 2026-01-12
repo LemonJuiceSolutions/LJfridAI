@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import Image from 'next/image';
 import type { MediaItem, LinkItem, TriggerItem, DiagnosticNode } from '@/lib/types';
+import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 
 
 type Message = {
@@ -48,6 +49,7 @@ export default function ChatbotPage() {
     const [previewingMedia, setPreviewingMedia] = useState<MediaItem | null>(null);
     const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
     const [selectedTreeJson, setSelectedTreeJson] = useState<string | null>(null);
+    const { apiKey: dbApiKey, model: dbModel } = useOpenRouterSettings();
 
     useEffect(() => {
         if (scrollAreaRef.current) {
@@ -151,9 +153,7 @@ export default function ChatbotPage() {
                 setInitialProblem(problem);
             }
 
-            const apiKey = localStorage.getItem('openrouter_api_key');
-            const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
-            const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+            const openRouterConfig = dbApiKey ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
 
             // CHECK: Is this the initial search phase?
             // If we don't have a current tree active AND this is not an option click (meaning it's a new query)

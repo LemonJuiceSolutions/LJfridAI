@@ -16,6 +16,7 @@ import ResultsDisplay from '@/components/rule-sage/results-display';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 
 const processExamples = [
   // Machinery Maintenance
@@ -40,17 +41,17 @@ export default function CreatePage() {
   const [textDescription, setTextDescription] = useState('');
   const { toast } = useToast();
   const [currentModel, setCurrentModel] = useState<string>('google/gemini-2.0-flash-001');
+  const { apiKey: dbApiKey, model: dbModel, isLoading: isSettingsLoading } = useOpenRouterSettings();
 
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeechSupported, setIsSpeechSupported] = useState(true);
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    const savedModel = localStorage.getItem('openrouter_model');
-    if (savedModel) {
-      setCurrentModel(savedModel);
+    if (!isSettingsLoading && dbModel) {
+      setCurrentModel(dbModel);
     }
-  }, []);
+  }, [dbModel, isSettingsLoading]);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -137,9 +138,7 @@ export default function CreatePage() {
     setIsLoading(true);
     setAnalysisResult(null);
     try {
-      const apiKey = localStorage.getItem('openrouter_api_key');
-      const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
-      const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+      const openRouterConfig = dbApiKey ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
 
       const searchParams = new URLSearchParams(window.location.search);
       const type = searchParams.get('type') || 'RULE';
@@ -192,9 +191,7 @@ export default function CreatePage() {
     if (!analysisResult?.id) return;
     setIsLoading(true);
     try {
-      const apiKey = localStorage.getItem('openrouter_api_key');
-      const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
-      const openRouterConfig = apiKey ? { apiKey, model } : undefined;
+      const openRouterConfig = dbApiKey ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
 
       const res = await regenerateNaturalLanguageAction(analysisResult.id, openRouterConfig);
       if (res.error) throw new Error(res.error);

@@ -32,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine } from 'lucide-react';
+import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Minimize2, Maximize2 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig } from '@/lib/types';
 import { Input } from '../ui/input';
@@ -47,6 +47,7 @@ import { DataTable } from '../ui/data-table';
 import { EmailBodyEditor, EmailBodyEditorRef } from './email-body-editor';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 
 const CollapsibleSection = ({
   title,
@@ -66,14 +67,24 @@ const CollapsibleSection = ({
   const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
-    const savedState = localStorage.getItem(storageKey);
-    if (savedState !== null) {
-      setIsOpen(savedState === 'true');
-    } else {
-      // Default rule: open if has items, closed otherwise
-      setIsOpen(count > 0);
-    }
+    const loadState = () => {
+      const savedState = localStorage.getItem(storageKey);
+      if (savedState !== null) {
+        setIsOpen(savedState === 'true');
+      } else {
+        // Default rule: open if has items, closed otherwise
+        setIsOpen(count > 0);
+      }
+    };
+
+    loadState();
     setHasLoaded(true);
+
+    // Listen for storage events (from collapse/expand all buttons)
+    const handleStorage = () => loadState();
+    window.addEventListener('storage', handleStorage);
+
+    return () => window.removeEventListener('storage', handleStorage);
   }, [storageKey, count]);
 
   const toggle = () => {
@@ -147,6 +158,7 @@ export default function EditNodeDialog({
   availableParentTriggers = []
 }: EditNodeDialogProps) {
   const { toast } = useToast();
+  const { apiKey: openRouterApiKey, model: openRouterModel } = useOpenRouterSettings();
 
   // Local state for node type switching (Question <-> Decision)
   const [currentNodeType, setCurrentNodeType] = useState<'question' | 'decision'>(nodeType);
@@ -846,6 +858,58 @@ export default function EditNodeDialog({
                 <DialogDescription>{description}</DialogDescription>
               </div>
 
+              {/* Collapse/Expand All Buttons */}
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs px-2 gap-1.5"
+                  onClick={() => {
+                    const keys = [
+                      `collapse-links-${treeId}-${nodePath}`,
+                      `collapse-triggers-${treeId}-${nodePath}`,
+                      `collapse-media-${treeId}-${nodePath}`,
+                      `collapse-sql-${treeId}-${nodePath}`,
+                      `collapse-python-${treeId}-${nodePath}`,
+                      `collapse-sql-export-${treeId}-${nodePath}`,
+                      `collapse-email-${treeId}-${nodePath}`,
+                    ];
+                    keys.forEach(k => localStorage.setItem(k, 'false'));
+                    window.dispatchEvent(new Event('storage'));
+                  }}
+                  disabled={componentIsSaving}
+                  title="Implodi tutto"
+                >
+                  <Minimize2 className="h-3.5 w-3.5" />
+                  Implodi
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs px-2 gap-1.5"
+                  onClick={() => {
+                    const keys = [
+                      `collapse-links-${treeId}-${nodePath}`,
+                      `collapse-triggers-${treeId}-${nodePath}`,
+                      `collapse-media-${treeId}-${nodePath}`,
+                      `collapse-sql-${treeId}-${nodePath}`,
+                      `collapse-python-${treeId}-${nodePath}`,
+                      `collapse-sql-export-${treeId}-${nodePath}`,
+                      `collapse-email-${treeId}-${nodePath}`,
+                    ];
+                    keys.forEach(k => localStorage.setItem(k, 'true'));
+                    window.dispatchEvent(new Event('storage'));
+                  }}
+                  disabled={componentIsSaving}
+                  title="Esplodi tutto"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                  Esplodi
+                </Button>
+              </div>
+
               {/* Node Type Switcher - Only show for Question/Decision nodes, not Options */}
               {!('option' in initialNode) && (
                 <div className="flex items-center gap-2 bg-muted/50 rounded-lg p-1">
@@ -1214,323 +1278,307 @@ export default function EditNodeDialog({
                     </div>
                   )}
 
-                  {/* Enhanced Chatbot UI for Generation */}
-                  {/* Enhanced Chatbot UI for Generation */}
-                  <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col transition-all duration-300 h-[300px] hover:h-[500px]">
-                    <div className="bg-muted/50 p-2 px-3 border-b flex items-center justify-between">
-                      <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                        <Bot className="h-3.5 w-3.5" />
-                        AI SQL Assistant
-                      </span>
-                      {agentStatus && (
-                        <div className="bg-background text-[10px] h-5 gap-1 flex items-center px-2 rounded-full border">
-                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                          {agentStatus.replace('...', '')}
-                        </div>
-                      )}
-                    </div>
-
-                    <ScrollArea className="flex-1 p-4">
-                      <div className="flex flex-col gap-4">
-                        {/* Intro Message */}
-                        {sqlChatHistory.length === 0 && (
-                          <div className="flex gap-3">
-                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                              <Bot className="h-4 w-4 text-primary" />
-                            </div>
-                            <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
-                              <p>Ciao! Posso aiutarti a scrivere query SQL per i tuoi dati. Dimmi cosa ti serve estrarre.</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* History Messages */}
-                        {sqlChatHistory?.map((msg, idx) => (
-                          <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''} group`}>
-                            {msg.role === 'assistant' && (
-                              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                <Bot className="h-4 w-4 text-primary" />
-                              </div>
-                            )}
-                            <div className={`${msg.role === 'user'
-                              ? 'bg-primary text-primary-foreground rounded-br-sm'
-                              : 'bg-white dark:bg-zinc-800 rounded-tl-sm border shadow-sm'
-                              } p-2.5 rounded-2xl text-sm max-w-[85%] space-y-2 relative`}>
-                              <p className="whitespace-pre-wrap">{msg.content}</p>
-
-                              {/* Insert Query Button for Assistant Messages with Code */}
-                              {msg.role === 'assistant' && (msg.content.includes('SELECT') || msg.content.includes('WITH')) && (
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  className="w-full h-7 text-[10px] gap-1 mt-2"
-                                  onClick={() => {
-                                    // Extract code from content
-                                    const codeBlockRegex = /```(?:sql|tsql|mssql)?\s*([\s\S]*?)```/i;
-                                    const match = msg.content.match(codeBlockRegex);
-                                    let queryToInsert = '';
-
-                                    if (match && match[1]) {
-                                      queryToInsert = match[1].trim();
-                                    } else {
-                                      // If no code block, try to find the SELECT statement
-                                      const selectIdx = msg.content.indexOf('SELECT');
-                                      if (selectIdx >= 0) {
-                                        queryToInsert = msg.content.substring(selectIdx);
-                                      } else {
-                                        queryToInsert = msg.content;
-                                      }
-                                    }
-
-                                    if (queryToInsert) {
-                                      setSqlQuery(queryToInsert);
-                                      toast({ title: "Query Inserita", description: "L'editor SQL è stato aggiornato." });
-                                    }
-                                  }}
-                                >
-                                  <ArrowDownToLine className="h-3 w-3" /> Inserisci nel Editor
-                                </Button>
-                              )}
-                            </div>
-                            {msg.role === 'user' && (
-                              <div className="flex flex-col gap-1 items-end">
-                                <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-white font-bold text-xs">
-                                  U
-                                </div>
-                                {/* Undo / Rollback Button */}
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                  title="Torna a questo punto (cancella i messaggi successivi)"
-                                  onClick={() => {
-                                    // Remove this message and all subsequent messages to "rewind" to the state BEFORE this message
-                                    // Actually, usually user wants to delete THIS prompt and try again, OR keep this prompts context but delete subsequent
-                                    // Let's implement: "Delete from here onwards" -> Effectively rewinds to state BEFORE this message was sent.
-                                    // Wait, if I delete my user message, I want to restart from the previous assistant message.
-                                    const newHistory = sqlChatHistory.slice(0, idx);
-                                    setSqlChatHistory(newHistory);
-                                    toast({ title: "Conversazione Riavvobolta", description: "Sei tornato a un punto precedente." });
-                                  }}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-
-                        {/* Loading State */}
-                        {agentStatus && (
-                          <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
-                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                              <Bot className="h-4 w-4 text-primary" />
-                            </div>
-                            <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
-                              <div className="flex items-center gap-2 text-muted-foreground">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                <span>{agentStatus}</span>
-                              </div>
-                              <div className="h-1 bg-muted rounded-full overflow-hidden w-32">
-                                <div className="h-full bg-primary animate-pulse w-2/3" />
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                  {/* Two Column Layout: Left = Query/Editor, Right = Chatbot */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* LEFT COLUMN: Query Editor & Result Name - fills full height */}
+                    <div className="flex flex-col order-2 lg:order-1 h-full">
+                      {/* SQL Editor */}
+                      <div className="grid gap-2 flex-1">
+                        <Label>Query SQL</Label>
+                        <Textarea
+                          value={sqlQuery}
+                          onChange={(e) => setSqlQuery(e.target.value)}
+                          className="font-mono text-sm flex-1 min-h-[200px]"
+                          placeholder="SELECT * FROM ..."
+                        />
                       </div>
-                    </ScrollArea>
 
-                    {/* Input Area */}
-                    <div className="p-2 border-t bg-background flex gap-2">
-                      <Input
-                        placeholder="Descrivi cosa estrarre (es. 'Tutti i clienti attivi')"
-                        className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent"
-                        id="ai-prompt-input"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            // Trigger click on button
-                            const btn = document.getElementById('ai-send-btn');
-                            if (btn) btn.click();
-                          }
-                        }}
-                      />
-                      <Button
-                        id="ai-send-btn"
-                        size="sm"
-                        className="gap-2 rounded-lg"
-                        disabled={!!agentStatus}
-                        onClick={() => {
-                          const input = document.getElementById('ai-prompt-input') as HTMLInputElement;
-                          if (!input || !input.value) return;
+                      <div className="flex justify-between items-end mt-3 gap-4">
+                        <div className="grid gap-2 flex-1">
+                          <Label>Nome Tabella Risultato (Opzionale)</Label>
+                          <Input
+                            value={sqlResultName}
+                            onChange={(e) => setSqlResultName(e.target.value)}
+                            placeholder="Es. ClientiAttivi (per riutilizzo)"
+                          />
+                        </div>
 
-                          const userPrompt = input.value;
-                          input.value = ''; // Clear input immediately
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            if (!sqlQuery) {
+                              toast({ variant: 'destructive', title: "Errore", description: "Inserisci una query SQL prima di eseguire l'anteprima." });
+                              return;
+                            }
+                            setAgentStatus("Esecuzione Query...");
 
-                          // Optimistic update
-                          const newHistory = [...sqlChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
-                          setSqlChatHistory(newHistory);
+                            // Build Dependencies for Execution
+                            let pipelineDeps: any[] = [];
+                            if (availableInputTables && availableInputTables.length > 0) {
+                              // Auto-detect which tables are referenced in the SQL query
+                              const referencedTables = new Set<string>();
 
-                          // Get API key and model from local storage
-                          const apiKey = localStorage.getItem('openrouter_api_key') || '';
-                          const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+                              // Parse the SQL query for table references (FROM, JOIN)
+                              const sqlUpper = sqlQuery.toUpperCase();
+                              availableInputTables.forEach(table => {
+                                const tableNameUpper = table.name.toUpperCase();
+                                // Check for FROM or JOIN references
+                                if (sqlUpper.includes(`FROM ${tableNameUpper}`) ||
+                                  sqlUpper.includes(`FROM\n${tableNameUpper}`) ||
+                                  sqlUpper.includes(`JOIN ${tableNameUpper}`) ||
+                                  sqlUpper.includes(`JOIN\n${tableNameUpper}`)) {
+                                  referencedTables.add(table.name);
+                                }
+                              });
 
-                          if (!apiKey) {
-                            toast({ variant: 'destructive', title: "Configurazione Mancante", description: "Imposta la chiave API nelle Impostazioni." });
-                            return;
-                          }
+                              console.log('[SQL PREVIEW] Auto-detected referenced tables:', Array.from(referencedTables));
 
-                          setAgentStatus("Analisi Schema in corso...");
+                              // Include both selected tables AND auto-detected referenced tables
+                              const tablesToInclude = new Set([...selectedPipelines, ...referencedTables]);
 
-                          // Fetch Schema with array args
-                          fetchTableSchemaAction(
-                            sqlConnectorId || '', // connectorId (string)
-                            selectedPipelines?.map(p => p.split(':')[1]) // tableNames (string[])
-                          ).then((schemaRes) => {
-                            let schemaContext = schemaRes.schemaContext;
-
-                            // Continue even if schema error (maybe just no schema found)
-                            if (schemaRes.error) {
-                              console.warn("Schema fetch warning:", schemaRes.error);
+                              pipelineDeps = availableInputTables
+                                .filter(t => tablesToInclude.has(t.name))
+                                .map(table => ({
+                                  tableName: table.name,
+                                  query: table.sqlQuery || undefined,
+                                  isPython: table.isPython,
+                                  pythonCode: table.pythonCode,
+                                  connectorId: table.connectorId,
+                                  pipelineDependencies: table.pipelineDependencies
+                                }))
+                                .filter(d => d.query || (d.isPython && d.pythonCode));
                             }
 
-                            setAgentStatus("Generazione Query SQL...");
-
-                            // Generate SQL with correct args
-                            generateSqlAction(
-                              userPrompt, // userDescription
-                              { apiKey, model }, // openRouterConfig
-                              sqlConnectorId, // connectorId
-                              schemaContext || undefined, // schemaContextArgs
-                              newHistory // Pass history!
-                            ).then((res) => {
-                              if (res.sql) {
-                                // setSqlQuery(res.sql); // Don't auto-set, let user use button? Or maybe auto-set if empty?
-                                // Let's auto-set AND show in chat
-                                // Actually, consistent with Python, we DON'T auto-set, we just show code in chat
-                                // But legacy behavior was auto-set. Let's keep it but also show in chat.
-                                // Wait, the prompt returns ONLY SQL. So the message content IS the SQL.
-                                const assistantMsg = { role: 'assistant' as const, content: `Ecco la query:\n\`\`\`sql\n${res.sql}\n\`\`\``, timestamp: Date.now() };
-                                setSqlChatHistory([...newHistory, assistantMsg]);
-
-                                // Auto-fill editor if empty? No, use the button strictly to avoid overwriting.
-                                // setSqlQuery(res.sql); 
-                                // toast({ title: "SQL Generato!", description: "La query è stata scritta nell'editor." });
-                              } else {
-                                const errorMsg = { role: 'assistant' as const, content: `Errore: ${res.error || "Errore sconosciuto"}`, timestamp: Date.now() };
-                                setSqlChatHistory([...newHistory, errorMsg]);
-                                toast({ variant: 'destructive', title: "Errore AI", description: res.error || "Errore sconosciuto" });
-                              }
+                            executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps).then((res) => {
                               setAgentStatus(null);
+                              if (res.data) {
+                                setSqlPreviewData(res.data);
+                                toast({ title: "Query Eseguita", description: `Estratti ${res.data.length} record.` });
+                              } else {
+                                toast({ variant: 'destructive', title: "Errore SQL", description: res.error || "Errore sconosciuto" });
+                              }
                             });
-                          });
-                        }}
-                      >
-                        {agentStatus ? 'Elaborazione...' : 'Invia'}
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
+                          }}
+                          disabled={!!agentStatus}
+                        >
+                          {agentStatus === "Esecuzione Query..." ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                          Esegui Anteprima
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN: AI Chatbot */}
+                    <div className="order-1 lg:order-2">
+                      <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col h-[300px]">
+                        <div className="bg-muted/50 p-2 px-3 border-b flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                            <Bot className="h-3.5 w-3.5" />
+                            AI SQL Assistant
+                          </span>
+                          {agentStatus && (
+                            <div className="bg-background text-[10px] h-5 gap-1 flex items-center px-2 rounded-full border">
+                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                              {agentStatus.replace('...', '')}
+                            </div>
+                          )}
+                        </div>
+
+                        <ScrollArea className="flex-1 p-4">
+                          <div className="flex flex-col gap-4">
+                            {/* Intro Message */}
+                            {sqlChatHistory.length === 0 && (
+                              <div className="flex gap-3">
+                                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                  <Bot className="h-4 w-4 text-primary" />
+                                </div>
+                                <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
+                                  <p>Ciao! Posso aiutarti a scrivere query SQL per i tuoi dati. Dimmi cosa ti serve estrarre.</p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* History Messages */}
+                            {sqlChatHistory?.map((msg, idx) => (
+                              <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''} group`}>
+                                {msg.role === 'assistant' && (
+                                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                    <Bot className="h-4 w-4 text-primary" />
+                                  </div>
+                                )}
+                                <div className={`${msg.role === 'user'
+                                  ? 'bg-primary text-primary-foreground rounded-br-sm'
+                                  : 'bg-white dark:bg-zinc-800 rounded-tl-sm border shadow-sm'
+                                  } p-2.5 rounded-2xl text-sm max-w-[85%] space-y-2 relative`}>
+                                  <p className="whitespace-pre-wrap">{msg.content}</p>
+
+                                  {/* Insert Query Button for Assistant Messages with Code */}
+                                  {msg.role === 'assistant' && (msg.content.includes('SELECT') || msg.content.includes('WITH')) && (
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      className="w-full h-7 text-[10px] gap-1 mt-2"
+                                      onClick={() => {
+                                        const codeBlockRegex = /```(?:sql|tsql|mssql)?\s*([\s\S]*?)```/i;
+                                        const match = msg.content.match(codeBlockRegex);
+                                        let queryToInsert = '';
+
+                                        if (match && match[1]) {
+                                          queryToInsert = match[1].trim();
+                                        } else {
+                                          const selectIdx = msg.content.indexOf('SELECT');
+                                          if (selectIdx >= 0) {
+                                            queryToInsert = msg.content.substring(selectIdx);
+                                          } else {
+                                            queryToInsert = msg.content;
+                                          }
+                                        }
+
+                                        if (queryToInsert) {
+                                          setSqlQuery(queryToInsert);
+                                          toast({ title: "Query Inserita", description: "L'editor SQL è stato aggiornato." });
+                                        }
+                                      }}
+                                    >
+                                      <ArrowDownToLine className="h-3 w-3" /> Inserisci nel Editor
+                                    </Button>
+                                  )}
+                                </div>
+                                {msg.role === 'user' && (
+                                  <div className="flex flex-col gap-1 items-end">
+                                    <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-white font-bold text-xs">
+                                      U
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                      title="Torna a questo punto"
+                                      onClick={() => {
+                                        const newHistory = sqlChatHistory.slice(0, idx);
+                                        setSqlChatHistory(newHistory);
+                                        toast({ title: "Conversazione Riavvobolta", description: "Sei tornato a un punto precedente." });
+                                      }}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+
+                            {/* Loading State */}
+                            {agentStatus && (
+                              <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
+                                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                  <Bot className="h-4 w-4 text-primary" />
+                                </div>
+                                <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
+                                  <div className="flex items-center gap-2 text-muted-foreground">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    <span>{agentStatus}</span>
+                                  </div>
+                                  <div className="h-1 bg-muted rounded-full overflow-hidden w-32">
+                                    <div className="h-full bg-primary animate-pulse w-2/3" />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </ScrollArea>
+
+                        {/* Input Area */}
+                        <div className="p-2 border-t bg-background flex gap-2">
+                          <Input
+                            placeholder="Descrivi cosa estrarre (es. 'Tutti i clienti attivi')"
+                            className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent"
+                            id="ai-prompt-input"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                const btn = document.getElementById('ai-send-btn');
+                                if (btn) btn.click();
+                              }
+                            }}
+                          />
+                          <Button
+                            id="ai-send-btn"
+                            size="sm"
+                            className="gap-2 rounded-lg"
+                            disabled={!!agentStatus}
+                            onClick={() => {
+                              const input = document.getElementById('ai-prompt-input') as HTMLInputElement;
+                              if (!input || !input.value) return;
+
+                              const userPrompt = input.value;
+                              input.value = '';
+
+                              const newHistory = [...sqlChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
+                              setSqlChatHistory(newHistory);
+
+                              const apiKey = openRouterApiKey || '';
+                              const model = openRouterModel || 'google/gemini-2.0-flash-001';
+
+                              if (!apiKey) {
+                                toast({ variant: 'destructive', title: "Configurazione Mancante", description: "Imposta la chiave API nelle Impostazioni." });
+                                return;
+                              }
+
+                              setAgentStatus("Analisi Schema in corso...");
+
+                              fetchTableSchemaAction(
+                                sqlConnectorId || '',
+                                selectedPipelines?.map(p => p.split(':')[1])
+                              ).then((schemaRes) => {
+                                let schemaContext = schemaRes.schemaContext;
+
+                                if (schemaRes.error) {
+                                  console.warn("Schema fetch warning:", schemaRes.error);
+                                }
+
+                                setAgentStatus("Generazione Query SQL...");
+
+                                generateSqlAction(
+                                  userPrompt,
+                                  { apiKey, model },
+                                  sqlConnectorId,
+                                  schemaContext || undefined,
+                                  newHistory
+                                ).then((res) => {
+                                  if (res.sql) {
+                                    const assistantMsg = { role: 'assistant' as const, content: `Ecco la query:\n\`\`\`sql\n${res.sql}\n\`\`\``, timestamp: Date.now() };
+                                    setSqlChatHistory([...newHistory, assistantMsg]);
+                                  } else {
+                                    const errorMsg = { role: 'assistant' as const, content: `Errore: ${res.error || "Errore sconosciuto"}`, timestamp: Date.now() };
+                                    setSqlChatHistory([...newHistory, errorMsg]);
+                                    toast({ variant: 'destructive', title: "Errore AI", description: res.error || "Errore sconosciuto" });
+                                  }
+                                  setAgentStatus(null);
+                                });
+                              });
+                            }}
+                          >
+                            {agentStatus ? 'Elaborazione...' : 'Invia'}
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* SQL Editor & Preview */}
-                  <div className="grid gap-2">
-                    <Label>Query SQL</Label>
-                    <Textarea
-                      value={sqlQuery}
-                      onChange={(e) => setSqlQuery(e.target.value)}
-                      className="font-mono text-sm h-32"
-                      placeholder="SELECT * FROM ..."
-                    />
-                  </div>
-
-                  <div className="flex justify-end">
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        if (!sqlQuery) {
-                          toast({ variant: 'destructive', title: "Errore", description: "Inserisci una query SQL prima di eseguire l'anteprima." });
-                          return;
-                        }
-                        setAgentStatus("Esecuzione Query...");
-
-                        // Build Dependencies for Execution
-                        let pipelineDeps: any[] = [];
-                        if (availableInputTables && availableInputTables.length > 0) {
-                          // Auto-detect which tables are referenced in the SQL query
-                          const referencedTables = new Set<string>();
-
-                          // Parse the SQL query for table references (FROM, JOIN)
-                          const sqlUpper = sqlQuery.toUpperCase();
-                          availableInputTables.forEach(table => {
-                            const tableNameUpper = table.name.toUpperCase();
-                            // Check for FROM or JOIN references
-                            if (sqlUpper.includes(`FROM ${tableNameUpper}`) ||
-                              sqlUpper.includes(`FROM\n${tableNameUpper}`) ||
-                              sqlUpper.includes(`JOIN ${tableNameUpper}`) ||
-                              sqlUpper.includes(`JOIN\n${tableNameUpper}`)) {
-                              referencedTables.add(table.name);
-                            }
-                          });
-
-                          console.log('[SQL PREVIEW] Auto-detected referenced tables:', Array.from(referencedTables));
-
-                          // Include both selected tables AND auto-detected referenced tables
-                          const tablesToInclude = new Set([...selectedPipelines, ...referencedTables]);
-
-                          pipelineDeps = availableInputTables
-                            .filter(t => tablesToInclude.has(t.name))
-                            .map(table => ({
-                              tableName: table.name,
-                              query: table.sqlQuery || undefined,
-                              isPython: table.isPython,
-                              pythonCode: table.pythonCode,
-                              connectorId: table.connectorId, // Pass connector ID for HubSpot/API tokens
-                              pipelineDependencies: table.pipelineDependencies
-                            }))
-                            .filter(d => d.query || (d.isPython && d.pythonCode));
-                        }
-
-                        executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps).then((res) => {
-                          setAgentStatus(null);
-                          if (res.data) {
-                            setSqlPreviewData(res.data);
-                            toast({ title: "Query Eseguita", description: `Estratti ${res.data.length} record.` });
-                          } else {
-                            toast({ variant: 'destructive', title: "Errore SQL", description: res.error || "Errore sconosciuto" });
-                          }
-                        });
-                      }}
-                      disabled={!!agentStatus}
-                    >
-                      {agentStatus === "Esecuzione Query..." ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-                      Esegui Anteprima
-                    </Button>
-                  </div>
-
-                  {/* Data Preview Table */}
+                  {/* Preview section BELOW the columns - max 200px height */}
                   {sqlPreviewData && (
-                    <div className="border rounded-md overflow-hidden max-w-full">
+                    <div className="border rounded-md overflow-hidden mt-4">
                       <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
                         <span className="font-semibold text-xs flex items-center gap-2">
                           <Database className="h-3 w-3" />
-                          Risultati Anteprima
+                          Risultati Anteprima ({sqlPreviewData.length} record)
                         </span>
                         <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setSqlPreviewData(null)}><X className="h-3 w-3" /></Button>
                       </div>
-                      <DataTable
-                        data={sqlPreviewData}
-                      />
+                      <div className="max-h-[200px] overflow-auto">
+                        <DataTable data={sqlPreviewData} />
+                      </div>
                     </div>
                   )}
-
-                  <div className="grid gap-2">
-                    <Label>Nome Tabella Risultato (Opzionale)</Label>
-                    <Input
-                      value={sqlResultName}
-                      onChange={(e) => setSqlResultName(e.target.value)}
-                      placeholder="Es. ClientiAttivi (per riutilizzo in altri nodi)"
-                    />
-                    <p className="text-[10px] text-muted-foreground">Dai un nome a questa tabella per usarla come input nei nodi successivi (JOIN).</p>
-                  </div>
 
                 </div>
               </CollapsibleSection>
@@ -1628,405 +1676,349 @@ export default function EditNodeDialog({
                     </div>
                   )}
 
-                  {/* AI Chatbot for Python Generation */}
-                  <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col transition-all duration-300 h-[300px] hover:h-[500px]">
-                    <div className="bg-muted/50 p-2 px-3 border-b flex items-center justify-between">
-                      <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                        <Bot className="h-3.5 w-3.5" />
-                        AI Python Assistant
-                      </span>
-                      {pythonAgentStatus && (
-                        <div className="bg-background text-[10px] h-5 gap-1 flex items-center px-2 rounded-full border">
-                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                          {pythonAgentStatus.replace('...', '')}
-                        </div>
-                      )}
-                    </div>
-
-                    <ScrollArea className="flex-1 p-4">
-                      <div className="flex flex-col gap-4">
-                        {/* Intro Message */}
-                        {pythonChatHistory.length === 0 && (
-                          <div className="flex gap-3">
-                            <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
-                              <Bot className="h-4 w-4 text-yellow-600" />
-                            </div>
-                            <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
-                              <p>Ciao! Posso generare script Python per {pythonOutputType === 'table' ? 'tabelle' : pythonOutputType === 'variable' ? 'variabili' : 'grafici'}. Dimmi cosa ti serve.</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* History Messages */}
-                        {pythonChatHistory?.map((msg, idx) => (
-                          <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''} group`}>
-                            {msg.role === 'assistant' && (
-                              <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
-                                <Bot className="h-4 w-4 text-yellow-600" />
-                              </div>
-                            )}
-                            <div className={`${msg.role === 'user'
-                              ? 'bg-primary text-primary-foreground rounded-br-sm'
-                              : 'bg-white dark:bg-zinc-800 rounded-tl-sm border shadow-sm'
-                              } p-2.5 rounded-2xl text-sm max-w-[85%] space-y-2 relative`}>
-                              <p className="whitespace-pre-wrap">{msg.content}</p>
-                              {/* Insert Code Button for Assistant Messages with Code */}
-                              {msg.role === 'assistant' && msg.content.includes('```python') && (
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  className="w-full h-7 text-[10px] gap-1 mt-2"
-                                  onClick={() => {
-                                    // Extract code from content
-                                    const match = msg.content.match(/```python\s*([\s\S]*?)```/);
-                                    if (match && match[1]) {
-                                      setPythonCode(match[1]);
-                                      toast({ title: "Codice Inserito", description: "Lo script è stato aggiornato con questa versione." });
-                                    }
-                                  }}
-                                >
-                                  <ArrowDownToLine className="h-3 w-3" /> Inserisci nel Editor
-                                </Button>
-                              )}
-
-                              {/* --- PREVIEW IN CHAT --- */}
-                              {msg.preview && (
-                                <div className="mt-3 border-t pt-2">
-                                  <div className="text-[10px] font-semibold mb-2 text-muted-foreground flex items-center gap-1">
-                                    <Eye className="h-3 w-3" /> Anteprima Risultato
-                                  </div>
-
-                                  <div className="bg-background rounded-md border text-xs overflow-hidden">
-                                    {/* TABLE */}
-                                    {msg.preview.type === 'table' && msg.preview.data && msg.preview.columns && (
-                                      <div className="max-h-60 overflow-auto">
-                                        <DataTable data={msg.preview.data} columns={msg.preview.columns} />
-                                      </div>
-                                    )}
-
-                                    {/* VARIABLES */}
-                                    {msg.preview.type === 'variable' && msg.preview.variables && (
-                                      <div className="max-h-60 overflow-auto p-2">
-                                        <pre className="text-[10px]">{JSON.stringify(msg.preview.variables, null, 2)}</pre>
-                                      </div>
-                                    )}
-
-                                    {/* CHART */}
-                                    {msg.preview.type === 'chart' && (
-                                      <div className="h-60 w-full bg-white dark:bg-zinc-950 flex items-center justify-center">
-                                        {msg.preview.chartHtml ? (
-                                          <iframe
-                                            srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; }</style></head><body>${msg.preview.chartHtml}</body></html>`}
-                                            className="w-full h-full border-none"
-                                            title="Chat Chart Preview"
-                                          />
-                                        ) : msg.preview.chartBase64 ? (
-                                          <img
-                                            src={`data:image/png;base64,${msg.preview.chartBase64}`}
-                                            alt="Chart Preview"
-                                            className="max-h-full max-w-full"
-                                          />
-                                        ) : (
-                                          <span className="text-muted-foreground italic">Grafico vuoto</span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                            {msg.role === 'user' && (
-                              <div className="flex flex-col gap-1 items-end">
-                                <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-white font-bold text-xs">
-                                  U
-                                </div>
-                                {/* Undo / Rollback Button */}
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                  title="Torna a questo punto (cancella i messaggi successivi)"
-                                  onClick={() => {
-                                    const newHistory = pythonChatHistory.slice(0, idx);
-                                    setPythonChatHistory(newHistory);
-                                    toast({ title: "Conversazione Riavvobolta", description: "Sei tornato a un punto precedente." });
-                                  }}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-
-                        {/* Loading State */}
-                        {pythonAgentStatus && (
-                          <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
-                            <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
-                              <Bot className="h-4 w-4 text-yellow-600" />
-                            </div>
-                            <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
-                              <div className="flex items-center gap-2 text-muted-foreground">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                <span>{pythonAgentStatus}</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                  {/* Two Column Layout: Left = Code/Preview, Right = Chatbot */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* LEFT COLUMN: Code Editor & Result Name - fills full height */}
+                    <div className="flex flex-col order-2 lg:order-1 h-full">
+                      {/* Python Code Editor */}
+                      <div className="grid gap-2 flex-1">
+                        <Label>Codice Python</Label>
+                        <Textarea
+                          value={pythonCode}
+                          onChange={(e) => setPythonCode(e.target.value)}
+                          className="font-mono text-sm flex-1 min-h-[200px]"
+                          placeholder={`# ${pythonOutputType === 'table' ? 'Ritorna un DataFrame Pandas' : pythonOutputType === 'variable' ? 'Ritorna un dizionario di variabili' : 'Ritorna una figura Matplotlib/Plotly'}\n`}
+                        />
                       </div>
-                    </ScrollArea>
 
-                    <div className="p-2 border-t bg-background flex gap-2">
-                      <Input
-                        placeholder={`Descrivi ${pythonOutputType === 'table' ? 'la tabella' : pythonOutputType === 'variable' ? 'le variabili' : 'il grafico'} da generare...`}
-                        className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent"
-                        id="python-prompt-input"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            const btn = document.getElementById('python-send-btn');
-                            if (btn) btn.click();
-                          }
-                        }}
-                      />
-                      <Button
-                        id="python-send-btn"
-                        size="sm"
-                        className="gap-2 rounded-lg bg-yellow-600 hover:bg-yellow-700"
-                        disabled={!!pythonAgentStatus}
-                        onClick={() => {
-                          const input = document.getElementById('python-prompt-input') as HTMLInputElement;
-                          if (!input || !input.value) return;
+                      <div className="flex justify-between items-end mt-3 gap-4">
+                        <div className="grid gap-2 flex-1">
+                          <Label>Nome Risultato (Opzionale)</Label>
+                          <Input
+                            value={pythonResultName}
+                            onChange={(e) => setPythonResultName(e.target.value)}
+                            placeholder="Es. DataAnalysis (per riutilizzo)"
+                          />
+                        </div>
 
-                          const userPrompt = input.value;
-                          const apiKey = localStorage.getItem('openrouter_api_key') || '';
-                          const model = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
-
-                          if (!apiKey) {
-                            toast({ variant: 'destructive', title: "Configurazione Mancante", description: "Imposta la chiave API nelle Impostazioni." });
-                            return;
-                          }
-
-                          // Optimistic Update
-                          const newHistory = [...pythonChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
-                          setPythonChatHistory(newHistory);
-                          input.value = ''; // Clear Input
-
-                          setPythonAgentStatus("Generazione Codice Python...");
-
-                          // Defined recursively for auto-healing
-                          const performGeneration = async (currentHistory: any[], retryCount = 0) => {
-                            try {
-                              const response = await generatePythonAction(
-                                userPrompt,
-                                { apiKey, model },
-                                pythonOutputType,
-                                pythonSelectedPipelines,
-                                currentHistory
-                              );
-
-                              if (response.code) {
-                                setPythonAgentStatus(retryCount > 0 ? `Correzione in corso (Tentativo ${retryCount}/3)...` : "Esecuzione Anteprima Automatica...");
-
-                                const previewRes = await executePythonPreviewAction(
-                                  response.code,
-                                  pythonOutputType,
-                                  {},
-                                  pythonSelectedPipelines.map(pName => {
-                                    const dep = availableInputTables?.find(t => t.name === pName);
-                                    return {
-                                      tableName: dep?.name || '',
-                                      query: dep?.sqlQuery,
-                                      connectorId: dep?.connectorId,
-                                      isPython: dep?.isPython,
-                                      pythonCode: dep?.pythonCode,
-                                      pipelineDependencies: dep?.pipelineDependencies
-                                    };
-                                  }),
-                                  pythonConnectorId
-                                );
-
-                                if (previewRes.success) {
-                                  setPythonCode(response.code);
-                                  setPythonPreviewResult({
-                                    type: pythonOutputType,
-                                    data: previewRes.data,
-                                    columns: previewRes.columns,
-                                    variables: previewRes.variables,
-                                    chartBase64: previewRes.chartBase64,
-                                    chartHtml: previewRes.chartHtml,
-                                    debugLogs: previewRes.debugLogs
-                                  });
-                                  setHasPythonCodeChanged(true);
-
-                                  const successMsg = retryCount > 0
-                                    ? `Ho corretto l'errore ed eseguito lo script con successo (al tentativo ${retryCount})!\n\n\`\`\`python\n${response.code}\n\`\`\``
-                                    : `Ho generato ed eseguito lo script con successo!\n\n\`\`\`python\n${response.code}\n\`\`\``;
-
-                                  setPythonChatHistory(prev => [...prev, {
-                                    role: 'assistant',
-                                    content: successMsg,
-                                    timestamp: Date.now(),
-                                    preview: {
-                                      type: pythonOutputType,
-                                      data: previewRes.data,
-                                      columns: previewRes.columns,
-                                      chartHtml: previewRes.chartHtml,
-                                      chartBase64: previewRes.chartBase64,
-                                      variables: previewRes.variables
-                                    }
-                                  }]);
-                                } else {
-                                  if (retryCount < 3) {
-                                    const errorFeedback = `The code failed execution with this error: ${previewRes.error}.
-                                    
-OUTPUT LOGS (STDOUT) - Use this to fix column names:
-${previewRes.stdout || "No output captured."}
-
-Please fix the code to resolve this error. Return ONLY the fixed python code.`;
-                                    const nextHistory = [
-                                      ...currentHistory,
-                                      { role: 'assistant', content: `\`\`\`python\n${response.code}\n\`\`\`` },
-                                      { role: 'user', content: errorFeedback }
-                                    ];
-                                    await performGeneration(nextHistory, retryCount + 1);
-                                  } else {
-                                    const errorMessage = `Non sono riuscito a correggere l'errore dopo 3 tentativi. Ultimo errore:\n${previewRes.error}\n\nUltimo codice:\n\`\`\`python\n${response.code}\n\`\`\``;
-                                    setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
-                                    toast({ variant: 'destructive', title: "Errore Irrisolvibile", description: "Impossibile correggere automaticamente lo script." });
-                                  }
-                                }
-                              } else {
-                                const errorMessage = `Errore generazione: ${response.error || "Sconosciuto"}`;
-                                setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
-                                toast({ variant: 'destructive', title: "Errore AI", description: response.error || "Errore sconosciuto" });
-                              }
-                            } catch (e: any) {
-                              const errorMessage = `Errore critico: ${e.message}`;
-                              setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            if (!pythonCode) {
+                              toast({ variant: 'destructive', title: "Errore", description: "Inserisci del codice Python prima di eseguire l'anteprima." });
+                              return;
                             }
-                          };
 
-                          performGeneration(newHistory, 0).finally(() => setPythonAgentStatus(null));
+                            setPythonAgentStatus("Recupero Dati in corso...");
+                            setPythonProgressStep(1);
+                            isExecutingRef.current = true;
 
-                        }}
-                      >
-                        {pythonAgentStatus ? 'Elaborazione...' : 'Invia'}
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
+                            setTimeout(() => {
+                              if (isExecutingRef.current) {
+                                setPythonAgentStatus("Elaborazione Python...");
+                                setPythonProgressStep(2);
+                              }
+                            }, 2000);
 
-                  {/* Python Code Editor */}
-                  <div className="grid gap-2">
-                    <Label>Codice Python</Label>
-                    <Textarea
-                      value={pythonCode}
-                      onChange={(e) => setPythonCode(e.target.value)}
-                      className="font-mono text-sm h-40"
-                      placeholder={`# ${pythonOutputType === 'table' ? 'Ritorna un DataFrame Pandas' : pythonOutputType === 'variable' ? 'Ritorna un dizionario di variabili' : 'Ritorna una figura Matplotlib/Plotly'}\n`}
-                    />
-                  </div>
+                            setTimeout(() => {
+                              if (isExecutingRef.current) {
+                                setPythonAgentStatus("Rendering Grafico...");
+                                setPythonProgressStep(3);
+                              }
+                            }, 5000);
 
-                  {/* Preview Button */}
-
-                  <div className="flex justify-end">
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        if (!pythonCode) {
-                          toast({ variant: 'destructive', title: "Errore", description: "Inserisci del codice Python prima di eseguire l'anteprima." });
-                          return;
-                        }
-
-                        // Reset visual state
-                        setPythonAgentStatus("Recupero Dati in corso...");
-                        setPythonProgressStep(1);
-                        isExecutingRef.current = true;
-
-                        // Simulate progress phases
-                        setTimeout(() => {
-                          if (isExecutingRef.current) {
-                            setPythonAgentStatus("Elaborazione Python...");
-                            setPythonProgressStep(2);
-                          }
-                        }, 2000);
-
-                        setTimeout(() => {
-                          if (isExecutingRef.current) {
-                            setPythonAgentStatus("Rendering Grafico...");
-                            setPythonProgressStep(3);
-                          }
-                        }, 5000);
-
-                        // Prepara i dati di input e le dipendenze dai nodi selezionati
-                        // Include pipelineDependencies for cascading SQL execution
-                        const dependencies: { tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
-                        if (availableInputTables) {
-                          pythonSelectedPipelines.forEach(pName => {
-                            const table = availableInputTables.find(t => t.name === pName);
-                            if (table) {
-                              dependencies.push({
-                                tableName: pName,
-                                connectorId: table.connectorId,
-                                query: table.sqlQuery,
-                                isPython: table.isPython,
-                                pythonCode: table.pythonCode,
-                                pipelineDependencies: table.pipelineDependencies // Pass ancestor queries
+                            const dependencies: { tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
+                            if (availableInputTables) {
+                              pythonSelectedPipelines.forEach(pName => {
+                                const table = availableInputTables.find(t => t.name === pName);
+                                if (table) {
+                                  dependencies.push({
+                                    tableName: pName,
+                                    connectorId: table.connectorId,
+                                    query: table.sqlQuery,
+                                    isPython: table.isPython,
+                                    pythonCode: table.pythonCode,
+                                    pipelineDependencies: table.pipelineDependencies
+                                  });
+                                }
                               });
                             }
-                          });
-                        }
 
-                        executePythonPreviewAction(pythonCode, pythonOutputType, {}, dependencies, pythonConnectorId).then((res: any) => {
-                          isExecutingRef.current = false;
-                          setPythonAgentStatus(null);
-                          setPythonProgressStep(0); // Reset on finish
-                          if (res.success) {
-                            setPythonPreviewResult({
-                              type: pythonOutputType,
-                              data: res.data,
-                              variables: res.variables,
-                              chartBase64: res.chartBase64,
-                              chartHtml: res.chartHtml,
-                              debugLogs: res.debugLogs
+                            executePythonPreviewAction(pythonCode, pythonOutputType, {}, dependencies, pythonConnectorId).then((res: any) => {
+                              isExecutingRef.current = false;
+                              setPythonAgentStatus(null);
+                              setPythonProgressStep(0);
+                              if (res.success) {
+                                setPythonPreviewResult({
+                                  type: pythonOutputType,
+                                  data: res.data,
+                                  variables: res.variables,
+                                  chartBase64: res.chartBase64,
+                                  chartHtml: res.chartHtml,
+                                  debugLogs: res.debugLogs
+                                });
+                                toast({ title: "Script Eseguito", description: "Anteprima pronta." });
+                              } else {
+                                toast({ variant: 'destructive', title: "Errore Python", description: res.error || "Errore sconosciuto" });
+                              }
                             });
-                            toast({ title: "Script Eseguito", description: "Anteprima pronta." });
-                          } else {
-                            toast({ variant: 'destructive', title: "Errore Python", description: res.error || "Errore sconosciuto" });
-                          }
-                        });
-                      }}
-                      disabled={!!pythonAgentStatus}
-                    >
-                      {pythonAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
-                      {pythonAgentStatus || "Esegui Anteprima"}
-                    </Button>
+                          }}
+                          disabled={!!pythonAgentStatus}
+                        >
+                          {pythonAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                          Esegui Anteprima
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN: AI Chatbot */}
+                    <div className="order-1 lg:order-2">
+                      <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col h-[300px]">
+                        <div className="bg-muted/50 p-2 px-3 border-b flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                            <Bot className="h-3.5 w-3.5" />
+                            AI Python Assistant
+                          </span>
+                          {pythonAgentStatus && (
+                            <div className="bg-background text-[10px] h-5 gap-1 flex items-center px-2 rounded-full border">
+                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                              {pythonAgentStatus.replace('...', '')}
+                            </div>
+                          )}
+                        </div>
+
+                        <ScrollArea className="flex-1 p-4">
+                          <div className="flex flex-col gap-4">
+                            {pythonChatHistory.length === 0 && (
+                              <div className="flex gap-3">
+                                <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
+                                  <Bot className="h-4 w-4 text-yellow-600" />
+                                </div>
+                                <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
+                                  <p>Ciao! Posso generare script Python per {pythonOutputType === 'table' ? 'tabelle' : pythonOutputType === 'variable' ? 'variabili' : 'grafici'}. Dimmi cosa ti serve.</p>
+                                </div>
+                              </div>
+                            )}
+
+                            {pythonChatHistory?.map((msg, idx) => (
+                              <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''} group`}>
+                                {msg.role === 'assistant' && (
+                                  <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
+                                    <Bot className="h-4 w-4 text-yellow-600" />
+                                  </div>
+                                )}
+                                <div className={`${msg.role === 'user'
+                                  ? 'bg-primary text-primary-foreground rounded-br-sm'
+                                  : 'bg-white dark:bg-zinc-800 rounded-tl-sm border shadow-sm'
+                                  } p-2.5 rounded-2xl text-sm max-w-[85%] space-y-2 relative`}>
+                                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                                  {msg.role === 'assistant' && msg.content.includes('```python') && (
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      className="w-full h-7 text-[10px] gap-1 mt-2"
+                                      onClick={() => {
+                                        const match = msg.content.match(/```python\s*([\s\S]*?)```/);
+                                        if (match && match[1]) {
+                                          setPythonCode(match[1]);
+                                          toast({ title: "Codice Inserito", description: "Lo script è stato aggiornato." });
+                                        }
+                                      }}
+                                    >
+                                      <ArrowDownToLine className="h-3 w-3" /> Inserisci nel Editor
+                                    </Button>
+                                  )}
+                                </div>
+                                {msg.role === 'user' && (
+                                  <div className="flex flex-col gap-1 items-end">
+                                    <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-white font-bold text-xs">
+                                      U
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                      title="Torna a questo punto"
+                                      onClick={() => {
+                                        const newHistory = pythonChatHistory.slice(0, idx);
+                                        setPythonChatHistory(newHistory);
+                                        toast({ title: "Conversazione Riavvobolta", description: "Sei tornato a un punto precedente." });
+                                      }}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+
+                            {pythonAgentStatus && (
+                              <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
+                                <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
+                                  <Bot className="h-4 w-4 text-yellow-600" />
+                                </div>
+                                <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
+                                  <div className="flex items-center gap-2 text-muted-foreground">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    <span>{pythonAgentStatus}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </ScrollArea>
+
+                        <div className="p-2 border-t bg-background flex gap-2">
+                          <Input
+                            placeholder={`Descrivi ${pythonOutputType === 'table' ? 'la tabella' : pythonOutputType === 'variable' ? 'le variabili' : 'il grafico'} da generare...`}
+                            className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent"
+                            id="python-prompt-input"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                const btn = document.getElementById('python-send-btn');
+                                if (btn) btn.click();
+                              }
+                            }}
+                          />
+                          <Button
+                            id="python-send-btn"
+                            size="sm"
+                            className="gap-2 rounded-lg bg-yellow-600 hover:bg-yellow-700"
+                            disabled={!!pythonAgentStatus}
+                            onClick={() => {
+                              const input = document.getElementById('python-prompt-input') as HTMLInputElement;
+                              if (!input || !input.value) return;
+
+                              const userPrompt = input.value;
+                              const apiKey = openRouterApiKey || '';
+                              const model = openRouterModel || 'google/gemini-2.0-flash-001';
+
+                              if (!apiKey) {
+                                toast({ variant: 'destructive', title: "Configurazione Mancante", description: "Imposta la chiave API nelle Impostazioni." });
+                                return;
+                              }
+
+                              const newHistory = [...pythonChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
+                              setPythonChatHistory(newHistory);
+                              input.value = '';
+
+                              setPythonAgentStatus("Generazione Codice Python...");
+
+                              const performGeneration = async (currentHistory: any[], retryCount = 0) => {
+                                try {
+                                  const response = await generatePythonAction(
+                                    userPrompt,
+                                    { apiKey, model },
+                                    pythonOutputType,
+                                    pythonSelectedPipelines,
+                                    currentHistory
+                                  );
+
+                                  if (response.code) {
+                                    setPythonAgentStatus(retryCount > 0 ? `Correzione in corso (Tentativo ${retryCount}/3)...` : "Esecuzione Anteprima Automatica...");
+
+                                    const previewRes = await executePythonPreviewAction(
+                                      response.code,
+                                      pythonOutputType,
+                                      {},
+                                      pythonSelectedPipelines.map(pName => {
+                                        const dep = availableInputTables?.find(t => t.name === pName);
+                                        return {
+                                          tableName: dep?.name || '',
+                                          query: dep?.sqlQuery,
+                                          connectorId: dep?.connectorId,
+                                          isPython: dep?.isPython,
+                                          pythonCode: dep?.pythonCode,
+                                          pipelineDependencies: dep?.pipelineDependencies
+                                        };
+                                      }),
+                                      pythonConnectorId
+                                    );
+
+                                    if (previewRes.success) {
+                                      setPythonCode(response.code);
+                                      setPythonPreviewResult({
+                                        type: pythonOutputType,
+                                        data: previewRes.data,
+                                        columns: previewRes.columns,
+                                        variables: previewRes.variables,
+                                        chartBase64: previewRes.chartBase64,
+                                        chartHtml: previewRes.chartHtml,
+                                        debugLogs: previewRes.debugLogs
+                                      });
+                                      setHasPythonCodeChanged(true);
+
+                                      const successMsg = retryCount > 0
+                                        ? `Ho corretto l'errore ed eseguito lo script con successo (al tentativo ${retryCount})!\n\n\`\`\`python\n${response.code}\n\`\`\``
+                                        : `Ho generato ed eseguito lo script con successo!\n\n\`\`\`python\n${response.code}\n\`\`\``;
+
+                                      setPythonChatHistory(prev => [...prev, {
+                                        role: 'assistant',
+                                        content: successMsg,
+                                        timestamp: Date.now(),
+                                        preview: {
+                                          type: pythonOutputType,
+                                          data: previewRes.data,
+                                          columns: previewRes.columns,
+                                          chartHtml: previewRes.chartHtml,
+                                          chartBase64: previewRes.chartBase64,
+                                          variables: previewRes.variables
+                                        }
+                                      }]);
+                                    } else {
+                                      if (retryCount < 3) {
+                                        const errorFeedback = `The code failed execution with this error: ${previewRes.error}.\n\nOUTPUT LOGS (STDOUT) - Use this to fix column names:\n${previewRes.stdout || "No output captured."}\n\nPlease fix the code to resolve this error. Return ONLY the fixed python code.`;
+                                        const nextHistory = [
+                                          ...currentHistory,
+                                          { role: 'assistant', content: `\`\`\`python\n${response.code}\n\`\`\`` },
+                                          { role: 'user', content: errorFeedback }
+                                        ];
+                                        await performGeneration(nextHistory, retryCount + 1);
+                                      } else {
+                                        const errorMessage = `Non sono riuscito a correggere l'errore dopo 3 tentativi. Ultimo errore:\n${previewRes.error}\n\nUltimo codice:\n\`\`\`python\n${response.code}\n\`\`\``;
+                                        setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
+                                        toast({ variant: 'destructive', title: "Errore Irrisolvibile", description: "Impossibile correggere automaticamente lo script." });
+                                      }
+                                    }
+                                  } else {
+                                    const errorMessage = `Errore generazione: ${response.error || "Sconosciuto"}`;
+                                    setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
+                                    toast({ variant: 'destructive', title: "Errore AI", description: response.error || "Errore sconosciuto" });
+                                  }
+                                } catch (e: any) {
+                                  const errorMessage = `Errore critico: ${e.message}`;
+                                  setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
+                                }
+                              };
+
+                              performGeneration(newHistory, 0).finally(() => setPythonAgentStatus(null));
+                            }}
+                          >
+                            {pythonAgentStatus ? 'Elaborazione...' : 'Invia'}
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Visual Stepper "N Pallini" */}
+                  {/* Visual Stepper - shown during execution */}
                   {pythonAgentStatus && (
-                    <div className="flex items-center justify-center gap-8 py-4 animate-in fade-in zoom-in-95 duration-300">
-                      {/* Step 1: Dati */}
+                    <div className="flex items-center justify-center gap-8 py-4 mt-4 animate-in fade-in zoom-in-95 duration-300">
                       <div className="flex flex-col items-center gap-2">
                         <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pythonProgressStep >= 1 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
                           {pythonProgressStep > 1 ? <Check className="h-5 w-5" /> : <Database className="h-4 w-4" />}
                         </div>
                         <span className={`text-[10px] font-medium ${pythonProgressStep >= 1 ? 'text-primary' : 'text-muted-foreground'}`}>Recupero Dati</span>
                       </div>
-
                       <div className={`h-0.5 w-16 transition-all ${pythonProgressStep >= 2 ? 'bg-primary' : 'bg-muted'}`} />
-
-                      {/* Step 2: Python */}
                       <div className="flex flex-col items-center gap-2">
                         <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pythonProgressStep >= 2 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
                           {pythonProgressStep > 2 ? <Check className="h-5 w-5" /> : <Code className="h-4 w-4" />}
                         </div>
                         <span className={`text-[10px] font-medium ${pythonProgressStep >= 2 ? 'text-primary' : 'text-muted-foreground'}`}>Elaborazione</span>
                       </div>
-
                       <div className={`h-0.5 w-16 transition-all ${pythonProgressStep >= 3 ? 'bg-primary' : 'bg-muted'}`} />
-
-                      {/* Step 3: Grafica */}
                       <div className="flex flex-col items-center gap-2">
                         <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pythonProgressStep >= 3 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
                           <LineChart className="h-4 w-4" />
@@ -2036,9 +2028,9 @@ Please fix the code to resolve this error. Return ONLY the fixed python code.`;
                     </div>
                   )}
 
-                  {/* Preview Result */}
+                  {/* Preview Result - BELOW the two columns, max 200px */}
                   {pythonPreviewResult && (
-                    <div className="border rounded-md overflow-hidden max-w-full">
+                    <div className="border rounded-md overflow-hidden mt-4">
                       <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
                         <span className="font-semibold text-xs flex items-center gap-2">
                           <Code className="h-3 w-3" />
@@ -2051,23 +2043,7 @@ Please fix the code to resolve this error. Return ONLY the fixed python code.`;
                               variant="outline"
                               className="h-6 text-[10px] gap-1 px-2 font-bold"
                               onClick={() => {
-                                const fullHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>${pythonResultName || 'Chart Preview'}</title>
-  <style>
-    body { margin: 0; padding: 20px; font-family: sans-serif; background-color: #f8fafc; }
-    .chart-container { background: white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); padding: 20px; }
-  </style>
-</head>
-<body>
-  <div class="chart-container">
-    ${pythonPreviewResult.chartHtml}
-  </div>
-</body>
-</html>`;
+                                const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${pythonResultName || 'Chart Preview'}</title><style>body { margin: 0; padding: 20px; font-family: sans-serif; background-color: #f8fafc; }.chart-container { background: white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); padding: 20px; }</style></head><body><div class="chart-container">${pythonPreviewResult.chartHtml}</div></body></html>`;
                                 const blob = new Blob([fullHtml], { type: 'text/html' });
                                 const url = window.URL.createObjectURL(blob);
                                 const link = document.createElement('a');
@@ -2083,37 +2059,29 @@ Please fix the code to resolve this error. Return ONLY the fixed python code.`;
                           <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPythonPreviewResult(null)}><X className="h-3 w-3" /></Button>
                         </div>
                       </div>
-                      {pythonPreviewResult.type === 'table' && pythonPreviewResult.data && (
-                        <DataTable data={pythonPreviewResult.data} columns={pythonPreviewResult.columns} />
-                      )}
-                      {pythonPreviewResult.type === 'variable' && pythonPreviewResult.variables && (
-                        <pre className="p-3 text-xs overflow-auto max-h-48">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
-                      )}
-                      {pythonPreviewResult.type === 'chart' && (
-                        <div className="bg-white dark:bg-zinc-950">
-                          {pythonPreviewResult.chartHtml ? (
-                            <div className="w-full h-[70vh] border-none overflow-auto">
+                      <div className="max-h-[200px] overflow-auto">
+                        {pythonPreviewResult.type === 'table' && pythonPreviewResult.data && (
+                          <DataTable data={pythonPreviewResult.data} columns={pythonPreviewResult.columns} />
+                        )}
+                        {pythonPreviewResult.type === 'variable' && pythonPreviewResult.variables && (
+                          <pre className="p-3 text-xs">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
+                        )}
+                        {pythonPreviewResult.type === 'chart' && (
+                          <div className="bg-white dark:bg-zinc-950 h-[200px]">
+                            {pythonPreviewResult.chartHtml ? (
                               <iframe
-                                srcDoc={`
-                                  <html>
-                                    <head>
-                                      <style>body { margin: 0; padding: 0; background: transparent; }</style>
-                                    </head>
-                                    <body>${pythonPreviewResult.chartHtml}</body>
-                                  </html>
-                                `}
-                                className="w-full border-none"
-                                style={{ minHeight: '100%', height: 'auto' }}
+                                srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; }</style></head><body>${pythonPreviewResult.chartHtml}</body></html>`}
+                                className="w-full h-full border-none"
                                 title="Interactive Chart"
                               />
-                            </div>
-                          ) : pythonPreviewResult.chartBase64 ? (
-                            <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className="max-w-full block mx-auto py-4" />
-                          ) : (
-                            <div className="p-8 text-center text-muted-foreground italic text-xs">Nessun grafico generato</div>
-                          )}
-                        </div>
-                      )}
+                            ) : pythonPreviewResult.chartBase64 ? (
+                              <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className="max-w-full max-h-full block mx-auto" />
+                            ) : (
+                              <div className="p-8 text-center text-muted-foreground italic text-xs">Nessun grafico generato</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -2127,17 +2095,6 @@ Please fix the code to resolve this error. Return ONLY the fixed python code.`;
                       </div>
                     </CollapsibleSection>
                   )}
-
-                  {/* Result Name */}
-                  <div className="grid gap-2">
-                    <Label>Nome Risultato (Opzionale)</Label>
-                    <Input
-                      value={pythonResultName}
-                      onChange={(e) => setPythonResultName(e.target.value)}
-                      placeholder="Es. DataAnalysis (per riutilizzo)"
-                    />
-                    <p className="text-[10px] text-muted-foreground">Dai un nome a questo risultato per usarlo in altri nodi.</p>
-                  </div>
 
                 </div>
               </CollapsibleSection>

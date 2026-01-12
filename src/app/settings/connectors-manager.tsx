@@ -27,6 +27,10 @@ const CONNECTOR_TYPES = [
     { value: 'SMTP', label: 'Email SMTP', icon: Mail },
 ];
 
+// Default Azure AD credentials for SharePoint integration
+const DEFAULT_TENANT_ID = "0089ad7d-e10f-49b4-bf68-60e706423382";
+const DEFAULT_CLIENT_ID = "7ff50e8a-eb8c-4bf8-9fa6-f4068c6fe82b";
+
 export function ConnectorsManager() {
     const { toast } = useToast();
     const [connectors, setConnectors] = useState<any[]>([]);
@@ -609,7 +613,18 @@ export function ConnectorsManager() {
                             </div>
                             <div className="space-y-2">
                                 <Label>Tipo</Label>
-                                <Select value={newType} onValueChange={(v) => { setNewType(v); setTestStatus(null); }}>
+                                <Select value={newType} onValueChange={(v) => {
+                                    setNewType(v);
+                                    setTestStatus(null);
+                                    // Apply default credentials when SHAREPOINT is selected
+                                    if (v === 'SHAREPOINT' && !editingId) {
+                                        setConfigData((prev: any) => ({
+                                            ...prev,
+                                            tenantId: prev.tenantId || DEFAULT_TENANT_ID,
+                                            clientId: prev.clientId || DEFAULT_CLIENT_ID
+                                        }));
+                                    }
+                                }}>
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>

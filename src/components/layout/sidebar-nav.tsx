@@ -173,6 +173,19 @@ export function SidebarNav() {
                         <Compass className={cn("h-4 w-4", pathname === '/settings/navigation' ? "text-violet-600 dark:text-violet-400" : "text-slate-400 dark:text-slate-500")} />
                         <span>Navigation</span>
                     </Link>
+                    <Link
+                        href="/settings/database"
+                        className={cn(
+                            "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
+                            pathname === '/settings/database'
+                                ? "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
+                                : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-900 hover:text-slate-900 dark:hover:text-white"
+                        )}
+                    >
+                        <Database className={cn("h-4 w-4", pathname === '/settings/database' ? "text-violet-600 dark:text-violet-400" : "text-slate-400 dark:text-slate-500")} />
+                        <span>Database</span>
+                    </Link>
+
 
                     {session?.user && (
                         <div className="rounded-md bg-slate-50 dark:bg-zinc-900 px-2.5 py-2 space-y-1.5 mt-2">

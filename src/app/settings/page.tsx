@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 import { testOpenRouterConnection, chatOpenRouterAction, fetchOpenRouterModelsAction } from '../actions';
 import { createInvitationAction, getInvitationsAction, revokeInvitationAction } from '../actions/invitations';
+import { getOpenRouterSettingsAction, saveOpenRouterSettingsAction } from '@/actions/openrouter';
 import { ConnectorsManager } from './connectors-manager';
 import { Users, UserPlus, Copy } from 'lucide-react';
 
@@ -44,10 +45,13 @@ export default function SettingsPage() {
     const [inviteLink, setInviteLink] = useState('');
 
     useEffect(() => {
-        const storedKey = localStorage.getItem('openrouter_api_key');
-        const storedModel = localStorage.getItem('openrouter_model');
-        if (storedKey) setApiKey(storedKey);
-        if (storedModel) setModel(storedModel);
+        // Load OpenRouter settings from database
+        getOpenRouterSettingsAction().then(res => {
+            if (!res.error) {
+                if (res.apiKey) setApiKey(res.apiKey);
+                if (res.model) setModel(res.model);
+            }
+        });
 
         // Load invitations
         getInvitationsAction().then(res => {
@@ -79,15 +83,22 @@ export default function SettingsPage() {
         m.id.toLowerCase().includes(modelSearch.toLowerCase())
     );
 
-    const handleSave = () => {
+    const handleSave = async () => {
         setIsLoading(true);
         try {
-            localStorage.setItem('openrouter_api_key', apiKey);
-            localStorage.setItem('openrouter_model', model);
-            toast({
-                title: "Impostazioni salvate",
-                description: "Le tue preferenze per OpenRouter sono state aggiornate.",
-            });
+            const result = await saveOpenRouterSettingsAction(apiKey, model);
+            if (result.success) {
+                toast({
+                    title: "Impostazioni salvate",
+                    description: "Le tue preferenze per OpenRouter sono state salvate nel database.",
+                });
+            } else {
+                toast({
+                    title: "Errore",
+                    description: result.error || "Impossibile salvare le impostazioni.",
+                    variant: "destructive"
+                });
+            }
         } catch (error) {
             console.error(error);
             toast({
