@@ -6,17 +6,17 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import type { DecisionNode, DecisionLeaf, MediaItem, LinkItem, TriggerItem, StoredTree, DecisionOptionChild } from '@/lib/types';
-import { ArrowLeft, Brain, Eye, GitBranch, Lightbulb, Link as LinkIcon, Loader2, RotateCcw, Sparkles, Zap, Image as ImageIcon, Video, Flag, Play, Check } from 'lucide-react';
+import { ArrowLeft, Brain, Eye, GitBranch, Lightbulb, Link as LinkIcon, Loader2, RotateCcw, Sparkles, Zap, Image as ImageIcon, Video, Flag, Play, Check, Mail, Paperclip } from 'lucide-react';
 import {
     executeTriggerAction,
     getTreeAction,
     rephraseQuestionAction,
     resolveDependencyChainAction,
-    executeEmailAction,
     executeSqlPreviewAction,
     executePythonPreviewAction,
     exportTableToSqlAction
 } from '@/app/actions';
+import { sendTestEmailWithDataAction } from '@/app/actions/connectors';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import Image from 'next/image';
@@ -1287,6 +1287,398 @@ function SqlExportBox({
     );
 }
 
+// Email Action Box Component - Interactive email UI with Pipeline Execution
+function EmailActionBox({
+    emailAction,
+    pipelineDependencies,
+    currentNode,
+    initialTree,
+    loadedSubTrees
+}: {
+    emailAction: {
+        enabled: boolean;
+        connectorId: string;
+        to: string;
+        cc?: string;
+        bcc?: string;
+        subject: string;
+        body: string;
+        attachments?: {
+            tablesInBody?: string[];
+            tablesAsExcel?: string[];
+            pythonOutputsInBody?: string[];
+            pythonOutputsAsAttachment?: string[];
+            mediaAsAttachment?: string[];
+        };
+    };
+    pipelineDependencies: any[];
+    currentNode: any;
+    initialTree?: DecisionNode | null;
+    loadedSubTrees?: Map<string, { tree: DecisionNode, name: string }>;
+}) {
+    const { toast } = useToast();
+    const [emailStatus, setEmailStatus] = useState<'idle' | 'resolving' | 'sending' | 'success' | 'error'>('idle');
+    const [emailError, setEmailError] = useState<string | null>(null);
+    const [hasAutoExecuted, setHasAutoExecuted] = useState(false);
+
+    // Async dependency resolution (same pattern as SqlExportBox)
+    const [asyncResolvedDeps, setAsyncResolvedDeps] = useState<any[]>([]);
+    const [isResolvingDeps, setIsResolvingDeps] = useState(false);
+
+    // Collect all required tables from attachments config
+    const requiredTables = useMemo(() => {
+        const tables: string[] = [];
+        if (emailAction.attachments?.tablesInBody) tables.push(...emailAction.attachments.tablesInBody);
+        if (emailAction.attachments?.tablesAsExcel) tables.push(...emailAction.attachments.tablesAsExcel);
+        if (emailAction.attachments?.pythonOutputsInBody) tables.push(...emailAction.attachments.pythonOutputsInBody);
+        if (emailAction.attachments?.pythonOutputsAsAttachment) tables.push(...emailAction.attachments.pythonOutputsAsAttachment);
+        return [...new Set(tables)];
+    }, [emailAction.attachments]);
+
+    // Full dependency chain (pipelineDependencies + async resolved)
+    const fullDependencyChain = useMemo(() => {
+        const allDeps = [...pipelineDependencies, ...asyncResolvedDeps];
+        return allDeps.filter((v, i, a) => a.findIndex(t => t.tableName === v.tableName) === i);
+    }, [pipelineDependencies, asyncResolvedDeps]);
+
+    // Resolve missing dependencies on mount
+    useEffect(() => {
+        let mounted = true;
+        const resolveMissingDeps = async () => {
+            const existingNames = new Set([
+                ...pipelineDependencies.map(d => d.tableName.toLowerCase()),
+                ...asyncResolvedDeps.map(d => d.tableName.toLowerCase())
+            ]);
+
+            const missingTables = requiredTables.filter(t => {
+                if ((currentNode as any)?.sqlResultName?.toLowerCase() === t.toLowerCase()) return false;
+                if ((currentNode as any)?.pythonResultName?.toLowerCase() === t.toLowerCase()) return false;
+                return !existingNames.has(t.toLowerCase());
+            });
+
+            if (missingTables.length === 0) return;
+
+            console.log(`[EmailActionBox] 🌍 Resolving missing tables: ${missingTables.join(', ')}`);
+            setIsResolvingDeps(true);
+
+            const newDeps: any[] = [];
+
+            for (const tableName of missingTables) {
+                try {
+                    console.log(`[EmailActionBox] 🌍 Fetching dependency chain for: ${tableName}`);
+                    const result = await resolveDependencyChainAction(tableName);
+
+                    if (result.data && Array.isArray(result.data)) {
+                        console.log(`[EmailActionBox] ✅ Server found chain of ${result.data.length} nodes for: ${tableName}`);
+
+                        for (const node of result.data) {
+                            const nodeTableName = node.pythonResultName || node.sqlResultName;
+                            if (newDeps.some(d => d.tableName === nodeTableName)) continue;
+                            if (pipelineDependencies.some(d => d.tableName === nodeTableName)) continue;
+                            if (asyncResolvedDeps.some(d => d.tableName === nodeTableName)) continue;
+
+                            if ('sqlQuery' in node) {
+                                newDeps.push({
+                                    tableName: node.sqlResultName,
+                                    query: node.sqlQuery,
+                                    connectorId: node.sqlConnectorId
+                                });
+                            } else if ('pythonCode' in node) {
+                                newDeps.push({
+                                    tableName: node.pythonResultName,
+                                    isPython: true,
+                                    pythonCode: node.pythonCode,
+                                    pythonOutputType: node.pythonOutputType || 'table',
+                                    connectorId: node.pythonConnectorId
+                                });
+                            }
+                        }
+                    } else if (result.error) {
+                        console.warn(`[EmailActionBox] Server returned error for ${tableName}: ${result.error}`);
+                    }
+                } catch (e) {
+                    console.warn(`[EmailActionBox] Failed to resolve ${tableName}`, e);
+                }
+            }
+
+            if (mounted && newDeps.length > 0) {
+                console.log(`[EmailActionBox] ✅ Resolved ${newDeps.length} missing dependencies`);
+                setAsyncResolvedDeps(prev => [...prev, ...newDeps]);
+            }
+            if (mounted) setIsResolvingDeps(false);
+        };
+
+        resolveMissingDeps();
+        return () => { mounted = false; };
+    }, [requiredTables, pipelineDependencies, asyncResolvedDeps, currentNode]);
+
+    // Handle send email
+    const handleSendEmail = useCallback(async () => {
+        console.log('[EmailActionBox] 📧 Starting email send process...');
+        setEmailStatus('sending');
+        setEmailError(null);
+
+        try {
+            // Build selected tables for the action
+            const selectedTables: Array<{
+                name: string;
+                query: string;
+                inBody: boolean;
+                asExcel: boolean;
+                pipelineDependencies?: any[];
+            }> = [];
+
+            const tablesInBody = emailAction.attachments?.tablesInBody || [];
+            const tablesAsExcel = emailAction.attachments?.tablesAsExcel || [];
+
+            // Find SQL tables in dependencies
+            for (const tableName of [...new Set([...tablesInBody, ...tablesAsExcel])]) {
+                const dep = fullDependencyChain.find(d => d.tableName === tableName && !d.isPython);
+                if (dep && dep.query) {
+                    selectedTables.push({
+                        name: tableName,
+                        query: dep.query,
+                        inBody: tablesInBody.includes(tableName),
+                        asExcel: tablesAsExcel.includes(tableName),
+                        pipelineDependencies: fullDependencyChain.filter(d => d.tableName !== tableName)
+                    });
+                }
+                // Check current node
+                if ((currentNode as any)?.sqlResultName === tableName && (currentNode as any)?.sqlQuery) {
+                    selectedTables.push({
+                        name: tableName,
+                        query: (currentNode as any).sqlQuery,
+                        inBody: tablesInBody.includes(tableName),
+                        asExcel: tablesAsExcel.includes(tableName),
+                        pipelineDependencies: fullDependencyChain
+                    });
+                }
+            }
+
+            // Build selected Python outputs
+            const selectedPythonOutputs: Array<{
+                name: string;
+                code: string;
+                outputType: 'table' | 'variable' | 'chart';
+                connectorId?: string;
+                inBody: boolean;
+                asAttachment: boolean;
+                dependencies?: any[];
+            }> = [];
+
+            const pythonInBody = emailAction.attachments?.pythonOutputsInBody || [];
+            const pythonAsAttachment = emailAction.attachments?.pythonOutputsAsAttachment || [];
+
+            for (const tableName of [...new Set([...pythonInBody, ...pythonAsAttachment])]) {
+                const dep = fullDependencyChain.find(d => d.tableName === tableName && d.isPython);
+                if (dep && dep.pythonCode) {
+                    selectedPythonOutputs.push({
+                        name: tableName,
+                        code: dep.pythonCode,
+                        outputType: dep.pythonOutputType || 'table',
+                        connectorId: dep.connectorId,
+                        inBody: pythonInBody.includes(tableName),
+                        asAttachment: pythonAsAttachment.includes(tableName),
+                        dependencies: fullDependencyChain.filter(d => d.tableName !== tableName)
+                    });
+                }
+                // Check current node
+                if ((currentNode as any)?.pythonResultName === tableName && (currentNode as any)?.pythonCode) {
+                    selectedPythonOutputs.push({
+                        name: tableName,
+                        code: (currentNode as any).pythonCode,
+                        outputType: (currentNode as any).pythonOutputType || 'table',
+                        connectorId: (currentNode as any).pythonConnectorId,
+                        inBody: pythonInBody.includes(tableName),
+                        asAttachment: pythonAsAttachment.includes(tableName),
+                        dependencies: fullDependencyChain
+                    });
+                }
+            }
+
+            // Get SQL connector ID - search in multiple sources
+            // Priority: 1. From fullDependencyChain (server-resolved), 2. From selectedTables, 3. From currentNode
+            const sqlConnectorId =
+                fullDependencyChain.find(d => d.connectorId && !d.isPython)?.connectorId
+                || fullDependencyChain.find(d => d.connectorId)?.connectorId
+                || selectedTables[0]?.pipelineDependencies?.find(d => d.connectorId)?.connectorId
+                || (currentNode as any)?.sqlConnectorId
+                || '';
+
+            console.log('[EmailActionBox] 📧 sqlConnectorId resolution:', {
+                fromDepsNonPython: fullDependencyChain.find(d => d.connectorId && !d.isPython)?.connectorId,
+                fromDepsAny: fullDependencyChain.find(d => d.connectorId)?.connectorId,
+                fromSelectedTables: selectedTables[0]?.pipelineDependencies?.find(d => d.connectorId)?.connectorId,
+                fromCurrentNode: (currentNode as any)?.sqlConnectorId,
+                final: sqlConnectorId
+            });
+
+            console.log(`[EmailActionBox] 📧 Sending email with ${selectedTables.length} tables, ${selectedPythonOutputs.length} Python outputs`);
+
+            // Call the email action
+            const result = await sendTestEmailWithDataAction({
+                connectorId: emailAction.connectorId,
+                sqlConnectorId: sqlConnectorId,
+                to: emailAction.to,
+                cc: emailAction.cc,
+                bcc: emailAction.bcc,
+                subject: emailAction.subject,
+                bodyHtml: emailAction.body,
+                selectedTables,
+                selectedPythonOutputs,
+                mediaAttachments: emailAction.attachments?.mediaAsAttachment
+            });
+
+            if (result.success) {
+                setEmailStatus('success');
+                toast({ title: "Email Inviata", description: `Email inviata con successo a ${emailAction.to}` });
+            } else {
+                throw new Error(result.error || 'Errore sconosciuto');
+            }
+        } catch (e: any) {
+            console.error('[EmailActionBox] Email failed:', e);
+            setEmailStatus('error');
+            setEmailError(e.message);
+            toast({ variant: 'destructive', title: "Errore Email", description: e.message });
+        }
+    }, [emailAction, fullDependencyChain, currentNode, toast]);
+
+    // Auto-execute when dependencies are ready
+    useEffect(() => {
+        if (hasAutoExecuted) return;
+        if (emailStatus !== 'idle') return;
+        if (isResolvingDeps) {
+            console.log('[EmailActionBox] ⏳ Waiting for dependency resolution...');
+            return;
+        }
+
+        // Check if all required tables are available
+        const allTablesReady = requiredTables.every(tableName => {
+            const inDeps = fullDependencyChain.some(d => d.tableName.toLowerCase() === tableName.toLowerCase());
+            const isCurrentNode = (currentNode as any)?.sqlResultName === tableName || (currentNode as any)?.pythonResultName === tableName;
+            return inDeps || isCurrentNode;
+        });
+
+        if (requiredTables.length === 0 || allTablesReady) {
+            console.log('[EmailActionBox] 🚀 Dependencies ready, auto-executing email...');
+            setHasAutoExecuted(true);
+            handleSendEmail();
+        } else {
+            // Poll with timeout
+            const timeout = setTimeout(() => {
+                if (!hasAutoExecuted && emailStatus === 'idle') {
+                    console.log('[EmailActionBox] ⚠️ Timeout waiting for dependencies, executing anyway...');
+                    setHasAutoExecuted(true);
+                    handleSendEmail();
+                }
+            }, 10000);
+            return () => clearTimeout(timeout);
+        }
+    }, [hasAutoExecuted, emailStatus, isResolvingDeps, requiredTables, fullDependencyChain, currentNode, handleSendEmail]);
+
+    // Build visual steps
+    const visualSteps = useMemo(() => {
+        const steps: { name: string, type: 'sql' | 'python', status: 'pending' | 'running' | 'done' | 'error' | 'cached' }[] = [];
+
+        fullDependencyChain.forEach(d => {
+            steps.push({
+                name: d.tableName,
+                type: d.isPython ? 'python' : 'sql',
+                status: 'cached'
+            });
+        });
+
+        steps.push({
+            name: `Invia Email → ${emailAction.to}`,
+            type: 'sql',
+            status: emailStatus === 'sending' ? 'running' :
+                emailStatus === 'success' ? 'done' :
+                    emailStatus === 'error' ? 'error' : 'pending'
+        });
+
+        return steps;
+    }, [fullDependencyChain, emailAction.to, emailStatus]);
+
+    return (
+        <div className="mt-4 border rounded-lg overflow-hidden bg-white dark:bg-zinc-900">
+            <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 px-4 py-3 border-b flex items-center gap-3">
+                <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                    <Mail className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Invio Email Automatico</p>
+                    <p className="text-xs text-muted-foreground">
+                        Destinatario: <code className="font-mono bg-muted px-1 rounded">{emailAction.to}</code>
+                    </p>
+                </div>
+            </div>
+
+            <div className="p-4 space-y-3">
+                {/* Pipeline Visualization */}
+                <HierarchyVisualizer
+                    steps={visualSteps}
+                    currentStepIndex={visualSteps.length - 1}
+                    isExecuting={emailStatus === 'sending' || isResolvingDeps}
+                />
+
+                {/* Info about attachments */}
+                {(requiredTables.length > 0) && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                        <Paperclip className="h-3 w-3" />
+                        <span>Allegati: {requiredTables.join(', ')}</span>
+                    </div>
+                )}
+
+                {/* Send Button */}
+                <Button
+                    className="w-full"
+                    variant={emailStatus === 'success' ? 'outline' : 'default'}
+                    disabled={emailStatus === 'sending' || isResolvingDeps}
+                    onClick={handleSendEmail}
+                >
+                    {isResolvingDeps ? (
+                        <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Risoluzione dipendenze...
+                        </>
+                    ) : emailStatus === 'sending' ? (
+                        <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Invio email in corso...
+                        </>
+                    ) : emailStatus === 'success' ? (
+                        <>
+                            <Check className="mr-2 h-4 w-4 text-emerald-600" />
+                            Re-invia Email
+                        </>
+                    ) : (
+                        <>
+                            <Mail className="mr-2 h-4 w-4" />
+                            Invia Email
+                        </>
+                    )}
+                </Button>
+
+                {/* Result */}
+                {emailStatus === 'success' && (
+                    <div className="flex items-center gap-2 p-3 rounded-md bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
+                        <Check className="h-5 w-5 text-emerald-600" />
+                        <span className="text-sm text-emerald-700 dark:text-emerald-300">
+                            ✅ Email inviata con successo a <code className="font-mono">{emailAction.to}</code>
+                        </span>
+                    </div>
+                )}
+                {emailStatus === 'error' && emailError && (
+                    <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 border border-destructive/30">
+                        <Mail className="h-5 w-5 text-destructive" />
+                        <span className="text-sm text-destructive">{emailError}</span>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideProps) {
     const { toast } = useToast();
     const { apiKey: openRouterApiKey, model: openRouterModel } = useOpenRouterSettings();
@@ -1370,23 +1762,9 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
             }
 
             // NEW: Automated Actions (Email & SQL)
+            // Note: Email Action is now handled by EmailActionBox component in renderLeafNode
             if (nodeId && !executedNodeIds.has(nodeId)) {
                 let actionExecuted = false;
-
-                // 1. Email Action
-                if ((leaf as any).emailAction?.enabled) {
-                    const action = (leaf as any).emailAction;
-                    console.log(`[InteractiveGuide] 📧 Executing Email Action for node ${nodeId}`);
-                    executeEmailAction(action.connectorId, action.to, action.subject, action.body)
-                        .then(res => {
-                            if (res.success) {
-                                toast({ title: "Email Inviata", description: res.message });
-                            } else {
-                                toast({ variant: 'destructive', title: "Errore Email", description: "Impossibile inviare l'email." });
-                            }
-                        });
-                    actionExecuted = true;
-                }
 
                 // 2. SQL Query Execution (display results)
                 if ((leaf as any).sqlQuery) {
@@ -2008,6 +2386,16 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                 sqlExportAction={(node as any).sqlExportAction}
                                 pipelineDependencies={dependencies}
                                 currentNode={node}
+                            />
+                        )}
+                        {/* Email Action Box */}
+                        {isLeafObject && 'emailAction' in node && (node as any).emailAction?.enabled && (
+                            <EmailActionBox
+                                emailAction={(node as any).emailAction}
+                                pipelineDependencies={dependencies}
+                                currentNode={node}
+                                initialTree={initialTree}
+                                loadedSubTrees={loadedSubTrees}
                             />
                         )}
                         {/* Automated SQL Query Results */}
