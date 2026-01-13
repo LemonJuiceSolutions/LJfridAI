@@ -12,6 +12,7 @@ import {
     getTreeAction,
     rephraseQuestionAction,
     resolveDependencyChainAction,
+    resolveAncestorResourcesAction,
     executeSqlPreviewAction,
     executePythonPreviewAction,
     exportTableToSqlAction
@@ -1293,7 +1294,10 @@ function EmailActionBox({
     pipelineDependencies,
     currentNode,
     initialTree,
-    loadedSubTrees
+    loadedSubTrees,
+    availableMedia,
+    availableLinks,
+    availableTriggers
 }: {
     emailAction: {
         enabled: boolean;
@@ -1315,6 +1319,9 @@ function EmailActionBox({
     currentNode: any;
     initialTree?: DecisionNode | null;
     loadedSubTrees?: Map<string, { tree: DecisionNode, name: string }>;
+    availableMedia?: MediaItem[];
+    availableLinks?: LinkItem[];
+    availableTriggers?: TriggerItem[];
 }) {
     const { toast } = useToast();
     const [emailStatus, setEmailStatus] = useState<'idle' | 'resolving' | 'sending' | 'success' | 'error'>('idle');
@@ -1324,6 +1331,74 @@ function EmailActionBox({
     // Async dependency resolution (same pattern as SqlExportBox)
     const [asyncResolvedDeps, setAsyncResolvedDeps] = useState<any[]>([]);
     const [isResolvingDeps, setIsResolvingDeps] = useState(false);
+
+    // State for resolved ancestor resources from linked nodes
+    const [resolvedAncestorResources, setResolvedAncestorResources] = useState<{
+        media: MediaItem[],
+        links: LinkItem[],
+        triggers: TriggerItem[]
+    } | null>(null);
+
+    // Resolve ancestor resources when currentNode has an ID (indicating it may be a linked node)
+    useEffect(() => {
+        let mounted = true;
+        const resolveAncestorResources = async () => {
+            const nodeId = (currentNode as any)?.id;
+            if (!nodeId) return;
+
+            console.log(`[EmailActionBox] 📎 Resolving ancestor resources for node ID: ${nodeId}`);
+
+            try {
+                const result = await resolveAncestorResourcesAction(nodeId);
+                if (mounted && result.data) {
+                    console.log(`[EmailActionBox] ✅ Resolved ancestor resources: ${result.data.media?.length || 0} media, ${result.data.links?.length || 0} links, ${result.data.triggers?.length || 0} triggers`);
+                    setResolvedAncestorResources(result.data as any);
+                }
+            } catch (e) {
+                console.warn('[EmailActionBox] Failed to resolve ancestor resources:', e);
+            }
+        };
+
+        resolveAncestorResources();
+        return () => { mounted = false; };
+    }, [(currentNode as any)?.id]);
+
+    // Combine provided resources with resolved ancestor resources
+    const effectiveMedia = useMemo(() => {
+        const combined = [...(availableMedia || [])];
+        if (resolvedAncestorResources?.media) {
+            resolvedAncestorResources.media.forEach(m => {
+                if (!combined.some(existing => existing.url === m.url)) {
+                    combined.push(m);
+                }
+            });
+        }
+        return combined;
+    }, [availableMedia, resolvedAncestorResources]);
+
+    const effectiveLinks = useMemo(() => {
+        const combined = [...(availableLinks || [])];
+        if (resolvedAncestorResources?.links) {
+            resolvedAncestorResources.links.forEach(l => {
+                if (!combined.some(existing => existing.name === l.name)) {
+                    combined.push(l);
+                }
+            });
+        }
+        return combined;
+    }, [availableLinks, resolvedAncestorResources]);
+
+    const effectiveTriggers = useMemo(() => {
+        const combined = [...(availableTriggers || [])];
+        if (resolvedAncestorResources?.triggers) {
+            resolvedAncestorResources.triggers.forEach(t => {
+                if (!combined.some(existing => existing.name === t.name)) {
+                    combined.push(t);
+                }
+            });
+        }
+        return combined;
+    }, [availableTriggers, resolvedAncestorResources]);
 
     // Collect all required tables from attachments config
     const requiredTables = useMemo(() => {
@@ -1526,6 +1601,9 @@ function EmailActionBox({
                 bodyHtml: emailAction.body,
                 selectedTables,
                 selectedPythonOutputs,
+                availableMedia: effectiveMedia,
+                availableLinks: effectiveLinks,
+                availableTriggers: effectiveTriggers,
                 mediaAttachments: emailAction.attachments?.mediaAsAttachment
             });
 
@@ -2337,6 +2415,43 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
         return deps;
     };
 
+    // Collect accumulated media/links/triggers from the navigation path
+    const getAccumulatedResources = (history: HistoryItem[], currentNodeParam?: DecisionNode | DecisionLeaf | string | null) => {
+        const media: MediaItem[] = [];
+        const links: LinkItem[] = [];
+        const triggers: TriggerItem[] = [];
+
+        // Helper to add resources from a node
+        const addResources = (node: any) => {
+            if (node && typeof node === 'object') {
+                if (node.media && Array.isArray(node.media)) {
+                    media.push(...node.media);
+                }
+                if (node.links && Array.isArray(node.links)) {
+                    links.push(...node.links);
+                }
+                if (node.triggers && Array.isArray(node.triggers)) {
+                    triggers.push(...node.triggers);
+                }
+            }
+        };
+
+        // 1. Add from Stack (parent trees)
+        treeStack.forEach(frame => {
+            frame.path.forEach(node => addResources(node));
+        });
+
+        // 2. Add from current history
+        history.forEach(node => addResources(node));
+
+        // 3. Add from current node
+        if (currentNodeParam) {
+            addResources(currentNodeParam);
+        }
+
+        return { media, links, triggers };
+    };
+
     const renderLeafNode = (node: DecisionLeaf | string, index?: number) => {
         const decisionText = typeof node === 'string' ? node : node.decision;
         const isLeafObject = typeof node === 'object' && node !== null;
@@ -2389,15 +2504,21 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                             />
                         )}
                         {/* Email Action Box */}
-                        {isLeafObject && 'emailAction' in node && (node as any).emailAction?.enabled && (
-                            <EmailActionBox
-                                emailAction={(node as any).emailAction}
-                                pipelineDependencies={dependencies}
-                                currentNode={node}
-                                initialTree={initialTree}
-                                loadedSubTrees={loadedSubTrees}
-                            />
-                        )}
+                        {isLeafObject && 'emailAction' in node && (node as any).emailAction?.enabled && (() => {
+                            const resources = getAccumulatedResources(nodeHistory, node);
+                            return (
+                                <EmailActionBox
+                                    emailAction={(node as any).emailAction}
+                                    pipelineDependencies={dependencies}
+                                    currentNode={node}
+                                    initialTree={initialTree}
+                                    loadedSubTrees={loadedSubTrees}
+                                    availableMedia={resources.media}
+                                    availableLinks={resources.links}
+                                    availableTriggers={resources.triggers}
+                                />
+                            );
+                        })()}
                         {/* Automated SQL Query Results */}
                         {renderAutoSqlResult()}
                         {/* SQL Export Action Results */}

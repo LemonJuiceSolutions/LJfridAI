@@ -3034,3 +3034,100 @@ export async function resolveDependencyChainAction(targetName: string): Promise<
         return { data: null, error: e instanceof Error ? e.message : "Errore durante la risoluzione delle dipendenze." };
     }
 }
+
+// Resolve ancestor resources (media, links, triggers) for a target node by ID
+// This is used to collect resources from ancestors of linked nodes
+export async function resolveAncestorResourcesAction(targetNodeId: string): Promise<{
+    data: { media: any[], links: any[], triggers: any[] } | null,
+    error: string | null
+}> {
+    try {
+        const user = await getAuthenticatedUser();
+
+        // Helper to find ancestors of a node with specific ID
+        const findAncestorsWithResources = (tree: any, targetId: string): { media: any[], links: any[], triggers: any[] } => {
+            const result = { media: [] as any[], links: [] as any[], triggers: [] as any[] };
+
+            // Track path while searching
+            const search = (node: any, ancestorMedia: any[], ancestorLinks: any[], ancestorTriggers: any[]): boolean => {
+                if (!node) return false;
+
+                // Current node's resources
+                const currentMedia = (node.media && Array.isArray(node.media)) ? node.media : [];
+                const currentLinks = (node.links && Array.isArray(node.links)) ? node.links : [];
+                const currentTriggers = (node.triggers && Array.isArray(node.triggers)) ? node.triggers : [];
+
+                // Combine with ancestors
+                const allMedia = [...ancestorMedia, ...currentMedia];
+                const allLinks = [...ancestorLinks, ...currentLinks];
+                const allTriggers = [...ancestorTriggers, ...currentTriggers];
+
+                // Check if this is the target node
+                if (node.id === targetId) {
+                    result.media = allMedia;
+                    result.links = allLinks;
+                    result.triggers = allTriggers;
+                    return true;
+                }
+
+                // Check arrays
+                if (Array.isArray(node)) {
+                    for (const item of node) {
+                        if (search(item, ancestorMedia, ancestorLinks, ancestorTriggers)) return true;
+                    }
+                    return false;
+                }
+
+                // Check options
+                if (typeof node === 'object' && node.options) {
+                    for (const key in node.options) {
+                        if (search(node.options[key], allMedia, allLinks, allTriggers)) return true;
+                    }
+                }
+
+                return false;
+            };
+
+            search(tree, [], [], []);
+            return result;
+        };
+
+        // Search all trees for the target node
+        const candidates = await db.tree.findMany({
+            where: {
+                companyId: user.companyId,
+                jsonDecisionTree: {
+                    contains: targetNodeId,
+                }
+            },
+            select: {
+                id: true,
+                jsonDecisionTree: true,
+                name: true
+            }
+        });
+
+        for (const tree of candidates) {
+            try {
+                const json = JSON.parse(tree.jsonDecisionTree);
+                const resources = findAncestorsWithResources(json, targetNodeId);
+
+                // If we found any resources, return them
+                if (resources.media.length > 0 || resources.links.length > 0 || resources.triggers.length > 0) {
+                    console.log(`[resolveAncestorResourcesAction] Found resources for node ${targetNodeId}: ${resources.media.length} media, ${resources.links.length} links, ${resources.triggers.length} triggers`);
+                    return { data: resources, error: null };
+                }
+            } catch (e) {
+                continue;
+            }
+        }
+
+        // Return empty resources if not found
+        return { data: { media: [], links: [], triggers: [] }, error: null };
+
+    } catch (e) {
+        console.error("Error in resolveAncestorResourcesAction:", e);
+        return { data: null, error: e instanceof Error ? e.message : "Errore durante la risoluzione delle risorse ancestor." };
+    }
+}
+
