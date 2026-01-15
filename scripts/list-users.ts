@@ -1,32 +1,29 @@
 
-import { PrismaClient } from '@prisma/client';
+import { db } from "../src/lib/db";
 
-const prisma = new PrismaClient();
+async function main() {
+    console.log("----------------------------------------");
+    console.log("Listing All Users in Database");
+    console.log("----------------------------------------");
 
-async function listUsers() {
-    try {
-        const users = await prisma.user.findMany({
-            include: {
-                company: true
-            },
-            orderBy: { createdAt: 'desc' }
+    const users = await db.user.findMany({
+        select: {
+            email: true,
+            name: true,
+            role: true,
+            companyId: true
+        }
+    });
+
+    if (users.length === 0) {
+        console.log("No users found in the database.");
+    } else {
+        console.log(`Found ${users.length} user(s):`);
+        users.forEach((u, index) => {
+            console.log(`${index + 1}. Email: ${u.email} | Name: ${u.name || "(none)"} | Role: ${u.role}`);
         });
-
-        console.log('\n--- UTENTI E AZIENDE ---');
-        console.table(users.map(u => ({
-            ID: u.id.substring(0, 8) + '...',
-            Name: u.name,
-            Email: u.email,
-            Company: u.company?.name || 'N/A',
-            CompanyID: u.company?.id || 'N/A'
-        })));
-        console.log('------------------------\n');
-
-    } catch (error) {
-        console.error('Errore:', error);
-    } finally {
-        await prisma.$disconnect();
     }
+    console.log("----------------------------------------");
 }
 
-listUsers();
+main().catch(console.error);

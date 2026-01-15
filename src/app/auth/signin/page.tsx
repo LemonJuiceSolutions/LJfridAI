@@ -90,6 +90,12 @@ export default function SignInPage() {
                                 disabled={isLoading}
                                 required
                             />
+                            <Link
+                                href="/auth/reset"
+                                className="text-sm font-normal text-primary underline-offset-4 hover:underline px-0"
+                            >
+                                Password dimenticata?
+                            </Link>
                         </div>
                         <Button
                             type="submit"
