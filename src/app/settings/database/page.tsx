@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Database, Table2, Loader2, ChevronLeft, ChevronRight, Search, RefreshCw, Hash, Calendar, Type, Link2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Database, Table2, Loader2, ChevronLeft, ChevronRight, Search, RefreshCw, Hash, Calendar, Type, Link2, Download, Upload, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,17 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { getTablesAction, getTableDataAction, getTableSchemaAction } from '@/actions/database';
+import { backupDatabaseAction, restoreDatabaseAction } from '@/actions/database-backup';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface TableInfo {
     name: string;
@@ -34,6 +45,13 @@ export default function DatabaseViewerPage() {
     const [isLoadingTables, setIsLoadingTables] = useState(true);
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [tableSearch, setTableSearch] = useState('');
+
+    // Backup/Restore state
+    const [isBackingUp, setIsBackingUp] = useState(false);
+    const [isRestoring, setIsRestoring] = useState(false);
+    const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+    const [pendingRestoreSql, setPendingRestoreSql] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Load tables on mount
     useEffect(() => {
@@ -97,6 +115,74 @@ export default function DatabaseViewerPage() {
         setColumns([]);
     };
 
+    // Backup handler
+    const handleBackup = async () => {
+        setIsBackingUp(true);
+        try {
+            const result = await backupDatabaseAction();
+            if (result.error) {
+                toast({ title: "Errore Backup", description: result.error, variant: "destructive" });
+                return;
+            }
+            if (result.sql) {
+                // Create and download file
+                const blob = new Blob([result.sql], { type: 'application/sql' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `backup_${new Date().toISOString().split('T')[0]}.sql`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                toast({ title: "Backup completato", description: "File scaricato con successo" });
+            }
+        } catch {
+            toast({ title: "Errore", description: "Backup fallito", variant: "destructive" });
+        } finally {
+            setIsBackingUp(false);
+        }
+    };
+
+    // Restore handler
+    const handleRestoreClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const sql = await file.text();
+        setPendingRestoreSql(sql);
+        setShowRestoreConfirm(true);
+
+        // Reset input so same file can be selected again
+        e.target.value = '';
+    };
+
+    const confirmRestore = async () => {
+        if (!pendingRestoreSql) return;
+
+        setShowRestoreConfirm(false);
+        setIsRestoring(true);
+
+        try {
+            const result = await restoreDatabaseAction(pendingRestoreSql);
+            if (result.error) {
+                toast({ title: "Errore Restore", description: result.error, variant: "destructive" });
+            } else {
+                toast({ title: "Restore completato", description: "Database ripristinato con successo" });
+                loadTables(); // Refresh table list
+            }
+        } catch {
+            toast({ title: "Errore", description: "Restore fallito", variant: "destructive" });
+        } finally {
+            setIsRestoring(false);
+            setPendingRestoreSql(null);
+        }
+    };
+
     const filteredTables = tables.filter(t =>
         t.name.toLowerCase().includes(tableSearch.toLowerCase())
     );
@@ -141,7 +227,36 @@ export default function DatabaseViewerPage() {
                         {tables.length} tabelle nel database
                     </CardDescription>
                 </CardHeader>
-                <div className="p-3 border-b">
+                <div className="p-3 border-b space-y-2">
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleBackup}
+                            disabled={isBackingUp || isRestoring}
+                            className="flex-1 h-7 text-xs"
+                        >
+                            {isBackingUp ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Download className="h-3 w-3 mr-1" />}
+                            Backup
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRestoreClick}
+                            disabled={isBackingUp || isRestoring}
+                            className="flex-1 h-7 text-xs"
+                        >
+                            {isRestoring ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+                            Restore
+                        </Button>
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileSelect}
+                            accept=".sql"
+                            className="hidden"
+                        />
+                    </div>
                     <div className="flex items-center border rounded-md px-2.5 py-1.5 bg-muted/30">
                         <Search className="h-3.5 w-3.5 opacity-50 mr-2 shrink-0" />
                         <Input
@@ -165,8 +280,8 @@ export default function DatabaseViewerPage() {
                                         key={table.name}
                                         onClick={() => handleTableSelect(table.name)}
                                         className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs font-medium transition-colors ${selectedTable === table.name
-                                                ? 'bg-primary text-primary-foreground'
-                                                : 'hover:bg-muted text-foreground'
+                                            ? 'bg-primary text-primary-foreground'
+                                            : 'hover:bg-muted text-foreground'
                                             }`}
                                     >
                                         <span className="flex items-center gap-2 truncate">
@@ -316,6 +431,28 @@ export default function DatabaseViewerPage() {
                     </>
                 )}
             </Card>
+
+            {/* Restore Confirmation Dialog */}
+            <AlertDialog open={showRestoreConfirm} onOpenChange={setShowRestoreConfirm}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <AlertTriangle className="h-5 w-5 text-destructive" />
+                            Conferma Restore
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Stai per sovrascrivere il database corrente con il backup selezionato.
+                            Questa operazione non può essere annullata. Sei sicuro?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Annulla</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmRestore} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Conferma Restore
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
