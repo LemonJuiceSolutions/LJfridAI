@@ -11,8 +11,12 @@ import type { MediaItem, LinkItem, TriggerItem } from '@/lib/types';
 // ... (existing functions)
 
 export async function getConnectorsAction() {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    // Fetch fresh user data from DB to avoid staleness
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user) return { error: 'Utente non trovato' };
 
     try {
         const connectors = await db.connector.findMany({
@@ -31,26 +35,41 @@ export async function getConnectorsAction() {
 
 
 export async function createConnectorAction(data: { name: string, type: string, config: string }) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    // Fetch fresh user data from DB to avoid staleness
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user) return { error: 'Utente non trovato' };
+
+    // Check if user has a company
+    if (!user.companyId) {
+        console.error("[CONNECTOR] User does not have a companyId:", user.email);
+        return { error: 'Utente non associato a nessuna azienda. Contatta l\'amministratore.' };
+    }
 
     try {
+        console.log("[CONNECTOR] Creating connector:", { name: data.name, type: data.type, companyId: user.companyId });
         const connector = await db.connector.create({
             data: {
                 ...data,
                 companyId: user.companyId
             }
         });
+        console.log("[CONNECTOR] Created successfully:", connector.id);
         return { data: connector };
-    } catch (e) {
+    } catch (e: any) {
         console.error("Create Connector Error:", e);
-        return { error: 'Errore creazione connettore' };
+        return { error: `Errore creazione connettore: ${e.message}` };
     }
 }
 
 export async function deleteConnectorAction(id: string) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Non autorizzato' };
 
     try {
         await db.connector.delete({
@@ -63,8 +82,11 @@ export async function deleteConnectorAction(id: string) {
 }
 
 export async function updateConnectorAction(id: string, data: { name: string, type: string, config: string }) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Non autorizzato' };
 
     try {
         const existing = await db.connector.findUnique({ where: { id } });

@@ -1,68 +1,49 @@
 
-import { PrismaClient } from '@prisma/client';
+import { db } from "../src/lib/db";
 
-const prisma = new PrismaClient();
+const EMAIL = "manuele.zanoni@gmail.com";
 
-async function assignUserToCompany() {
-    const userEmail = process.argv[2];
-    const targetCompanyAdminEmail = process.argv[3];
+async function main() {
+    console.log("----------------------------------------");
+    console.log(`Checking company assignment for: ${EMAIL}`);
+    console.log("----------------------------------------");
 
-    if (!userEmail || !targetCompanyAdminEmail) {
-        console.error('Uso: npx tsx scripts/assign-company.ts <email_utente_da_spostare> <email_admin_azienda_target>');
-        process.exit(1);
+    // Get user
+    const user = await db.user.findUnique({
+        where: { email: EMAIL },
+        select: { id: true, companyId: true }
+    });
+
+    if (!user) {
+        console.log("User not found!");
+        return;
     }
 
-    try {
-        const userToMove = await prisma.user.findUnique({ where: { email: userEmail } });
-        const targetAdmin = await prisma.user.findUnique({ where: { email: targetCompanyAdminEmail } });
+    console.log("Current companyId:", user.companyId || "(null)");
 
-        if (!userToMove) throw new Error(`Utente ${userEmail} non trovato`);
-        if (!targetAdmin) throw new Error(`Admin ${targetCompanyAdminEmail} non trovato`);
-        if (!targetAdmin.companyId) throw new Error(`L'admin ${targetCompanyAdminEmail} non ha un'azienda`);
+    if (user.companyId) {
+        console.log("User already has a company!");
+        return;
+    }
 
-        console.log(`Sposto l'utente ${userToMove.name} (${userToMove.id}) nell'azienda ${targetAdmin.companyId}...`);
+    // Find or create a company
+    let company = await db.company.findFirst();
 
-        await prisma.user.update({
-            where: { id: userToMove.id },
-            data: {
-                companyId: targetAdmin.companyId,
-                // Reset department se necessario, o prova a trovarne uno nell'altra azienda. Per ora lo lasciamo null o cerchiamo il primo.
-                // departmentId: ... 
-            }
+    if (!company) {
+        console.log("No company found, creating one...");
+        company = await db.company.create({
+            data: { name: "Default Company" }
         });
-
-        // Opzionale: Se l'utente spostato aveva creato alberi, spostiamo anche quelli?
-        // In genere sì, se vogliamo che li porti con sé. Altrimenti li perde.
-        // Facciamolo per comodità.
-        if (userToMove.companyId) {
-            console.log("Sposto anche gli alberi creati dall'utente nella nuova azienda...");
-            await prisma.tree.updateMany({
-                where: { companyId: userToMove.companyId }, // Attenzione: questo sposta TUTTI gli alberi della vecchia azienda di provenienza
-                // Se l'utente era l'unico, ok. Se c'erano altri, rubiamo tutto.
-                // Dato che la reg crea 1 user 1 company, è sicuro.
-                data: { companyId: targetAdmin.companyId }
-            });
-
-            // Spostiamo anche le variabili
-            await prisma.variable.updateMany({
-                where: { companyId: userToMove.companyId },
-                data: { companyId: targetAdmin.companyId }
-            });
-
-            // Cancelliamo la vecchia company vuota
-            console.log("Cancello la vecchia azienda vuota...");
-            await prisma.company.delete({
-                where: { id: userToMove.companyId }
-            });
-        }
-
-        console.log('Operazione completata con successo!');
-
-    } catch (error) {
-        console.error('Errore:', error);
-    } finally {
-        await prisma.$disconnect();
     }
+
+    // Assign user to company
+    await db.user.update({
+        where: { id: user.id },
+        data: { companyId: company.id }
+    });
+
+    console.log(`[SUCCESS] User assigned to company: ${company.name} (${company.id})`);
+    console.log("----------------------------------------");
 }
 
-assignUserToCompany();
+main().catch(console.error);
