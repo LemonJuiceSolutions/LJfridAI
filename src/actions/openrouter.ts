@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { getAuthenticatedUser } from "@/lib/session";
 
 async function getSession() {
     return await getServerSession(authOptions);
@@ -88,37 +89,35 @@ export async function saveOpenRouterSettingsAction(
  * Get OpenRouter agent model for the current user (FridAI Agent chatbot)
  */
 export async function getOpenRouterAgentModelAction(): Promise<{
+    success?: boolean;
     model?: string;
     error?: string;
 }> {
-    const session = await getSession();
-    if (!session?.user) {
-        return { error: "Non autorizzato" };
-    }
-
-    const userId = (session.user as any).id;
-    if (!userId) {
-        return { error: "Utente non trovato" };
-    }
-
     try {
-        const user = await db.user.findUnique({
-            where: { id: userId },
+        const sessionUser = await getAuthenticatedUser();
+        if (!sessionUser) {
+            return { error: 'Non autorizzato' };
+        }
+
+        // Fetch fresh user data from DB to avoid staleness
+        const user = await db.user.findUnique({ // Changed prisma to db
+            where: { id: sessionUser.id },
             select: {
                 openRouterAgentModel: true
             }
         });
 
         if (!user) {
-            return { error: "Utente non trovato" };
+            return { error: 'Utente non trovato' };
         }
 
         return {
+            success: true,
             model: user.openRouterAgentModel || 'google/gemini-2.0-flash-001'
         };
     } catch (error) {
-        console.error("Failed to get OpenRouter agent model:", error);
-        return { error: "Impossibile caricare il modello" };
+        console.error('Error in getOpenRouterAgentModelAction:', error);
+        return { error: 'Errore nel recupero del modello' };
     }
 }
 

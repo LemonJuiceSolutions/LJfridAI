@@ -409,11 +409,21 @@ ${variablesTable}`;
 
 export async function processDescriptionAction(
     textDescription: string,
-    openRouterConfig?: { apiKey: string, model: string },
-    type: string = 'RULE'
-): Promise<{ data: StoredTree & { debug?: any } | null; error: string | null; }> {
+    name: string,
+    type: 'RULE' | 'PIPELINE' = 'RULE',
+    openRouterConfig?: { apiKey: string, model: string }
+): Promise<{ data: any | null; error: string | null }> {
     try {
-        const user = await getAuthenticatedUser();
+        const sessionUser = await getAuthenticatedUser();
+        if (!sessionUser) {
+            return { data: null, error: 'Non autorizzato.' };
+        }
+
+        // Fetch fresh user data from DB to avoid staleness
+        const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+        if (!user || !user.companyId) {
+            return { data: null, error: 'Utente non associato a nessuna azienda.' };
+        }
         let decisionTreeResult;
         let extractedVariables = [];
         let debugInfo = null;
@@ -2870,7 +2880,16 @@ export async function fetchOpenRouterModelsAction(): Promise<{ data: any[] | nul
 
 export async function importTreeFromJsonAction(treeData: Partial<StoredTree>) {
     try {
-        const user = await getAuthenticatedUser();
+        const sessionUser = await getAuthenticatedUser();
+        if (!sessionUser) {
+            return { error: 'Non autorizzato.' };
+        }
+
+        // Fetch fresh user data from DB to avoid staleness
+        const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+        if (!user || !user.companyId) {
+            return { error: 'Utente non associato a nessuna azienda.' };
+        }
 
         // Basic validation
         if (!treeData.name || !treeData.jsonDecisionTree) {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Settings, Save, PlayCircle, Loader2, CheckCircle2, XCircle, Send, Bot, User as UserIcon, Trash2, Search } from 'lucide-react';
+import { ArrowLeft, Settings, Save, PlayCircle, Loader2, CheckCircle2, XCircle, Send, Bot, User as UserIcon, Trash2, Search, Download, Upload } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import { createInvitationAction, getInvitationsAction, revokeInvitationAction } 
 import { getOpenRouterSettingsAction, saveOpenRouterSettingsAction } from '@/actions/openrouter';
 import { ConnectorsManager } from './connectors-manager';
 import { Users, UserPlus, Copy } from 'lucide-react';
+import { exportSettingsAction, importSettingsAction } from '../actions/backup-restore';
 
 export default function SettingsPage() {
     const { toast } = useToast();
@@ -43,6 +44,10 @@ export default function SettingsPage() {
     const [inviteEmail, setInviteEmail] = useState('');
     const [isInviting, setIsInviting] = useState(false);
     const [inviteLink, setInviteLink] = useState('');
+
+    // Backup/Restore State
+    const [isExporting, setIsExporting] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
 
     useEffect(() => {
         // Load OpenRouter settings from database
@@ -173,6 +178,75 @@ export default function SettingsPage() {
         setChatMessages([]);
     };
 
+    const handleExportSettings = async () => {
+        setIsExporting(true);
+        try {
+            const result = await exportSettingsAction();
+            if (result.success && result.data) {
+                const blob = new Blob([result.data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `settings-backup-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                toast({
+                    title: "Backup completato",
+                    description: "Le impostazioni sono state esportate con successo.",
+                });
+            } else {
+                toast({
+                    title: "Errore",
+                    description: result.error || "Impossibile esportare le impostazioni.",
+                    variant: "destructive"
+                });
+            }
+        } catch (e: any) {
+            toast({
+                title: "Errore",
+                description: e.message,
+                variant: "destructive"
+            });
+        }
+        setIsExporting(false);
+    };
+
+    const handleImportSettings = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        setIsImporting(true);
+        try {
+            const fileContent = await file.text();
+            const result = await importSettingsAction(fileContent);
+
+            if (result.success) {
+                toast({
+                    title: "Importazione completata",
+                    description: result.message || "Impostazioni importate con successo.",
+                });
+                window.location.reload();
+            } else {
+                toast({
+                    title: "Errore",
+                    description: result.error || "Impossibile importare le impostazioni.",
+                    variant: "destructive"
+                });
+            }
+        } catch (e: any) {
+            toast({
+                title: "Errore",
+                description: e.message,
+                variant: "destructive"
+            });
+        }
+        setIsImporting(false);
+        event.target.value = '';
+    };
+
     const handleInvite = async () => {
         if (!inviteEmail) return;
         setIsInviting(true);
@@ -265,6 +339,55 @@ export default function SettingsPage() {
                                     </div>
                                 )}
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Backup & Restore */}
+                    <Card className="mt-6">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Download className="h-6 w-6 text-primary" />
+                                Backup & Restore
+                            </CardTitle>
+                            <CardDescription>
+                                Esporta o importa le tue impostazioni e connettori.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex gap-4">
+                                <Button
+                                    onClick={handleExportSettings}
+                                    disabled={isExporting}
+                                    variant="outline"
+                                    className="flex-1"
+                                >
+                                    {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                                    {isExporting ? 'Esportazione...' : 'Esporta Impostazioni'}
+                                </Button>
+
+                                <label className="flex-1">
+                                    <Button
+                                        disabled={isImporting}
+                                        variant="outline"
+                                        className="w-full"
+                                        onClick={() => document.getElementById('import-file')?.click()}
+                                        type="button"
+                                    >
+                                        {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                                        {isImporting ? 'Importazione...' : 'Importa Impostazioni'}
+                                    </Button>
+                                    <input
+                                        id="import-file"
+                                        type="file"
+                                        accept=".json"
+                                        onChange={handleImportSettings}
+                                        className="hidden"
+                                    />
+                                </label>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                                Il backup include i connettori e le configurazioni, ma non le password o i token di accesso.
+                            </p>
                         </CardContent>
                     </Card>
 
