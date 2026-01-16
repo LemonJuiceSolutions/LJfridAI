@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { getAuthenticatedUser } from "@/app/actions";
+import { getAuthenticatedUser } from "@/lib/session";
 import { revalidatePath } from "next/cache";
 
 export async function getProfileAction() {

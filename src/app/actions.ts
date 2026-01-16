@@ -21,18 +21,14 @@ import { z } from 'zod';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
+import { getAuthenticatedUser as getAuthUserSession } from "@/lib/session";
+
 export async function getAuthenticatedUser() {
-    const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
+    const user = await getAuthUserSession();
+    if (!user) {
         throw new Error("Non autorizzato. Effettua il login.");
     }
-    // Cast to include custom fields
-    return session.user as {
-        id: string;
-        name?: string | null;
-        email?: string | null;
-        companyId: string
-    };
+    return user;
 }
 
 export async function executeEmailAction(

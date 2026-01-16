@@ -1,12 +1,13 @@
 'use server'
 
 import { db } from '@/lib/db';
-import { getAuthenticatedUser } from '../actions';
+import { getAuthenticatedUser } from '@/lib/session';
 import sql from 'mssql';
 import nodemailer from 'nodemailer';
 import fs from 'fs/promises';
 import path from 'path';
 import type { MediaItem, LinkItem, TriggerItem } from '@/lib/types';
+import { testSharePointConnectionAction } from './sharepoint';
 
 // ... (existing functions)
 
@@ -17,6 +18,10 @@ export async function getConnectorsAction() {
     // Fetch fresh user data from DB to avoid staleness
     const user = await db.user.findUnique({ where: { id: sessionUser.id } });
     if (!user) return { error: 'Utente non trovato' };
+
+    if (!user.companyId) {
+        return { data: [] }; // Return empty list if no company
+    }
 
     try {
         const connectors = await db.connector.findMany({
@@ -186,6 +191,9 @@ export async function testConnectorAction(type: string, config: string) {
             }
         }
 
+
+
+        // ... (inside testConnectorAction)
         if (type === 'SHAREPOINT') {
             // Validate required fields
             if (!conf.tenantId || !conf.clientId) {
@@ -195,8 +203,7 @@ export async function testConnectorAction(type: string, config: string) {
                 return { success: false, message: 'URL Sito e Percorso File sono obbligatori' };
             }
 
-            // Import and call SharePoint test action
-            const { testSharePointConnectionAction } = await import('./sharepoint');
+            // Call SharePoint test action (imported statically)
             const result = await testSharePointConnectionAction(
                 conf.tenantId,
                 conf.clientId,

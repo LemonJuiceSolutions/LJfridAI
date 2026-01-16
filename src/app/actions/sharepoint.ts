@@ -2,7 +2,7 @@
 
 import { PublicClientApplication, DeviceCodeRequest, Configuration, AccountInfo, SilentFlowRequest } from '@azure/msal-node';
 import { db } from '@/lib/db';
-import { getAuthenticatedUser } from '../actions';
+import { getAuthenticatedUser } from '@/lib/session';
 
 const SCOPES = ['User.Read', 'Files.Read.All', 'Sites.Read.All'];
 
@@ -50,8 +50,11 @@ async function saveTokenCache(companyId: string, cache: string, account: Account
 
 // Initiate Device Code Flow
 export async function initiateSharePointAuthAction(tenantId: string, clientId: string) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
 
     try {
         const msalApp = createMsalApp(tenantId, clientId);
@@ -85,8 +88,11 @@ export async function initiateSharePointAuthAction(tenantId: string, clientId: s
 
 // Try silent auth with cached token
 export async function trySharePointSilentAuthAction(tenantId: string, clientId: string) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
 
     try {
         const cachedData = await loadTokenCache(user.companyId);
@@ -133,8 +139,11 @@ export async function testSharePointConnectionAction(
     driveId?: string,
     fileId?: string
 ) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
 
     try {
         // First try to get cached token
@@ -238,8 +247,11 @@ export async function completeDeviceCodeAuthAction(
     clientId: string,
     deviceCode: string
 ) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
 
     try {
         const msalApp = createMsalApp(tenantId, clientId);
@@ -260,8 +272,11 @@ export async function completeDeviceCodeAuthAction(
 
 // Generate device code (returns immediately with code info)
 export async function generateDeviceCodeAction(tenantId: string, clientId: string) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
 
     try {
         // For Device Code Flow, we need to make a direct HTTP request
@@ -305,8 +320,11 @@ export async function generateDeviceCodeAction(tenantId: string, clientId: strin
 
 // Poll for token after user completes device code login
 export async function pollForTokenAction(tenantId: string, clientId: string, deviceCode: string) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
 
     try {
         const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
@@ -377,8 +395,11 @@ export async function pollForTokenAction(tenantId: string, clientId: string, dev
 
 // Get cached access token (for use in other parts of the app)
 export async function getCachedSharePointTokenAction(tenantId: string, clientId: string) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
 
     try {
         const cachedData = await loadTokenCache(user.companyId);
@@ -444,8 +465,11 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
 
 // List document libraries (drives) in a SharePoint site
 export async function listSharePointDrivesAction(tenantId: string, clientId: string, siteUrl: string) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
 
     try {
         const authResult = await getCachedSharePointTokenAction(tenantId, clientId);
@@ -523,8 +547,11 @@ export async function listSharePointFilesAction(
     driveId: string,
     folderId?: string
 ) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
 
     try {
         const authResult = await getCachedSharePointTokenAction(tenantId, clientId);
@@ -586,8 +613,11 @@ export async function listExcelSheetsAction(
     driveId: string,
     fileId: string
 ) {
-    const user = await getAuthenticatedUser();
-    if (!user) return { error: 'Non autorizzato' };
+    const sessionUser = await getAuthenticatedUser();
+    if (!sessionUser) return { error: 'Non autorizzato' };
+
+    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
 
     try {
         const authResult = await getCachedSharePointTokenAction(tenantId, clientId);
