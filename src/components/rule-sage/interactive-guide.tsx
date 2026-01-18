@@ -818,22 +818,40 @@ function PythonDataPreview({
             ].map(s => s.toLowerCase()));
 
             for (const varName of missing) {
+                console.log(`[PythonDataPreview] 🕵️ checking var: "${varName}"`);
+
                 // === PATTERN-BASED FILTERING (before skip list) ===
                 // Skip anything starting with underscore (private/internal names)
-                if (varName.startsWith('_')) continue;
-                // Skip UPPERCASE_CONSTANTS (environment variables, constants)
-                if (/^[A-Z][A-Z0-9_]+$/.test(varName)) continue;
+                if (varName.startsWith('_')) {
+                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (starts with _)`);
+                    continue;
+                }
                 // Skip snake_case with underscores (Python variable naming convention)
-                if (varName.includes('_') && varName === varName.toLowerCase()) continue;
+                if (varName.includes('_') && varName === varName.toLowerCase()) {
+                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (snake_case internal)`);
+                    continue;
+                }
                 // Skip very short identifiers (1-2 chars) - these are loop variables, etc.
-                if (varName.length <= 2) continue;
+                if (varName.length <= 2) {
+                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (too short)`);
+                    continue;
+                }
                 // Skip identifiers ending with common suffixes that indicate variables
-                if (/(_id|_ids|_data|_list|_name|_names|_date|_size|_count|_props|_items|_batch)$/i.test(varName)) continue;
+                if (/(_id|_ids|_data|_list|_name|_names|_date|_size|_count|_props|_items|_batch)$/i.test(varName)) {
+                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (common suffix)`);
+                    continue;
+                }
                 // Skip identifiers starting with common prefixes
-                if (/^(get_|set_|fetch_|create_|delete_|update_|is_|has_|can_|all_|next_|prev_|first_|last_)/i.test(varName)) continue;
+                if (/^(get_|set_|fetch_|create_|delete_|update_|is_|has_|can_|all_|next_|prev_|first_|last_)/i.test(varName)) {
+                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (common prefix)`);
+                    continue;
+                }
 
                 // === Skip Python keywords, builtins, methods, and common patterns ===
-                if (PYTHON_SKIP_IDENTIFIERS.has(varName.toLowerCase())) continue;
+                if (PYTHON_SKIP_IDENTIFIERS.has(varName.toLowerCase())) {
+                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (in SKIP list)`);
+                    continue;
+                }
 
                 try {
                     console.log(`[PythonDataPreview] 🌍 Creating server request for missing dependency chain: ${varName}`);
@@ -844,23 +862,27 @@ function PythonDataPreview({
 
                         // Add ALL returned nodes as dependencies
                         for (const node of result.data) {
+                            const resultName = node.pythonResultName || node.sqlResultName || '';
+                            const isTarget = resultName.toLowerCase() === varName.toLowerCase();
+                            const finalTableName = isTarget ? varName : (resultName || varName);
+
                             // Avoid adding duplicates if multiple chains return same node
                             // Check against newDeps too
-                            const alreadyAdded = newDeps.some(d => d.tableName === (node.pythonResultName || node.sqlResultName));
-                            const alreadyStable = stableDeps.some(d => d.tableName === (node.pythonResultName || node.sqlResultName));
-                            const alreadyAsync = asyncDeps.some(d => d.tableName === (node.pythonResultName || node.sqlResultName));
+                            const alreadyAdded = newDeps.some(d => d.tableName === finalTableName);
+                            const alreadyStable = stableDeps.some(d => d.tableName === finalTableName);
+                            const alreadyAsync = asyncDeps.some(d => d.tableName === finalTableName);
 
                             if (alreadyAdded || alreadyStable || alreadyAsync) continue;
 
                             if ('sqlQuery' in node) {
                                 newDeps.push({
-                                    tableName: node.sqlResultName || varName, // Fallback if name matches
+                                    tableName: finalTableName, // Use matched casing or fallback
                                     query: (node as any).sqlQuery,
                                     connectorId: (node as any).sqlConnectorId
                                 });
                             } else if ('pythonCode' in node) {
                                 newDeps.push({
-                                    tableName: node.pythonResultName || varName,
+                                    tableName: finalTableName,
                                     isPython: true,
                                     pythonCode: (node as any).pythonCode,
                                     pythonOutputType: (node as any).pythonOutputType || 'table',
@@ -877,11 +899,13 @@ function PythonDataPreview({
             }
 
             if (mounted && newDeps.length > 0) {
+                console.log(`[PythonDataPreview] 📥 Adding new async deps:`, newDeps.map(d => d.tableName));
                 setAsyncDeps(prev => [...prev, ...newDeps]);
             }
             if (mounted) setIsResolving(false);
         };
 
+        console.log(`[PythonDataPreview] 🔍 Resolve Effect Triggered. Deps: Stable=${stableDeps.length}, Async=${asyncDeps.length}. AsyncVars: ${asyncDeps.map(d => d.tableName).join(',')}`);
         resolveMissing();
 
         return () => { mounted = false; };
