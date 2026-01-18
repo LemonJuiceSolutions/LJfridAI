@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -48,6 +48,61 @@ import { EmailBodyEditor, EmailBodyEditorRef } from './email-body-editor';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
+
+// Memoized input component to prevent re-renders when typing
+const MemoizedChatInput = memo(function MemoizedChatInput({
+  placeholder,
+  onSubmit,
+  disabled,
+  buttonText,
+  buttonClassName
+}: {
+  placeholder: string;
+  onSubmit: (value: string) => void;
+  disabled: boolean;
+  buttonText: string;
+  buttonClassName?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (inputRef.current?.value) {
+        onSubmit(inputRef.current.value);
+        inputRef.current.value = '';
+      }
+    }
+  }, [onSubmit]);
+
+  const handleClick = useCallback(() => {
+    if (inputRef.current?.value) {
+      onSubmit(inputRef.current.value);
+      inputRef.current.value = '';
+    }
+  }, [onSubmit]);
+
+  return (
+    <div className="p-2 border-t bg-background flex gap-2">
+      <input
+        ref={inputRef}
+        placeholder={placeholder}
+        className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent h-9 px-3 text-sm outline-none"
+        onKeyDown={handleKeyDown}
+        disabled={disabled}
+      />
+      <Button
+        size="sm"
+        className={`gap-2 rounded-lg ${buttonClassName || ''}`}
+        disabled={disabled}
+        onClick={handleClick}
+      >
+        {buttonText}
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+});
 
 const CollapsibleSection = ({
   title,
@@ -622,6 +677,111 @@ export default function EditNodeDialog({
     }
     setEditingMediaName(null);
   };
+
+  // Memoized handler for Python chat submissions to prevent re-renders
+  const handlePythonSubmit = useCallback((userPrompt: string) => {
+    const apiKey = openRouterApiKey || '';
+    const model = openRouterModel || 'google/gemini-2.0-flash-001';
+
+    if (!apiKey) {
+      toast({ variant: 'destructive', title: "Configurazione Mancante", description: "Imposta la chiave API nelle Impostazioni." });
+      return;
+    }
+
+    const newHistory = [...pythonChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
+    setPythonChatHistory(newHistory);
+
+    setPythonAgentStatus("Generazione Codice Python...");
+
+    const performGeneration = async (currentHistory: any[], retryCount = 0) => {
+      try {
+        const response = await generatePythonAction(
+          userPrompt,
+          { apiKey, model },
+          pythonOutputType,
+          pythonSelectedPipelines,
+          currentHistory
+        );
+
+        if (response.code) {
+          setPythonAgentStatus(retryCount > 0 ? `Correzione in corso (Tentativo ${retryCount}/3)...` : "Esecuzione Anteprima Automatica...");
+
+          const previewRes = await executePythonPreviewAction(
+            response.code,
+            pythonOutputType,
+            {},
+            pythonSelectedPipelines.map(pName => {
+              const dep = availableInputTables?.find(t => t.name === pName);
+              return {
+                tableName: dep?.name || '',
+                query: dep?.sqlQuery,
+                connectorId: dep?.connectorId,
+                isPython: dep?.isPython,
+                pythonCode: dep?.pythonCode,
+                pipelineDependencies: dep?.pipelineDependencies
+              };
+            }),
+            pythonConnectorId
+          );
+
+          if (previewRes.success) {
+            setPythonCode(response.code);
+            setPythonPreviewResult({
+              type: pythonOutputType,
+              data: previewRes.data,
+              columns: previewRes.columns,
+              variables: previewRes.variables,
+              chartBase64: previewRes.chartBase64,
+              chartHtml: previewRes.chartHtml,
+              debugLogs: previewRes.debugLogs
+            });
+            setHasPythonCodeChanged(true);
+
+            const successMsg = retryCount > 0
+              ? `Ho corretto l'errore ed eseguito lo script con successo (al tentativo ${retryCount})!\n\n\`\`\`python\n${response.code}\n\`\`\``
+              : `Ho generato ed eseguito lo script con successo!\n\n\`\`\`python\n${response.code}\n\`\`\``;
+
+            setPythonChatHistory(prev => [...prev, {
+              role: 'assistant',
+              content: successMsg,
+              timestamp: Date.now(),
+              preview: {
+                type: pythonOutputType,
+                data: previewRes.data,
+                columns: previewRes.columns,
+                chartHtml: previewRes.chartHtml,
+                chartBase64: previewRes.chartBase64,
+                variables: previewRes.variables
+              }
+            }]);
+          } else {
+            if (retryCount < 3) {
+              const errorFeedback = `The code failed execution with this error: ${previewRes.error}.\n\nOUTPUT LOGS (STDOUT) - Use this to fix column names:\n${previewRes.stdout || "No output captured."}\n\nPlease fix the code to resolve this error. Return ONLY the fixed python code.`;
+              const nextHistory = [
+                ...currentHistory,
+                { role: 'assistant', content: `\`\`\`python\n${response.code}\n\`\`\`` },
+                { role: 'user', content: errorFeedback }
+              ];
+              await performGeneration(nextHistory, retryCount + 1);
+            } else {
+              const errorMessage = `Non sono riuscito a correggere l'errore dopo 3 tentativi. Ultimo errore:\n${previewRes.error}\n\nUltimo codice:\n\`\`\`python\n${response.code}\n\`\`\``;
+              setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
+              toast({ variant: 'destructive', title: "Errore Irrisolvibile", description: "Impossibile correggere automaticamente lo script." });
+            }
+          }
+        } else {
+          const errorMessage = `Errore generazione: ${response.error || "Sconosciuto"}`;
+          setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
+          toast({ variant: 'destructive', title: "Errore AI", description: response.error || "Errore sconosciuto" });
+        }
+      } catch (e: any) {
+        const errorMessage = `Errore critico: ${e.message}`;
+        setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
+      }
+    };
+
+    performGeneration(newHistory, 0).finally(() => setPythonAgentStatus(null));
+  }, [openRouterApiKey, openRouterModel, pythonChatHistory, pythonOutputType, pythonSelectedPipelines, pythonConnectorId, availableInputTables, toast]);
 
   const handleSaveClick = async () => {
     // Validation based on CURRENT node type
@@ -1787,7 +1947,7 @@ export default function EditNodeDialog({
                           )}
                         </div>
 
-                        <ScrollArea className="flex-1 p-4">
+                        <ScrollArea className="flex-1 p-4" scrollbarAlwaysVisible>
                           <div className="flex flex-col gap-4">
                             {pythonChatHistory.length === 0 && (
                               <div className="flex gap-3">
@@ -1868,136 +2028,13 @@ export default function EditNodeDialog({
                           </div>
                         </ScrollArea>
 
-                        <div className="p-2 border-t bg-background flex gap-2">
-                          <Input
-                            placeholder={`Descrivi ${pythonOutputType === 'table' ? 'la tabella' : pythonOutputType === 'variable' ? 'le variabili' : 'il grafico'} da generare...`}
-                            className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent"
-                            id="python-prompt-input"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                const btn = document.getElementById('python-send-btn');
-                                if (btn) btn.click();
-                              }
-                            }}
-                          />
-                          <Button
-                            id="python-send-btn"
-                            size="sm"
-                            className="gap-2 rounded-lg bg-yellow-600 hover:bg-yellow-700"
-                            disabled={!!pythonAgentStatus}
-                            onClick={() => {
-                              const input = document.getElementById('python-prompt-input') as HTMLInputElement;
-                              if (!input || !input.value) return;
-
-                              const userPrompt = input.value;
-                              const apiKey = openRouterApiKey || '';
-                              const model = openRouterModel || 'google/gemini-2.0-flash-001';
-
-                              if (!apiKey) {
-                                toast({ variant: 'destructive', title: "Configurazione Mancante", description: "Imposta la chiave API nelle Impostazioni." });
-                                return;
-                              }
-
-                              const newHistory = [...pythonChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
-                              setPythonChatHistory(newHistory);
-                              input.value = '';
-
-                              setPythonAgentStatus("Generazione Codice Python...");
-
-                              const performGeneration = async (currentHistory: any[], retryCount = 0) => {
-                                try {
-                                  const response = await generatePythonAction(
-                                    userPrompt,
-                                    { apiKey, model },
-                                    pythonOutputType,
-                                    pythonSelectedPipelines,
-                                    currentHistory
-                                  );
-
-                                  if (response.code) {
-                                    setPythonAgentStatus(retryCount > 0 ? `Correzione in corso (Tentativo ${retryCount}/3)...` : "Esecuzione Anteprima Automatica...");
-
-                                    const previewRes = await executePythonPreviewAction(
-                                      response.code,
-                                      pythonOutputType,
-                                      {},
-                                      pythonSelectedPipelines.map(pName => {
-                                        const dep = availableInputTables?.find(t => t.name === pName);
-                                        return {
-                                          tableName: dep?.name || '',
-                                          query: dep?.sqlQuery,
-                                          connectorId: dep?.connectorId,
-                                          isPython: dep?.isPython,
-                                          pythonCode: dep?.pythonCode,
-                                          pipelineDependencies: dep?.pipelineDependencies
-                                        };
-                                      }),
-                                      pythonConnectorId
-                                    );
-
-                                    if (previewRes.success) {
-                                      setPythonCode(response.code);
-                                      setPythonPreviewResult({
-                                        type: pythonOutputType,
-                                        data: previewRes.data,
-                                        columns: previewRes.columns,
-                                        variables: previewRes.variables,
-                                        chartBase64: previewRes.chartBase64,
-                                        chartHtml: previewRes.chartHtml,
-                                        debugLogs: previewRes.debugLogs
-                                      });
-                                      setHasPythonCodeChanged(true);
-
-                                      const successMsg = retryCount > 0
-                                        ? `Ho corretto l'errore ed eseguito lo script con successo (al tentativo ${retryCount})!\n\n\`\`\`python\n${response.code}\n\`\`\``
-                                        : `Ho generato ed eseguito lo script con successo!\n\n\`\`\`python\n${response.code}\n\`\`\``;
-
-                                      setPythonChatHistory(prev => [...prev, {
-                                        role: 'assistant',
-                                        content: successMsg,
-                                        timestamp: Date.now(),
-                                        preview: {
-                                          type: pythonOutputType,
-                                          data: previewRes.data,
-                                          columns: previewRes.columns,
-                                          chartHtml: previewRes.chartHtml,
-                                          chartBase64: previewRes.chartBase64,
-                                          variables: previewRes.variables
-                                        }
-                                      }]);
-                                    } else {
-                                      if (retryCount < 3) {
-                                        const errorFeedback = `The code failed execution with this error: ${previewRes.error}.\n\nOUTPUT LOGS (STDOUT) - Use this to fix column names:\n${previewRes.stdout || "No output captured."}\n\nPlease fix the code to resolve this error. Return ONLY the fixed python code.`;
-                                        const nextHistory = [
-                                          ...currentHistory,
-                                          { role: 'assistant', content: `\`\`\`python\n${response.code}\n\`\`\`` },
-                                          { role: 'user', content: errorFeedback }
-                                        ];
-                                        await performGeneration(nextHistory, retryCount + 1);
-                                      } else {
-                                        const errorMessage = `Non sono riuscito a correggere l'errore dopo 3 tentativi. Ultimo errore:\n${previewRes.error}\n\nUltimo codice:\n\`\`\`python\n${response.code}\n\`\`\``;
-                                        setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
-                                        toast({ variant: 'destructive', title: "Errore Irrisolvibile", description: "Impossibile correggere automaticamente lo script." });
-                                      }
-                                    }
-                                  } else {
-                                    const errorMessage = `Errore generazione: ${response.error || "Sconosciuto"}`;
-                                    setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
-                                    toast({ variant: 'destructive', title: "Errore AI", description: response.error || "Errore sconosciuto" });
-                                  }
-                                } catch (e: any) {
-                                  const errorMessage = `Errore critico: ${e.message}`;
-                                  setPythonChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage, timestamp: Date.now() }]);
-                                }
-                              };
-
-                              performGeneration(newHistory, 0).finally(() => setPythonAgentStatus(null));
-                            }}
-                          >
-                            {pythonAgentStatus ? 'Elaborazione...' : 'Invia'}
-                            <ChevronRight className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <MemoizedChatInput
+                          placeholder={`Descrivi ${pythonOutputType === 'table' ? 'la tabella' : pythonOutputType === 'variable' ? 'le variabili' : 'il grafico'} da generare...`}
+                          onSubmit={handlePythonSubmit}
+                          disabled={!!pythonAgentStatus}
+                          buttonText={pythonAgentStatus ? 'Elaborazione...' : 'Invia'}
+                          buttonClassName="bg-yellow-600 hover:bg-yellow-700"
+                        />
                       </div>
                     </div>
                   </div>
