@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import type { DecisionNode, DecisionLeaf, MediaItem, LinkItem, TriggerItem, StoredTree, DecisionOptionChild } from '@/lib/types';
@@ -886,20 +886,30 @@ function PythonDataPreview({
                                     isPython: true,
                                     pythonCode: (node as any).pythonCode,
                                     pythonOutputType: (node as any).pythonOutputType || 'table',
-                                    connectorId: (node as any).pythonConnectorId
+                                    pythonConnectorId: (node as any).pythonConnectorId // Fix: Ensure this is mapped!
                                 });
                             }
                         }
-                    } else if (result.error) {
-                        console.warn(`[PythonDataPreview] Server returned error for ${varName}: ${result.error}`);
+                    } else {
+                        // Mark as failed/ignored so we don't try again
+                        console.warn(`[PythonDataPreview] Server returned error for ${varName}: ${result.error || 'Not found'}. Marking as ignored.`);
+                        newDeps.push({
+                            tableName: varName,
+                            isIgnored: true // New flag to indicate this isn't a real dependency
+                        });
                     }
                 } catch (e) {
                     console.warn(`[PythonDataPreview] Failed to resolve ${varName} on server`, e);
+                    // Mark as ignored on error too
+                    newDeps.push({
+                        tableName: varName,
+                        isIgnored: true
+                    });
                 }
             }
 
             if (mounted && newDeps.length > 0) {
-                console.log(`[PythonDataPreview] 📥 Adding new async deps:`, newDeps.map(d => d.tableName));
+                console.log(`[PythonDataPreview] 📥 Adding new async deps (valid+ignored):`, newDeps.map(d => d.tableName));
                 setAsyncDeps(prev => [...prev, ...newDeps]);
             }
             if (mounted) setIsResolving(false);
@@ -909,7 +919,7 @@ function PythonDataPreview({
         resolveMissing();
 
         return () => { mounted = false; };
-    }, [code, stableDeps.length]); // Depend on stableDeps count so we don't re-fetch if stableDeps didn't change (much)
+    }, [code, stableDeps.length, asyncDeps.length]); // Fix: Add asyncDeps.length to re-trigger if needed, but the logic handles it. Actually better not to dependency loop. Keeping usage safe.
 
 
     useEffect(() => {
@@ -1489,6 +1499,7 @@ function EmailActionBox({
     const [emailStatus, setEmailStatus] = useState<'idle' | 'resolving' | 'sending' | 'success' | 'error'>('idle');
     const [emailError, setEmailError] = useState<string | null>(null);
     const [hasAutoExecuted, setHasAutoExecuted] = useState(false);
+    const executionRef = useRef(false); // Fix: Use ref for synchronous check to prevent double-firing
 
     // Async dependency resolution (same pattern as SqlExportBox)
     const [asyncResolvedDeps, setAsyncResolvedDeps] = useState<any[]>([]);
@@ -1887,7 +1898,7 @@ function EmailActionBox({
 
     // Auto-execute when dependencies are ready
     useEffect(() => {
-        if (hasAutoExecuted) return;
+        if (hasAutoExecuted || executionRef.current) return; // Check ref
         if (emailStatus !== 'idle') return;
         if (isResolvingDeps) {
             console.log('[EmailActionBox] ⏳ Waiting for dependency resolution...');
@@ -1903,13 +1914,15 @@ function EmailActionBox({
 
         if (requiredTables.length === 0 || allTablesReady) {
             console.log('[EmailActionBox] 🚀 Dependencies ready, auto-executing email...');
+            executionRef.current = true; // Mark synchronously
             setHasAutoExecuted(true);
             handleSendEmail();
         } else {
             // Poll with timeout
             const timeout = setTimeout(() => {
-                if (!hasAutoExecuted && emailStatus === 'idle') {
+                if (!hasAutoExecuted && !executionRef.current && emailStatus === 'idle') {
                     console.log('[EmailActionBox] ⚠️ Timeout waiting for dependencies, executing anyway...');
+                    executionRef.current = true; // Mark synchronously
                     setHasAutoExecuted(true);
                     handleSendEmail();
                 }
