@@ -814,42 +814,49 @@ function PythonDataPreview({
                 'affiancate', 'textposition', 'inside', 'insidetextanchor', 'middle', 'textangle', 'textfont',
                 'white', 'black', 'emerald', 'xanchor', 'center', 'yanchor', 'top', 'font', 'margin', 'hovermode',
                 'unified', 'annotations', 'matches', 'showticklabels', 'showline', 'linecolor', 'mirror', 'dtick',
-                'category', 'normalize', 'rename', 'unique', 'pair', 'Analisi', 'Mensile', 'util'
+                'category', 'normalize', 'rename', 'unique', 'pair', 'Analisi', 'Mensile', 'util',
+                'HUBSPOT_TOKEN', 'hubspot_token',
+                // Python script configuration constants (from GraficoTest chart code)
+                'CONFIGURAZIONE', 'SHOW_AREAS', 'MOLTIPLICATORE', 'PIXEL_PER_UNIT', 'MIN_HEIGHT_PX',
+                'GAP_PX', 'DASH_FITTO', 'Utilizzo', 'CAPACITA', 'ORE_LAVORATE', 'CAPACITA_NETTA',
+                'ORE_LAVORATE_NET', 'CAPACITA_NETTA_NET', 'GIORNO', 'MESE_STR', 'HYBRID_WORK',
+                'HYBRID_NET', 'ORE_STRAORD', 'CALCOLO', 'ALTEZZE', 'BAR_FONT', 'TRACCE', 'LINEE',
+                'SCALINI', 'NET', 'MENSILI', 'STYLE', 'TITOLO', 'ALTO', 'PRESENZE', 'MINUTI', 'Prepara'
             ].map(s => s.toLowerCase()));
 
             for (const varName of missing) {
-                console.log(`[PythonDataPreview] 🕵️ checking var: "${varName}"`);
+                // console.log(`[PythonDataPreview] 🕵️ checking var: "${varName}"`);
 
                 // === PATTERN-BASED FILTERING (before skip list) ===
                 // Skip anything starting with underscore (private/internal names)
                 if (varName.startsWith('_')) {
-                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (starts with _)`);
+                    // console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (starts with _)`);
                     continue;
                 }
                 // Skip snake_case with underscores (Python variable naming convention)
                 if (varName.includes('_') && varName === varName.toLowerCase()) {
-                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (snake_case internal)`);
+                    // console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (snake_case internal)`);
                     continue;
                 }
                 // Skip very short identifiers (1-2 chars) - these are loop variables, etc.
                 if (varName.length <= 2) {
-                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (too short)`);
+                    // console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (too short)`);
                     continue;
                 }
                 // Skip identifiers ending with common suffixes that indicate variables
                 if (/(_id|_ids|_data|_list|_name|_names|_date|_size|_count|_props|_items|_batch)$/i.test(varName)) {
-                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (common suffix)`);
+                    // console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (common suffix)`);
                     continue;
                 }
                 // Skip identifiers starting with common prefixes
                 if (/^(get_|set_|fetch_|create_|delete_|update_|is_|has_|can_|all_|next_|prev_|first_|last_)/i.test(varName)) {
-                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (common prefix)`);
+                    // console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (common prefix)`);
                     continue;
                 }
 
                 // === Skip Python keywords, builtins, methods, and common patterns ===
                 if (PYTHON_SKIP_IDENTIFIERS.has(varName.toLowerCase())) {
-                    console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (in SKIP list)`);
+                    // console.log(`[PythonDataPreview] ⏭️ Skipping "${varName}" (in SKIP list)`);
                     continue;
                 }
 
