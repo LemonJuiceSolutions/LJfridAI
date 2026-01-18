@@ -17,7 +17,7 @@ import {
     executePythonPreviewAction,
     exportTableToSqlAction
 } from '@/app/actions';
-import { sendTestEmailWithDataAction } from '@/app/actions/connectors';
+import { sendTestEmailWithDataAction, getConnectorsAction } from '@/app/actions/connectors';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import Image from 'next/image';
@@ -693,9 +693,147 @@ function PythonDataPreview({
             const newDeps: any[] = [];
 
             // 2. Fetch from server
+            // Comprehensive list of Python keywords, builtins, methods, and common patterns to skip
+            const PYTHON_SKIP_IDENTIFIERS = new Set([
+                // Python keywords
+                'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del',
+                'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in',
+                'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while',
+                'with', 'yield', 'none', 'true', 'false',
+                // Python builtins
+                'abs', 'aiter', 'all', 'any', 'anext', 'ascii', 'bin', 'bool', 'breakpoint',
+                'bytearray', 'bytes', 'callable', 'chr', 'classmethod', 'compile', 'complex',
+                'delattr', 'dict', 'dir', 'divmod', 'enumerate', 'eval', 'exec', 'filter', 'float',
+                'format', 'frozenset', 'getattr', 'globals', 'hasattr', 'hash', 'help', 'hex',
+                'id', 'input', 'int', 'isinstance', 'issubclass', 'iter', 'len', 'list', 'locals',
+                'map', 'max', 'memoryview', 'min', 'next', 'object', 'oct', 'open', 'ord', 'pow',
+                'print', 'property', 'range', 'repr', 'reversed', 'round', 'set', 'setattr',
+                'slice', 'sorted', 'staticmethod', 'str', 'sum', 'super', 'tuple', 'type', 'vars', 'zip',
+                // Common exception names
+                'exception', 'runtimeerror', 'valueerror', 'typeerror', 'keyerror', 'indexerror',
+                'attributeerror', 'nameerror', 'filenotfounderror', 'ioerror', 'oserror',
+                // Common methods and attributes
+                'append', 'extend', 'insert', 'remove', 'pop', 'clear', 'index', 'count', 'sort',
+                'reverse', 'copy', 'get', 'keys', 'values', 'items', 'update', 'setdefault',
+                'split', 'join', 'strip', 'lstrip', 'rstrip', 'replace', 'find', 'rfind',
+                'startswith', 'endswith', 'upper', 'lower', 'capitalize', 'title', 'isdigit',
+                'isalpha', 'isalnum', 'isspace', 'encode', 'decode', 'format', 'read', 'write',
+                'readline', 'readlines', 'writelines', 'close', 'flush', 'seek', 'tell',
+                // Standard library modules (commonly used)
+                'json', 'datetime', 'time', 'os', 'sys', 'math', 're', 'random', 'collections',
+                'itertools', 'functools', 'operator', 'io', 'pathlib', 'urllib', 'http', 'ssl',
+                'socket', 'email', 'html', 'xml', 'csv', 'hashlib', 'hmac', 'base64', 'struct',
+                'copy', 'pickle', 'shelve', 'sqlite3', 'zlib', 'gzip', 'bz2', 'lzma', 'zipfile',
+                'tarfile', 'tempfile', 'shutil', 'glob', 'fnmatch', 'linecache', 'tokenize',
+                'logging', 'warnings', 'traceback', 'typing', 'dataclasses', 'contextlib',
+                'threading', 'multiprocessing', 'subprocess', 'asyncio', 'concurrent',
+                'request', 'parse', 'error', 'urlopen', 'urlencode',
+                // Common variable patterns
+                'self', 'cls', 'args', 'kwargs', 'result', 'data', 'response', 'resp', 'req',
+                'url', 'params', 'headers', 'body', 'content', 'text', 'value', 'key', 'item',
+                'name', 'path', 'file', 'line', 'row', 'col', 'rows', 'cols', 'idx', 'index',
+                'i', 'j', 'k', 'n', 'm', 'x', 'y', 'z', 'a', 'b', 'c', 'd', 'e', 'f', 'v', 'w',
+                'tmp', 'temp', 'buf', 'buffer', 'msg', 'message', 'err', 'error', 'ex',
+                'ctx', 'context', 'config', 'cfg', 'settings', 'options', 'opts',
+                'output', 'input', 'out', 'inp', 'src', 'dst', 'source', 'target', 'dest',
+                'start', 'end', 'begin', 'stop', 'first', 'last', 'prev', 'next', 'cur', 'current',
+                'count', 'total', 'size', 'length', 'width', 'height', 'depth', 'limit', 'offset',
+                'timeout', 'delay', 'interval', 'period', 'duration', 'timestamp', 'date',
+                'today', 'now', 'time', 'year', 'month', 'day', 'hour', 'minute', 'second',
+                'chunks', 'batch', 'batches', 'chunk', 'block', 'blocks', 'parts', 'pieces',
+                'loads', 'dumps', 'load', 'dump', 'reader', 'writer', 'parser', 'builder',
+                'handler', 'callback', 'listener', 'observer', 'sender', 'receiver',
+                'client', 'server', 'connection', 'conn', 'session', 'transaction', 'cursor',
+                'query', 'queries', 'statement', 'command', 'action', 'event', 'signal',
+                'token', 'tokens', 'auth', 'authorization', 'bearer', 'api', 'endpoint',
+                'method', 'methods', 'func', 'function', 'functions', 'proc', 'procedure',
+                'main', 'init', 'setup', 'teardown', 'run', 'execute', 'call', 'invoke',
+                'create', 'update', 'delete', 'insert', 'select', 'fetch', 'save', 'load',
+                'add', 'remove', 'set', 'get', 'put', 'post', 'patch', 'head', 'options',
+                'environ', 'env', 'os', 'sys', 'platform', 'version', 'release', 'info',
+                'fmt', 'format', 'template', 'pattern', 'regex', 'match', 'search', 'group',
+                'fromisoformat', 'strftime', 'strptime', 'isoformat', 'utcnow', 'utc',
+                'utf', 'ascii', 'latin', 'unicode', 'encoding', 'charset', 'codec',
+                'http', 'https', 'ftp', 'smtp', 'imap', 'pop', 'ssh', 'tcp', 'udp', 'ip',
+                'application', 'content', 'type', 'accept', 'header', 'cookie', 'cookies',
+                // Common library-specific identifiers (hubspot, requests, etc.)
+                'hubspot', 'hubapi', 'crm', 'deals', 'companies', 'contacts', 'properties',
+                'paging', 'link', 'results', 'archived', 'associations', 'objects',
+                'company', 'deal', 'contact', 'line_items', 'products', 'quotes',
+                'dealname', 'dealstage', 'dealtype', 'amount', 'description', 'pipeline',
+                'hs_forecast_probability', 'hs_deal_stage_probability', 'createdate',
+                'consegna', 'data_consegna', 'campione', 'art14_trat', 'createdAt',
+                'props', 'ids', 'inputs', 'outputs', 'status', 'state', 'code',
+                'qty', 'quantity', 'price', 'unit', 'currency', 'discount',
+                // Italian keywords commonly used in this codebase
+                'nomi', 'aziende', 'prodotti', 'associati', 'quantita', 'descrizione',
+                'codice', 'cliente', 'nome', 'inizio', 'fine', 'job', 'cols', 'commesse',
+                'recupero', 'futuri', 'nessuna', 'trattativa', 'trovata', 'tempo', 'totale',
+                'configurato', 'non', 'campione', 'consegna', 'oggi', 'ieri', 'domani',
+                // Common words
+                'com', 'using', 'per', 'cached', 'quantities', 'files', 'result', 'props',
+                'copy', 'input', 'output', 'value', 'key', 'index', 'count', 'total',
+                // Class-like names commonly used
+                'Convert', 'Build', 'Extract', 'Batch', 'Client', 'Service', 'Model',
+                'Context', 'Session', 'Request', 'Response', 'Query', 'Mutation',
+                // Data science libraries
+                'pandas', 'pd', 'numpy', 'np', 'matplotlib', 'plt', 'seaborn', 'sns',
+                'plotly', 'go', 'px', 'scipy', 'sklearn', 'tensorflow', 'tf', 'keras',
+                'torch', 'cv2', 'PIL', 'openpyxl', 'xlrd', 'xlwt', 'requests',
+                'beautifulsoup', 'bs4', 'lxml', 'selenium', 'scrapy',
+                'df', 'dataframe', 'series', 'figure', 'ax', 'axes', 'fig', 'plot',
+                'subplot', 'subplots', 'show', 'savefig', 'legend', 'xlabel', 'ylabel',
+                'title', 'grid', 'scatter', 'bar', 'hist', 'pie', 'boxplot', 'heatmap',
+                'express', 'graph_objects', 'make_subplots', 'iplot', 'offline',
+                // DataFrame methods
+                'iloc', 'loc', 'head', 'tail', 'describe', 'info', 'shape', 'columns',
+                'dtypes', 'astype', 'fillna', 'dropna', 'isna', 'isnull', 'notnull',
+                'groupby', 'agg', 'aggregate', 'merge', 'concat', 'pivot', 'melt',
+                'apply', 'map', 'transform', 'rolling', 'resample', 'shift', 'diff',
+                'to_csv', 'to_excel', 'to_json', 'to_sql', 'to_dict', 'to_list',
+                'read_csv', 'read_excel', 'read_json', 'read_sql', 'read_html',
+                // Common pandas/numpy identifiers
+                'axis', 'inplace', 'ascending', 'how', 'left', 'right', 'inner', 'outer',
+                'nan', 'inf', 'dtype', 'ndarray', 'array', 'matrix', 'zeros', 'ones',
+                'empty', 'full', 'arange', 'linspace', 'meshgrid', 'reshape', 'flatten',
+                'transpose', 'dot', 'cross', 'mean', 'std', 'var', 'median', 'mode',
+                'percentile', 'quantile', 'cumsum', 'cumprod', 'argmax', 'argmin',
+                'where', 'clip', 'abs', 'sqrt', 'exp', 'log', 'sin', 'cos', 'tan',
+                // Standard libraries & Common words
+                'json', 'math', 'time', 'datetime', 'random', 're', 'os', 'sys',
+                'subprocess', 'shutil', 'glob', 'pickle', 'copy', 'itertools',
+                'functools', 'collections', 'operator', 'typing', 'enum', 'uuid',
+                'createdAt', 'names', 'Convert', 'cid', 'assoc', 'Build', 'Extract', 'dati', 'dayfirst',
+                'errors', 'coerce', 'subset', 'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+                'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre',
+                'reparti', 'reparto', 'passato', 'futuro', 'step', 'lines', 'Raggruppa', 'color', 'conta', 'rgb',
+                'mese', 'Capacit', 'Crea', 'showlegend', 'grafico', 'violet', 'istogramma', 'fill', 'sovrapposto',
+                'tozeroy', 'Aggiungi', 'fillcolor', 'barre', 'rgba', 'Mago', 'Lavorate', 'green', 'stra', 'opacity',
+                'markers', 'blue', 'red', 'Personalizza', 'marker', 'layout', 'Straord', 'Confronto', 'dash',
+                'Mese', 'Previste', 'Mesi', 'solid', 'Numero', 'gray', 'barmode', 'automargin', 'Mostra', 'denom',
+                'affiancate', 'textposition', 'inside', 'insidetextanchor', 'middle', 'textangle', 'textfont',
+                'white', 'black', 'emerald', 'xanchor', 'center', 'yanchor', 'top', 'font', 'margin', 'hovermode',
+                'unified', 'annotations', 'matches', 'showticklabels', 'showline', 'linecolor', 'mirror', 'dtick',
+                'category', 'normalize', 'rename', 'unique', 'pair', 'Analisi', 'Mensile', 'util'
+            ].map(s => s.toLowerCase()));
+
             for (const varName of missing) {
-                // Skip common python keywords (heuristic)
-                if (['print', 'len', 'range', 'list', 'dict', 'set', 'str', 'int', 'float', 'import', 'from', 'def', 'return', 'none', 'true', 'false'].includes(varName.toLowerCase())) continue;
+                // === PATTERN-BASED FILTERING (before skip list) ===
+                // Skip anything starting with underscore (private/internal names)
+                if (varName.startsWith('_')) continue;
+                // Skip UPPERCASE_CONSTANTS (environment variables, constants)
+                if (/^[A-Z][A-Z0-9_]+$/.test(varName)) continue;
+                // Skip snake_case with underscores (Python variable naming convention)
+                if (varName.includes('_') && varName === varName.toLowerCase()) continue;
+                // Skip very short identifiers (1-2 chars) - these are loop variables, etc.
+                if (varName.length <= 2) continue;
+                // Skip identifiers ending with common suffixes that indicate variables
+                if (/(_id|_ids|_data|_list|_name|_names|_date|_size|_count|_props|_items|_batch)$/i.test(varName)) continue;
+                // Skip identifiers starting with common prefixes
+                if (/^(get_|set_|fetch_|create_|delete_|update_|is_|has_|can_|all_|next_|prev_|first_|last_)/i.test(varName)) continue;
+
+                // === Skip Python keywords, builtins, methods, and common patterns ===
+                if (PYTHON_SKIP_IDENTIFIERS.has(varName.toLowerCase())) continue;
 
                 try {
                     console.log(`[PythonDataPreview] 🌍 Creating server request for missing dependency chain: ${varName}`);
@@ -1339,6 +1477,9 @@ function EmailActionBox({
         triggers: TriggerItem[]
     } | null>(null);
 
+    // State for resolving SMTP connector if missing
+    const [resolvedSmtpConnectorId, setResolvedSmtpConnectorId] = useState<string | null>(null);
+
     // Resolve ancestor resources when currentNode has an ID (indicating it may be a linked node)
     useEffect(() => {
         let mounted = true;
@@ -1487,9 +1628,59 @@ function EmailActionBox({
         return () => { mounted = false; };
     }, [requiredTables, pipelineDependencies, asyncResolvedDeps, currentNode]);
 
+
+
+    // Resolve SMTP Connector if missing
+    useEffect(() => {
+        let mounted = true;
+        const resolveSmtp = async () => {
+            // If we already have a functional connectorId from props, or already resolved one, do nothing (unless it failed?)
+            if (emailAction.connectorId && !resolvedSmtpConnectorId) return;
+            if (resolvedSmtpConnectorId) return;
+
+            console.log('[EmailActionBox] 🔍 ConnectorId is missing or invalid. Attempting to find a default SMTP connector...');
+
+            try {
+                const result = await getConnectorsAction();
+                if (mounted && result.data) {
+                    const smtpConnectors = result.data.filter((c: any) => c.type === 'SMTP');
+                    if (smtpConnectors.length > 0) {
+                        const bestMatch = smtpConnectors[0];
+                        console.log(`[EmailActionBox] ✅ Found fallback SMTP connector: ${bestMatch.name} (${bestMatch.id})`);
+                        setResolvedSmtpConnectorId(bestMatch.id);
+                    } else {
+                        console.warn('[EmailActionBox] ⚠️ No SMTP connectors found in the company.');
+                    }
+                }
+            } catch (e) {
+                console.warn('[EmailActionBox] Failed to fetch connectors:', e);
+            }
+        };
+
+        if (!emailAction.connectorId) {
+            resolveSmtp();
+        }
+        return () => { mounted = false; };
+    }, [emailAction.connectorId, resolvedSmtpConnectorId]);
+
     // Handle send email
     const handleSendEmail = useCallback(async () => {
-        console.log('[EmailActionBox] 📧 Starting email send process...');
+        // Use resolved connector if available, otherwise prop
+        const targetConnectorId = emailAction.connectorId || resolvedSmtpConnectorId;
+
+        console.log('[EmailActionBox] 📧 Starting email send process...', {
+            configuredId: emailAction.connectorId,
+            resolvedId: resolvedSmtpConnectorId,
+            finalTarget: targetConnectorId
+        });
+
+        if (!targetConnectorId) {
+            setEmailStatus('error');
+            setEmailError("Nessun connettore SMTP configurato o trovato.");
+            toast({ variant: 'destructive', title: "Errore Configurazione", description: "Manca il connettore SMTP." });
+            return;
+        }
+
         setEmailStatus('sending');
         setEmailError(null);
 
@@ -1590,36 +1781,85 @@ function EmailActionBox({
 
             console.log(`[EmailActionBox] 📧 Sending email with ${selectedTables.length} tables, ${selectedPythonOutputs.length} Python outputs`);
 
-            // Call the email action
-            const result = await sendTestEmailWithDataAction({
-                connectorId: emailAction.connectorId,
-                sqlConnectorId: sqlConnectorId,
-                to: emailAction.to,
-                cc: emailAction.cc,
-                bcc: emailAction.bcc,
-                subject: emailAction.subject,
-                bodyHtml: emailAction.body,
-                selectedTables,
-                selectedPythonOutputs,
-                availableMedia: effectiveMedia,
-                availableLinks: effectiveLinks,
-                availableTriggers: effectiveTriggers,
-                mediaAttachments: emailAction.attachments?.mediaAsAttachment
-            });
+            // Helper function to try sending
+            const trySend = async (connId: string) => {
+                return await sendTestEmailWithDataAction({
+                    connectorId: connId,
+                    sqlConnectorId: sqlConnectorId,
+                    to: emailAction.to,
+                    cc: emailAction.cc,
+                    bcc: emailAction.bcc,
+                    subject: emailAction.subject,
+                    bodyHtml: emailAction.body,
+                    selectedTables: selectedTables.map(t => ({
+                        ...t,
+                        // Ensure dependencies are passed correctly
+                        pipelineDependencies: t.pipelineDependencies
+                    })),
+                    selectedPythonOutputs,
+                    availableMedia: effectiveMedia,
+                    availableLinks: effectiveLinks,
+                    availableTriggers: effectiveTriggers,
+                    mediaAttachments: emailAction.attachments?.mediaAsAttachment
+                });
+            };
+
+            // First attempt
+            let result = await trySend(targetConnectorId);
+
+            // Detailed logging for debugging retry logic
+            if (!result.success && result.error) {
+                console.log(`[EmailActionBox] ⚠️ Email failed first attempt. Error: "${result.error}"`);
+                console.log(`[EmailActionBox] 🔍 Retry check: Includes 'SMTP'? ${result.error.toLowerCase().includes('smtp')}`);
+            }
+
+            // Retry logic if connector not found
+            // Check broadly for "connector" and "smtp" or specific messages
+            if (!result.success && result.error && (
+                result.error.includes('Connettore SMTP non trovato') ||
+                result.error.includes('SMTP Connector not found') ||
+                result.error.toLowerCase().includes('connector not found')
+            )) {
+                console.warn('[EmailActionBox] ⚠️ Configured connector failed. Attempting auto-recovery...');
+                try {
+                    // Fetch fresh list of connectors
+                    const connResult = await getConnectorsAction();
+                    if (connResult.data) {
+                        const fallback = connResult.data.find((c: any) => c.type === 'SMTP');
+                        if (fallback) {
+                            console.log(`[EmailActionBox] 🔄 Retrying with fallback connector: ${fallback.name} (${fallback.id})`);
+                            result = await trySend(fallback.id);
+                            if (result.success) {
+                                // If successful, update state to remember this working connector
+                                setResolvedSmtpConnectorId(fallback.id);
+                            }
+                        } else {
+                            console.error('[EmailActionBox] ❌ No fallback SMTP connectors available.');
+                        }
+                    }
+                } catch (retryErr) {
+                    console.error('[EmailActionBox] ❌ Auto-recovery failed:', retryErr);
+                }
+            }
 
             if (result.success) {
                 setEmailStatus('success');
+                setHasAutoExecuted(true); // Mark as executed
                 toast({ title: "Email Inviata", description: `Email inviata con successo a ${emailAction.to}` });
             } else {
-                throw new Error(result.error || 'Errore sconosciuto');
+                console.error('[EmailActionBox] Email failed:', result.error);
+                setEmailStatus('error');
+                setEmailError(result.error || "Errore sconosciuto");
+                toast({ variant: 'destructive', title: "Errore Email", description: result.error || "Errore sconosciuto" });
             }
+
         } catch (e: any) {
-            console.error('[EmailActionBox] Email failed:', e);
+            console.error('[EmailActionBox] Email failed (exception):', e);
             setEmailStatus('error');
             setEmailError(e.message);
             toast({ variant: 'destructive', title: "Errore Email", description: e.message });
         }
-    }, [emailAction, fullDependencyChain, currentNode, toast]);
+    }, [emailAction, fullDependencyChain, currentNode, toast, resolvedSmtpConnectorId]);
 
     // Auto-execute when dependencies are ready
     useEffect(() => {
