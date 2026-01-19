@@ -1,5 +1,6 @@
 
 
+// Updated: 2026-01-18 15:35 - Inline handler fix
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback, memo } from 'react';
@@ -217,6 +218,11 @@ export default function EditNodeDialog({
 
   // Local state for node type switching (Question <-> Decision)
   const [currentNodeType, setCurrentNodeType] = useState<'question' | 'decision'>(nodeType);
+
+  // Debug: log whenever currentNodeType changes
+  React.useEffect(() => {
+    console.log('🔵 [RENDER] currentNodeType changed to:', currentNodeType);
+  }, [currentNodeType]);
   const [pendingTypeChange, setPendingTypeChange] = useState<'question' | 'decision' | null>(null);
 
   // Helper to request type change with confirmation
@@ -229,7 +235,21 @@ export default function EditNodeDialog({
   };
 
   const confirmTypeChange = () => {
+    console.log('[CONFIRM TYPE CHANGE] Called with pendingTypeChange:', pendingTypeChange);
+    console.log('[CONFIRM TYPE CHANGE] Current decisionText:', decisionText);
+    console.log('[CONFIRM TYPE CHANGE] Current questionText:', questionText);
+
     if (pendingTypeChange) {
+      // Copy text between fields when switching types
+      if (pendingTypeChange === 'question' && decisionText) {
+        // Converting from Decision to Question: copy decision text to question
+        console.log('[CONFIRM TYPE CHANGE] Copying decisionText to questionText:', decisionText);
+        setQuestionText(decisionText);
+      } else if (pendingTypeChange === 'decision' && questionText) {
+        // Converting from Question to Decision: copy question text to decision
+        console.log('[CONFIRM TYPE CHANGE] Copying questionText to decisionText:', questionText);
+        setDecisionText(questionText);
+      }
       setCurrentNodeType(pendingTypeChange);
       setPendingTypeChange(null);
     }
@@ -784,12 +804,15 @@ export default function EditNodeDialog({
   }, [openRouterApiKey, openRouterModel, pythonChatHistory, pythonOutputType, pythonSelectedPipelines, pythonConnectorId, availableInputTables, toast]);
 
   const handleSaveClick = async () => {
-    // Validation based on CURRENT node type
-    if (currentNodeType === 'question' && !('option' in initialNode) && !questionText.trim()) {
+    // Validation based on CURRENT node type, with fallback for type conversion case
+    const effectiveQuestionText = questionText.trim() || decisionText.trim();
+    const effectiveDecisionText = decisionText.trim() || questionText.trim();
+
+    if (currentNodeType === 'question' && !('option' in initialNode) && !effectiveQuestionText) {
       toast({ title: 'Il testo della domanda è obbligatorio', variant: 'destructive' });
       return;
     }
-    if (currentNodeType === 'decision' && !decisionText.trim()) {
+    if (currentNodeType === 'decision' && !effectiveDecisionText) {
       toast({ title: 'Il testo della decisione è obbligatorio', variant: 'destructive' });
       return;
     }
@@ -812,15 +835,24 @@ export default function EditNodeDialog({
 
       let newNodeData: any = { ...initialNode };
 
+      console.log('[TYPE SWITCH DEBUG] currentNodeType:', currentNodeType);
+      console.log('[TYPE SWITCH DEBUG] questionText:', questionText);
+      console.log('[TYPE SWITCH DEBUG] decisionText:', decisionText);
+      console.log('[TYPE SWITCH DEBUG] initialNode:', initialNode);
+
       // 1. Structure Updates (Type Switching & Core Text)
       if (currentNodeType === 'question' && !('option' in initialNode)) {
         // Question Node
-        newNodeData.question = questionText;
+        // Use decisionText as fallback if questionText is empty (async state update case)
+        const effectiveQuestionText = questionText.trim() || decisionText.trim();
+        newNodeData.question = effectiveQuestionText;
         if ('decision' in newNodeData) delete newNodeData.decision;
         if (!newNodeData.options) newNodeData.options = {};
       } else if (currentNodeType === 'decision') {
         // Decision Node
-        newNodeData.decision = decisionText;
+        // Use questionText as fallback if decisionText is empty (async state update case)
+        const effectiveDecisionText = decisionText.trim() || questionText.trim();
+        newNodeData.decision = effectiveDecisionText;
         if ('question' in newNodeData) delete newNodeData.question;
         if ('options' in newNodeData) delete newNodeData.options;
       } else if ('option' in initialNode) {
@@ -927,9 +959,9 @@ export default function EditNodeDialog({
   }
 
   const canSave = !componentIsSaving && (
-    (currentNodeType === 'question' && !('option' in initialNode) && questionText.trim() !== '') ||
+    (currentNodeType === 'question' && !('option' in initialNode) && (questionText.trim() !== '' || decisionText.trim() !== '')) ||
     (currentNodeType === 'question' && 'option' in initialNode) || // Allow empty option text
-    (currentNodeType === 'decision' && decisionText.trim() !== '')
+    (currentNodeType === 'decision' && (decisionText.trim() !== '' || questionText.trim() !== ''))
   );
 
   const MediaListItem = ({
@@ -1009,7 +1041,7 @@ export default function EditNodeDialog({
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={(open) => !open && !componentIsSaving && onClose()}>
+      <Dialog open={isOpen} onOpenChange={(open) => !open && !componentIsSaving && !pendingTypeChange && onClose()}>
         <DialogContent className="sm:max-w-[75vw] md:max-w-[75vw] lg:max-w-[75vw] !max-w-[75vw] w-[75vw]">
           <DialogHeader>
             <div className="flex items-center justify-between pr-8">
@@ -3062,14 +3094,38 @@ export default function EditNodeDialog({
             <AlertDialogTitle>Conferma modifica tipo</AlertDialogTitle>
             <AlertDialogDescription>
               {pendingTypeChange === 'decision'
-                ? "Stai convertendo una Domanda in un Risultato. Tutte le opzioni e i nodi figli verranno eliminati. Questa azione non può essere annullata."
-                : "Stai convertendo un Risultato in una Domanda. Il testo del risultato attuale verrà perso."
+                ? "Stai convertendo una Domanda in un Risultato. Il testo verrà preservato, ma tutte le opzioni e i nodi figli verranno eliminati. Questa azione non può essere annullata."
+                : "Stai convertendo un Risultato in una Domanda. Il testo verrà preservato."
               }
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Annulla</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmTypeChange}>Procedi</AlertDialogAction>
+            <AlertDialogAction onClick={() => {
+              // CRITICAL: Save the pendingTypeChange value BEFORE it gets cleared by onOpenChange
+              // This fixes the race condition where the dialog's onOpenChange handler sets
+              // pendingTypeChange to null before this onClick handler can use it
+              const targetType = pendingTypeChange;
+
+              console.log('🔴 PROCEDI CLICKED - targetType (saved):', targetType);
+              console.log('🔴 Before: currentNodeType:', currentNodeType);
+              console.log('🔴 decisionText:', decisionText);
+              console.log('🔴 questionText:', questionText);
+
+              if (targetType) {
+                if (targetType === 'question' && decisionText) {
+                  console.log('🟢 Copying decisionText to questionText');
+                  setQuestionText(decisionText);
+                } else if (targetType === 'decision' && questionText) {
+                  console.log('🟢 Copying questionText to decisionText');
+                  setDecisionText(questionText);
+                }
+                console.log('🟢 Setting currentNodeType to:', targetType);
+                setCurrentNodeType(targetType);
+              }
+              // Clear pending state (dialog will close automatically via AlertDialogAction)
+              setPendingTypeChange(null);
+            }}>Procedi</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

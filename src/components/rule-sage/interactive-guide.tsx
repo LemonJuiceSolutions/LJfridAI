@@ -126,7 +126,7 @@ function useFlowExecution() {
     const executeFlow = useCallback(async (
         mainCode: string,
         mainOutputType: 'table' | 'variable' | 'chart',
-        dependencies: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[],
+        dependencies: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string, isIgnored?: boolean }[],
         pythonConnectorId?: string,
         resultTableName?: string
     ) => {
@@ -138,8 +138,10 @@ function useFlowExecution() {
         // Log current cache state
         console.log(`[Flow] 📦 Cache state at start: ${GLOBAL_EXECUTION_CACHE.size} entries`);
 
-        // 1. Prepare steps
-        const initialSteps = dependencies.map(d => ({
+        // 1. Prepare steps - FILTER OUT ignored dependencies (words from comments, etc.)
+        const validDependencies = dependencies.filter(d => !d.isIgnored);
+
+        const initialSteps = validDependencies.map(d => ({
             name: d.tableName,
             type: (d.isPython ? 'python' : 'sql') as 'sql' | 'python',
             status: 'pending' as const,
@@ -670,9 +672,20 @@ function PythonDataPreview({
         const resolveMissing = async () => {
             if (!code) return;
 
+            // PRE-PROCESSING: Remove Python comments before extracting identifiers
+            // This prevents words in comments from being detected as dependencies
+            let cleanedCode = code
+                // Remove triple-quoted strings (docstrings) - both ''' and """
+                .replace(/'''[\s\S]*?'''/g, '')
+                .replace(/"""[\s\S]*?"""/g, '')
+                // Remove single-line comments starting with #
+                .replace(/#.*$/gm, '')
+                // Remove string literals to avoid matching words inside strings
+                .replace(/'[^']*'/g, '""')
+                .replace(/"[^"]*"/g, '""');
+
             // 1. Identify what variables are referenced but NOT in stableDeps
-            const codeLower = code.toLowerCase();
-            const potentialVars = code.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [];
+            const potentialVars = cleanedCode.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [];
             const uniqueVars = Array.from(new Set(potentialVars));
 
             const existingNames = new Set(stableDeps.map(d => d.tableName.toLowerCase()));

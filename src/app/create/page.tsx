@@ -143,7 +143,7 @@ export default function CreatePage() {
       const searchParams = new URLSearchParams(window.location.search);
       const type = searchParams.get('type') || 'RULE';
 
-      const result = await processDescriptionAction(textDescription, openRouterConfig, type);
+      const result = await processDescriptionAction(textDescription, '', type as 'RULE' | 'PIPELINE', openRouterConfig);
       if (result.error || !result.data) {
         throw new Error(result.error || 'Analisi fallita senza un errore specifico.');
       }

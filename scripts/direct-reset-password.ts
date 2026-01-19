@@ -1,6 +1,8 @@
 
-import { db } from "../src/lib/db";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+
+const prisma = new PrismaClient();
 
 const EMAIL = "manuele.zanoni@gmail.com";
 const NEW_PASSWORD = "NuovaPassword123";
@@ -12,7 +14,7 @@ async function main() {
 
     const hashedPassword = await bcrypt.hash(NEW_PASSWORD, 10);
 
-    const user = await db.user.update({
+    const user = await prisma.user.update({
         where: { email: EMAIL },
         data: { password: hashedPassword }
     });
