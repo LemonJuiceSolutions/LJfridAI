@@ -372,23 +372,31 @@ def execute_python():
                     chart_base64 = None
                     try:
                         # Extract dimensions from figure layout, or use sensible defaults
-                        fig_width = res_val.layout.width if res_val.layout.width else 1200
-                        fig_height = res_val.layout.height if res_val.layout.height else 800
+                        fig_width = res_val.layout.width if res_val.layout.width else 1000
+                        fig_height = res_val.layout.height if res_val.layout.height else 500
                         
-                        # For figures with many subplots, ensure minimum height per row
-                        # Check if it's a subplots figure by counting rows
-                        try:
-                            annotations = res_val.layout.annotations or []
-                            # Count unique y positions to estimate subplot rows
-                            if len(annotations) > 0:
-                                subplot_count = len(set(a.y for a in annotations if hasattr(a, 'y')))
-                                min_height_per_subplot = 200
-                                fig_height = max(fig_height, subplot_count * min_height_per_subplot)
-                        except:
-                            pass
+                        # CRITICAL: Limit dimensions for email compatibility
+                        # Enforce max width and height to avoid huge images in email body
+                        MAX_WIDTH = 1000
+                        MAX_HEIGHT = 600  # Max height to prevent super tall charts
                         
-                        # Use 2x scale for high definition (retina quality)
-                        scale = 2
+                        # Scale proportionally if too large
+                        if fig_width > MAX_WIDTH:
+                            ratio = MAX_WIDTH / fig_width
+                            fig_width = MAX_WIDTH
+                            fig_height = int(fig_height * ratio)
+                        
+                        if fig_height > MAX_HEIGHT:
+                            ratio = MAX_HEIGHT / fig_height
+                            fig_height = MAX_HEIGHT
+                            fig_width = int(fig_width * ratio)
+                        
+                        # Ensure minimum reasonable aspect ratio (no taller than 1:1)
+                        if fig_height > fig_width:
+                            fig_height = fig_width
+                        
+                        # Use 1.5x scale for good quality without huge file size
+                        scale = 1.5
                         
                         print(f"📊 [EXECUTE] Generating PNG: {fig_width}x{fig_height} @ {scale}x scale")
                         img_bytes = pio.to_image(res_val, format='png', width=fig_width, height=fig_height, scale=scale)

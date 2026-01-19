@@ -1006,8 +1006,8 @@ export async function executeSqlPreviewAction(
             options: {
                 encrypt: conf.host && conf.host.includes('database.windows.net'),
                 trustServerCertificate: true,
-                connectTimeout: 30000,
-                requestTimeout: 120000 // 2 minutes for complex queries
+                connectTimeout: 60000,  // 1 minute to connect
+                requestTimeout: 600000  // 10 minutes for very complex queries with CTE/XML
             }
         };
 
