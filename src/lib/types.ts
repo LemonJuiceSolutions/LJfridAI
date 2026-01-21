@@ -74,6 +74,7 @@ export interface WidgetConfig {
   colors?: string[]; // Hex colors
   kpiValueKey?: string;
   kpiLabel?: string;
+  data?: any[]; // Sealed data for persistence
 }
 
 export interface DecisionLeaf {

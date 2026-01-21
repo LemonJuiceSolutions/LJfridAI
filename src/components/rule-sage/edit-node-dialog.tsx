@@ -529,6 +529,22 @@ export default function EditNodeDialog({
       // Load Widget Config
       if ('widgetConfig' in node && node.widgetConfig) {
         setWidgetConfig(node.widgetConfig);
+        if (node.widgetConfig.data && node.widgetConfig.data.length > 0) {
+          // Auto-load sealed data based on context (SQL or Python)
+          // We infer type from widgetConfig itself or node type if possible, 
+          // but generic storage is enough to hydrate the preview vars
+          if (node.pythonCode) {
+            // Must be python data
+            setPythonPreviewResult({
+              type: node.pythonOutputType || 'table',
+              data: node.widgetConfig.data
+            });
+            // Also set progress to show results
+            setPythonProgressStep(3);
+          } else if (node.sqlQuery) {
+            setSqlPreviewData(node.widgetConfig.data);
+          }
+        }
       } else {
         setWidgetConfig(undefined);
       }
@@ -944,7 +960,11 @@ export default function EditNodeDialog({
 
       // Widget Configuration
       if (widgetConfig) {
-        newNodeData.widgetConfig = widgetConfig;
+        newNodeData.widgetConfig = {
+          ...widgetConfig,
+          // SEAL DATA: Save current preview data into the config
+          data: pythonPreviewResult?.data || sqlPreviewData || widgetConfig.data || []
+        };
       } else {
         delete newNodeData.widgetConfig;
       }
