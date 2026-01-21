@@ -63,6 +63,19 @@ export interface EmailActionConfig {
   };
 }
 
+export type WidgetType = 'table' | 'bar-chart' | 'line-chart' | 'area-chart' | 'pie-chart' | 'kpi-card';
+
+export interface WidgetConfig {
+  type: WidgetType;
+  title?: string;
+  description?: string;
+  xAxisKey?: string;
+  dataKeys?: string[];
+  colors?: string[]; // Hex colors
+  kpiValueKey?: string;
+  kpiLabel?: string;
+}
+
 export interface DecisionLeaf {
   id?: string;
   decision: string;
@@ -79,6 +92,7 @@ export interface DecisionLeaf {
   pythonSelectedPipelines?: string[];
   sqlSelectedPipelines?: string[];
   emailAction?: EmailActionConfig;
+  widgetConfig?: WidgetConfig;
 }
 
 export type SingleDecisionOptionChild = DecisionNode | DecisionLeaf | string | { ref: string, id?: string } | { subTreeRef: string, id?: string };
@@ -128,6 +142,7 @@ export interface DecisionNode {
   pythonSelectedPipelines?: string[];
   pythonChatHistory?: ChatMessage[];
   emailAction?: EmailActionConfig;
+  widgetConfig?: WidgetConfig;
 }
 
 export interface StoredTree extends AnalysisResult {

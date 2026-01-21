@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import TextWidget from "@/components/dashboard/text-widget";
+import SmartWidgetRenderer from "@/components/widgets/builder/SmartWidgetRenderer";
+import { WidgetConfig } from "@/components/widgets/builder/WidgetEditor";
 import { executeScript } from '@/ai/flows/execute-script-flow';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -56,15 +58,25 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
     const [reportData, setReportData] = useState<any>(null);
     const [reportContent, setReportContent] = useState<string>('');
     const [reportType, setReportType] = useState<'table' | 'kpi' | 'chart' | undefined>(undefined);
+    const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | undefined>(undefined);
     const [isLoading, setIsLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
     const { toast } = useToast();
 
     useEffect(() => {
         if (status === 'loading') return;
 
         const fetchData = async () => {
-            if (!session?.user) return;
-            setIsLoading(true);
+            // Only show global loading on first load
+            if (refreshTrigger === 0) setIsLoading(true);
+            else setIsRefreshing(true);
+
+            if (!session?.user) {
+                setIsLoading(false);
+                setIsRefreshing(false);
+                return;
+            }
 
             try {
                 const loadedPipelines = await getPipelines();
@@ -82,11 +94,18 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
                 if (pipeline && node) {
                     setReportContent(node.content || '{{result}}');
                     setReportType(node.previewType);
+                    setWidgetConfig(node.widgetConfig);
                     const result = await runUpToNode(pipelines, pipelineId, nodeId);
                     setReportData(result);
+
+                    if (refreshTrigger > 0) {
+                        toast({
+                            title: "Dati aggiornati",
+                            description: "I dati del widget sono stati ricalcolati.",
+                            duration: 3000
+                        });
+                    }
                 } else {
-                    // Silent failure or empty state if widget refers to deleted pipeline
-                    // throw new Error("Pipeline or node not found.");
                     setReportContent('<p class="text-muted-foreground italic">Pipeline non trovata o eliminata.</p>');
                 }
             } catch (error: any) {
@@ -94,11 +113,16 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
                 setReportContent('<p class="text-destructive">Errore nel caricamento dei dati del widget.</p>');
             } finally {
                 setIsLoading(false);
+                setIsRefreshing(false);
             }
         };
 
         fetchData();
-    }, [status, session, pipelineId, nodeId, toast]);
+    }, [status, session, pipelineId, nodeId, toast, refreshTrigger]);
+
+    const handleRefresh = () => {
+        setRefreshTrigger(prev => prev + 1);
+    };
 
     if (isLoading || status === 'loading') {
         return (
@@ -109,14 +133,23 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
     }
 
     return (
-        <TextWidget
-            content={reportContent}
-            onContentChange={() => { }} // Content is read-only in dashboard view
-            isEditing={false}
-            reportData={reportData}
-            reportType={reportType}
-            isLoadingData={isLoading}
-        />
+        widgetConfig ? (
+            <SmartWidgetRenderer
+                data={reportData}
+                config={widgetConfig}
+                onRefresh={handleRefresh}
+                isRefreshing={isRefreshing}
+            />
+        ) : (
+            <TextWidget
+                content={reportContent}
+                onContentChange={() => { }} // Content is read-only in dashboard view
+                isEditing={false}
+                reportData={reportData}
+                reportType={reportType}
+                isLoadingData={isLoading}
+            />
+        )
     );
 }
 

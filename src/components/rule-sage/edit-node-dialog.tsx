@@ -46,6 +46,8 @@ import Image from 'next/image';
 import { ScrollArea } from '../ui/scroll-area';
 import { DataTable } from '../ui/data-table';
 import { EmailBodyEditor, EmailBodyEditorRef } from './email-body-editor';
+import WidgetEditor from '../widgets/builder/WidgetEditor';
+import { WidgetConfig } from '@/lib/types';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
@@ -340,6 +342,9 @@ export default function EditNodeDialog({
     mediaAsAttachment: emailConfig.attachments?.mediaAsAttachment || [],
   };
 
+  // Widget Builder State
+  const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | undefined>(undefined);
+
 
 
   const isExecutingRef = useRef(false);
@@ -518,6 +523,14 @@ export default function EditNodeDialog({
         setSqlExportSourceTables([]);
         setSqlExportTargetConnectorId('');
         setSqlExportTargetTableName('');
+      }
+
+      // Load Widget Config
+      // Load Widget Config
+      if ('widgetConfig' in node && node.widgetConfig) {
+        setWidgetConfig(node.widgetConfig);
+      } else {
+        setWidgetConfig(undefined);
       }
 
     }
@@ -927,6 +940,13 @@ export default function EditNodeDialog({
         };
       } else {
         delete newNodeData.sqlExportAction;
+      }
+
+      // Widget Configuration
+      if (widgetConfig) {
+        newNodeData.widgetConfig = widgetConfig;
+      } else {
+        delete newNodeData.widgetConfig;
       }
 
       onSave(nodePath, newNodeData);
@@ -1949,7 +1969,7 @@ export default function EditNodeDialog({
                                   chartHtml: res.chartHtml,
                                   debugLogs: res.debugLogs
                                 });
-                                toast({ title: "Script Eseguito", description: "Anteprima pronta." });
+                                toast({ title: "Script Eseguito", description: "Anteprima pronta.", duration: 1000 });
                               } else {
                                 toast({ variant: 'destructive', title: "Errore Python", description: res.error || "Errore sconosciuto" });
                               }
@@ -2165,6 +2185,39 @@ export default function EditNodeDialog({
                     </CollapsibleSection>
                   )}
 
+                </div>
+              </CollapsibleSection>
+
+              {/* Widget Builder Section */}
+              <CollapsibleSection
+                title="Widget Builder"
+                count={widgetConfig ? 1 : 0}
+                storageKey={`collapse-widget-builder-${treeId}-${nodePath}`}
+                icon={BarChart3}
+              >
+                <div className="pt-3 h-[500px]">
+                  {(pythonPreviewResult?.data || sqlPreviewData) ? (
+                    <WidgetEditor
+                      data={pythonPreviewResult?.data || sqlPreviewData || []}
+                      initialConfig={widgetConfig}
+                      onSave={(config) => {
+                        setWidgetConfig(config);
+                      }}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground border-2 border-dashed rounded-lg p-6 text-center">
+                      <BarChart3 className="h-10 w-10 mb-2 opacity-50" />
+                      {pythonOutputType === 'chart' && pythonPreviewResult ? (
+                        <div className="max-w-md space-y-2">
+                          <p className="font-semibold text-foreground">Modalità Grafico Python rilevata</p>
+                          <p>Il Widget Builder serve per creare grafici <strong>interattivi React</strong> partendo da dati grezzi.</p>
+                          <p>Per usarlo, cambia il "Tipo Output" dello script Python in <strong>Tabella</strong> e riesegui l'anteprima. Il Widget Builder userà i dati della tabella per costruire il grafico.</p>
+                        </div>
+                      ) : (
+                        <p>Esegui un'anteprima (SQL o Python "Tabella") per configurare il widget.</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </CollapsibleSection>
 
