@@ -45,6 +45,15 @@ const getLegendProps = (position?: 'top' | 'bottom' | 'left' | 'right') => {
     }
 };
 
+const getStrokeDasharray = (style?: 'solid' | 'dashed' | 'dotted') => {
+    switch (style) {
+        case 'dashed': return '5 5';
+        case 'dotted': return '1 1';
+        case 'solid':
+        default: return undefined;
+    }
+};
+
 export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEditorProps) {
     const [config, setConfig] = useState<WidgetConfig>(initialConfig || {
         type: 'table',
@@ -176,8 +185,8 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
                     <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={chartData} margin={getChartMargins(config)}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: -10 } : undefined} />
-                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: -80, style: { textAnchor: 'middle' } } : undefined} />
+                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
                             <Tooltip />
                             <Legend {...getLegendProps(config.legendPosition)} />
                             {(config.dataKeys || []).map((key, index) => (
@@ -191,8 +200,8 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
                     <ResponsiveContainer width="100%" height={300}>
                         <LineChart data={chartData} margin={getChartMargins(config)}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: -10 } : undefined} />
-                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: -80, style: { textAnchor: 'middle' } } : undefined} />
+                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
                             <Tooltip />
                             <Legend {...getLegendProps(config.legendPosition)} />
                             {(config.dataKeys || []).map((key, index) => (
@@ -205,6 +214,7 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
                                     dot={{ r: 4 }}
                                     activeDot={{ r: 6 }}
                                     connectNulls
+                                    strokeDasharray={getStrokeDasharray(config.lineStyle)}
                                 />
                             ))}
                         </LineChart>
@@ -215,12 +225,12 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
                     <ResponsiveContainer width="100%" height={300}>
                         <AreaChart data={chartData} margin={getChartMargins(config)}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: -10 } : undefined} />
-                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: -80, style: { textAnchor: 'middle' } } : undefined} />
+                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
                             <Tooltip />
                             <Legend {...getLegendProps(config.legendPosition)} />
                             {(config.dataKeys || []).map((key, index) => (
-                                <Area key={key} type="monotone" dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} />
+                                <Area key={key} type="monotone" dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} strokeDasharray={getStrokeDasharray(config.lineStyle)} />
                             ))}
                         </AreaChart>
                     </ResponsiveContainer>
@@ -328,6 +338,46 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
                                         <SelectItem value="right">Right</SelectItem>
                                     </SelectContent>
                                 </Select>
+                            </div>
+
+                            <div className="space-y-4 pt-4 border-t">
+                                <h4 className="font-medium text-sm">Stile & Layout</h4>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>X Axis Title Offset (dy)</Label>
+                                        <Input type="number" value={config.xAxisDy || -10} onChange={e => setConfig({ ...config, xAxisDy: parseInt(e.target.value) || -10 })} />
+                                    </div>
+                                    {config.yAxisTitle && (
+                                        <div className="space-y-2">
+                                            <Label>Y Axis Title Offset (dx)</Label>
+                                            <Input type="number" value={config.yAxisDx || -80} onChange={e => setConfig({ ...config, yAxisDx: parseInt(e.target.value) || -80 })} />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label>Line Style</Label>
+                                    <Select value={config.lineStyle || 'solid'} onValueChange={(val: any) => setConfig({ ...config, lineStyle: val })}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Style" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="solid">Solid</SelectItem>
+                                            <SelectItem value="dashed">Dashed</SelectItem>
+                                            <SelectItem value="dotted">Dotted</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label>Chart Colors (comma separated hex)</Label>
+                                    <Input
+                                        value={config.colors?.join(',') || ''}
+                                        onChange={e => setConfig({ ...config, colors: e.target.value ? e.target.value.split(',').map(c => c.trim()) : undefined })}
+                                        placeholder="#0088FE, #00C49F, ..."
+                                    />
+                                </div>
                             </div>
                         </div>
 

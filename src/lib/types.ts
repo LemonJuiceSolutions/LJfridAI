@@ -72,6 +72,9 @@ export interface WidgetConfig {
   xAxisKey?: string;
   xAxisTitle?: string;
   yAxisTitle?: string;
+  xAxisDy?: number;
+  yAxisDx?: number;
+  lineStyle?: 'solid' | 'dashed' | 'dotted';
   legendPosition?: 'top' | 'bottom' | 'left' | 'right';
   dataKeys?: string[];
   colors?: string[]; // Hex colors

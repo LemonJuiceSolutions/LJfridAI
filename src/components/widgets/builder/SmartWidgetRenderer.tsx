@@ -41,6 +41,15 @@ const getLegendProps = (position?: 'top' | 'bottom' | 'left' | 'right') => {
     }
 };
 
+const getStrokeDasharray = (style?: 'solid' | 'dashed' | 'dotted') => {
+    switch (style) {
+        case 'dashed': return '5 5';
+        case 'dotted': return '1 1';
+        case 'solid':
+        default: return undefined;
+    }
+};
+
 export default function SmartWidgetRenderer({ data, config, onRefresh, isRefreshing }: SmartWidgetRendererProps) {
     if ((!data || data.length === 0) && !isRefreshing) {
         return (
@@ -119,8 +128,8 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={chartData} margin={getChartMargins(config)}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: -10 } : undefined} />
-                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: -80, style: { textAnchor: 'middle' } } : undefined} />
+                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
                             <Tooltip
                                 contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
                             />
@@ -136,8 +145,8 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={chartData} margin={getChartMargins(config)}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: -10 } : undefined} />
-                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: -80, style: { textAnchor: 'middle' } } : undefined} />
+                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
                             <Tooltip
                                 contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
                             />
@@ -148,10 +157,11 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                                     type="monotone"
                                     dataKey={key}
                                     stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]}
-                                    strokeWidth={3}
+                                    strokeWidth={2}
                                     dot={{ r: 4 }}
                                     activeDot={{ r: 6 }}
                                     connectNulls
+                                    strokeDasharray={getStrokeDasharray(config.lineStyle)}
                                 />
                             ))}
                         </LineChart>
@@ -162,14 +172,14 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={chartData} margin={getChartMargins(config)}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: -10 } : undefined} />
-                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: -80, style: { textAnchor: 'middle' } } : undefined} />
+                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
                             <Tooltip
                                 contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
                             />
                             <Legend {...getLegendProps(config.legendPosition)} />
                             {(config.dataKeys || []).map((key, index) => (
-                                <Area key={key} type="monotone" dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} />
+                                <Area key={key} type="monotone" dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} strokeDasharray={getStrokeDasharray(config.lineStyle)} />
                             ))}
                         </AreaChart>
                     </ResponsiveContainer>
