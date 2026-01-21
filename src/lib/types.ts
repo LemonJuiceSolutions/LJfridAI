@@ -70,6 +70,9 @@ export interface WidgetConfig {
   title?: string;
   description?: string;
   xAxisKey?: string;
+  xAxisTitle?: string;
+  yAxisTitle?: string;
+  legendPosition?: 'top' | 'bottom' | 'left' | 'right';
   dataKeys?: string[];
   colors?: string[]; // Hex colors
   kpiValueKey?: string;

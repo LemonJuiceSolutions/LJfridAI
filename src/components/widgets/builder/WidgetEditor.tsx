@@ -21,6 +21,30 @@ interface WidgetEditorProps {
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
+// Helper to determine margins based on axis titles to prevent overlap
+const getChartMargins = (config: Partial<WidgetConfig>) => {
+    return {
+        top: 20,
+        right: 30,
+        // Increase left margin if Y-axis title is present to prevent overlap
+        left: config.yAxisTitle ? 110 : 30,
+        bottom: config.xAxisTitle ? 30 : 20
+    };
+};
+
+// Helper for legend props
+const getLegendProps = (position?: 'top' | 'bottom' | 'left' | 'right') => {
+    const defaultProps = { verticalAlign: 'bottom' as const, align: 'center' as const, layout: 'horizontal' as const };
+
+    switch (position) {
+        case 'top': return { verticalAlign: 'top' as const, align: 'center' as const, layout: 'horizontal' as const, wrapperStyle: { top: 0 } };
+        case 'left': return { verticalAlign: 'middle' as const, align: 'left' as const, layout: 'vertical' as const, wrapperStyle: { left: 0 } };
+        case 'right': return { verticalAlign: 'middle' as const, align: 'right' as const, layout: 'vertical' as const, wrapperStyle: { right: 0 } };
+        case 'bottom':
+        default: return { verticalAlign: 'bottom' as const, align: 'center' as const, layout: 'horizontal' as const, wrapperStyle: { bottom: 0 } };
+    }
+};
+
 export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEditorProps) {
     const [config, setConfig] = useState<WidgetConfig>(initialConfig || {
         type: 'table',
@@ -150,14 +174,14 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
             case 'bar-chart':
                 return (
                     <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={chartData}>
+                        <BarChart data={chartData} margin={getChartMargins(config)}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} />
-                            <YAxis />
+                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: -10 } : undefined} />
+                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: -80, style: { textAnchor: 'middle' } } : undefined} />
                             <Tooltip />
-                            <Legend />
+                            <Legend {...getLegendProps(config.legendPosition)} />
                             {(config.dataKeys || []).map((key, index) => (
-                                <Bar key={key} dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} />
+                                <Bar key={key} dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} radius={[4, 4, 0, 0]} />
                             ))}
                         </BarChart>
                     </ResponsiveContainer>
@@ -165,12 +189,12 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
             case 'line-chart':
                 return (
                     <ResponsiveContainer width="100%" height={300}>
-                        <LineChart data={chartData}>
+                        <LineChart data={chartData} margin={getChartMargins(config)}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} />
-                            <YAxis />
+                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: -10 } : undefined} />
+                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: -80, style: { textAnchor: 'middle' } } : undefined} />
                             <Tooltip />
-                            <Legend />
+                            <Legend {...getLegendProps(config.legendPosition)} />
                             {(config.dataKeys || []).map((key, index) => (
                                 <Line
                                     key={key}
@@ -189,12 +213,12 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
             case 'area-chart':
                 return (
                     <ResponsiveContainer width="100%" height={300}>
-                        <AreaChart data={chartData}>
+                        <AreaChart data={chartData} margin={getChartMargins(config)}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} />
-                            <YAxis />
+                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: -10 } : undefined} />
+                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: -80, style: { textAnchor: 'middle' } } : undefined} />
                             <Tooltip />
-                            <Legend />
+                            <Legend {...getLegendProps(config.legendPosition)} />
                             {(config.dataKeys || []).map((key, index) => (
                                 <Area key={key} type="monotone" dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} />
                             ))}
@@ -270,16 +294,41 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
 
                 {config.type !== 'table' && config.type !== 'kpi-card' && (
                     <>
-                        <div className="space-y-2">
-                            <Label>X Axis (Category)</Label>
-                            <Select value={config.xAxisKey} onValueChange={(val) => setConfig({ ...config, xAxisKey: val })}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select column..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {columns.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
+                        <div className="space-y-4 border rounded p-3">
+                            <h4 className="font-medium text-sm">Assi e Legende</h4>
+                            <div className="space-y-2">
+                                <Label>X Axis Column</Label>
+                                <Select value={config.xAxisKey} onValueChange={(val) => setConfig({ ...config, xAxisKey: val })}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select column..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {columns.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>X Axis Title (Opzionale)</Label>
+                                <Input value={config.xAxisTitle || ''} onChange={e => setConfig({ ...config, xAxisTitle: e.target.value })} placeholder="Titolo asse X" />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Y Axis Title (Opzionale)</Label>
+                                <Input value={config.yAxisTitle || ''} onChange={e => setConfig({ ...config, yAxisTitle: e.target.value })} placeholder="Titolo asse Y" />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Legend Position</Label>
+                                <Select value={config.legendPosition || 'bottom'} onValueChange={(val: any) => setConfig({ ...config, legendPosition: val })}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Position" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="bottom">Bottom</SelectItem>
+                                        <SelectItem value="top">Top</SelectItem>
+                                        <SelectItem value="left">Left</SelectItem>
+                                        <SelectItem value="right">Right</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
                         </div>
 
                         <div className="space-y-2">
