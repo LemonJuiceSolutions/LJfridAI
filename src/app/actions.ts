@@ -51,6 +51,23 @@ export async function executeEmailAction(
     };
 }
 
+export async function fetchTableDataAction(tableName: string, connectorId: string = '') {
+    try {
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return { data: null, error: "Unauthorized" };
+        }
+
+        const sanitizedTableName = tableName.replace(/[^a-zA-Z0-9_]/g, '');
+        const query = `SELECT * FROM "${sanitizedTableName}" LIMIT 1000`;
+
+        return await executeSqlPreviewAction(query, connectorId);
+    } catch (error) {
+        console.error('Error fetching table data:', error);
+        return { data: null, error: 'Failed to fetch table data' };
+    }
+}
+
 function findNodeByQuestion(node: DecisionNode | DecisionLeaf | string | { ref: string } | { subTreeRef: string } | any, questionOrDecision: string): DecisionNode | DecisionLeaf | null {
     if (!node) return null;
     if (typeof node === 'string') return null;

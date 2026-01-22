@@ -81,6 +81,9 @@ export interface WidgetConfig {
   kpiValueKey?: string;
   kpiLabel?: string;
   data?: any[]; // Sealed data for persistence
+  // Data Source Config
+  dataSourceType?: 'current-sql' | 'current-python' | 'parent-table';
+  dataSourceId?: string; // Table name for parent-table, or 'sql'/'python' for current
 }
 
 export interface DecisionLeaf {

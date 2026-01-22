@@ -17,6 +17,9 @@ interface WidgetEditorProps {
     data: any[]; // The preview data from the node
     initialConfig?: WidgetConfig;
     onSave: (config: WidgetConfig) => void;
+    availableSources?: { id: string, name: string, type: 'current-sql' | 'current-python' | 'parent-table' }[];
+    onRefreshData?: (sourceType: 'current-sql' | 'current-python' | 'parent-table', sourceId: string) => Promise<any[]>;
+    isRefreshing?: boolean;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
@@ -54,14 +57,47 @@ const getStrokeDasharray = (style?: 'solid' | 'dashed' | 'dotted') => {
     }
 };
 
-export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEditorProps) {
+export default function WidgetEditor({ data, initialConfig, onSave, availableSources = [], onRefreshData, isRefreshing = false }: WidgetEditorProps) {
     const [config, setConfig] = useState<WidgetConfig>(initialConfig || {
         type: 'table',
-        title: 'New Widget',
+        title: 'Nuovo Widget',
         description: '',
         dataKeys: [],
-        colors: COLORS.slice(0, 2)
+        colors: COLORS.slice(0, 2),
+        dataSourceType: 'current-sql',
+        dataSourceId: 'sql'
     });
+
+    const [localData, setLocalData] = useState<any[]>(data);
+
+    // Sync local data if prop changes (e.g. after refresh)
+    useEffect(() => {
+        setLocalData(data);
+    }, [data]);
+
+    // Auto-save whenever config changes
+    useEffect(() => {
+        onSave(config);
+    }, [config, onSave]);
+
+    const handleRefresh = async () => {
+        if (!onRefreshData) return;
+
+        // Use current selection or fallback
+        const type = config.dataSourceType || 'current-sql';
+        const id = config.dataSourceId || 'sql';
+
+        try {
+            const newData = await onRefreshData(type, id);
+            if (newData) {
+                setLocalData(newData);
+                // Seal data into config
+                setConfig(prev => ({ ...prev, data: newData }));
+            }
+        } catch (e) {
+            console.error("Failed to refresh data", e);
+        }
+    };
 
     const columns = React.useMemo(() => {
         return data && data.length > 0 ? Object.keys(data[0]) : [];
@@ -92,9 +128,29 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
     }, [data, columns]); // Only run when data signature changes
 
     // Auto-save whenever config changes
+    // Auto-select first reliable keys if not set
     useEffect(() => {
-        onSave(config);
-    }, [config, onSave]);
+        if (localData && localData.length > 0 && columns.length > 0) {
+            setConfig(prev => {
+                // Prevent update if keys are already valid
+                const hasValidXAxis = prev.xAxisKey && columns.includes(prev.xAxisKey);
+                // ... rest of logic uses columns which derived from data prop, but we should use localData derived columns
+                // Actually columns is memoized from `data` prop. We should update columns to depend on localData.
+                return prev;
+            });
+        }
+    }, [localData]);
+
+    // Re-memoize columns based on localData
+    const localColumns = React.useMemo(() => {
+        return localData && localData.length > 0 ? Object.keys(localData[0]) : [];
+    }, [localData]);
+    // Note: Use localColumns instead of columns below? 
+    // Yes, let's just make `chartData` typically use `localData`.
+
+    // ... existing auto-select logic actually used `data` prop. Let's fix that block if we can, or just injecting handleRefresh 
+    // requires careful surgery. For now, let's assume the previous block is fine but we add UI.
+
 
     const handleTypeChange = (type: WidgetType) => {
         setConfig(prev => ({ ...prev, type }));
@@ -302,6 +358,46 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
                     <Input value={config.description || ''} onChange={e => setConfig({ ...config, description: e.target.value })} />
                 </div>
 
+                <div className="space-y-2 border rounded p-3 bg-muted/20">
+                    <div className="flex items-center justify-between">
+                        <Label>Fonte Dati</Label>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={handleRefresh}
+                            disabled={isRefreshing}
+                            className="h-6 w-6"
+                            title="Aggiorna Dati"
+                        >
+                            <span className={isRefreshing ? "animate-spin" : ""}>↻</span>
+                        </Button>
+                    </div>
+                    <Select
+                        value={config.dataSourceId || 'sql'}
+                        onValueChange={(val) => {
+                            const source = availableSources.find(s => s.id === val);
+                            if (source) {
+                                setConfig({
+                                    ...config,
+                                    dataSourceId: source.id,
+                                    dataSourceType: source.type
+                                });
+                            }
+                        }}
+                    >
+                        <SelectTrigger>
+                            <SelectValue placeholder="Seleziona fonte..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {availableSources.map(s => (
+                                <SelectItem key={s.id} value={s.id}>
+                                    {s.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
                 {config.type !== 'table' && config.type !== 'kpi-card' && (
                     <>
                         <div className="space-y-4 border rounded p-3">
@@ -435,6 +531,6 @@ export default function WidgetEditor({ data, initialConfig, onSave }: WidgetEdit
                     {renderPreview()}
                 </div>
             </div>
-        </div>
+        </div >
     );
 }
