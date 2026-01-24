@@ -187,7 +187,24 @@ def execute_python():
             if isinstance(e, KeyError):
                 error_msg = f"KeyError: La colonna {error_msg} non è presente nei dati. Controlla i nomi delle colonne nel terminale."
             elif isinstance(e, NameError):
-                error_msg = f"NameError: {error_msg}. Hai definito tutte le variabili necessarie?"
+                # Extract the variable name from the error message
+                missing_var_match = re.search(r"name '(\w+)' is not defined", str(e))
+                missing_var = missing_var_match.group(1) if missing_var_match else 'unknown'
+                
+                # List available data tables that were injected
+                available_tables = [name for name in input_data.keys()]
+                
+                if available_tables:
+                    error_msg = f"NameError: La variabile '{missing_var}' non è definita.\n\n"
+                    error_msg += f"📊 Tabelle disponibili: {', '.join(available_tables)}\n\n"
+                    error_msg += "💡 Suggerimento: Verifica che il nome della variabile corrisponda esattamente "
+                    error_msg += "al nome della dipendenza configurata (case-sensitive).\n"
+                    error_msg += "Controlla anche che la dipendenza sia selezionata nel dropdown 'USA DATI DA (PIPELINE)'."
+                else:
+                    error_msg = f"NameError: La variabile '{missing_var}' non è definita.\n\n"
+                    error_msg += "⚠️ Nessuna tabella è stata fornita come dipendenza.\n\n"
+                    error_msg += "💡 Suggerimento: Questo script richiede dati da altri nodi. "
+                    error_msg += "Seleziona le dipendenze necessarie nel dropdown 'USA DATI DA (PIPELINE)'."
             
             print(f"❌ [EXECUTE] Script error: {error_msg}")
             return jsonify({
@@ -197,6 +214,7 @@ def execute_python():
                 'stdout': raw_stdout.getvalue(),
                 'stderr': raw_stderr.getvalue()
             }), 200
+
 
         stdout_val = raw_stdout.getvalue()
         stderr_val = raw_stderr.getvalue()
@@ -325,10 +343,19 @@ def execute_python():
         if output_type == 'table':
             if isinstance(res_val, pd.DataFrame):
                 # Convert DataFrame to list of dicts
+                # FIX: Replace NaN with None so it becomes null in JSON (NaN is invalid JSON)
+                # FIX: Also replace NaT (missing datetime) with None
+                # IMPORTANT: Must cast to object first, otherwise None in float columns reverts to NaN!
+                df_clean = res_val.astype(object).where(pd.notnull(res_val), None)
+                
+                # Double check for NaT specifically if where() missed it for object types
+                # (Sometimes NaT persists in object columns)
+                df_clean = df_clean.replace({pd.NaT: None})
+
                 return jsonify({
                     'success': True,
-                    'data': res_val.to_dict(orient='records'),
-                    'columns': list(res_val.columns),
+                    'data': df_clean.to_dict(orient='records'),
+                    'columns': list(res_val.columns.astype(str)),
                     'rowCount': len(res_val),
                     'stdout': stdout_val
                 })

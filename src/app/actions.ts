@@ -1159,21 +1159,25 @@ export async function executeSqlPreviewAction(
                     // Execute on TRANSACTION to keep checks alive
                     if (rowsToInsert.length > 0) {
                         // Build CREATE TABLE statement from actual data
+                        // Build CREATE TABLE statement from actual data
+                        // FIX: Scan up to 100 rows to determine type more reliably
+                        // because first row might be null or have a different type than subsequent rows
                         const colDefs = columns.map(col => {
-                            const val = rowsToInsert[0][col];
-                            let colType = 'NVARCHAR(MAX)';
-                            // Simple type inference
-                            if (typeof val === 'number') {
-                                colType = Number.isInteger(val) ? 'BIGINT' : 'DECIMAL(18,4)';
-                            } else if (val instanceof Date) {
-                                colType = 'DATETIME';
-                            } else if (typeof val === 'boolean') {
-                                colType = 'BIT';
-                            }
-                            return `[${col}] ${colType}`;
+                            let determinedType = 'NVARCHAR(MAX)';
+                            // FAIL-SAFE STRATEGY: 
+                            // Always use NVARCHAR(MAX) for Python/External data previews.
+                            // Trying to infer types (BIGINT/FLOAT) causes "Arithmetic overflow" or "Conversion failed" 
+                            // too often with dirty data (common in Excel/SharePoint).
+                            // Users can explicitly CAST() in their SQL query if they need math.
+                            // e.g. SELECT CAST(Price AS FLOAT) * 2 FROM ...
+
+                            determinedType = 'NVARCHAR(MAX)';
+
+                            return `[${col}] ${determinedType}`;
                         }).join(', ');
 
                         await request.query(`CREATE TABLE ${tempTableName} (${colDefs});`);
+                        console.log(`[PIPELINE DEBUG] Created temp table: ${tempTableName} with schema: ${colDefs}`);
                         createdTempTables.push(tempTableName);
 
                         // Insert data in batches to avoid query size limits
@@ -1195,7 +1199,14 @@ export async function executeSqlPreviewAction(
 
                             // T-SQL INSERT can handle multiple values
                             if (values.length > 0) {
-                                await request.query(`INSERT INTO ${tempTableName} VALUES ${values};`);
+                                try {
+                                    await request.query(`INSERT INTO ${tempTableName} VALUES ${values};`);
+                                } catch (err: any) {
+                                    console.error(`[PIPELINE ERROR] Failed to insert batch into ${tempTableName}:`, err);
+                                    // Log a snippet of values to debug
+                                    console.log(`[PIPELINE DEBUG] First value in failing batch: ${values.substring(0, 200)}...`);
+                                    throw err;
+                                }
                             }
                         }
 
@@ -1731,6 +1742,31 @@ export async function executePythonPreviewAction(
                 // Generic mapping for other potential keys
                 if (config.password) envVars['DB_PASSWORD'] = config.password;
                 if (config.username) envVars['DB_USERNAME'] = config.username;
+
+                // Handle SharePoint Auth
+                if (connector.type === 'SHAREPOINT') {
+                    const tenantId = config.tenantId || "0089ad7d-e10f-49b4-bf68-60e706423382";
+                    const clientId = config.clientId || "7ff50e8a-eb8c-4bf8-9fa6-f4068c6fe82b";
+
+                    const { getCachedSharePointTokenAction } = await import('./actions/sharepoint');
+                    const authResult = await getCachedSharePointTokenAction(tenantId, clientId);
+
+                    if (authResult.accessToken) {
+                        envVars['SHAREPOINT_TOKEN'] = authResult.accessToken;
+                        // Inject helpful IDs if browsing was used
+                        if (config._siteId) envVars['SHAREPOINT_SITE_ID'] = config._siteId;
+                        if (config._driveId) envVars['SHAREPOINT_DRIVE_ID'] = config._driveId;
+                        if (config._fileId) envVars['SHAREPOINT_FILE_ID'] = config._fileId;
+                        // Also inject raw config just in case
+                        if (config.siteUrl) envVars['SHAREPOINT_SITE_URL'] = config.siteUrl;
+                        if (config.filePath) envVars['SHAREPOINT_FILE_PATH'] = config.filePath;
+                        if (config.sheetName) envVars['SHAREPOINT_SHEET_NAME'] = config.sheetName;
+
+                        console.log(`[Python] Injected SharePoint token and context`);
+                    } else {
+                        console.warn('[Python] Failed to Retrieve SharePoint Token for connector');
+                    }
+                }
 
                 console.log(`[Python] Injected env vars from connector ${connector.name} (ID: ${connectorId})`);
                 console.log(`[Python] Config keys known: ${Object.keys(config).join(', ')}`);
@@ -3055,9 +3091,29 @@ export async function resolveDependencyChainAction(targetName: string): Promise<
 
         await buildChain(targetName);
 
-        if (chain.length === 0) {
-            return { data: null, error: 'Nessuna dipendenza trovata.' };
+        if (chain.length > 0) {
+            return { data: chain, error: null };
         }
+
+        // Fallback: If targetName has a dot (e.g. "dBQUID.PROD") and we found nothing, try resolving just the name ("PROD")
+        if (targetName.includes('.')) {
+            const simpleName = targetName.split('.').pop();
+            if (simpleName && simpleName !== targetName) {
+                console.log(`[resolveDependencyChainAction] No chain found for "${targetName}". Retrying with simple name "${simpleName}"...`);
+                // Reset visited/resolving sets for the new attempt? 
+                // Actually, we can just call buildChain again.
+                // But we need to make sure we don't return partial chains from the first attempt if it failed?
+                // The first attempt verified `chain` is empty, so we are safe.
+
+                await buildChain(simpleName);
+
+                if (chain.length > 0) {
+                    return { data: chain, error: null };
+                }
+            }
+        }
+
+        return { data: null, error: 'Nessuna dipendenza trovata.' };
 
         return { data: chain, error: null };
 

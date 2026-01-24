@@ -4,7 +4,7 @@ import { PublicClientApplication, DeviceCodeRequest, Configuration, AccountInfo,
 import { db } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/session';
 
-const SCOPES = ['User.Read', 'Files.Read.All', 'Sites.Read.All'];
+const SCOPES = ['User.Read', 'Files.Read.All', 'Sites.Read.All', 'offline_access'];
 
 interface TokenCacheData {
     cache: string;
@@ -416,7 +416,13 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
         }
 
         // Check if token is expired
-        if (tokenData.expiresOn && new Date(tokenData.expiresOn) < new Date()) {
+        const now = new Date();
+        const expiresOn = tokenData.expiresOn ? new Date(tokenData.expiresOn) : null;
+        const needsRefresh = expiresOn ? expiresOn < now : true;
+
+        if (needsRefresh) {
+            console.log(`[SharePoint Auth] Token expired at ${expiresOn?.toISOString()} (Current: ${now.toISOString()}). Attempting refresh...`);
+
             // Token expired, try refresh
             if (tokenData.refreshToken) {
                 const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
@@ -437,6 +443,7 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
                 const data = await response.json();
 
                 if (data.access_token) {
+                    console.log(`[SharePoint Auth] Refresh successful! New expiry: ${new Date(Date.now() + data.expires_in * 1000).toISOString()}`);
                     // Update cache with new token
                     await saveTokenCache(user.companyId, JSON.stringify({
                         accessToken: data.access_token,
@@ -446,7 +453,11 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
                     }), cachedData.account);
 
                     return { success: true, accessToken: data.access_token };
+                } else {
+                    console.error(`[SharePoint Auth] Refresh failed: ${data.error_description || JSON.stringify(data)}`);
                 }
+            } else {
+                console.warn(`[SharePoint Auth] No refresh token available.`);
             }
             return { needsAuth: true };
         }

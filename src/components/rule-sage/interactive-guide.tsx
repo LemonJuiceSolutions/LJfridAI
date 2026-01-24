@@ -222,12 +222,13 @@ function useFlowExecution() {
                     try {
                         let resultData = null;
                         if (dep.isPython && dep.pythonCode) {
-                            const depsBefore = dependencies.slice(0, i);
+                            // Pass FULL dependencies list (not just depsBefore) so Python can access ALL parent data
+                            // The currentData already contains fetched results, and dependencies provides metadata
                             const res = await executePythonPreviewAction(
                                 dep.pythonCode,
                                 'table',
-                                currentData,
-                                depsBefore,
+                                currentData, // Already accumulated data from previous steps
+                                dependencies, // FULL dependency list (changed from depsBefore)
                                 dep.connectorId || pythonConnectorId
                             );
                             if (res.success && res.data) resultData = res.data;
@@ -268,8 +269,8 @@ function useFlowExecution() {
             const res = await executePythonPreviewAction(
                 mainCode,
                 mainOutputType,
-                currentData,
-                [],
+                currentData, // All dependency data already fetched
+                validDependencies, // Pass full dependency list for metadata
                 pythonConnectorId
             );
 
@@ -581,7 +582,8 @@ function PythonDataPreview({
         if (selectedPipelines) {
             filteredDeps = pipelineDependencies.filter(d => {
                 const isExplicitlySelected = selectedPipelines.includes(d.tableName);
-                const isReferenced = code.includes(d.tableName);
+                // FIX: Case-insensitive check for code references
+                const isReferenced = code.toLowerCase().includes(d.tableName.toLowerCase());
                 return isExplicitlySelected || isReferenced;
             });
             console.log(`[PythonDataPreview] 🧠 Smart Filtering for "${tableName || 'python'}":`,
@@ -1063,6 +1065,20 @@ const findNodeById = (node: any, id: string): any => {
     return null;
 };
 
+// Helper: check if two table names are equal, leniently handling schema prefixes (e.g. "dBQUID.PROD" == "PROD")
+const areTableNamesEqual = (n1: string, n2: string) => {
+    if (!n1 || !n2) return false;
+    const s1 = n1.toLowerCase();
+    const s2 = n2.toLowerCase();
+    if (s1 === s2) return true;
+    if (s1.endsWith(`.${s2}`)) return true; // "schema.table" == "table"
+    if (s2.endsWith(`.${s1}`)) return true; // "table" == "schema.table"
+    // Also check just the last part after split
+    const last1 = s1.split('.').pop() || '';
+    const last2 = s2.split('.').pop() || '';
+    return last1 === last2 && last1.length > 0;
+};
+
 // SQL Export Box Component - Interactive export UI with Pipeline Execution
 function SqlExportBox({
     sqlExportAction,
@@ -1111,13 +1127,14 @@ function SqlExportBox({
                     connectorId: (currentNode as any).pythonConnectorId
                 });
             } else {
-                // Find in pipeline dependencies
-                const dep = pipelineDependencies.find(d => d.tableName === tableName);
+                // Find in pipeline dependencies (fuzzy match)
+                const dep = pipelineDependencies.find(d => areTableNamesEqual(d.tableName, tableName));
                 if (dep) {
                     deps.push(dep);
                 }
             }
         }
+
 
         return deps;
     }, [sqlExportAction.sourceTables, currentNode, pipelineDependencies]);
@@ -1139,10 +1156,10 @@ function SqlExportBox({
 
             const missingTables = sourceTables.filter(t => {
                 // Not in current node
-                if ((currentNode as any)?.sqlResultName === t) return false;
-                if ((currentNode as any)?.pythonResultName === t) return false;
+                if (areTableNamesEqual((currentNode as any)?.sqlResultName || '', t)) return false;
+                if (areTableNamesEqual((currentNode as any)?.pythonResultName || '', t)) return false;
                 // Not in existing deps
-                return !existingNames.has(t.toLowerCase());
+                return !Array.from(existingNames).some(existing => areTableNamesEqual(existing, t));
             });
 
             if (missingTables.length === 0) return;
@@ -1164,9 +1181,9 @@ function SqlExportBox({
                             const nodeTableName = node.pythonResultName || node.sqlResultName;
 
                             // Skip if already added
-                            if (newDeps.some(d => d.tableName === nodeTableName)) continue;
-                            if (pipelineDependencies.some(d => d.tableName === nodeTableName)) continue;
-                            if (asyncResolvedDeps.some(d => d.tableName === nodeTableName)) continue;
+                            if (newDeps.some(d => areTableNamesEqual(d.tableName, nodeTableName))) continue;
+                            if (pipelineDependencies.some(d => areTableNamesEqual(d.tableName, nodeTableName))) continue;
+                            if (asyncResolvedDeps.some(d => areTableNamesEqual(d.tableName, nodeTableName))) continue;
 
                             if ('sqlQuery' in node) {
                                 newDeps.push({
@@ -1217,7 +1234,7 @@ function SqlExportBox({
         }
 
         // Deduplicate
-        return allDeps.filter((v, i, a) => a.findIndex(t => t.tableName === v.tableName) === i);
+        return allDeps.filter((v, i, a) => a.findIndex(t => areTableNamesEqual(t.tableName, v.tableName)) === i);
     }, [pipelineDependencies, sourceDeps, asyncResolvedDeps]);
 
     // Execute the pipeline and then export
@@ -1232,11 +1249,11 @@ function SqlExportBox({
 
             // Try to find the source dependency definition
             // First look in our specific sourceDeps, then in the full chain (which includes async resolved)
-            let mainSourceDep = sourceDeps.find(d => sourceTables.includes(d.tableName));
+            let mainSourceDep = sourceDeps.find(d => sourceTables.some(st => areTableNamesEqual(st, d.tableName)));
 
             if (!mainSourceDep) {
                 // Fallback: look in fullDependencyChain
-                mainSourceDep = fullDependencyChain.find(d => sourceTables.includes(d.tableName));
+                mainSourceDep = fullDependencyChain.find(d => sourceTables.some(st => areTableNamesEqual(st, d.tableName)));
             }
 
             if (!mainSourceDep) {
@@ -2669,30 +2686,47 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
     };
 
     const getAccumulatedDependencies = (history: HistoryItem[], currentNode?: DecisionNode | DecisionLeaf | string | null) => {
-        const deps: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[] = [];
+        const deps: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string, pipelineDependencies?: any[] }[] = [];
+        const seenTableNames = new Set<string>();
 
-        // Helper to add unique deps
+        // Helper to add unique deps (recursively including nested dependencies)
         const addDep = (node: any) => {
             // Handle Python dependencies
             if (node && typeof node === 'object' && node.pythonCode && node.pythonResultName) {
-                if (!deps.find(d => d.tableName === node.pythonResultName)) {
+                if (!seenTableNames.has(node.pythonResultName)) {
+                    seenTableNames.add(node.pythonResultName);
+
+                    // 🔥 CRITICAL FIX: Recursively add pipeline dependencies FIRST
+                    if (node.pipelineDependencies && Array.isArray(node.pipelineDependencies)) {
+                        node.pipelineDependencies.forEach((pipeDep: any) => addDep(pipeDep));
+                    }
+
                     deps.push({
                         tableName: node.pythonResultName,
                         isPython: true,
                         pythonCode: node.pythonCode,
                         pythonOutputType: node.pythonOutputType || 'table',
-                        connectorId: node.pythonConnectorId // 🔥 CRITICAL FIX: Propagate connector ID for HubSpot/API calls
+                        connectorId: node.pythonConnectorId, // Propagate connector ID for HubSpot/API calls
+                        pipelineDependencies: node.pipelineDependencies // Include nested deps for reference
                     });
                 }
             }
             // Handle SQL dependencies
             if (node && typeof node === 'object' && node.sqlQuery && node.sqlResultName) {
                 // Avoid duplicates
-                if (!deps.find(d => d.tableName === node.sqlResultName)) {
+                if (!seenTableNames.has(node.sqlResultName)) {
+                    seenTableNames.add(node.sqlResultName);
+
+                    // 🔥 CRITICAL FIX: Recursively add pipeline dependencies FIRST
+                    if (node.pipelineDependencies && Array.isArray(node.pipelineDependencies)) {
+                        node.pipelineDependencies.forEach((pipeDep: any) => addDep(pipeDep));
+                    }
+
                     deps.push({
                         tableName: node.sqlResultName,
                         query: node.sqlQuery,
-                        connectorId: node.sqlConnectorId
+                        connectorId: node.sqlConnectorId,
+                        pipelineDependencies: node.pipelineDependencies // Include nested deps for reference
                     });
                 }
             }
