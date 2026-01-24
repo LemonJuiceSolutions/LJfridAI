@@ -1430,9 +1430,7 @@ export async function exportTableToSqlAction(
         if (createTableIfNotExists) {
             // Infer column types (simplified: everything is NVARCHAR(MAX) for safety)
             const columnDefs = columns.map(col => {
-                const sanitizedCol = col.replace(/[^a-zA-Z0-9_ ]/g, '_')
-                    .toLowerCase()
-                    .replace(/(?:^|[\s_])(.)/g, (m) => m.toUpperCase());
+                const sanitizedCol = col.trim().replace(/[^a-zA-Z0-9_ ]+/g, "");
                 return `[${sanitizedCol}] NVARCHAR(MAX)`;
             }).join(', ');
 
@@ -1484,9 +1482,7 @@ export async function exportTableToSqlAction(
             });
 
             const sanitizedColumns = columns.map(c => {
-                const safe = c.replace(/[^a-zA-Z0-9_ ]/g, '_')
-                    .toLowerCase()
-                    .replace(/(?:^|[\s_])(.)/g, (m) => m.toUpperCase());
+                const safe = c.trim().replace(/[^a-zA-Z0-9_ ]+/g, "");
                 return `[${safe}]`;
             }).join(', ');
             const insertSql = `INSERT INTO [${sanitizedTableName}] (${sanitizedColumns}) VALUES ${valueRows.join(', ')}`;

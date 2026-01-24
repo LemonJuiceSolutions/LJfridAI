@@ -686,26 +686,7 @@ function PythonDataPreview({
                 .replace(/'[^']*'/g, '""')
                 .replace(/"[^"]*"/g, '""');
 
-            // 1. Identify what variables are referenced but NOT in stableDeps
-            const potentialVars = cleanedCode.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [];
-            const uniqueVars = Array.from(new Set(potentialVars));
 
-            const existingNames = new Set(stableDeps.map(d => d.tableName.toLowerCase()));
-            const asyncNames = new Set(asyncDeps.map(d => d.tableName.toLowerCase()));
-
-            const missing = uniqueVars.filter(v =>
-                !existingNames.has(v.toLowerCase()) &&
-                !asyncNames.has(v.toLowerCase()) &&
-                v.length > 2 // Skip short vars like i, x
-            );
-
-            if (missing.length === 0) return;
-
-            setIsResolving(true);
-            // Clear any previous execution error while resolving to avoid UI flash
-            // logic handled in render, but good to be explicit if we had setError exposed here.
-
-            const newDeps: any[] = [];
 
             // 2. Fetch from server
             // Comprehensive list of Python keywords, builtins, methods, and common patterns to skip
@@ -724,26 +705,33 @@ function PythonDataPreview({
                 'map', 'max', 'memoryview', 'min', 'next', 'object', 'oct', 'open', 'ord', 'pow',
                 'print', 'property', 'range', 'repr', 'reversed', 'round', 'set', 'setattr',
                 'slice', 'sorted', 'staticmethod', 'str', 'sum', 'super', 'tuple', 'type', 'vars', 'zip',
-                // Common exception names
+                // Standard Libraries & Types
+                'bytesio', 'stringio', 'buffer', 'datetime', 'time', 'os', 'sys', 'math', 're', 'random',
+                'collections', 'itertools', 'functools', 'operator', 'io', 'json', 'csv', 'logging',
+                'typing', 'dataclasses', 'warnings', 'traceback', 'threading', 'multiprocessing',
+                // Pandas / Data Science Methods & Properties
+                'dataframe', 'series', 'pd', 'np', 'numpy', 'pandas',
+                'drop', 'tolist', 'iterrows', 'loc', 'iloc', 'groupby', 'head', 'tail', 'shape',
+                'columns', 'index', 'dtypes', 'notna', 'isna', 'fillna', 'rename', 'merge', 'concat',
+                'apply', 'map', 'lambda', 'pivot', 'melt', 'sort_values', 'reset_index', 'set_index',
+                'astype', 'copy', 'values', 'unique', 'nunique', 'mean', 'sum', 'count', 'min', 'max',
+                'std', 'describe', 'info', 'to_csv', 'to_excel', 'read_csv', 'read_excel',
+                // Plotly / Visualization
+                'figure', 'layout', 'data', 'trace', 'update_layout', 'add_trace', 'show',
+                'ticktext', 'tickvals', 'tickmode', 'tickformat', 'xref', 'yref', 'layer',
+                'hover', 'hovertext', 'hoverinfo', 'hovertemplate', 'marker', 'line', 'color',
+                'title', 'xaxis', 'yaxis', 'legend', 'margin', 'autosize', 'template',
+                // Common Exceptions
                 'exception', 'runtimeerror', 'valueerror', 'typeerror', 'keyerror', 'indexerror',
                 'attributeerror', 'nameerror', 'filenotfounderror', 'ioerror', 'oserror',
-                // Common methods and attributes
+                // Common List/String Methods
                 'append', 'extend', 'insert', 'remove', 'pop', 'clear', 'index', 'count', 'sort',
-                'reverse', 'copy', 'get', 'keys', 'values', 'items', 'update', 'setdefault',
+                'reverse', 'get', 'keys', 'values', 'items', 'update', 'setdefault',
                 'split', 'join', 'strip', 'lstrip', 'rstrip', 'replace', 'find', 'rfind',
                 'startswith', 'endswith', 'upper', 'lower', 'capitalize', 'title', 'isdigit',
                 'isalpha', 'isalnum', 'isspace', 'encode', 'decode', 'format', 'read', 'write',
                 'readline', 'readlines', 'writelines', 'close', 'flush', 'seek', 'tell',
-                // Standard library modules (commonly used)
-                'json', 'datetime', 'time', 'os', 'sys', 'math', 're', 'random', 'collections',
-                'itertools', 'functools', 'operator', 'io', 'pathlib', 'urllib', 'http', 'ssl',
-                'socket', 'email', 'html', 'xml', 'csv', 'hashlib', 'hmac', 'base64', 'struct',
-                'copy', 'pickle', 'shelve', 'sqlite3', 'zlib', 'gzip', 'bz2', 'lzma', 'zipfile',
-                'tarfile', 'tempfile', 'shutil', 'glob', 'fnmatch', 'linecache', 'tokenize',
-                'logging', 'warnings', 'traceback', 'typing', 'dataclasses', 'contextlib',
-                'threading', 'multiprocessing', 'subprocess', 'asyncio', 'concurrent',
-                'request', 'parse', 'error', 'urlopen', 'urlencode',
-                // Common variable patterns
+                // Common variable patterns & args
                 'self', 'cls', 'args', 'kwargs', 'result', 'data', 'response', 'resp', 'req',
                 'url', 'params', 'headers', 'body', 'content', 'text', 'value', 'key', 'item',
                 'name', 'path', 'file', 'line', 'row', 'col', 'rows', 'cols', 'idx', 'index',
@@ -752,92 +740,50 @@ function PythonDataPreview({
                 'ctx', 'context', 'config', 'cfg', 'settings', 'options', 'opts',
                 'output', 'input', 'out', 'inp', 'src', 'dst', 'source', 'target', 'dest',
                 'start', 'end', 'begin', 'stop', 'first', 'last', 'prev', 'next', 'cur', 'current',
-                'count', 'total', 'size', 'length', 'width', 'height', 'depth', 'limit', 'offset',
-                'timeout', 'delay', 'interval', 'period', 'duration', 'timestamp', 'date',
-                'today', 'now', 'time', 'year', 'month', 'day', 'hour', 'minute', 'second',
-                'chunks', 'batch', 'batches', 'chunk', 'block', 'blocks', 'parts', 'pieces',
-                'loads', 'dumps', 'load', 'dump', 'reader', 'writer', 'parser', 'builder',
-                'handler', 'callback', 'listener', 'observer', 'sender', 'receiver',
+                'limit', 'offset', 'timeout', 'delay', 'interval', 'period', 'duration',
+                'chunks', 'batch', 'batches', 'chunk',
                 'client', 'server', 'connection', 'conn', 'session', 'transaction', 'cursor',
                 'query', 'queries', 'statement', 'command', 'action', 'event', 'signal',
-                'token', 'tokens', 'auth', 'authorization', 'bearer', 'api', 'endpoint',
-                'method', 'methods', 'func', 'function', 'functions', 'proc', 'procedure',
-                'main', 'init', 'setup', 'teardown', 'run', 'execute', 'call', 'invoke',
-                'create', 'update', 'delete', 'insert', 'select', 'fetch', 'save', 'load',
-                'add', 'remove', 'set', 'get', 'put', 'post', 'patch', 'head', 'options',
-                'environ', 'env', 'os', 'sys', 'platform', 'version', 'release', 'info',
-                'fmt', 'format', 'template', 'pattern', 'regex', 'match', 'search', 'group',
-                'fromisoformat', 'strftime', 'strptime', 'isoformat', 'utcnow', 'utc',
-                'utf', 'ascii', 'latin', 'unicode', 'encoding', 'charset', 'codec',
-                'http', 'https', 'ftp', 'smtp', 'imap', 'pop', 'ssh', 'tcp', 'udp', 'ip',
-                'application', 'content', 'type', 'accept', 'header', 'cookie', 'cookies',
-                // Common library-specific identifiers (hubspot, requests, etc.)
-                'hubspot', 'hubapi', 'crm', 'deals', 'companies', 'contacts', 'properties',
-                'paging', 'link', 'results', 'archived', 'associations', 'objects',
-                'company', 'deal', 'contact', 'line_items', 'products', 'quotes',
-                'dealname', 'dealstage', 'dealtype', 'amount', 'description', 'pipeline',
-                'hs_forecast_probability', 'hs_deal_stage_probability', 'createdate',
-                'consegna', 'data_consegna', 'campione', 'art14_trat', 'createdAt',
-                'props', 'ids', 'inputs', 'outputs', 'status', 'state', 'code',
-                'qty', 'quantity', 'price', 'unit', 'currency', 'discount',
-                // Italian keywords commonly used in this codebase
-                'nomi', 'aziende', 'prodotti', 'associati', 'quantita', 'descrizione',
-                'codice', 'cliente', 'nome', 'inizio', 'fine', 'job', 'cols', 'commesse',
-                'recupero', 'futuri', 'nessuna', 'trattativa', 'trovata', 'tempo', 'totale',
-                'configurato', 'non', 'campione', 'consegna', 'oggi', 'ieri', 'domani',
-                // Common words
-                'com', 'using', 'per', 'cached', 'quantities', 'files', 'result', 'props',
-                'copy', 'input', 'output', 'value', 'key', 'index', 'count', 'total',
-                // Class-like names commonly used
-                'Convert', 'Build', 'Extract', 'Batch', 'Client', 'Service', 'Model',
-                'Context', 'Session', 'Request', 'Response', 'Query', 'Mutation',
-                // Data science libraries
-                'pandas', 'pd', 'numpy', 'np', 'matplotlib', 'plt', 'seaborn', 'sns',
-                'plotly', 'go', 'px', 'scipy', 'sklearn', 'tensorflow', 'tf', 'keras',
-                'torch', 'cv2', 'PIL', 'openpyxl', 'xlrd', 'xlwt', 'requests',
-                'beautifulsoup', 'bs4', 'lxml', 'selenium', 'scrapy',
-                'df', 'dataframe', 'series', 'figure', 'ax', 'axes', 'fig', 'plot',
-                'subplot', 'subplots', 'show', 'savefig', 'legend', 'xlabel', 'ylabel',
-                'title', 'grid', 'scatter', 'bar', 'hist', 'pie', 'boxplot', 'heatmap',
-                'express', 'graph_objects', 'make_subplots', 'iplot', 'offline',
-                // DataFrame methods
-                'iloc', 'loc', 'head', 'tail', 'describe', 'info', 'shape', 'columns',
-                'dtypes', 'astype', 'fillna', 'dropna', 'isna', 'isnull', 'notnull',
-                'groupby', 'agg', 'aggregate', 'merge', 'concat', 'pivot', 'melt',
-                'apply', 'map', 'transform', 'rolling', 'resample', 'shift', 'diff',
-                'to_csv', 'to_excel', 'to_json', 'to_sql', 'to_dict', 'to_list',
-                'read_csv', 'read_excel', 'read_json', 'read_sql', 'read_html',
-                // Common pandas/numpy identifiers
-                'axis', 'inplace', 'ascending', 'how', 'left', 'right', 'inner', 'outer',
-                'nan', 'inf', 'dtype', 'ndarray', 'array', 'matrix', 'zeros', 'ones',
-                'empty', 'full', 'arange', 'linspace', 'meshgrid', 'reshape', 'flatten',
-                'transpose', 'dot', 'cross', 'mean', 'std', 'var', 'median', 'mode',
-                'percentile', 'quantile', 'cumsum', 'cumprod', 'argmax', 'argmin',
-                'where', 'clip', 'abs', 'sqrt', 'exp', 'log', 'sin', 'cos', 'tan',
-                // Standard libraries & Common words
-                'json', 'math', 'time', 'datetime', 'random', 're', 'os', 'sys',
-                'subprocess', 'shutil', 'glob', 'pickle', 'copy', 'itertools',
-                'functools', 'collections', 'operator', 'typing', 'enum', 'uuid',
-                'createdAt', 'names', 'Convert', 'cid', 'assoc', 'Build', 'Extract', 'dati', 'dayfirst',
-                'errors', 'coerce', 'subset', 'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
-                'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre',
-                'reparti', 'reparto', 'passato', 'futuro', 'step', 'lines', 'Raggruppa', 'color', 'conta', 'rgb',
-                'mese', 'Capacit', 'Crea', 'showlegend', 'grafico', 'violet', 'istogramma', 'fill', 'sovrapposto',
-                'tozeroy', 'Aggiungi', 'fillcolor', 'barre', 'rgba', 'Mago', 'Lavorate', 'green', 'stra', 'opacity',
-                'markers', 'blue', 'red', 'Personalizza', 'marker', 'layout', 'Straord', 'Confronto', 'dash',
-                'Mese', 'Previste', 'Mesi', 'solid', 'Numero', 'gray', 'barmode', 'automargin', 'Mostra', 'denom',
-                'affiancate', 'textposition', 'inside', 'insidetextanchor', 'middle', 'textangle', 'textfont',
-                'white', 'black', 'emerald', 'xanchor', 'center', 'yanchor', 'top', 'font', 'margin', 'hovermode',
-                'unified', 'annotations', 'matches', 'showticklabels', 'showline', 'linecolor', 'mirror', 'dtick',
-                'category', 'normalize', 'rename', 'unique', 'pair', 'Analisi', 'Mensile', 'util',
-                'HUBSPOT_TOKEN', 'hubspot_token',
-                // Python script configuration constants (from GraficoTest chart code)
-                'CONFIGURAZIONE', 'SHOW_AREAS', 'MOLTIPLICATORE', 'PIXEL_PER_UNIT', 'MIN_HEIGHT_PX',
-                'GAP_PX', 'DASH_FITTO', 'Utilizzo', 'CAPACITA', 'ORE_LAVORATE', 'CAPACITA_NETTA',
-                'ORE_LAVORATE_NET', 'CAPACITA_NETTA_NET', 'GIORNO', 'MESE_STR', 'HYBRID_WORK',
-                'HYBRID_NET', 'ORE_STRAORD', 'CALCOLO', 'ALTEZZE', 'BAR_FONT', 'TRACCE', 'LINEE',
-                'SCALINI', 'NET', 'MENSILI', 'STYLE', 'TITOLO', 'ALTO', 'PRESENZE', 'MINUTI', 'Prepara'
+                // Specific Constants frequently found in logs
+                'px_per_task', 'min_row_height_px', 'left_margin', 'bar_height',
+                'today_color', 'contract_color',
+                // Common Italian Terms found in logs (non-dependencies)
+                'conversione', 'completata', 'colonne', 'finali', 'linea', 'line',
+                'fornitore', 'interno', 'reparto_interno', 'commessa', 'corretto', 'old',
+                'descr', 'articolo', 'confezionamento', 'produzione', 'stimata',
+                'contratto', 'riga', 'valida', 'gantt', 'controlla', 'delta', 'groups',
+                'rep', 'days', 'timedelta', 'shorten', 'art', 'label', 'lum', 'ann'
             ].map(s => s.toLowerCase()));
+
+            // IMPROVED REGEX: Find identifiers, but capture what comes before to check for dot
+            // Matches: (Start of string OR non-dot char) + (boundary) + (identifier) + (boundary)
+            // This allows us to filter out obj.method() or obj.property matches
+            const potentialMatches = [...cleanedCode.matchAll(/([^a-zA-Z0-9_.]|^)\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g)];
+            const potentialVars = potentialMatches.map(m => m[2]);
+
+            const uniqueVars = Array.from(new Set(potentialVars));
+
+            const existingNames = new Set(stableDeps.map(d => d.tableName.toLowerCase()));
+            const asyncNames = new Set(asyncDeps.map(d => d.tableName.toLowerCase()));
+
+            const missing = uniqueVars.filter(v =>
+                !existingNames.has(v.toLowerCase()) &&
+                !asyncNames.has(v.toLowerCase()) &&
+                v.length > 2 && // Skip short vars like i, x
+                !PYTHON_SKIP_IDENTIFIERS.has(v.toLowerCase()) &&
+                // Extra check: prevent duplicate requests if we already tried (and failed) in this session
+                !GLOBAL_EXECUTION_CACHE.has(`failed_dep::${v.toLowerCase()}`)
+            );
+
+            if (missing.length === 0) return;
+
+            setIsResolving(true);
+            // Clear any previous execution error while resolving to avoid UI flash
+            // logic handled in render, but good to be explicit if we had setError exposed here.
+
+            const newDeps: any[] = [];
+
+
 
             for (const varName of missing) {
                 // console.log(`[PythonDataPreview] 🕵️ checking var: "${varName}"`);
