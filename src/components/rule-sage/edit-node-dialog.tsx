@@ -606,40 +606,101 @@ export default function EditNodeDialog({
     try {
       if (sourceType === 'current-sql') {
         if (!sqlQuery) throw new Error("Nessuna query SQL definita");
-        // Reuse existing SQL preview logic, but slightly adapted to just want data
-        const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId);
+
+        // Execute SQL with full dependencies from selected pipelines
+        const pipelineDeps = selectedPipelines.map(pName => {
+          const dep = availableInputTables?.find(t => t.name === pName);
+          if (!dep) return null;
+          return {
+            tableName: dep.name,
+            query: dep.sqlQuery,
+            connectorId: dep.connectorId,
+            isPython: dep.isPython,
+            pythonCode: dep.pythonCode,
+            pipelineDependencies: dep.pipelineDependencies
+          };
+        }).filter(Boolean);
+
+        const res = await executeSqlPreviewAction(
+          sqlQuery,
+          sqlConnectorId,
+          pipelineDeps as any
+        );
+
         if (res.error) throw new Error(res.error || "Errore esecuzione SQL");
 
-        // Update main SQL preview state too? Ideally yes to keep sync
+        // Update main SQL preview state too to keep sync
         if (res.data) setSqlPreviewData(res.data);
         return res.data || [];
 
       } else if (sourceType === 'current-python') {
         if (!pythonCode) throw new Error("Nessun codice Python definito");
-        // Execute python preview
-        // Note: Reuse handlePythonSubmit logic or call action directly
-        // Calling action directly is cleaner but we need to pass dependencies
-        // Python execution is complex with dependencies. 
-        // Best to assume if "current-python", user should probably use the main "Esegui" button?
-        // But valid to have semantic refresh.
 
-        // Let's call executePythonPreviewAction directly with correct params
-        // Let's call executePythonPreviewAction blocking
+        // Build full dependency chain including SQL result and parent tables
+        const pipelineDeps: any[] = [];
+
+        // Add SQL result if selected
+        if (pythonSelectedPipelines.includes('Risultato SQL') || pythonSelectedPipelines.includes(sqlResultName)) {
+          if (sqlPreviewData) {
+            pipelineDeps.push({
+              tableName: sqlResultName || 'Risultato SQL',
+              data: sqlPreviewData,
+              query: sqlQuery,
+              connectorId: sqlConnectorId
+            });
+          } else if (sqlQuery) {
+            // Need to execute SQL first to get data
+            const sqlRes = await executeSqlPreviewAction(
+              sqlQuery,
+              sqlConnectorId,
+              selectedPipelines.map(pName => {
+                const dep = availableInputTables?.find(t => t.name === pName);
+                if (!dep) return null;
+                return {
+                  tableName: dep.name,
+                  query: dep.sqlQuery,
+                  connectorId: dep.connectorId,
+                  isPython: dep.isPython,
+                  pythonCode: dep.pythonCode,
+                  pipelineDependencies: dep.pipelineDependencies
+                };
+              }).filter(Boolean) as any
+            );
+
+            if (sqlRes.data) {
+              setSqlPreviewData(sqlRes.data);
+              pipelineDeps.push({
+                tableName: sqlResultName || 'Risultato SQL',
+                data: sqlRes.data,
+                query: sqlQuery,
+                connectorId: sqlConnectorId
+              });
+            }
+          }
+        }
+
+        // Add other selected parent tables
+        pythonSelectedPipelines.forEach(pName => {
+          if (pName === 'Risultato SQL' || pName === sqlResultName) return; // Already added above
+          const dep = availableInputTables?.find(t => t.name === pName);
+          if (dep) {
+            pipelineDeps.push({
+              tableName: dep.name,
+              query: dep.sqlQuery,
+              connectorId: dep.connectorId,
+              isPython: dep.isPython,
+              pythonCode: dep.pythonCode,
+              pipelineDependencies: dep.pipelineDependencies
+            });
+          }
+        });
+
+        // Execute Python with full dependency chain
         const res = await executePythonPreviewAction(
           pythonCode,
           pythonOutputType,
-          {}, // Input data (empty for refresh, will fetch dependencies)
-          pythonSelectedPipelines.map(pName => {
-            const dep = availableInputTables?.find(t => t.name === pName);
-            return {
-              tableName: dep?.name || '',
-              query: dep?.sqlQuery,
-              connectorId: dep?.connectorId,
-              isPython: dep?.isPython,
-              pythonCode: dep?.pythonCode,
-              pipelineDependencies: dep?.pipelineDependencies
-            };
-          }),
+          {}, // Empty input data, will fetch from dependencies
+          pipelineDeps,
           pythonConnectorId
         );
 

@@ -69,6 +69,7 @@ export interface WidgetConfig {
   type: WidgetType;
   title?: string;
   description?: string;
+  isPublished?: boolean; // Flag to publish widget to dashboard library
   xAxisKey?: string;
   xAxisTitle?: string;
   yAxisTitle?: string;

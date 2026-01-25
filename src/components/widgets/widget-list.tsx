@@ -69,16 +69,16 @@ export const useAvailableWidgets = () => {
     useEffect(() => {
         if (status === 'loading') return;
 
-        const fetchPipelineWidgets = async () => {
+        const fetchDynamicWidgets = async () => {
             if (!session?.user) return;
 
             try {
-                const loadedPipelines = await getPipelines();
                 const dynamicWidgets: Record<string, Widget> = {};
 
+                // 1. Pipeline widgets (existing logic)
+                const loadedPipelines = await getPipelines();
                 if (loadedPipelines) {
                     loadedPipelines.forEach((rawPipeline: any) => {
-                        // Parse fields
                         const pipeline = {
                             ...rawPipeline,
                             nodes: typeof rawPipeline.nodes === 'string' ? JSON.parse(rawPipeline.nodes) : rawPipeline.nodes
@@ -98,15 +98,62 @@ export const useAvailableWidgets = () => {
                         }
                     });
                 }
+
+                // 2. NEW: Decision tree node widgets
+                const { getTreesAction } = await import('@/app/actions');
+                const { NodeWidgetRenderer } = await import('./builder/NodeWidgetRenderer');
+
+                const treesResult = await getTreesAction(undefined, 'RULE');
+                if (treesResult.data) {
+                    treesResult.data.forEach((tree: any) => {
+                        const jsonTree = typeof tree.jsonDecisionTree === 'string'
+                            ? JSON.parse(tree.jsonDecisionTree)
+                            : tree.jsonDecisionTree;
+
+                        // Recursively scan tree for published widgets
+                        const scanNode = (node: any, path: string[] = []) => {
+                            if (!node) return;
+
+                            // Check if this node has a published widget
+                            if (node.widgetConfig?.isPublished) {
+                                const nodeId = node.id || path.join('-');
+                                const widgetId = `tree-${tree.id}-${nodeId}`;
+                                dynamicWidgets[widgetId] = {
+                                    id: widgetId,
+                                    name: node.widgetConfig.title || `Widget da ${tree.name}`,
+                                    component: <NodeWidgetRenderer treeId={tree.id} nodeId={nodeId} />,
+                                };
+                            }
+
+                            // Recurse into options
+                            if (node.options) {
+                                Object.entries(node.options).forEach(([key, child]: [string, any]) => {
+                                    if (typeof child === 'object' && !Array.isArray(child)) {
+                                        scanNode(child, [...path, key]);
+                                    } else if (Array.isArray(child)) {
+                                        child.forEach((c, idx) => {
+                                            if (typeof c === 'object') {
+                                                scanNode(c, [...path, key, String(idx)]);
+                                            }
+                                        });
+                                    }
+                                });
+                            }
+                        };
+
+                        scanNode(jsonTree);
+                    });
+                }
+
                 setAvailableWidgets({ ...staticWidgets, ...dynamicWidgets });
 
             } catch (error) {
-                console.error("Error fetching pipeline widgets:", error);
+                console.error("Error fetching dynamic widgets:", error);
                 setAvailableWidgets(staticWidgets);
             }
         };
 
-        fetchPipelineWidgets();
+        fetchDynamicWidgets();
     }, [status, session]);
 
     return availableWidgets;

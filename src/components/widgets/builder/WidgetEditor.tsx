@@ -7,6 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { WidgetConfig, WidgetType } from '@/lib/types';
@@ -60,13 +63,18 @@ const getStrokeDasharray = (style?: 'solid' | 'dashed' | 'dotted') => {
 export default function WidgetEditor({ data, initialConfig, onSave, availableSources = [], onRefreshData, isRefreshing = false }: WidgetEditorProps) {
     const [config, setConfig] = useState<WidgetConfig>(initialConfig || {
         type: 'table',
-        title: 'Nuovo Widget',
-        description: '',
+        title: '',
         dataKeys: [],
+        data: [],
         colors: COLORS.slice(0, 2),
         dataSourceType: 'current-sql',
         dataSourceId: 'sql'
     });
+
+    // Collapsible state
+    const [axesOpen, setAxesOpen] = useState(true);
+    const [styleOpen, setStyleOpen] = useState(false);
+    const [dataSeriesOpen, setDataSeriesOpen] = useState(true);
 
     const [localData, setLocalData] = useState<any[]>(data);
 
@@ -331,42 +339,15 @@ export default function WidgetEditor({ data, initialConfig, onSave, availableSou
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
             <div className="lg:col-span-1 border-r pr-4 space-y-6 overflow-auto h-full p-1">
-                <div className="space-y-2">
-                    <Label>Widget Type</Label>
-                    <Select value={config.type} onValueChange={(val: WidgetType) => handleTypeChange(val)}>
-                        <SelectTrigger>
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="table">Table</SelectItem>
-                            <SelectItem value="bar-chart">Bar Chart</SelectItem>
-                            <SelectItem value="line-chart">Line Chart</SelectItem>
-                            <SelectItem value="area-chart">Area Chart</SelectItem>
-                            <SelectItem value="pie-chart">Pie Chart</SelectItem>
-                            <SelectItem value="kpi-card">KPI Card</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-
-                <div className="space-y-2">
-                    <Label>Title</Label>
-                    <Input value={config.title || ''} onChange={e => setConfig({ ...config, title: e.target.value })} />
-                </div>
-
-                <div className="space-y-2">
-                    <Label>Description</Label>
-                    <Input value={config.description || ''} onChange={e => setConfig({ ...config, description: e.target.value })} />
-                </div>
-
-                <div className="space-y-2 border rounded p-3 bg-muted/20">
+                <div className="space-y-2 border rounded p-3 bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800">
                     <div className="flex items-center justify-between">
-                        <Label>Fonte Dati</Label>
+                        <Label className="font-semibold text-violet-700 dark:text-violet-300">Fonte Dati</Label>
                         <Button
                             variant="ghost"
                             size="icon"
                             onClick={handleRefresh}
                             disabled={isRefreshing}
-                            className="h-6 w-6"
+                            className="h-6 w-6 text-violet-600 hover:text-violet-700 dark:text-violet-400"
                             title="Aggiorna Dati"
                         >
                             <span className={isRefreshing ? "animate-spin" : ""}>↻</span>
@@ -396,106 +377,173 @@ export default function WidgetEditor({ data, initialConfig, onSave, availableSou
                             ))}
                         </SelectContent>
                     </Select>
+
+                    <div className="flex items-center space-x-2 pt-2 mt-2 border-t border-violet-200 dark:border-violet-800">
+                        <Switch
+                            id="isPublished"
+                            checked={config.isPublished || false}
+                            onCheckedChange={(checked) => setConfig({ ...config, isPublished: checked })}
+                        />
+                        <Label htmlFor="isPublished" className="cursor-pointer text-sm text-violet-700 dark:text-violet-300">
+                            Pubblica widget nella libreria dashboard
+                        </Label>
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <Label>Widget Type</Label>
+                    <Select value={config.type} onValueChange={(val: WidgetType) => handleTypeChange(val)}>
+                        <SelectTrigger>
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="table">Table</SelectItem>
+                            <SelectItem value="bar-chart">Bar Chart</SelectItem>
+                            <SelectItem value="line-chart">Line Chart</SelectItem>
+                            <SelectItem value="area-chart">Area Chart</SelectItem>
+                            <SelectItem value="pie-chart">Pie Chart</SelectItem>
+                            <SelectItem value="kpi-card">KPI Card</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div className="space-y-2">
+                    <Label>Title</Label>
+                    <Input value={config.title || ''} onChange={e => setConfig({ ...config, title: e.target.value })} />
+                </div>
+
+                <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Input value={config.description || ''} onChange={e => setConfig({ ...config, description: e.target.value })} />
                 </div>
 
                 {config.type !== 'table' && config.type !== 'kpi-card' && (
                     <>
-                        <div className="space-y-4 border rounded p-3">
-                            <h4 className="font-medium text-sm">Assi e Legende</h4>
-                            <div className="space-y-2">
-                                <Label>X Axis Column</Label>
-                                <Select value={config.xAxisKey} onValueChange={(val) => setConfig({ ...config, xAxisKey: val })}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select column..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {columns.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-2">
-                                <Label>X Axis Title (Opzionale)</Label>
-                                <Input value={config.xAxisTitle || ''} onChange={e => setConfig({ ...config, xAxisTitle: e.target.value })} placeholder="Titolo asse X" />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Y Axis Title (Opzionale)</Label>
-                                <Input value={config.yAxisTitle || ''} onChange={e => setConfig({ ...config, yAxisTitle: e.target.value })} placeholder="Titolo asse Y" />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Legend Position</Label>
-                                <Select value={config.legendPosition || 'bottom'} onValueChange={(val: any) => setConfig({ ...config, legendPosition: val })}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Position" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="bottom">Bottom</SelectItem>
-                                        <SelectItem value="top">Top</SelectItem>
-                                        <SelectItem value="left">Left</SelectItem>
-                                        <SelectItem value="right">Right</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="space-y-4 pt-4 border-t">
-                                <h4 className="font-medium text-sm">Stile & Layout</h4>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <Label>X Axis Title Offset (dy)</Label>
-                                        <Input type="number" value={config.xAxisDy || -10} onChange={e => setConfig({ ...config, xAxisDy: parseInt(e.target.value) || -10 })} />
-                                    </div>
-                                    {config.yAxisTitle && (
+                        {/* Assi e Legende - Collapsible */}
+                        <Collapsible open={axesOpen} onOpenChange={setAxesOpen}>
+                            <div className="border rounded overflow-hidden">
+                                <CollapsibleTrigger className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
+                                    <h4 className="font-medium text-sm">Assi e Legende</h4>
+                                    {axesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                </CollapsibleTrigger>
+                                <CollapsibleContent>
+                                    <div className="p-3 space-y-4 border-t bg-muted/10">
                                         <div className="space-y-2">
-                                            <Label>Y Axis Title Offset (dx)</Label>
-                                            <Input type="number" value={config.yAxisDx || -80} onChange={e => setConfig({ ...config, yAxisDx: parseInt(e.target.value) || -80 })} />
+                                            <Label>X Axis Column</Label>
+                                            <Select value={config.xAxisKey} onValueChange={(val) => setConfig({ ...config, xAxisKey: val })}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select column..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {columns.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                                                </SelectContent>
+                                            </Select>
                                         </div>
-                                    )}
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label>Line Style</Label>
-                                    <Select value={config.lineStyle || 'solid'} onValueChange={(val: any) => setConfig({ ...config, lineStyle: val })}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Style" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="solid">Solid</SelectItem>
-                                            <SelectItem value="dashed">Dashed</SelectItem>
-                                            <SelectItem value="dotted">Dotted</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label>Chart Colors (comma separated hex)</Label>
-                                    <Input
-                                        value={config.colors?.join(',') || ''}
-                                        onChange={e => setConfig({ ...config, colors: e.target.value ? e.target.value.split(',').map(c => c.trim()) : undefined })}
-                                        placeholder="#0088FE, #00C49F, ..."
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label>Data Series (Values)</Label>
-                            <div className="space-y-2 border rounded p-2">
-                                {columns.map(col => (
-                                    <div key={col} className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            id={`col-${col}`}
-                                            checked={(config.dataKeys || []).includes(col)}
-                                            onChange={() => handleDataKeyToggle(col)}
-                                            className="h-4 w-4 rounded border-gray-300"
-                                        />
-                                        <label htmlFor={`col-${col}`} className="text-sm cursor-pointer select-none">
-                                            {col}
-                                        </label>
+                                        <div className="space-y-2">
+                                            <Label>X Axis Title (Opzionale)</Label>
+                                            <Input value={config.xAxisTitle || ''} onChange={e => setConfig({ ...config, xAxisTitle: e.target.value })} placeholder="Titolo asse X" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Y Axis Title (Opzionale)</Label>
+                                            <Input value={config.yAxisTitle || ''} onChange={e => setConfig({ ...config, yAxisTitle: e.target.value })} placeholder="Titolo asse Y" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Legend Position</Label>
+                                            <Select value={config.legendPosition || 'bottom'} onValueChange={(val: any) => setConfig({ ...config, legendPosition: val })}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Position" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="bottom">Bottom</SelectItem>
+                                                    <SelectItem value="top">Top</SelectItem>
+                                                    <SelectItem value="left">Left</SelectItem>
+                                                    <SelectItem value="right">Right</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
                                     </div>
-                                ))}
+                                </CollapsibleContent>
                             </div>
-                        </div>
+                        </Collapsible>
+
+                        {/* Stile & Layout - Collapsible */}
+                        <Collapsible open={styleOpen} onOpenChange={setStyleOpen}>
+                            <div className="border rounded overflow-hidden">
+                                <CollapsibleTrigger className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
+                                    <h4 className="font-medium text-sm">Stile & Layout</h4>
+                                    {styleOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                </CollapsibleTrigger>
+                                <CollapsibleContent>
+                                    <div className="p-3 space-y-4 border-t bg-muted/10">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <Label>X Axis Title Offset (dy)</Label>
+                                                <Input type="number" value={config.xAxisDy || -10} onChange={e => setConfig({ ...config, xAxisDy: parseInt(e.target.value) || -10 })} />
+                                            </div>
+                                            {config.yAxisTitle && (
+                                                <div className="space-y-2">
+                                                    <Label>Y Axis Title Offset (dx)</Label>
+                                                    <Input type="number" value={config.yAxisDx || -80} onChange={e => setConfig({ ...config, yAxisDx: parseInt(e.target.value) || -80 })} />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label>Line Style</Label>
+                                            <Select value={config.lineStyle || 'solid'} onValueChange={(val: any) => setConfig({ ...config, lineStyle: val })}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Style" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="solid">Solid</SelectItem>
+                                                    <SelectItem value="dashed">Dashed</SelectItem>
+                                                    <SelectItem value="dotted">Dotted</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label>Chart Colors (comma separated hex)</Label>
+                                            <Input
+                                                value={config.colors?.join(',') || ''}
+                                                onChange={e => setConfig({ ...config, colors: e.target.value ? e.target.value.split(',').map(c => c.trim()) : undefined })}
+                                                placeholder="#0088FE, #00C49F, ..."
+                                            />
+                                        </div>
+                                    </div>
+                                </CollapsibleContent>
+                            </div>
+                        </Collapsible>
+
+                        {/* Data Series - Collapsible */}
+                        <Collapsible open={dataSeriesOpen} onOpenChange={setDataSeriesOpen}>
+                            <div className="border rounded overflow-hidden">
+                                <CollapsibleTrigger className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
+                                    <h4 className="font-medium text-sm">Data Series (Values)</h4>
+                                    {dataSeriesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                </CollapsibleTrigger>
+                                <CollapsibleContent>
+                                    <div className="p-3 border-t bg-muted/10">
+                                        <div className="space-y-2">
+                                            {columns.map(col => (
+                                                <div key={col} className="flex items-center gap-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        id={`col-${col}`}
+                                                        checked={(config.dataKeys || []).includes(col)}
+                                                        onChange={() => handleDataKeyToggle(col)}
+                                                        className="h-4 w-4 rounded border-gray-300"
+                                                    />
+                                                    <label htmlFor={`col-${col}`} className="text-sm cursor-pointer select-none">
+                                                        {col}
+                                                    </label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </CollapsibleContent>
+                            </div>
+                        </Collapsible>
                     </>
                 )}
 
