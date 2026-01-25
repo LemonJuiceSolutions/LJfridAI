@@ -1170,6 +1170,86 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         };
     }, [flatTree]);
 
+    const getLinkedNodesTables = useMemo(() => {
+        return (currentPath: string): { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] => {
+            const linkedTables: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
+
+            console.log(`[LINKED NODES DEBUG] Looking for linked nodes from path: "${currentPath}"`);
+
+            // Find all link nodes ({ ref: string }) in the flat tree
+            flatTree.forEach((item: any) => {
+                const actualNode = item.node;
+
+                // Check if this is a link node with a ref property
+                if (actualNode && typeof actualNode === 'object' && 'ref' in actualNode) {
+                    const refId = actualNode.ref;
+                    console.log(`[LINKED NODES DEBUG] Found link node with ref: "${refId}" at path: "${item.path}"`);
+
+                    // Find the target node by ID to check if it's the current node we're editing
+                    const targetItem = flatTree.find((t: any) => {
+                        const tNode = t.node;
+                        return tNode && typeof tNode === 'object' && tNode.id === refId;
+                    });
+
+                    if (targetItem && targetItem.path === currentPath) {
+                        // This link points to the current node! Extract tables from the parent (question) node of this link
+                        console.log(`[LINKED NODES DEBUG] Link at "${item.path}" points to current node! Extracting tables from parent.`);
+
+                        // Navigate up the path to find the parent question node
+                        // Path format: root.options['Name'].options['Mail'][1]
+                        // We need to go up to the question node (removing the .options['Mail'][1] part)
+                        const pathParts = item.path.split('.options');
+                        if (pathParts.length >= 2) {
+                            // Remove the last options part to get the parent question path
+                            // e.g., from "root.options['Commesse'][0].options['Mail'][1]" 
+                            // go to "root.options['Commesse'][0]"
+                            const parentQuestionPath = pathParts.slice(0, -1).join('.options');
+
+                            console.log(`[LINKED NODES DEBUG] Looking for parent question at path: "${parentQuestionPath}"`);
+
+                            // Find the parent question node
+                            const parentItem = flatTree.find((t: any) => t.path === parentQuestionPath);
+
+                            if (parentItem) {
+                                const parentNode = parentItem.node;
+                                console.log(`[LINKED NODES DEBUG] Found parent node at "${parentQuestionPath}"`);
+
+                                // Extract SQL result from parent node
+                                if (parentNode.sqlResultName) {
+                                    console.log(`[LINKED NODES DEBUG] Found SQL table: "${parentNode.sqlResultName}"`);
+                                    linkedTables.push({
+                                        name: parentNode.sqlResultName,
+                                        connectorId: parentNode.sqlConnectorId,
+                                        sqlQuery: parentNode.sqlQuery,
+                                        isPython: false,
+                                        pipelineDependencies: parentNode.pipelineDependencies
+                                    });
+                                }
+
+                                // Extract Python result from parent node
+                                if (parentNode.pythonResultName && parentNode.pythonCode) {
+                                    console.log(`[LINKED NODES DEBUG] Found Python table: "${parentNode.pythonResultName}"`);
+                                    linkedTables.push({
+                                        name: parentNode.pythonResultName,
+                                        connectorId: parentNode.pythonConnectorId,
+                                        isPython: true,
+                                        pythonCode: parentNode.pythonCode,
+                                        pipelineDependencies: parentNode.pipelineDependencies
+                                    });
+                                }
+                            } else {
+                                console.log(`[LINKED NODES DEBUG] Parent node not found at path "${parentQuestionPath}"`);
+                            }
+                        }
+                    }
+                }
+            });
+
+            console.log(`[LINKED NODES DEBUG] Total linked tables found: ${linkedTables.length}`, linkedTables.map(t => t.name));
+            return linkedTables;
+        };
+    }, [flatTree]);
+
     if (!tree) {
         return (
             <Card>
@@ -1442,7 +1522,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     nodePath={editingNodeInfo.path}
                     treeId={treeData.id}
                     isSaving={isSaving}
-                    availableInputTables={getAncestorInputTables(editingNodeInfo.path)}
+                    availableInputTables={[
+                        ...getAncestorInputTables(editingNodeInfo.path),
+                        ...getLinkedNodesTables(editingNodeInfo.path)
+                    ]}
                     availableParentMedia={getAncestorMedia(editingNodeInfo.path)}
                     availableParentLinks={getAncestorLinks(editingNodeInfo.path)}
                     availableParentTriggers={getAncestorTriggers(editingNodeInfo.path)}
