@@ -2379,6 +2379,7 @@ export default function EditNodeDialog({
                 <div className="pt-3 h-[500px]">
                   {(pythonPreviewResult?.data || sqlPreviewData) ? (
                     <WidgetEditor
+                      key={`widget-${JSON.stringify(pythonPreviewResult?.data || sqlPreviewData || []).substring(0, 100)}`}
                       data={pythonPreviewResult?.data || sqlPreviewData || []}
                       initialConfig={widgetConfig}
                       onSave={(config) => {

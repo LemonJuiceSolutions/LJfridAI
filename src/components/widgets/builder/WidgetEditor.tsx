@@ -61,14 +61,17 @@ const getStrokeDasharray = (style?: 'solid' | 'dashed' | 'dotted') => {
 };
 
 export default function WidgetEditor({ data, initialConfig, onSave, availableSources = [], onRefreshData, isRefreshing = false }: WidgetEditorProps) {
-    const [config, setConfig] = useState<WidgetConfig>(initialConfig || {
+    // Exclude data from initialConfig - always use prop data to prevent stale cache
+    const { data: _ignoredData, ...configWithoutData } = initialConfig || {};
+
+    const [config, setConfig] = useState<WidgetConfig>({
         type: 'table',
         title: '',
         dataKeys: [],
-        data: [],
         colors: COLORS.slice(0, 2),
         dataSourceType: 'current-sql',
-        dataSourceId: 'sql'
+        dataSourceId: 'sql',
+        ...configWithoutData, // Merge initialConfig but without data field
     });
 
     // Collapsible state
@@ -76,11 +79,14 @@ export default function WidgetEditor({ data, initialConfig, onSave, availableSou
     const [styleOpen, setStyleOpen] = useState(false);
     const [dataSeriesOpen, setDataSeriesOpen] = useState(true);
 
-    const [localData, setLocalData] = useState<any[]>(data);
+    const localData = useMemo(() => data, [data]);
 
-    // Sync local data if prop changes (e.g. after refresh)
+    // Sync config data when prop data changes
     useEffect(() => {
-        setLocalData(data);
+        if (data && data.length > 0) {
+            // Update config data to ensure widget uses latest data
+            setConfig(prev => ({ ...prev, data: data }));
+        }
     }, [data]);
 
     // Auto-save whenever config changes
@@ -98,7 +104,6 @@ export default function WidgetEditor({ data, initialConfig, onSave, availableSou
         try {
             const newData = await onRefreshData(type, id);
             if (newData) {
-                setLocalData(newData);
                 // Seal data into config
                 setConfig(prev => ({ ...prev, data: newData }));
             }
@@ -108,8 +113,8 @@ export default function WidgetEditor({ data, initialConfig, onSave, availableSou
     };
 
     const columns = React.useMemo(() => {
-        return data && data.length > 0 ? Object.keys(data[0]) : [];
-    }, [data]);
+        return localData && localData.length > 0 ? Object.keys(localData[0]) : [];
+    }, [localData]);
 
     // Auto-select first reliable keys if not set
     useEffect(() => {
@@ -211,18 +216,18 @@ export default function WidgetEditor({ data, initialConfig, onSave, availableSou
     };
 
     const chartData = React.useMemo(() => {
-        if (!data) return [];
-        return data.map(item => {
+        if (!localData) return [];
+        return localData.map(item => {
             const newItem = { ...item };
             Object.keys(newItem).forEach(key => {
                 newItem[key] = cleanNumber(newItem[key]);
             });
             return newItem;
         });
-    }, [data]);
+    }, [localData]);
 
     const renderPreview = () => {
-        if (!data || data.length === 0) return <div className="p-4 text-center text-muted-foreground">No data available for preview.</div>;
+        if (!localData || localData.length === 0) return <div className="p-4 text-center text-muted-foreground">No data available for preview.</div>;
 
         switch (config.type) {
             case 'table':
@@ -235,7 +240,7 @@ export default function WidgetEditor({ data, initialConfig, onSave, availableSou
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {data.slice(0, 5).map((row, i) => (
+                                {localData.slice(0, 5).map((row, i) => (
                                     <TableRow key={i}>
                                         {columns.map(col => <TableCell key={col}>{String(row[col])}</TableCell>)}
                                     </TableRow>
@@ -324,7 +329,7 @@ export default function WidgetEditor({ data, initialConfig, onSave, availableSou
                     </ResponsiveContainer>
                 );
             case 'kpi-card':
-                const kpiValue = data[0] && config.kpiValueKey ? data[0][config.kpiValueKey] : 'N/A';
+                const kpiValue = localData[0] && config.kpiValueKey ? localData[0][config.kpiValueKey] : 'N/A';
                 return (
                     <div className="flex flex-col items-center justify-center h-[200px] border rounded-lg bg-card p-6 text-card-foreground shadow-sm">
                         <div className="text-4xl font-bold">{kpiValue}</div>
