@@ -1287,7 +1287,7 @@ export async function executeSqlPreviewAction(
 }
 
 // New action to just fetch schema
-export async function fetchTableSchemaAction(connectorId: string, tableNames: string[]): Promise<{ schemaContext: string | null; error: string | null }> {
+export async function fetchTableSchemaAction(connectorId: string, tableNames: string[]): Promise<{ schemaContext: string | null; tables?: Record<string, string[]>; error: string | null }> {
     let pool: sql.ConnectionPool | null = null;
     try {
         const user = await getAuthenticatedUser();
@@ -1341,9 +1341,12 @@ export async function fetchTableSchemaAction(connectorId: string, tableNames: st
                 for (const [table, cols] of Object.entries(tablesSchema)) {
                     schemaDesc += `- Table '${table}': ${cols.join(', ')}\n`;
                 }
+                return { schemaContext: schemaDesc, tables: tablesSchema, error: null };
             } else {
                 schemaDesc = "No columns found for the selected tables (they might not exist or permissions issue).";
             }
+
+            return { schemaContext: schemaDesc, tables: {}, error: null };
 
         } catch (dbErr: any) {
             console.error("[FETCH-SCHEMA] DB Error:", dbErr);
@@ -1607,7 +1610,16 @@ export async function generatePythonAction(
     openRouterConfig?: { apiKey: string, model: string },
     outputType: 'table' | 'variable' | 'chart' = 'table',
     availableDataframes: string[] = [],
-    history: { role: string, content: string }[] = []
+    history: { role: string, content: string }[] = [],
+    context?: {
+        availableTables?: {
+            name: string;
+            columns?: string[];
+            preview?: any[];
+            isDataFrame?: boolean;
+        }[];
+        currentCode?: string;
+    }
 ): Promise<{ code: string | null; error: string | null }> {
     try {
         if (!openRouterConfig?.apiKey) {
@@ -1634,12 +1646,32 @@ ax.bar(data['Category'], data['Value'], color='#059669')
 fig`
         };
 
+        // Build context string for the prompt
+        let contextInfo = "";
+        if (context?.availableTables && context.availableTables.length > 0) {
+            contextInfo += "\n\n### Available Tables & DataFrames Context:\n";
+            context.availableTables.forEach(t => {
+                contextInfo += `- Name: ${t.name}\n`;
+                if (t.columns && t.columns.length > 0) {
+                    contextInfo += `  Columns: ${t.columns.join(", ")}\n`;
+                }
+                if (t.isDataFrame) {
+                    contextInfo += `  Type: DataFrame (Pre-loaded)\n`;
+                }
+            });
+        }
+
+        if (context?.currentCode) {
+            contextInfo += `\n\n### Current Draft Code:\n\`\`\`python\n${context.currentCode}\n\`\`\`\n`;
+        }
+
         const systemPrompt = `You are a Python code generator. Generate ONLY Python code that accomplishes the user's request.
 ${outputInstructions[outputType]}
 
 Available libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), plotly.express (px), plotly.graph_objects (go).
 
 Available Dataframes: ${availableDataframes.length > 0 ? availableDataframes.join(', ') : 'None'}.
+${contextInfo}
 
 STRICT RULES:
 1. Output ONLY the Python code, no explanations.
@@ -1654,7 +1686,8 @@ STRICT RULES:
 7. **ALWAYS USE PLOTLY** (plotly.express or plotly.graph_objects) for charts unless specifically told otherwise. Do not use Matplotlib if possible.
    - For charts, the last line MUST be the figure object 'fig'.
    - Do NOT use fig.show().
-8. **ROBUST DATE PARSING**: When converting columns to datetime, ALWAYS use \`pd.to_datetime(..., dayfirst=True, errors='coerce')\` to correctly handle European formats (DD-MM-YYYY) and prevent crashes.`;
+8. **ROBUST DATE PARSING**: When converting columns to datetime, ALWAYS use \`pd.to_datetime(..., dayfirst=True, errors='coerce')\` to correctly handle European formats (DD-MM-YYYY) and prevent crashes.
+9. **ASK FOR CLARIFICATION**: If you are unsure about column names, dataframe logic, or if the user's request is ambiguous, invalid, or refers to non-existent columns based on the provided context, you MUST ask the user for clarification instead of guessing. Return a polite question describing what is unclear.`;
 
         const messages = [
             { role: 'system', content: systemPrompt },
@@ -1780,8 +1813,13 @@ export async function executePythonPreviewAction(
             for (const dep of dependencies) {
                 const tDepStart = performance.now();
                 const pipelineCount = dep.pipelineDependencies?.length || 0;
-                console.log(`[Python] Processing dependency: ${dep.tableName}, Query length: ${dep.query?.length || 0}, Connector: ${dep.connectorId || 'default'}, Pipeline deps: ${pipelineCount}`);
-                debugLogs.push(`[${new Date().toLocaleTimeString()}] Fetching SQL for table '${dep.tableName}' (with ${pipelineCount} ancestors)...`);
+                const depConnectorId = dep.connectorId || 'default (none provided)';
+                console.log(`[Python DEBUG] Processing dependency: ${dep.tableName}`);
+                console.log(`[Python DEBUG]   - Connector ID: ${depConnectorId}`);
+                console.log(`[Python DEBUG]   - Query: "${dep.query}"`);
+                console.log(`[Python DEBUG]   - Is Python: ${dep.isPython}`);
+
+                debugLogs.push(`[${new Date().toLocaleTimeString()}] Fetching SQL for table '${dep.tableName}' (Connector: ${depConnectorId})...`);
 
                 let queryResults: any[] = [];
 
@@ -1794,30 +1832,44 @@ export async function executePythonPreviewAction(
 
                 if (dep.query) {
                     try {
-                        if (dep.connectorId) {
-                            // Fetch connector config to know dbType
-                            const connector = await db.connector.findUnique({
-                                where: { id: dep.connectorId, companyId: user.companyId }
-                            });
-                            if (connector && (connector.type === 'mssql' || connector.type === 'sql' || connector.type === 'SQL')) {
+                        // FIX: Execute SQL if query is present, even if connectorId is missing (defaults to internal DB)
+                        if (dep.query) {
+                            debugLogs.push(`[${new Date().toLocaleTimeString()}] Executing SQL query for '${dep.tableName}'...`);
+
+                            // Check connector type ONLY if connectorId is provided
+                            let isSqlConnector = true;
+                            if (dep.connectorId) {
+                                const connector = await db.connector.findUnique({
+                                    where: { id: dep.connectorId, companyId: user.companyId }
+                                });
+                                // Filter for SQL-like connectors
+                                isSqlConnector = !connector || (connector.type === 'mssql' || connector.type === 'sql' || connector.type === 'SQL');
+
+                                if (!isSqlConnector) {
+                                    console.warn(`[Python] Dependency ${dep.tableName} has connector type ${connector?.type} which might not be fully supported in preview yet.`);
+                                    debugLogs.push(`[WARN] Unsupported connector type for ${dep.tableName}: ${connector?.type}`);
+                                }
+                            }
+
+                            if (isSqlConnector) {
                                 // Use executeSqlPreviewAction WITH pipelineDependencies for cascading!
                                 const res = await executeSqlPreviewAction(
                                     dep.query,
-                                    dep.connectorId,
-                                    dep.pipelineDependencies // 🔥 KEY FIX: Pass ancestor queries
+                                    dep.connectorId, // Can be undefined/empty
+                                    dep.pipelineDependencies
                                 );
                                 if (res.data) {
                                     queryResults = res.data;
                                 } else {
                                     console.error(`[Python] Error fetching dependent SQL data for ${dep.tableName}: ${res.error}`);
                                     debugLogs.push(`[ERROR] Fetch failed for ${dep.tableName}: ${res.error}`);
+                                    // STOP execution if a core dependency fails
+                                    return {
+                                        success: false,
+                                        error: `Failed to fetch data for dependency '${dep.tableName}': ${res.error}`,
+                                        debugLogs
+                                    };
                                 }
-                            } else {
-                                // Default/HubSpot/Other handling (simplified for now, assuming only MSSQL works this way or generic)
-                                // If it's the internal DB or other, we might need a different handler.
-                                // Fallback or Specific handling if needed.
-                                console.warn(`[Python] Dependency ${dep.tableName} has connector type ${connector?.type} which might not be fully supported in preview yet.`);
-                                debugLogs.push(`[WARN] Unsupported connector type for ${dep.tableName}`);
                             }
                         }
 

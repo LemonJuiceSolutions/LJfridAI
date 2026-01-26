@@ -888,8 +888,8 @@ export default function EditNodeDialog({
     setEditingMediaName(null);
   };
 
-  // Memoized handler for Python chat submissions to prevent re-renders
-  const handlePythonSubmit = useCallback((userPrompt: string) => {
+  // Memoized handler for Python chat submissions
+  const handlePythonSubmit = useCallback(async (userPrompt: string) => {
     const apiKey = openRouterApiKey || '';
     const model = openRouterModel || 'google/gemini-2.0-flash-001';
 
@@ -900,6 +900,70 @@ export default function EditNodeDialog({
 
     const newHistory = [...pythonChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
     setPythonChatHistory(newHistory);
+    setPythonAgentStatus("Analisi contesto...");
+
+    // 1. GATHER CONTEXT
+    const context: {
+      availableTables: { name: string; columns?: string[]; isDataFrame?: boolean }[];
+      currentCode?: string;
+    } = {
+      availableTables: [],
+      currentCode: pythonCode
+    };
+
+    const tablesToFetchByConnector: Record<string, string[]> = {};
+
+    for (const pName of pythonSelectedPipelines) {
+      // Logic for SQL Result (Local)
+      if (pName === 'Risultato SQL' || (sqlResultName && pName === sqlResultName)) {
+        if (sqlPreviewData && sqlPreviewData.length > 0) {
+          const cols = Object.keys(sqlPreviewData[0]);
+          context.availableTables.push({
+            name: pName,
+            columns: cols,
+            isDataFrame: true
+          });
+        } else {
+          context.availableTables.push({ name: pName, isDataFrame: true });
+        }
+        continue;
+      }
+
+      // Logic for Input Tables
+      const inputTable = availableInputTables?.find(t => t.name === pName);
+      if (inputTable) {
+        if (!inputTable.isPython && inputTable.connectorId) {
+          if (!tablesToFetchByConnector[inputTable.connectorId]) {
+            tablesToFetchByConnector[inputTable.connectorId] = [];
+          }
+          tablesToFetchByConnector[inputTable.connectorId].push(inputTable.name);
+        } else {
+          // Python or unknown structure
+          context.availableTables.push({ name: pName, isDataFrame: true });
+        }
+      }
+    }
+
+    // Fetch schemas in parallel
+    if (Object.keys(tablesToFetchByConnector).length > 0) {
+      const schemaPromises = Object.entries(tablesToFetchByConnector).map(async ([connId, tables]) => {
+        try {
+          const res = await fetchTableSchemaAction(connId, tables);
+          if (res.tables) {
+            Object.entries(res.tables).forEach(([tableName, columnsWithTypes]) => {
+              context.availableTables.push({
+                name: tableName,
+                columns: columnsWithTypes,
+                isDataFrame: true
+              });
+            });
+          }
+        } catch (e) {
+          console.error("Failed to fetch schema for context", e);
+        }
+      });
+      await Promise.all(schemaPromises);
+    }
 
     setPythonAgentStatus("Generazione Codice Python...");
 
@@ -910,7 +974,8 @@ export default function EditNodeDialog({
           { apiKey, model },
           pythonOutputType,
           pythonSelectedPipelines,
-          currentHistory
+          currentHistory,
+          context // Pass context!
         );
 
         if (response.code) {
@@ -922,9 +987,16 @@ export default function EditNodeDialog({
             {},
             pythonSelectedPipelines.map(pName => {
               const dep = availableInputTables?.find(t => t.name === pName);
+              // Fallback query if missing for SQL tables (e.g. raw tables)
+              let finalQuery = dep?.sqlQuery;
+              if (!finalQuery && !dep?.isPython) {
+                // Use TOP 1000 and brackets for MSSQL safety
+                finalQuery = `SELECT TOP 1000 * FROM [${dep?.name}]`;
+              }
+
               return {
                 tableName: dep?.name || '',
-                query: dep?.sqlQuery,
+                query: finalQuery,
                 connectorId: dep?.connectorId,
                 isPython: dep?.isPython,
                 pythonCode: dep?.pythonCode,
@@ -946,6 +1018,17 @@ export default function EditNodeDialog({
               debugLogs: previewRes.debugLogs
             });
             setHasPythonCodeChanged(true);
+
+            // DEBUG AID: If data is empty, show logs to help user/AI debug
+            if (!previewRes.data || previewRes.data.length === 0) {
+              const lastLogs = previewRes.debugLogs?.slice(-5).join('\n') || "No logs";
+              toast({
+                variant: "default",
+                title: "Nessun dato (Debug Info)",
+                description: <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4 overflow-auto text-xs text-white">{lastLogs}</pre>,
+                duration: 10000
+              });
+            }
 
             const successMsg = retryCount > 0
               ? `Ho corretto l'errore ed eseguito lo script con successo (al tentativo ${retryCount})!\n\n\`\`\`python\n${response.code}\n\`\`\``
@@ -991,7 +1074,7 @@ export default function EditNodeDialog({
     };
 
     performGeneration(newHistory, 0).finally(() => setPythonAgentStatus(null));
-  }, [openRouterApiKey, openRouterModel, pythonChatHistory, pythonOutputType, pythonSelectedPipelines, pythonConnectorId, availableInputTables, toast]);
+  }, [openRouterApiKey, openRouterModel, pythonChatHistory, pythonOutputType, pythonSelectedPipelines, pythonConnectorId, availableInputTables, toast, pythonCode, sqlResultName, sqlPreviewData]);
 
   const handleSaveClick = async () => {
     // Validation based on CURRENT node type, with fallback for type conversion case
@@ -2125,10 +2208,17 @@ export default function EditNodeDialog({
                               pythonSelectedPipelines.forEach(pName => {
                                 const table = availableInputTables.find(t => t.name === pName);
                                 if (table) {
+                                  // Fallback query if missing for SQL tables (e.g. raw tables)
+                                  let finalQuery = table.sqlQuery;
+                                  if (!finalQuery && !table.isPython) {
+                                    // Use TOP 1000 and brackets for MSSQL safety
+                                    finalQuery = `SELECT TOP 1000 * FROM [${table.name}]`;
+                                  }
+
                                   dependencies.push({
                                     tableName: pName,
                                     connectorId: table.connectorId,
-                                    query: table.sqlQuery,
+                                    query: finalQuery,
                                     isPython: table.isPython,
                                     pythonCode: table.pythonCode,
                                     pipelineDependencies: table.pipelineDependencies
@@ -2299,8 +2389,18 @@ export default function EditNodeDialog({
                   )}
 
                   {/* Preview Result - BELOW the two columns, max 200px */}
+                  {/* DEBUG LOGS VIEWER */}
+                  {pythonPreviewResult?.debugLogs && pythonPreviewResult.debugLogs.length > 0 && (
+                    <div className="mt-4 p-4 border rounded-lg bg-slate-950 text-xs font-mono text-green-400 overflow-auto max-h-60">
+                      <div className="font-bold text-white mb-2 pb-2 border-b border-slate-800">Server-Side Debug Logs:</div>
+                      {pythonPreviewResult.debugLogs.map((log, i) => (
+                        <div key={i} className="whitespace-pre-wrap">{log}</div>
+                      ))}
+                    </div>
+                  )}
+
                   {pythonPreviewResult && (
-                    <div className="border rounded-md overflow-hidden mt-4">
+                    <div className="mt-4 border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[100px]">
                       <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
                         <span className="font-semibold text-xs flex items-center gap-2">
                           <Code className="h-3 w-3" />
