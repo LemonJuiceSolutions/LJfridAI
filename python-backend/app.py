@@ -403,25 +403,27 @@ def execute_python():
                         fig_height = res_val.layout.height if res_val.layout.height else 500
                         
                         # CRITICAL: Limit dimensions for email compatibility
-                        # Enforce max width and height to avoid huge images in email body
+                        # Enforce max width but allow height to grow (emails scroll vertically)
                         MAX_WIDTH = 1200
-                        MAX_HEIGHT = 1500  # Increased to allow tall charts (e.g. Gantt with many rows)
+                        MAX_HEIGHT = 6000  # Increased significantly to allow very tall charts (Gantt)
                         
-                        # Scale proportionally if too large
+                        # Scale proportionally if too large horizontally
                         if fig_width > MAX_WIDTH:
                             ratio = MAX_WIDTH / fig_width
                             fig_width = MAX_WIDTH
                             fig_height = int(fig_height * ratio)
                         
+                        # Don't strictly constrain height to avoid crushing width on tall charts
+                        # If extremely tall, we just cap it but try to preserve width if possible? 
+                        # Actually with 6000 limit it should be fine.
                         if fig_height > MAX_HEIGHT:
+                            # Only if it exceeds 6000px legical (which is huge)
                             ratio = MAX_HEIGHT / fig_height
                             fig_height = MAX_HEIGHT
                             fig_width = int(fig_width * ratio)
                         
-                        # Removed forced aspect ratio constraint to support tall/wide charts naturally
-                        
-                        # Use 2x scale for better high-DPI quality (email clients scale down nicely)
-                        scale = 2.0
+                        # Use 2.5x scale for high-DPI (Retina) quality without creating massive files
+                        scale = 2.5
                         
                         print(f"📊 [EXECUTE] Generating PNG: {fig_width}x{fig_height} @ {scale}x scale")
                         img_bytes = pio.to_image(res_val, format='png', width=fig_width, height=fig_height, scale=scale)
