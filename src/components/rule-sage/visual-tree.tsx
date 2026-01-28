@@ -90,8 +90,32 @@ type TreeNodeWithLayout = {
 
 
 // --- Layout Calculation Logic ---
-const calculateLayout = (root: DecisionNode) => {
+const createNodeMap = (root: DecisionNode): Map<string, DecisionNode> => {
+    const map = new Map<string, DecisionNode>();
+    const traverse = (node: any) => {
+        if (!node || typeof node !== 'object') return;
+
+        if (node.id) {
+            map.set(node.id, node);
+        }
+
+        if (node.options) {
+            Object.values(node.options).forEach((child: any) => {
+                if (Array.isArray(child)) {
+                    child.forEach(c => traverse(c));
+                } else {
+                    traverse(child);
+                }
+            });
+        }
+    };
+    traverse(root);
+    return map;
+};
+
+const calculateLayout = (root: DecisionNode, nodeMap: Map<string, DecisionNode>) => {
     const layout: Map<string, TreeNodeWithLayout> = new Map();
+
     let maxY = 0;
 
     function calculateNodePositions(
@@ -99,7 +123,8 @@ const calculateLayout = (root: DecisionNode) => {
         path: string,
         x = 0,
         y = 0,
-        parentNode?: TreeNodeWithLayout
+        parentNode?: TreeNodeWithLayout,
+        visitedRefs: Set<string> = new Set()
     ): { width: number, height: number, layoutNode: TreeNodeWithLayout } {
         const id = (typeof node === 'object' && node.id) ? node.id : path;
 
@@ -108,7 +133,17 @@ const calculateLayout = (root: DecisionNode) => {
         const isLink = typeof node === 'object' && 'ref' in node;
         const isSubTreeLink = typeof node === 'object' && 'subTreeRef' in node;
 
-        if (typeof node !== 'object' || ('decision' in node) || isLink || isSubTreeLink || !node.options) {
+        // CHECK FOR VALID EXPANDABLE LINK
+        let expandedTargetNode: DecisionNode | null = null;
+        if (isLink && node.ref && nodeMap) {
+            const target = nodeMap.get(node.ref);
+            // Check if valid target exists AND we haven't visited this ref ID in this branch yet (cycle detection)
+            if (target && target.options && !visitedRefs.has(node.ref)) {
+                expandedTargetNode = target;
+            }
+        }
+
+        if ((typeof node !== 'object' || ('decision' in node) || isLink || isSubTreeLink || !node.options) && !expandedTargetNode) {
             let type: LayoutNodeType = 'decision';
             if (isLink) type = 'link';
             if (isSubTreeLink) type = 'sub-tree-link';
@@ -128,18 +163,47 @@ const calculateLayout = (root: DecisionNode) => {
             return { width: effectiveWidth, height: effectiveHeight, layoutNode: nodeWithLayout };
         }
 
+        // --- EXPANDED LINK HANDLING ---
+        // If it's an expanded link, we effectively render it as a QUESTION node (with children)
+        // verifying we use the *target's* structure but keep the *link's* position/identity for the root of this subtree.
+        const effectiveNode = expandedTargetNode || node;
+        const isExpandedLink = !!expandedTargetNode;
+
         const questionNodeLayout: TreeNodeWithLayout = {
-            node, path, id, x, y,
+            node: isExpandedLink ? { ...node, ...expandedTargetNode, id: node.id } : node, // Merge to show target props but keep link ID
+            path, id, x, y,
             width: NODE_WIDTH, height: NODE_HEIGHT,
-            type: 'question',
+            type: 'question', // Treat as question to render children
             parent: parentNode
         };
 
-        const children = Object.entries(node.options);
+        // Mark as link for styling if needed (optional, logic might need adjustment in renderer)
+        if (isExpandedLink) {
+            (questionNodeLayout as any).isVirtualLink = true;
+            (questionNodeLayout as any).originalRefId = node.ref;
+        }
+
+        const children = Object.entries(effectiveNode.options || {});
+
+        // Update visited refs for children
+        const nextVisitedRefs = new Set(visitedRefs);
+        if (isExpandedLink && node.ref) {
+            nextVisitedRefs.add(node.ref);
+        }
 
         // First pass: calculate dimensions
         const childrenDims = children.map(([option, childNode]) => {
-            const optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
+            // For virtual nodes, we append a suffix to the path to indicate it's a "ghost" path
+            // Normal path: root.options['A']
+            // Link path: root.options['A']#linked:REF_ID.options['B'] 
+            // Better: just append as if it was normal, but we know it won't match a real path for editing.
+            // To make unique keys, we must rely on the path being unique.
+
+            let optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
+            if (isExpandedLink) {
+                optionPath += `#virtual:${node.ref}`;
+            }
+
             const startY = y + NODE_HEIGHT + V_SPACING + OPTION_NODE_HEIGHT;
 
             if (Array.isArray(childNode)) {
@@ -150,7 +214,7 @@ const calculateLayout = (root: DecisionNode) => {
 
                 childNode.forEach((c, idx) => {
                     // Pass dummy coordinates, we only care about dimensions here
-                    const { width, height } = calculateNodePositions(c, `${optionPath}[${idx}]`, 0, 0, undefined);
+                    const { width, height } = calculateNodePositions(c, `${optionPath}[${idx}]`, 0, 0, undefined, nextVisitedRefs);
                     const dims = { width, height };
 
                     subDims.push(dims);
@@ -165,7 +229,7 @@ const calculateLayout = (root: DecisionNode) => {
 
                 return { width: Math.max(OPTION_NODE_WIDTH, totalWidth), height: maxItemHeight, subDims, isArray: true };
             } else {
-                const { width, height, layoutNode } = calculateNodePositions(childNode, optionPath, 0, startY, undefined);
+                const { width, height, layoutNode } = calculateNodePositions(childNode, optionPath, 0, startY, undefined, nextVisitedRefs);
                 const dims = { width, height };
                 return { width: Math.max(OPTION_NODE_WIDTH, dims.width), height: dims.height, subDims: [dims], isArray: false };
             }
@@ -184,11 +248,14 @@ const calculateLayout = (root: DecisionNode) => {
             const [option, childNode] = child;
             const branchInfo = childrenDims[i];
             const branchWidth = branchInfo.width;
-            const optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
+            let optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
+            if (isExpandedLink) {
+                optionPath += `#virtual:${node.ref}`;
+            }
 
             const optionId = `${id}-${option}`;
-            const variableId = node.variableId;
-            const optionData = variableId && node.possibleValues ? node.possibleValues.find((v: VariableOption) => v.name === option) : null;
+            const variableId = effectiveNode.variableId;
+            const optionData = variableId && effectiveNode.possibleValues ? effectiveNode.possibleValues.find((v: VariableOption) => v.name === option) : null;
 
             const optionNodeLayout: TreeNodeWithLayout = {
                 node: { option: option, id: optionId, variableId: variableId, optionId: optionData?.id },
@@ -215,13 +282,13 @@ const calculateLayout = (root: DecisionNode) => {
                 childNode.forEach((c, idx) => {
                     const itemDims = branchInfo.subDims[idx];
 
-                    calculateNodePositions(c, `${optionPath}[${idx}]`, currentItemX, childStartY, itemParent);
+                    calculateNodePositions(c, `${optionPath}[${idx}]`, currentItemX, childStartY, itemParent, nextVisitedRefs);
 
                     currentItemX += itemDims.width + H_SPACING;
                 });
             } else {
                 const childWidth = branchInfo.subDims[0].width;
-                calculateNodePositions(childNode, optionPath, currentX + (branchWidth - childWidth) / 2, childStartY, optionNodeLayout);
+                calculateNodePositions(childNode, optionPath, currentX + (branchWidth - childWidth) / 2, childStartY, optionNodeLayout, nextVisitedRefs);
             }
 
             currentX += branchWidth + H_SPACING;
@@ -306,7 +373,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
         };
         enrichNode(enrichedTree);
-        return calculateLayout(enrichedTree);
+
+        // Create map for O(1) lookup
+        const nodeMap = createNodeMap(enrichedTree);
+
+        return calculateLayout(enrichedTree, nodeMap);
     }, [tree, dbVariables]);
 
     const flattenTree = useCallback((node: any, path: string, list: any[]) => {
@@ -493,6 +564,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             setEditingNodeInfo({ path, node: { decision: node }, type: 'decision' });
         } else if (typeof node === 'object' && node !== null && ('ref' in node || 'subTreeRef' in node)) {
             toast({ variant: "default", title: "Info", description: "I nodi di collegamento non possono essere modificati direttamente. Eliminali e ricreali se necessario." });
+            return;
+            return;
+        } else if (path.includes("#virtual:")) {
+            toast({ variant: "default", title: "Sola Lettura", description: "I nodi espansi da un link sono di sola lettura in questa vista." });
             return;
         } else {
             console.error("Node at path is not an editable type or is null:", path, node);
@@ -1024,9 +1099,42 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     // Returns only pipeline tables from ancestor nodes of the given path
     // Each table includes its own ancestors as pipelineDependencies for cascading execution
     const getAncestorInputTables = useMemo(() => {
-        return (currentPath: string): { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] => {
+        return (currentPath: string): { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] => {
             // First, collect all ancestors with their paths for ordering
-            const ancestorItems: { path: string; name: string; connectorId?: string; sqlQuery?: string; isPython?: boolean; pythonCode?: string }[] = [];
+            const ancestorItems: { path: string; name: string; connectorId?: string; sqlQuery?: string; isPython?: boolean; pythonCode?: string, pythonOutputType?: string, pipelineDependencies?: any[] }[] = [];
+
+            // Helper to recursively resolve dependencies
+            const resolveDependencies = (node: any, visited: Set<string> = new Set()): any[] => {
+                const deps: any[] = [];
+                const pipelines = [...(node.pythonSelectedPipelines || []), ...(node.sqlSelectedPipelines || [])];
+
+                pipelines.forEach(pName => {
+                    if (visited.has(pName)) return;
+
+                    const sourceItem = flatTree.find((item: any) => {
+                        const n = item.node;
+                        return n && typeof n === 'object' &&
+                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName));
+                    });
+
+                    if (sourceItem) {
+                        const sn = sourceItem.node;
+                        const newVisited = new Set(visited);
+                        newVisited.add(pName);
+
+                        deps.push({
+                            tableName: pName,
+                            connectorId: sn.pythonResultName === pName ? sn.pythonConnectorId : sn.sqlConnectorId,
+                            query: sn.sqlResultName === pName ? sn.sqlQuery : undefined,
+                            isPython: !!(sn.pythonResultName === pName),
+                            pythonCode: sn.pythonResultName === pName ? sn.pythonCode : undefined,
+                            pythonOutputType: sn.pythonOutputType,
+                            pipelineDependencies: resolveDependencies(sn, newVisited)
+                        });
+                    }
+                });
+                return deps;
+            };
 
             console.log(`[ANCESTOR DEBUG] Looking for ancestors of: "${currentPath}"`);
 
@@ -1058,7 +1166,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 name: actualNode.sqlResultName,
                                 connectorId: actualNode.sqlConnectorId,
                                 sqlQuery: actualNode.sqlQuery, // Can be undefined/empty
-                                isPython: false
+                                isPython: false,
+                                pythonOutputType: undefined,
+                                pipelineDependencies: resolveDependencies(actualNode)
                             });
                         }
 
@@ -1071,7 +1181,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 connectorId: actualNode.pythonConnectorId,
                                 sqlQuery: undefined,
                                 isPython: true,
-                                pythonCode: actualNode.pythonCode
+                                pythonCode: actualNode.pythonCode,
+                                pythonOutputType: actualNode.pythonOutputType,
+                                pipelineDependencies: resolveDependencies(actualNode)
                             });
                         }
                     }
@@ -1082,7 +1194,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             ancestorItems.sort((a, b) => a.path.length - b.path.length);
 
             // Build result with pipelineDependencies for each table
-            const tables: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
+            const tables: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
 
             for (let i = 0; i < ancestorItems.length; i++) {
                 const item = ancestorItems[i];
@@ -1106,6 +1218,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     sqlQuery: item.sqlQuery,
                     isPython: item.isPython,
                     pythonCode: item.pythonCode,
+                    pythonOutputType: item.pythonOutputType as any,
                     pipelineDependencies: pipelineDeps.length > 0 ? pipelineDeps : undefined
                 });
 
@@ -1171,8 +1284,42 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     }, [flatTree]);
 
     const getLinkedNodesTables = useMemo(() => {
-        return (currentPath: string): { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] => {
-            const linkedTables: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
+        return (currentPath: string): { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] => {
+            const linkedTables: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
+
+            // Helper to recursively resolve dependencies
+            const resolveDependencies = (node: any, visited: Set<string> = new Set()): any[] => {
+                const deps: any[] = [];
+                const pipelines = [...(node.pythonSelectedPipelines || []), ...(node.sqlSelectedPipelines || [])];
+
+                pipelines.forEach(pName => {
+                    if (visited.has(pName)) return;
+
+                    // Find the node in the flat tree that produces this result
+                    const sourceItem = flatTree.find((item: any) => {
+                        const n = item.node;
+                        return n && typeof n === 'object' &&
+                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName));
+                    });
+
+                    if (sourceItem) {
+                        const sn = sourceItem.node;
+                        const newVisited = new Set(visited);
+                        newVisited.add(pName);
+
+                        deps.push({
+                            tableName: pName,
+                            connectorId: sn.pythonResultName === pName ? sn.pythonConnectorId : sn.sqlConnectorId,
+                            query: sn.sqlResultName === pName ? sn.sqlQuery : undefined,
+                            isPython: !!(sn.pythonResultName === pName),
+                            pythonCode: sn.pythonResultName === pName ? sn.pythonCode : undefined,
+                            pythonOutputType: sn.pythonOutputType,
+                            pipelineDependencies: resolveDependencies(sn, newVisited)
+                        });
+                    }
+                });
+                return deps;
+            };
 
             console.log(`[LINKED NODES DEBUG] Looking for linked nodes from path: "${currentPath}"`);
 
@@ -1196,15 +1343,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                         console.log(`[LINKED NODES DEBUG] Link at "${item.path}" points to current node! Extracting tables from parent.`);
 
                         // Navigate up the path to find the parent question node
-                        // Path format: root.options['Name'].options['Mail'][1]
-                        // We need to go up to the question node (removing the .options['Mail'][1] part)
                         const pathParts = item.path.split('.options');
                         if (pathParts.length >= 2) {
-                            // Remove the last options part to get the parent question path
-                            // e.g., from "root.options['Commesse'][0].options['Mail'][1]" 
-                            // go to "root.options['Commesse'][0]"
                             const parentQuestionPath = pathParts.slice(0, -1).join('.options');
-
                             console.log(`[LINKED NODES DEBUG] Looking for parent question at path: "${parentQuestionPath}"`);
 
                             // Find the parent question node
@@ -1222,7 +1363,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                         connectorId: parentNode.sqlConnectorId,
                                         sqlQuery: parentNode.sqlQuery,
                                         isPython: false,
-                                        pipelineDependencies: parentNode.pipelineDependencies
+                                        pipelineDependencies: resolveDependencies(parentNode)
                                     });
                                 }
 
@@ -1234,7 +1375,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                         connectorId: parentNode.pythonConnectorId,
                                         isPython: true,
                                         pythonCode: parentNode.pythonCode,
-                                        pipelineDependencies: parentNode.pipelineDependencies
+                                        pythonOutputType: parentNode.pythonOutputType,
+                                        pipelineDependencies: resolveDependencies(parentNode)
                                     });
                                 }
                             } else {
@@ -1292,12 +1434,12 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     >
                         <div className="visual-tree-container" style={{ width: layout.contentWidth, height: layout.contentHeight }} onClick={() => setSelectedLinkId(null)}>
                             <svg className="connector-svg">
-                                {connectorData.map(c => {
+                                {connectorData.map((c, idx) => {
                                     const isSecondary = c.isLink || c.isSubTreeLink;
                                     const strokeColor = selectedLinkId === c.id ? '#6366f1' : (c.isBroken ? '#ef4444' : (isSecondary ? '#f59e0b' : '#a78bfa')); // Amber-500 for secondary, Violet-400 for direct
 
                                     return (
-                                        <g key={c.id} onClick={(e) => { e.stopPropagation(); setSelectedLinkId(c.id); }} className="cursor-pointer" style={{ pointerEvents: 'auto' }}>
+                                        <g key={`${c.id}-${idx}`} onClick={(e) => { e.stopPropagation(); setSelectedLinkId(c.id); }} className="cursor-pointer" style={{ pointerEvents: 'auto' }}>
                                             <path
                                                 d={c.pathD}
                                                 className={cn('connector-path transition-all duration-300', { 'is-link': isSecondary, 'is-broken': c.isBroken })}
@@ -1317,13 +1459,15 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 })}
                             </svg>
 
-                            {layout.positionedNodes.map(item => {
+                            {layout.positionedNodes.map((item, idx) => {
                                 const { node, path, x, y, width, height, type } = item;
 
                                 // Hide link nodes as they are rendered as connectors with labels
                                 if (type === 'link') return null;
 
                                 const actualNode = (typeof node === 'object' && node !== null && 'node' in node) ? (node as any).node : node;
+                                // Unique key using path and index to prevent collision
+                                const itemKey = `${item.id}-${path}-${idx}`;
 
                                 let text: string;
                                 const nodeAsQuestion = actualNode as DecisionNode;
@@ -1353,16 +1497,16 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
                                 const isUndefinedPath = type === 'decision' && text === 'Percorso non definito';
                                 const variableId = type === 'question' ? nodeAsQuestion.variableId : (type === 'option' ? nodeAsOption.variableId : undefined);
-                                const mediaItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && actualNode !== null && 'media' in actualNode ? actualNode.media : [];
-                                const linkItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && actualNode !== null && 'links' in actualNode ? actualNode.links : [];
-                                const triggerItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && actualNode !== null && 'triggers' in actualNode ? actualNode.triggers : [];
+                                const mediaItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && actualNode !== null && 'media' in actualNode && Array.isArray(actualNode.media) ? actualNode.media : [];
+                                const linkItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && actualNode !== null && 'links' in actualNode && Array.isArray(actualNode.links) ? actualNode.links : [];
+                                const triggerItems = (type === 'question' || type === 'decision' || type === 'option') && typeof actualNode !== 'string' && actualNode !== null && 'triggers' in actualNode && Array.isArray(actualNode.triggers) ? actualNode.triggers : [];
 
                                 const isInternalLink = type === 'decision' && typeof actualNode === 'object' && actualNode !== null && 'ref' in actualNode;
                                 const isSubTree = type === 'sub-tree-link';
 
                                 return (
                                     <div
-                                        key={`${item.id}-${path}`}
+                                        key={itemKey}
                                         className={cn(`tree-node-wrapper group is-${type} flex flex-col`, { 'is-undefined-path': isUndefinedPath, 'is-link': isInternalLink || isSubTree })}
                                         style={{ left: x, top: y, width: width, height: height }}
                                     >
@@ -1488,10 +1632,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 )
                             })}
 
-                            {connectorData.map(c => {
+                            {connectorData.map((c, idx) => {
                                 if (!c.isLink || selectedLinkId !== c.id) return null;
                                 return (
-                                    <div key={`${c.id}-overlay`} className="absolute z-50 flex items-center justify-center gap-1 bg-white dark:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 rounded-full shadow-lg px-2 py-1 text-xs text-muted-foreground" style={{ left: c.midX - 60, top: c.midY - 15, width: 120, height: 30 }}>
+                                    <div key={`${c.id}-overlay-${idx}`} className="absolute z-50 flex items-center justify-center gap-1 bg-white dark:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 rounded-full shadow-lg px-2 py-1 text-xs text-muted-foreground" style={{ left: c.midX - 60, top: c.midY - 15, width: 120, height: 30 }}>
                                         <span className="max-w-[60px] truncate" title={c.targetName}>Link: {c.targetName}</span>
                                         <button
                                             className="h-4 w-4 flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 rounded-full transition-colors"

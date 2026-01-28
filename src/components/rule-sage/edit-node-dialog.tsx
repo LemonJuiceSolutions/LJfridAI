@@ -188,7 +188,7 @@ interface EditNodeDialogProps {
   nodePath: string;
   treeId: string;
   isSaving: boolean;
-  availableInputTables?: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[];
+  availableInputTables?: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[];
   availableParentMedia?: MediaItem[];
   availableParentLinks?: LinkItem[];
   availableParentTriggers?: TriggerItem[];
@@ -2884,7 +2884,10 @@ export default function EditNodeDialog({
                             ...(availableInputTables?.map(t => ({ name: t.name })) || []),
                             ...(sqlResultName ? [{ name: sqlResultName }] : [])
                           ]}
-                          availableCharts={pythonResultName && pythonOutputType === 'chart' ? [{ name: pythonResultName }] : []}
+                          availableCharts={[
+                            ...(pythonResultName && pythonOutputType === 'chart' ? [{ name: pythonResultName }] : []),
+                            ...(availableInputTables?.filter(t => t.pythonOutputType === 'chart').map(t => ({ name: t.name })) || [])
+                          ]}
                           availableAttachments={[
                             ...(availableParentMedia?.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' })) || []),
                             ...media.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' }))
@@ -2978,47 +2981,71 @@ export default function EditNodeDialog({
                           )}
 
                           {/* Python Outputs */}
-                          {pythonResultName && (
-                            <div className="space-y-2 pt-2 border-t">
-                              <p className="text-xs font-semibold flex items-center gap-1.5 text-purple-600"><Code className="h-3.5 w-3.5" /> Output Python</p>
-                              <div className="bg-background border rounded p-2 text-xs hover:border-purple-300 transition-colors border-l-4 border-l-purple-500/30">
-                                <div className="font-medium mb-1.5 truncate" title={pythonResultName}>
-                                  {pythonResultName} <span className="opacity-70 text-[10px]">({pythonOutputType})</span>
-                                </div>
-                                <div className="flex items-center justify-between gap-2 overflow-x-auto">
-                                  {pythonOutputType === 'chart' && (
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      className="h-6 text-[10px] px-2 flex-shrink-0"
-                                      onClick={() => editorRef.current?.insertPlaceholder('GRAFICO', pythonResultName)}
-                                    >
-                                      <BarChart3 className="h-3 w-3 mr-1" /> Inserisci
-                                    </Button>
-                                  )}
-                                  <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
-                                    <input
-                                      type="checkbox"
-                                      checked={safeEmailAttachments.pythonOutputsAsAttachment.includes(pythonResultName)}
-                                      onChange={(e) => {
-                                        setEmailConfig(prev => ({
-                                          ...prev,
-                                          attachments: {
-                                            ...prev.attachments,
-                                            pythonOutputsAsAttachment: e.target.checked
-                                              ? [...prev.attachments.pythonOutputsAsAttachment, pythonResultName]
-                                              : prev.attachments.pythonOutputsAsAttachment.filter(t => t !== pythonResultName)
-                                          }
-                                        }));
-                                      }}
-                                      className="rounded w-3.5 h-3.5"
-                                    />
-                                    <span className="text-muted-foreground text-[10px]">Allega File</span>
-                                  </label>
-                                </div>
+                          {/* Python Outputs (Current + Ancestors) */}
+                          {(() => {
+                            const allPythonOutputs = [
+                              ...(pythonResultName ? [{
+                                name: pythonResultName,
+                                type: pythonOutputType,
+                                isCurrent: true
+                              }] : []),
+                              ...(availableInputTables || [])
+                                .filter(t => t.isPython && t.pythonCode && t.name !== pythonResultName)
+                                .map(t => ({
+                                  name: t.name,
+                                  type: t.pythonOutputType || 'table', // Fallback to table if unknown, but visual-tree should provide it
+                                  isCurrent: false
+                                }))
+                            ];
+
+                            if (allPythonOutputs.length === 0) return null;
+
+                            return (
+                              <div className="space-y-2 pt-2 border-t">
+                                <p className="text-xs font-semibold flex items-center gap-1.5 text-purple-600">
+                                  <Code className="h-3.5 w-3.5" /> Output Python
+                                </p>
+                                {allPythonOutputs.map((output, idx) => (
+                                  <div key={`${output.name}-${idx}`} className="bg-background border rounded p-2 text-xs hover:border-purple-300 transition-colors border-l-4 border-l-purple-500/30 mb-1.5 last:mb-0">
+                                    <div className="font-medium mb-1.5 truncate" title={output.name}>
+                                      {output.name} <span className="opacity-70 text-[10px]">({output.type} {output.isCurrent ? '- Corrente' : '- Collegato'})</span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2 overflow-x-auto">
+                                      {output.type === 'chart' && (
+                                        <Button
+                                          variant="secondary"
+                                          size="sm"
+                                          className="h-6 text-[10px] px-2 flex-shrink-0"
+                                          onClick={() => editorRef.current?.insertPlaceholder('GRAFICO', output.name)}
+                                        >
+                                          <BarChart3 className="h-3 w-3 mr-1" /> Inserisci
+                                        </Button>
+                                      )}
+                                      <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
+                                        <input
+                                          type="checkbox"
+                                          checked={safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name)}
+                                          onChange={(e) => {
+                                            setEmailConfig(prev => ({
+                                              ...prev,
+                                              attachments: {
+                                                ...prev.attachments,
+                                                pythonOutputsAsAttachment: e.target.checked
+                                                  ? [...prev.attachments.pythonOutputsAsAttachment, output.name]
+                                                  : prev.attachments.pythonOutputsAsAttachment.filter(t => t !== output.name)
+                                              }
+                                            }));
+                                          }}
+                                          className="rounded w-3.5 h-3.5"
+                                        />
+                                        <span className="text-muted-foreground text-[10px]">Allega File</span>
+                                      </label>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
 
                           {/* Media / Attachments (Parents + Current) */}
                           {/* Media / Attachments (Parents + Current) */}
@@ -3248,70 +3275,104 @@ export default function EditNodeDialog({
                           const placeholderChartNames = placeholderChartMatches.map(m => m.replace(/\{\{GRAFICO:|}\}/g, ''));
 
                           // Add current node Python output if selected OR referenced in placeholder
-                          if (pythonResultName && pythonCode) {
-                            const inBody = safeEmailAttachments.pythonOutputsInBody.includes(pythonResultName) || placeholderChartNames.includes(pythonResultName);
-                            const asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(pythonResultName);
+                          // Helper to build dependencies for a Python execution
+                          const buildDependencies = (sourceName: string, isCurrentNode: boolean = false) => {
+                            const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: any[] }> = [];
+
+                            // If it's the current node, use the current selected pipelines form state
+                            const pipelinesToUse = isCurrentNode ? pythonSelectedPipelines : [];
+                            // Note: For ancestor nodes, their dependencies are already embedded in their pipelineDependencies object from visual-tree logic
+                            // or we might need to look them up if deep dependencies are needed.
+                            // But usually, the `availableInputTables` entry already has the `pipelineDependencies` populate.
+
+                            if (isCurrentNode && availableInputTables) {
+                              pythonSelectedPipelines.forEach(pName => {
+                                const table = availableInputTables.find(t => t.name === pName);
+                                if (table) {
+                                  dependencies.push({
+                                    tableName: pName,
+                                    connectorId: table.connectorId,
+                                    query: table.sqlQuery,
+                                    isPython: table.isPython,
+                                    pythonCode: table.pythonCode,
+                                    pipelineDependencies: table.pipelineDependencies
+                                  });
+                                }
+                              });
+                            }
+
+                            return dependencies;
+                          };
+
+
+                          // Combined list of ALL potential outputs (Current + Ancestors)
+                          const allPotentialOutputs = [
+                            ...(pythonResultName && pythonCode ? [{
+                              name: pythonResultName,
+                              code: pythonCode,
+                              outputType: pythonOutputType,
+                              connectorId: pythonConnectorId,
+                              isCurrent: true,
+                              dependenciesOverride: null as any
+                            }] : []),
+                            ...(availableInputTables || [])
+                              .filter(t => t.isPython && t.pythonCode && t.name !== pythonResultName)
+                              .map(t => ({
+                                name: t.name,
+                                code: t.pythonCode!,
+                                outputType: t.pythonOutputType || 'table',
+                                connectorId: t.connectorId,
+                                isCurrent: false,
+                                dependenciesOverride: t.pipelineDependencies
+                              }))
+                          ];
+
+                          // Iterate over all potential outputs and add if selected or placed in body
+                          for (const output of allPotentialOutputs) {
+                            const inBody = safeEmailAttachments.pythonOutputsInBody.includes(output.name) || placeholderChartNames.includes(output.name);
+                            const asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name);
+
                             if (inBody || asAttachment) {
-                              // Prepare dependencies for Python execution
-                              // This includes BOTH ancestor tables AND the current node's SQL output (if any)
-                              const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: any[] }> = [];
+                              let dependencies = output.dependenciesOverride || [];
 
-                              // Add ancestor table dependencies from pythonSelectedPipelines
-                              if (availableInputTables) {
-                                pythonSelectedPipelines.forEach(pName => {
-                                  const table = availableInputTables.find(t => t.name === pName);
-                                  if (table) {
-                                    dependencies.push({
-                                      tableName: pName,
-                                      connectorId: table.connectorId,
-                                      query: table.sqlQuery,
-                                      isPython: table.isPython,
-                                      pythonCode: table.pythonCode,
-                                      pipelineDependencies: table.pipelineDependencies
-                                    });
-                                  }
-                                });
-                              }
+                              if (output.isCurrent) {
+                                // Re-calculate dependencies for current node to ensure latest state
+                                dependencies = buildDependencies(output.name, true);
 
-                              // CRITICAL: If the current node has BOTH SQL and Python output,
-                              // the Python (chart) likely depends on the SQL output (table).
-                              // Include the current node's SQL as a dependency with its full chain.
-                              if (sqlResultName && sqlQuery) {
-                                // Build the SQL's dependencies (same as we do for selectedTables)
-                                const sqlDeps: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }> = [];
-                                if (availableInputTables && selectedPipelines.length > 0) {
-                                  for (const pName of selectedPipelines) {
-                                    const sourceTable = availableInputTables.find(t => t.name === pName);
-                                    if (sourceTable) {
-                                      sqlDeps.push({
-                                        tableName: sourceTable.name,
-                                        query: sourceTable.sqlQuery,
-                                        isPython: sourceTable.isPython,
-                                        pythonCode: sourceTable.pythonCode,
-                                        connectorId: sourceTable.connectorId
-                                      });
+                                // Add current node's SQL result as dependency if exists
+                                if (sqlResultName && sqlQuery) {
+                                  // Build SQL deps
+                                  const sqlDeps: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }> = [];
+                                  if (availableInputTables && selectedPipelines.length > 0) {
+                                    for (const pName of selectedPipelines) {
+                                      const sourceTable = availableInputTables.find(t => t.name === pName);
+                                      if (sourceTable) {
+                                        sqlDeps.push({
+                                          tableName: sourceTable.name,
+                                          query: sourceTable.sqlQuery,
+                                          isPython: sourceTable.isPython,
+                                          pythonCode: sourceTable.pythonCode,
+                                          connectorId: sourceTable.connectorId
+                                        });
+                                      }
                                     }
                                   }
-                                }
 
-                                // Add the current node's SQL output as a dependency for the Python chart
-                                dependencies.push({
-                                  tableName: sqlResultName,
-                                  connectorId: sqlConnectorId || sqlExportTargetConnectorId,
-                                  query: sqlQuery,
-                                  isPython: false,
-                                  pipelineDependencies: sqlDeps.length > 0 ? sqlDeps : undefined
-                                });
-                                console.log('[EMAIL DEBUG] Added current SQL as Python dep:', { sqlResultName, sqlDeps: sqlDeps.map(d => d.tableName) });
+                                  dependencies.push({
+                                    tableName: sqlResultName,
+                                    connectorId: sqlConnectorId || sqlExportTargetConnectorId,
+                                    query: sqlQuery,
+                                    isPython: false,
+                                    pipelineDependencies: sqlDeps.length > 0 ? sqlDeps : undefined
+                                  });
+                                }
                               }
 
-                              console.log('[EMAIL DEBUG] Python chart dependencies:', dependencies.map(d => ({ name: d.tableName, isPython: d.isPython })));
-
                               selectedPythonOutputs.push({
-                                name: pythonResultName,
-                                code: pythonCode,
-                                outputType: pythonOutputType,
-                                connectorId: pythonConnectorId !== 'none' ? pythonConnectorId : undefined,
+                                name: output.name,
+                                code: output.code,
+                                outputType: output.outputType as any,
+                                connectorId: output.connectorId !== 'none' ? output.connectorId : undefined,
                                 inBody,
                                 asAttachment,
                                 dependencies: dependencies.length > 0 ? dependencies : undefined

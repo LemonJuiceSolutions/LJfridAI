@@ -404,8 +404,8 @@ def execute_python():
                         
                         # CRITICAL: Limit dimensions for email compatibility
                         # Enforce max width and height to avoid huge images in email body
-                        MAX_WIDTH = 1000
-                        MAX_HEIGHT = 600  # Max height to prevent super tall charts
+                        MAX_WIDTH = 1200
+                        MAX_HEIGHT = 1500  # Increased to allow tall charts (e.g. Gantt with many rows)
                         
                         # Scale proportionally if too large
                         if fig_width > MAX_WIDTH:
@@ -418,12 +418,10 @@ def execute_python():
                             fig_height = MAX_HEIGHT
                             fig_width = int(fig_width * ratio)
                         
-                        # Ensure minimum reasonable aspect ratio (no taller than 1:1)
-                        if fig_height > fig_width:
-                            fig_height = fig_width
+                        # Removed forced aspect ratio constraint to support tall/wide charts naturally
                         
-                        # Use 1.5x scale for good quality without huge file size
-                        scale = 1.5
+                        # Use 2x scale for better high-DPI quality (email clients scale down nicely)
+                        scale = 2.0
                         
                         print(f"📊 [EXECUTE] Generating PNG: {fig_width}x{fig_height} @ {scale}x scale")
                         img_bytes = pio.to_image(res_val, format='png', width=fig_width, height=fig_height, scale=scale)

@@ -826,8 +826,8 @@ export async function sendTestEmailWithDataAction(params: {
 
         // Replace chart placeholders: {{GRAFICO:nome}}
         processedBody = processedBody.replace(/\{\{GRAFICO:([^}]+)\}\}/g, (match, chartName) => {
-            const chartResult = pythonResults.find(p => p.name === chartName && p.type === 'chart');
-            if (chartResult && chartResult.chartBase64) {
+            const chartResult = pythonResults.find(p => p.name === chartName);
+            if (chartResult && chartResult.type === 'chart' && chartResult.chartBase64) {
                 const cid = `chart_${chartName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
                 console.log(`[EMAIL DEBUG] Replacing placeholder {{GRAFICO:${chartName}}} with CID image: ${cid}`);
 
@@ -840,7 +840,16 @@ export async function sendTestEmailWithDataAction(params: {
 
                 return `<div class="chart-container"><div class="table-title">${chartName}</div><img src="cid:${cid}" alt="${chartName}" style="max-width: 100%; height: auto;" /></div>`;
             }
-            return `<p><em>Grafico ${chartName} non trovato</em></p>`;
+
+            // Helpful error message for debugging
+            let errorMsg = `Grafico ${chartName} non trovato`;
+            if (chartResult && chartResult.data && chartResult.data.length > 0 && (chartResult.data[0] as any).error) {
+                errorMsg += `: ${(chartResult.data[0] as any).error}`;
+            } else if (chartResult && chartResult.type !== 'chart') {
+                errorMsg += ` (Tipo errato: ${chartResult.type})`;
+            }
+
+            return `<p style="color: #ef4444; background: #fee2e2; padding: 10px; border-radius: 4px; border: 1px solid #fca5a5;"><em>⚠️ ${errorMsg}</em></p>`;
         });
 
         // Add the processed body to the HTML
