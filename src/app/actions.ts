@@ -1740,13 +1740,14 @@ export async function executePythonPreviewAction(
     inputData: Record<string, any[]> = {},
     dependencies?: { tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[],
     connectorId?: string
-): Promise<{ success: boolean; data?: any[]; columns?: string[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
+): Promise<{ success: boolean; data?: any[]; columns?: string[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; rechartsConfig?: any; rechartsData?: any[]; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
     const debugLogs: string[] = [];
     const tStart = performance.now();
 
     try {
         const user = await getAuthenticatedUser();
         let envVars: Record<string, string> = {};
+
 
         // Fetch connector config if provided
         if (connectorId && connectorId !== 'none') {
@@ -1973,10 +1974,13 @@ export async function executePythonPreviewAction(
                     stdout: result.stdout
                 };
             } else if (outputType === 'chart') {
+                // NEW: Support Recharts config from backend
                 return {
                     success: true,
                     chartBase64: result.chartBase64,
                     chartHtml: result.chartHtml,
+                    rechartsConfig: result.rechartsConfig,
+                    rechartsData: result.rechartsData,
                     stdout: result.stdout
                 };
             }

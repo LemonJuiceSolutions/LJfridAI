@@ -50,6 +50,7 @@ import { EmailBodyEditor, EmailBodyEditorRef } from './email-body-editor';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
+import SmartWidgetRenderer from '@/components/widgets/builder/SmartWidgetRenderer';
 
 // Memoized input component to prevent re-renders when typing
 const MemoizedChatInput = memo(function MemoizedChatInput({
@@ -295,12 +296,14 @@ export default function EditNodeDialog({
     variables?: Record<string, any>;
     chartBase64?: string;
     chartHtml?: string;
+    rechartsConfig?: any;
+    rechartsData?: any[];
     debugLogs?: string[];
   } | null>(null);
   const [pythonConnectorId, setPythonConnectorId] = useState<string>('');
   const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
   const [pythonDebugLogs, setPythonDebugLogs] = useState<string[]>([]);
-  const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string } }[]>([]);
+  const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string, rechartsConfig?: any, rechartsData?: any[] } }[]>([]);
   const [pythonPreviewExpanded, setPythonPreviewExpanded] = useState(true);
   const [pythonPreviewFullHeight, setPythonPreviewFullHeight] = useState(false);
 
@@ -837,6 +840,8 @@ export default function EditNodeDialog({
               variables: previewRes.variables,
               chartBase64: previewRes.chartBase64,
               chartHtml: previewRes.chartHtml,
+              rechartsConfig: previewRes.rechartsConfig,
+              rechartsData: previewRes.rechartsData,
               debugLogs: previewRes.debugLogs
             });
             setHasPythonCodeChanged(true);
@@ -2051,6 +2056,8 @@ export default function EditNodeDialog({
                                   variables: res.variables,
                                   chartBase64: res.chartBase64,
                                   chartHtml: res.chartHtml,
+                                  rechartsConfig: res.rechartsConfig,
+                                  rechartsData: res.rechartsData,
                                   debugLogs: res.debugLogs
                                 });
                                 // Auto-expand on success
@@ -2271,7 +2278,7 @@ export default function EditNodeDialog({
                       </div>
 
                       {pythonPreviewExpanded && (
-                        <div className={`${pythonPreviewFullHeight ? 'h-auto overflow-hidden' : 'max-h-[200px] overflow-auto'} transition-all duration-300`}>
+                        <div className="transition-all duration-300">
                           {pythonPreviewResult.type === 'table' && pythonPreviewResult.data && (
                             <DataTable data={pythonPreviewResult.data} columns={pythonPreviewResult.columns} />
                           )}
@@ -2279,8 +2286,17 @@ export default function EditNodeDialog({
                             <pre className="p-3 text-xs">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
                           )}
                           {pythonPreviewResult.type === 'chart' && (
-                            <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 ${pythonPreviewFullHeight ? 'h-auto min-h-[500px]' : 'h-[200px]'}`}>
-                              {pythonPreviewResult.chartHtml ? (
+                            <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 ${pythonPreviewFullHeight ? 'min-h-[500px]' : ''}`} style={{ height: pythonPreviewFullHeight ? 'auto' : '400px' }}>
+                              {pythonPreviewResult.rechartsConfig && pythonPreviewResult.rechartsData ? (
+                                <div className="w-full h-full p-4">
+                                  <SmartWidgetRenderer
+                                    data={pythonPreviewResult.rechartsData}
+                                    config={pythonPreviewResult.rechartsConfig}
+                                    onRefresh={() => { }}
+                                    isRefreshing={false}
+                                  />
+                                </div>
+                              ) : pythonPreviewResult.chartHtml ? (
                                 <iframe
                                   srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: hidden; }</style></head><body>${pythonPreviewResult.chartHtml}</body></html>`}
                                   className="w-full border-none"

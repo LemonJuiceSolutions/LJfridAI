@@ -16,6 +16,7 @@ from contextlib import redirect_stdout, redirect_stderr
 import os
 import json
 import re
+from chart_to_recharts_converter import matplotlib_to_recharts, plotly_to_recharts, infer_chart_type
 
 app = Flask(__name__)
 app.json.sort_keys = False
@@ -389,6 +390,78 @@ def execute_python():
                 })
         
         elif output_type == 'chart':
+            print(f"📊 [EXECUTE] Chart output requested, result type: {type(res_val).__name__}")
+            print(f"📊 [EXECUTE] Result value: {res_val}")
+            
+            # NEW: Convert charts to Recharts config automatically
+            chart_lib = infer_chart_type(res_val)
+            print(f"📊 [EXECUTE] Inferred chart library: {chart_lib}")
+            recharts_result = None
+            
+            # Try to convert to Recharts
+            if chart_lib == 'matplotlib':
+                print("📊 [EXECUTE] Converting matplotlib chart to Recharts...")
+                recharts_result = matplotlib_to_recharts(res_val)
+            elif chart_lib == 'plotly':
+                print("📊 [EXECUTE] Converting plotly chart to Recharts...")
+                recharts_result = plotly_to_recharts(res_val)
+            
+            print(f"📊 [EXECUTE] Recharts conversion result: {recharts_result is not None}")
+            
+            # If conversion successful, return Recharts config
+            if recharts_result:
+                print(f"✅ [EXECUTE] Successfully converted to Recharts ({recharts_result['config']['type']})")
+                
+                response = {
+                    'success': True,
+                    'rechartsConfig': recharts_result['config'],
+                    'rechartsData': recharts_result['data'],
+                    'stdout': stdout_val
+                }
+                
+                # Also generate PNG for email compatibility (only if needed)
+                # This will be triggered by a separate request with need_png_for_email flag
+                try:
+                    if chart_lib == 'plotly' and hasattr(res_val, 'to_image'):
+                        # Generate PNG for plotly
+                        fig_width = res_val.layout.width if res_val.layout.width else 1000
+                        fig_height = res_val.layout.height if res_val.layout.height else 500
+                        
+                        MAX_WIDTH = 1200
+                        MAX_HEIGHT = 6000
+                        
+                        if fig_width > MAX_WIDTH:
+                            ratio = MAX_WIDTH / fig_width
+                            fig_width = MAX_WIDTH
+                            fig_height = int(fig_height * ratio)
+                        
+                        if fig_height > MAX_HEIGHT:
+                            ratio = MAX_HEIGHT / fig_height
+                            fig_height = MAX_HEIGHT
+                            fig_width = int(fig_width * ratio)
+                        
+                        scale = 2.5
+                        img_bytes = pio.to_image(res_val, format='png', width=fig_width, height=fig_height, scale=scale)
+                        response['chartBase64'] = base64.b64encode(img_bytes).decode('utf-8')
+                        print(f"✅ [EXECUTE] Also generated PNG for email ({len(img_bytes)//1024} KB)")
+                    
+                    elif chart_lib == 'matplotlib' and isinstance(res_val, plt.Figure):
+                        # Generate PNG for matplotlib
+                        buf = io.BytesIO()
+                        res_val.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+                        buf.seek(0)
+                        response['chartBase64'] = base64.b64encode(buf.read()).decode('utf-8')
+                        plt.close(res_val)
+                        print(f"✅ [EXECUTE] Also generated PNG for email")
+                
+                except Exception as png_err:
+                    print(f"⚠️ [EXECUTE] Could not generate PNG (non-critical): {str(png_err)}")
+                
+                return jsonify(response)
+            
+            # Fallback: If conversion failed, use old logic (PNG/HTML)
+            print(f"⚠️ [EXECUTE] Recharts conversion failed, falling back to PNG/HTML")
+            
             # 1. Plotly Figure (Check this first for interactivity)
             if hasattr(res_val, 'to_json') or isinstance(res_val, go.Figure) or hasattr(res_val, 'to_image'):
                 try:
