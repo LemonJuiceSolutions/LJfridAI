@@ -208,6 +208,12 @@ def plotly_to_recharts(fig: go.Figure) -> Optional[Dict[str, Any]]:
         if not hasattr(fig, 'data') or len(fig.data) == 0:
             return None
         
+        # Check if this is a subplot (not supported by Recharts conversion)
+        layout = fig.layout if hasattr(fig, 'layout') else {}
+        if hasattr(layout, 'xaxis2') or hasattr(layout, 'yaxis2'):
+            print("⚠️ [CONVERTER] Subplot detected - skipping Recharts conversion")
+            return None
+        
         # Detect chart type from first trace
         first_trace = fig.data[0]
         trace_type = first_trace.type if hasattr(first_trace, 'type') else 'scatter'
