@@ -46,8 +46,7 @@ import Image from 'next/image';
 import { ScrollArea } from '../ui/scroll-area';
 import { DataTable } from '../ui/data-table';
 import { EmailBodyEditor, EmailBodyEditorRef } from './email-body-editor';
-import WidgetEditor from '../widgets/builder/WidgetEditor';
-import { WidgetConfig } from '@/lib/types';
+
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
@@ -302,6 +301,8 @@ export default function EditNodeDialog({
   const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
   const [pythonDebugLogs, setPythonDebugLogs] = useState<string[]>([]);
   const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string } }[]>([]);
+  const [pythonPreviewExpanded, setPythonPreviewExpanded] = useState(true);
+  const [pythonPreviewFullHeight, setPythonPreviewFullHeight] = useState(false);
 
   // SQL Export State
   const [sqlExportEnabled, setSqlExportEnabled] = useState(true);
@@ -342,8 +343,7 @@ export default function EditNodeDialog({
     mediaAsAttachment: emailConfig.attachments?.mediaAsAttachment || [],
   };
 
-  // Widget Builder State
-  const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | undefined>(undefined);
+
 
 
 
@@ -525,29 +525,7 @@ export default function EditNodeDialog({
         setSqlExportTargetTableName('');
       }
 
-      // Load Widget Config
-      // Load Widget Config
-      if ('widgetConfig' in node && node.widgetConfig) {
-        setWidgetConfig(node.widgetConfig);
-        if (node.widgetConfig.data && node.widgetConfig.data.length > 0) {
-          // Auto-load sealed data based on context (SQL or Python)
-          // We infer type from widgetConfig itself or node type if possible, 
-          // but generic storage is enough to hydrate the preview vars
-          if (node.pythonCode) {
-            // Must be python data
-            setPythonPreviewResult({
-              type: node.pythonOutputType || 'table',
-              data: node.widgetConfig.data
-            });
-            // Also set progress to show results
-            setPythonProgressStep(3);
-          } else if (node.sqlQuery) {
-            setSqlPreviewData(node.widgetConfig.data);
-          }
-        }
-      } else {
-        setWidgetConfig(undefined);
-      }
+
 
     }
   }, [isOpen, initialNode, nodeType, availableInputTables]);
@@ -599,165 +577,9 @@ export default function EditNodeDialog({
     setMedia(prev => prev.filter((_, i) => i !== index));
   }
 
-  const [isWidgetRefreshing, setIsWidgetRefreshing] = useState(false);
 
-  const handleRefreshWidgetData = async (sourceType: 'current-sql' | 'current-python' | 'parent-table', sourceId: string): Promise<any[]> => {
-    setIsWidgetRefreshing(true);
-    try {
-      if (sourceType === 'current-sql') {
-        if (!sqlQuery) throw new Error("Nessuna query SQL definita");
 
-        // Execute SQL with full dependencies from selected pipelines
-        const pipelineDeps = selectedPipelines.map(pName => {
-          const dep = availableInputTables?.find(t => t.name === pName);
-          if (!dep) return null;
-          return {
-            tableName: dep.name,
-            query: dep.sqlQuery,
-            connectorId: dep.connectorId,
-            isPython: dep.isPython,
-            pythonCode: dep.pythonCode,
-            pipelineDependencies: dep.pipelineDependencies
-          };
-        }).filter(Boolean);
 
-        const res = await executeSqlPreviewAction(
-          sqlQuery,
-          sqlConnectorId,
-          pipelineDeps as any
-        );
-
-        if (res.error) throw new Error(res.error || "Errore esecuzione SQL");
-
-        // Update main SQL preview state too to keep sync
-        if (res.data) setSqlPreviewData(res.data);
-        return res.data || [];
-
-      } else if (sourceType === 'current-python') {
-        if (!pythonCode) throw new Error("Nessun codice Python definito");
-
-        // Build full dependency chain including SQL result and parent tables
-        const pipelineDeps: any[] = [];
-
-        // Add SQL result if selected
-        if (pythonSelectedPipelines.includes('Risultato SQL') || pythonSelectedPipelines.includes(sqlResultName)) {
-          if (sqlPreviewData) {
-            pipelineDeps.push({
-              tableName: sqlResultName || 'Risultato SQL',
-              data: sqlPreviewData,
-              query: sqlQuery,
-              connectorId: sqlConnectorId
-            });
-          } else if (sqlQuery) {
-            // Need to execute SQL first to get data
-            const sqlRes = await executeSqlPreviewAction(
-              sqlQuery,
-              sqlConnectorId,
-              selectedPipelines.map(pName => {
-                const dep = availableInputTables?.find(t => t.name === pName);
-                if (!dep) return null;
-                return {
-                  tableName: dep.name,
-                  query: dep.sqlQuery,
-                  connectorId: dep.connectorId,
-                  isPython: dep.isPython,
-                  pythonCode: dep.pythonCode,
-                  pipelineDependencies: dep.pipelineDependencies
-                };
-              }).filter(Boolean) as any
-            );
-
-            if (sqlRes.data) {
-              setSqlPreviewData(sqlRes.data);
-              pipelineDeps.push({
-                tableName: sqlResultName || 'Risultato SQL',
-                data: sqlRes.data,
-                query: sqlQuery,
-                connectorId: sqlConnectorId
-              });
-            }
-          }
-        }
-
-        // Add other selected parent tables
-        pythonSelectedPipelines.forEach(pName => {
-          if (pName === 'Risultato SQL' || pName === sqlResultName) return; // Already added above
-          const dep = availableInputTables?.find(t => t.name === pName);
-          if (dep) {
-            pipelineDeps.push({
-              tableName: dep.name,
-              query: dep.sqlQuery,
-              connectorId: dep.connectorId,
-              isPython: dep.isPython,
-              pythonCode: dep.pythonCode,
-              pipelineDependencies: dep.pipelineDependencies
-            });
-          }
-        });
-
-        // Execute Python with full dependency chain
-        const res = await executePythonPreviewAction(
-          pythonCode,
-          pythonOutputType,
-          {}, // Empty input data, will fetch from dependencies
-          pipelineDeps,
-          pythonConnectorId
-        );
-
-        if (!res.success) throw new Error(res.error || "Errore esecuzione Python");
-
-        // Update main state
-        if (res.data) {
-          setPythonPreviewResult({
-            type: pythonOutputType,
-            data: res.data,
-            columns: res.columns,
-            variables: res.variables,
-            chartBase64: res.chartBase64,
-            chartHtml: res.chartHtml,
-            debugLogs: res.debugLogs
-          });
-        }
-        return res.data || [];
-
-      } else if (sourceType === 'parent-table') {
-        // Fetch parent table data
-        const res = await fetchTableDataAction(sourceId); // sourceId is tableName
-        if (res.error) throw new Error(res.error || "Errore recupero tabella");
-        return res.data || [];
-      }
-    } catch (e: any) {
-      toast({
-        variant: "destructive",
-        title: "Errore Aggiornamento Dati",
-        description: e.message
-      });
-      return [];
-    } finally {
-      setIsWidgetRefreshing(false);
-    }
-    return [];
-  };
-
-  // Helper to build dependencies payload (duplicate from handlePythonSubmit logic basically)
-  const buildPipelineDependenciesForExecution = (selected: string[]) => {
-    const deps: any[] = [];
-    // Add SQL result if present and selected
-    if (selected.includes('Risultato SQL') && sqlPreviewData) {
-      deps.push({
-        tableName: sqlResultName || 'Risultato SQL',
-        data: sqlPreviewData, // We pass data if we have it? No, executePythonPreviewAction takes dependencies mainly for resolution
-        // Wait, server action might need to resolve them from DB if not passed.
-        // Actually executePythonPreviewAction signature: (code, outputType, connectorId, dependencyNames, parentOutputsJson?)
-        // If we verify signature: executePythonPreviewAction(code, type, connId, selectedPipelines, parentOutputsJson)
-        // Check actions.ts signature.
-      });
-    }
-    // ... This logic is complex to replicate perfect.
-    // For this iteration, let's simplify: if current-python refresh is requested, we might just warn "Usa Esegui" or try best effort. 
-    // Or even better: we rely on the main "Esegui" for python and just update the widget if data changes.
-    return []; // Placeholder
-  };
 
 
   const handleRemoveNewFile = (index: number) => {
@@ -1202,16 +1024,7 @@ export default function EditNodeDialog({
         delete newNodeData.sqlExportAction;
       }
 
-      // Widget Configuration
-      if (widgetConfig) {
-        newNodeData.widgetConfig = {
-          ...widgetConfig,
-          // SEAL DATA: Save current preview data into the config
-          data: pythonPreviewResult?.data || sqlPreviewData || widgetConfig.data || []
-        };
-      } else {
-        delete newNodeData.widgetConfig;
-      }
+
 
       onSave(nodePath, newNodeData);
       onClose();
@@ -2240,6 +2053,9 @@ export default function EditNodeDialog({
                                   chartHtml: res.chartHtml,
                                   debugLogs: res.debugLogs
                                 });
+                                // Auto-expand on success
+                                setPythonPreviewExpanded(true);
+                                setPythonPreviewFullHeight(true);
                                 toast({ title: "Script Eseguito", description: "Anteprima pronta.", duration: 1000 });
                               } else {
                                 toast({ variant: 'destructive', title: "Errore Python", description: res.error || "Errore sconosciuto" });
@@ -2400,18 +2216,42 @@ export default function EditNodeDialog({
                   )}
 
                   {pythonPreviewResult && (
-                    <div className="mt-4 border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[100px]">
+                    <div className="mt-4 border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[40px]">
                       <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
                         <span className="font-semibold text-xs flex items-center gap-2">
                           <Code className="h-3 w-3" />
                           Risultato Python ({pythonPreviewResult.type})
                         </span>
                         <div className="flex items-center gap-1">
-                          {pythonPreviewResult.type === 'chart' && pythonPreviewResult.chartHtml && (
+                          {/* Toggle Expand/Collapse */}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            title={pythonPreviewExpanded ? "Comprimi" : "Espandi"}
+                            onClick={() => setPythonPreviewExpanded(!pythonPreviewExpanded)}
+                          >
+                            {pythonPreviewExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </Button>
+
+                          {/* Toggle Full Height (only if expanded and chart) */}
+                          {pythonPreviewExpanded && pythonPreviewResult.type === 'chart' && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              title={pythonPreviewFullHeight ? "Riduci Altezza" : "Tutta Estesa"}
+                              onClick={() => setPythonPreviewFullHeight(!pythonPreviewFullHeight)}
+                            >
+                              {pythonPreviewFullHeight ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                            </Button>
+                          )}
+
+                          {pythonPreviewExpanded && pythonPreviewResult.type === 'chart' && pythonPreviewResult.chartHtml && (
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-6 text-[10px] gap-1 px-2 font-bold"
+                              className="h-6 text-[10px] gap-1 px-2 font-bold ml-1"
                               onClick={() => {
                                 const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${pythonResultName || 'Chart Preview'}</title><style>body { margin: 0; padding: 20px; font-family: sans-serif; background-color: #f8fafc; }.chart-container { background: white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); padding: 20px; }</style></head><body><div class="chart-container">${pythonPreviewResult.chartHtml}</div></body></html>`;
                                 const blob = new Blob([fullHtml], { type: 'text/html' });
@@ -2426,32 +2266,52 @@ export default function EditNodeDialog({
                               <Download className="h-3 w-3" /> Scarica HTML
                             </Button>
                           )}
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPythonPreviewResult(null)}><X className="h-3 w-3" /></Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6 ml-1" onClick={() => setPythonPreviewResult(null)}><X className="h-3 w-3" /></Button>
                         </div>
                       </div>
-                      <div className="max-h-[200px] overflow-auto">
-                        {pythonPreviewResult.type === 'table' && pythonPreviewResult.data && (
-                          <DataTable data={pythonPreviewResult.data} columns={pythonPreviewResult.columns} />
-                        )}
-                        {pythonPreviewResult.type === 'variable' && pythonPreviewResult.variables && (
-                          <pre className="p-3 text-xs">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
-                        )}
-                        {pythonPreviewResult.type === 'chart' && (
-                          <div className="bg-white dark:bg-zinc-950 h-[200px]">
-                            {pythonPreviewResult.chartHtml ? (
-                              <iframe
-                                srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; }</style></head><body>${pythonPreviewResult.chartHtml}</body></html>`}
-                                className="w-full h-full border-none"
-                                title="Interactive Chart"
-                              />
-                            ) : pythonPreviewResult.chartBase64 ? (
-                              <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className="max-w-full max-h-full block mx-auto" />
-                            ) : (
-                              <div className="p-8 text-center text-muted-foreground italic text-xs">Nessun grafico generato</div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+
+                      {pythonPreviewExpanded && (
+                        <div className={`${pythonPreviewFullHeight ? 'h-auto overflow-hidden' : 'max-h-[200px] overflow-auto'} transition-all duration-300`}>
+                          {pythonPreviewResult.type === 'table' && pythonPreviewResult.data && (
+                            <DataTable data={pythonPreviewResult.data} columns={pythonPreviewResult.columns} />
+                          )}
+                          {pythonPreviewResult.type === 'variable' && pythonPreviewResult.variables && (
+                            <pre className="p-3 text-xs">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
+                          )}
+                          {pythonPreviewResult.type === 'chart' && (
+                            <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 ${pythonPreviewFullHeight ? 'h-auto min-h-[500px]' : 'h-[200px]'}`}>
+                              {pythonPreviewResult.chartHtml ? (
+                                <iframe
+                                  srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: hidden; }</style></head><body>${pythonPreviewResult.chartHtml}</body></html>`}
+                                  className="w-full border-none"
+                                  title="Interactive Chart"
+                                  scrolling="no"
+                                  style={{ height: pythonPreviewFullHeight ? 'auto' : '100%', minHeight: pythonPreviewFullHeight ? '500px' : undefined }}
+                                  onLoad={(e) => {
+                                    if (pythonPreviewFullHeight) {
+                                      const iframe = e.currentTarget;
+                                      const doc = iframe.contentWindow?.document;
+                                      if (doc) {
+                                        // Wait for Plotly or other content to render properly
+                                        setTimeout(() => {
+                                          const height = doc.body.scrollHeight || doc.documentElement.scrollHeight;
+                                          if (height > 50) {
+                                            iframe.style.height = (height + 20) + 'px';
+                                          }
+                                        }, 100);
+                                      }
+                                    }
+                                  }}
+                                />
+                              ) : pythonPreviewResult.chartBase64 ? (
+                                <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className={`block mx-auto ${pythonPreviewFullHeight ? 'w-full h-auto' : 'max-w-full max-h-full'}`} />
+                              ) : (
+                                <div className="p-8 text-center text-muted-foreground italic text-xs">Nessun grafico generato</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2469,56 +2329,7 @@ export default function EditNodeDialog({
                 </div>
               </CollapsibleSection>
 
-              {/* Widget Builder Section */}
-              <CollapsibleSection
-                title="Widget Builder"
-                count={widgetConfig ? 1 : 0}
-                storageKey={`collapse-widget-builder-${treeId}-${nodePath}`}
-                icon={BarChart3}
-              >
-                <div className="pt-3 h-[500px]">
-                  {(pythonPreviewResult?.data || sqlPreviewData) ? (
-                    <WidgetEditor
-                      key={`widget-${JSON.stringify(pythonPreviewResult?.data || sqlPreviewData || []).substring(0, 100)}`}
-                      data={pythonPreviewResult?.data || sqlPreviewData || []}
-                      initialConfig={widgetConfig}
-                      onSave={(config) => {
-                        setWidgetConfig(config);
-                      }}
-                      availableSources={[
-                        // Current Node Sources with dynamic names
-                        ...(sqlQuery ? [{
-                          id: 'sql',
-                          name: sqlResultName ? `${sqlResultName} (SQL Corrente)` : 'Risultato SQL (Corrente)',
-                          type: 'current-sql' as const
-                        }] : []),
-                        ...(pythonCode ? [{
-                          id: 'python',
-                          name: pythonResultName ? `${pythonResultName} (Python Corrente)` : 'Risultato Python (Corrente)',
-                          type: 'current-python' as const
-                        }] : []),
-                        // Parent Sources
-                        ...(availableInputTables || []).map(t => ({ id: t.name, name: `${t.name} (Padre)`, type: 'parent-table' as const }))
-                      ]}
-                      onRefreshData={handleRefreshWidgetData}
-                      isRefreshing={isWidgetRefreshing}
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground border-2 border-dashed rounded-lg p-6 text-center">
-                      <BarChart3 className="h-10 w-10 mb-2 opacity-50" />
-                      {pythonOutputType === 'chart' && pythonPreviewResult ? (
-                        <div className="max-w-md space-y-2">
-                          <p className="font-semibold text-foreground">Modalità Grafico Python rilevata</p>
-                          <p>Il Widget Builder serve per creare grafici <strong>interattivi React</strong> partendo da dati grezzi.</p>
-                          <p>Per usarlo, cambia il "Tipo Output" dello script Python in <strong>Tabella</strong> e riesegui l'anteprima. Il Widget Builder userà i dati della tabella per costruire il grafico.</p>
-                        </div>
-                      ) : (
-                        <p>Esegui un'anteprima (SQL o Python "Tabella") per configurare il widget.</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </CollapsibleSection>
+
 
               {/* SQL Export Section */}
               {true && (
