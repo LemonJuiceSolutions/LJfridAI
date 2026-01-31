@@ -182,6 +182,7 @@ interface EditNodeDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (path: string, newNodeData: any) => void;
+  onSavePreview?: (nodePath: string, previewData: any) => void;
   initialNode: DecisionNode | DecisionLeaf | { question: string } | { option: string };
   nodeType: 'question' | 'decision';
   variableId?: string;
@@ -204,6 +205,7 @@ export default function EditNodeDialog({
   isOpen,
   onClose,
   onSave,
+  onSavePreview,
   initialNode,
   nodeType,
   variableId,
@@ -498,7 +500,27 @@ export default function EditNodeDialog({
       setPythonConnectorId((node as any).pythonConnectorId || '');
       setPythonSelectedPipelines((node as any).pythonSelectedPipelines || []);
       setPythonChatHistory((node as any).pythonChatHistory || []);
-      setPythonPreviewResult(null);
+      // Load saved preview data if available, otherwise set to null
+      const savedPreviewData = (node as any).pythonPreviewData;
+      if (savedPreviewData) {
+        console.log('[DEBUG] Caricamento anteprima salvata:', { nodePath, hasPreviewData: savedPreviewData.data !== null });
+        setPythonPreviewResult({
+          type: savedPreviewData.type,
+          data: savedPreviewData.data,
+          variables: savedPreviewData.variables,
+          chartBase64: savedPreviewData.chartBase64,
+          chartHtml: savedPreviewData.chartHtml,
+          rechartsConfig: savedPreviewData.rechartsConfig,
+          rechartsData: savedPreviewData.rechartsData,
+          debugLogs: savedPreviewData.debugLogs
+        });
+        // Auto-expand preview and set full height for charts if saved data exists
+        setPythonPreviewExpanded(true);
+        setPythonPreviewFullHeight(savedPreviewData.type === 'chart');
+      } else {
+        setPythonPreviewResult(null);
+        setPythonPreviewFullHeight(false);
+      }
 
       // Load Email Action Config with safe defaults merge
       if ((node as any).emailAction) {
@@ -2064,6 +2086,26 @@ export default function EditNodeDialog({
                                 setPythonPreviewExpanded(true);
                                 setPythonPreviewFullHeight(true);
                                 toast({ title: "Script Eseguito", description: "Anteprima pronta.", duration: 1000 });
+                                
+                                // Salva automaticamente i dati dell'anteprima nel nodo
+                                console.log('[DEBUG] Verifica salvataggio anteprima:', { onSavePreview: !!onSavePreview, nodePath: !!nodePath });
+                                if (onSavePreview && nodePath) {
+                                  console.log('[DEBUG] Salvataggio anteprima nel nodo:', { nodePath, hasPreviewData: res.data !== null });
+                                  const previewData = {
+                                    type: pythonOutputType,
+                                    data: res.data,
+                                    variables: res.variables,
+                                    chartBase64: res.chartBase64,
+                                    chartHtml: res.chartHtml,
+                                    rechartsConfig: res.rechartsConfig,
+                                    rechartsData: res.rechartsData,
+                                    debugLogs: res.debugLogs
+                                  };
+                                  onSavePreview(nodePath, previewData);
+                                  console.log('[DEBUG] Anteprima salvata nel nodo:', nodePath);
+                                } else {
+                                  console.error('[DEBUG] Salvataggio anteprima non eseguito:', { onSavePreview: !!onSavePreview, nodePath: !!nodePath });
+                                }
                               } else {
                                 toast({ variant: 'destructive', title: "Errore Python", description: res.error || "Errore sconosciuto" });
                               }

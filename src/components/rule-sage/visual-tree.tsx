@@ -578,10 +578,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
     const handleNodeUpdate = async (path: string, newNodeData: any) => {
         if (!onDataRefresh) return;
-
+ 
         setInternalSaving(true);
         setEditingNodeInfo(null);
-
+ 
         try {
             const result = await updateTreeNodeAction({
                 treeId: treeData.id,
@@ -591,15 +591,57 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             if (!result.success) {
                 throw new Error(result.error || "Salvataggio fallito");
             }
-
+ 
             toast({ title: "Albero aggiornato con successo!" });
             onDataRefresh();
-
+ 
         } catch (e) {
             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
             toast({ variant: 'destructive', title: "Errore durante l'aggiornamento del nodo", description: error });
         } finally {
             setInternalSaving(false);
+        }
+    };
+
+    const handleSavePreview = async (path: string, previewData: any) => {
+        console.log('[DEBUG] handleSavePreview chiamato:', { path, hasPreviewData: previewData !== null });
+
+        try {
+            // Ottieni il nodo corrente usando l'albero parsato (tree) invece di treeData
+            console.log('[DEBUG] Path da cercare:', path);
+            const currentNode = getNodeFromPath(tree, path);
+            console.log('[DEBUG] Nodo trovato:', currentNode);
+            if (!currentNode) {
+                console.error('[DEBUG] Nodo non trovato per il salvataggio dell\'anteprima:', path);
+                return;
+            }
+
+            // Aggiungi i dati dell'anteprima al nodo
+            const updatedNodeData = {
+                ...currentNode,
+                pythonPreviewData: previewData
+            };
+
+            console.log('[DEBUG] Salvataggio anteprima nel nodo:', { path, hasPreviewData: previewData !== null });
+
+            const result = await updateTreeNodeAction({
+                treeId: treeData.id,
+                nodePath: path,
+                nodeData: JSON.stringify(updatedNodeData)
+            });
+            if (!result.success) {
+                throw new Error(result.error || "Salvataggio anteprima fallito");
+            }
+
+            console.log('[DEBUG] Anteprima salvata con successo nel nodo:', path);
+            // Non chiamare onDataRefresh() qui perché causerebbe la chiusura della dialog
+            // L'anteprima è già nello stato locale e verrà persistita quando l'utente salva le modifiche al nodo
+            // Non mostrare toast per non disturbare l'utente durante l'anteprima
+
+        } catch (e) {
+            const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
+            console.error('[DEBUG] Errore durante il salvataggio dell\'anteprima:', error);
+            toast({ variant: 'destructive', title: "Errore durante il salvataggio dell'anteprima", description: error });
         }
     };
 
@@ -1660,6 +1702,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     isOpen={!!editingNodeInfo}
                     onClose={() => setEditingNodeInfo(null)}
                     onSave={handleNodeUpdate}
+                    onSavePreview={handleSavePreview}
                     initialNode={editingNodeInfo.node}
                     nodeType={editingNodeInfo.type}
                     variableId={(getNodeFromPath(tree, editingNodeInfo.path))?.variableId}
