@@ -282,6 +282,7 @@ export default function EditNodeDialog({
   const [sqlConnectors, setSqlConnectors] = useState<{ id: string, name: string }[]>([]);
   const [dataConnectors, setDataConnectors] = useState<{ id: string, name: string }[]>([]);
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
+  const [sqlPreviewTimestamp, setSqlPreviewTimestamp] = useState<number | null>(null);
   const [sqlChatHistory, setSqlChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number }[]>([]);
 
   // Python State
@@ -309,7 +310,6 @@ export default function EditNodeDialog({
   const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string, rechartsConfig?: any, rechartsData?: any[] } }[]>([]);
   const [pythonPreviewExpanded, setPythonPreviewExpanded] = useState(true);
   const [pythonPreviewFullHeight, setPythonPreviewFullHeight] = useState(false);
-  const [showPreviewTimestamp, setShowPreviewTimestamp] = useState(false);
 
   // SQL Export State
   const [sqlExportEnabled, setSqlExportEnabled] = useState(true);
@@ -444,11 +444,14 @@ export default function EditNodeDialog({
       setSqlQuery(query);
       // Load saved SQL preview data if available, otherwise set to null
       const savedSqlPreviewData = (node as any).sqlPreviewData;
+      const savedSqlPreviewTimestamp = (node as any).sqlPreviewTimestamp;
+      console.log('[DEBUG] Caricamento SQL anteprima salvata:', { nodePath, hasPreviewData: !!savedSqlPreviewData, hasTimestamp: !!savedSqlPreviewTimestamp, timestampValue: savedSqlPreviewTimestamp });
       if (savedSqlPreviewData) {
-        console.log('[DEBUG] Caricamento SQL anteprima salvata:', { nodePath, hasPreviewData: savedSqlPreviewData !== null });
         setSqlPreviewData(savedSqlPreviewData);
+        setSqlPreviewTimestamp(savedSqlPreviewTimestamp || null);
       } else {
         setSqlPreviewData(null);
+        setSqlPreviewTimestamp(null);
       }
       const connId = node.sqlConnectorId || '';
       setSqlConnectorId(connId);
@@ -511,8 +514,8 @@ export default function EditNodeDialog({
       setPythonChatHistory((node as any).pythonChatHistory || []);
       // Load saved preview data if available, otherwise set to null
       const savedPreviewData = (node as any).pythonPreviewData;
+      console.log('[DEBUG] Caricamento Python anteprima salvata:', { nodePath, hasPreviewData: !!savedPreviewData, hasTimestamp: !!savedPreviewData?.timestamp, timestampValue: savedPreviewData?.timestamp });
       if (savedPreviewData) {
-        console.log('[DEBUG] Caricamento anteprima salvata:', { nodePath, hasPreviewData: savedPreviewData.data !== null });
         setPythonPreviewResult({
           type: savedPreviewData.type,
           data: savedPreviewData.data,
@@ -1686,7 +1689,7 @@ export default function EditNodeDialog({
                                 console.log('[DEBUG] Verifica salvataggio SQL anteprima:', { onSavePreview: !!onSavePreview, nodePath: !!nodePath });
                                 if (onSavePreview && nodePath) {
                                   console.log('[DEBUG] Salvataggio SQL anteprima nel nodo:', { nodePath, hasPreviewData: res.data !== null });
-                                  onSavePreview(nodePath, { sqlPreviewData: res.data, timestamp: Date.now() });
+                                  onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
                                   console.log('[DEBUG] SQL anteprima salvata nel nodo:', nodePath);
                                 }
                               } else {
@@ -1909,6 +1912,14 @@ export default function EditNodeDialog({
                         </span>
                         <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setSqlPreviewData(null)}><X className="h-3 w-3" /></Button>
                       </div>
+
+                      {/* Timestamp Display - Always Visible */}
+                      {sqlPreviewTimestamp && (
+                        <div className="bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 border-b border-blue-200 dark:border-blue-800">
+                          <span className="font-medium">Ultimo aggiornamento:</span> {new Date(sqlPreviewTimestamp).toLocaleString('it-IT', { dateStyle: 'full', timeStyle: 'short' })}
+                        </div>
+                      )}
+
                       <div className="max-h-[200px] overflow-auto">
                         <DataTable data={sqlPreviewData} />
                       </div>
@@ -2119,7 +2130,8 @@ export default function EditNodeDialog({
                                     chartHtml: res.chartHtml,
                                     rechartsConfig: res.rechartsConfig,
                                     rechartsData: res.rechartsData,
-                                    debugLogs: res.debugLogs
+                                    debugLogs: res.debugLogs,
+                                    timestamp: Date.now()
                                   };
                                   onSavePreview(nodePath, previewData);
                                   console.log('[DEBUG] Anteprima salvata nel nodo:', nodePath);
@@ -2292,18 +2304,6 @@ export default function EditNodeDialog({
                           Risultato Python ({pythonPreviewResult.type})
                         </span>
                         <div className="flex items-center gap-1">
-                          {/* Info Button - Show Timestamp */}
-                          {pythonPreviewResult.timestamp && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6"
-                              title="Mostra data e ora dell'ultimo aggiornamento"
-                              onClick={() => setShowPreviewTimestamp(!showPreviewTimestamp)}
-                            >
-                              <Info className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
                           {/* Toggle Expand/Collapse */}
                           <Button
                             size="icon"
@@ -2352,7 +2352,7 @@ export default function EditNodeDialog({
                       </div>
 
                       {/* Timestamp Display */}
-                      {showPreviewTimestamp && pythonPreviewResult.timestamp && (
+                      {pythonPreviewResult.timestamp && (
                         <div className="bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 border-b border-blue-200 dark:border-blue-800">
                           <span className="font-medium">Ultimo aggiornamento:</span> {new Date(pythonPreviewResult.timestamp).toLocaleString('it-IT', { dateStyle: 'full', timeStyle: 'short' })}
                         </div>

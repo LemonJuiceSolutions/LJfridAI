@@ -589,6 +589,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 ...newNodeData,
                 // Preserve SQL preview data if it exists in the current node
                 ...(currentNode?.sqlPreviewData && { sqlPreviewData: currentNode.sqlPreviewData }),
+                // Preserve SQL preview timestamp if it exists in the current node
+                ...(currentNode?.sqlPreviewTimestamp && { sqlPreviewTimestamp: currentNode.sqlPreviewTimestamp }),
                 // Preserve Python preview data if it exists in the current node
                 ...(currentNode?.pythonPreviewData && { pythonPreviewData: currentNode.pythonPreviewData }),
             };
@@ -637,10 +639,18 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 // SQL preview - salva direttamente i dati (la proprietà sqlPreviewData contiene i dati)
                 console.log('[DEBUG] Salvataggio SQL preview data:', { dataLength: previewData.sqlPreviewData?.length });
                 updatedNodeData.sqlPreviewData = previewData.sqlPreviewData;
+                // Salva anche il timestamp SQL se presente
+                if (previewData.sqlPreviewTimestamp) {
+                    updatedNodeData.sqlPreviewTimestamp = previewData.sqlPreviewTimestamp;
+                }
             } else if (previewData.timestamp && !previewData.type) {
                 // SQL preview - formato alternativo con timestamp
                 console.log('[DEBUG] Salvataggio SQL preview data (alt):', { dataLength: previewData.sqlPreviewData?.length || previewData.data?.length });
                 updatedNodeData.sqlPreviewData = previewData.sqlPreviewData || previewData.data;
+                // Salva anche il timestamp SQL se presente
+                if (previewData.timestamp) {
+                    updatedNodeData.sqlPreviewTimestamp = previewData.timestamp;
+                }
             } else {
                 // Python preview - salva l'oggetto completo
                 console.log('[DEBUG] Salvataggio Python preview data:', { type: previewData?.type, hasData: !!previewData?.data });
@@ -669,9 +679,15 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 if (previewData.sqlPreviewData) {
                     console.log('[DEBUG] Updating SQL preview in local tree');
                     nodeToUpdate.sqlPreviewData = previewData.sqlPreviewData;
+                    if (previewData.sqlPreviewTimestamp) {
+                        nodeToUpdate.sqlPreviewTimestamp = previewData.sqlPreviewTimestamp;
+                    }
                 } else if (previewData.timestamp && !previewData.type) {
                     console.log('[DEBUG] Updating SQL preview (alt) in local tree');
                     nodeToUpdate.sqlPreviewData = previewData.sqlPreviewData || previewData.data;
+                    if (previewData.timestamp) {
+                        nodeToUpdate.sqlPreviewTimestamp = previewData.timestamp;
+                    }
                 } else {
                     console.log('[DEBUG] Updating Python preview in local tree');
                     nodeToUpdate.pythonPreviewData = previewData;
