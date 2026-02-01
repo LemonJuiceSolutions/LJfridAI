@@ -6,7 +6,7 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { useEditMode } from '@/hooks/use-edit-mode';
 import { cn } from '@/lib/utils';
-import { GripVertical, Plus, Trash2, LayoutGrid, Loader2 } from 'lucide-react';
+import { GripVertical, Plus, Trash2, LayoutGrid, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TextWidget from '@/components/dashboard/text-widget';
 import {
@@ -15,6 +15,16 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAvailableWidgets } from '../widgets/widget-list';
 import { getPageLayout, savePageLayout } from '@/actions/dashboard';
 import { useSession } from 'next-auth/react';
@@ -102,10 +112,30 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     const [items, setItems] = useState<Item[]>(defaultItems);
     const [isComponentMounted, setIsComponentMounted] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [hiddenWidgets, setHiddenWidgets] = useState<Set<string>>(new Set());
+    const [widgetToDelete, setWidgetToDelete] = useState<string | null>(null);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
     useEffect(() => {
         setIsComponentMounted(true);
     }, []);
+
+    // Load hidden widgets from localStorage
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const savedHiddenWidgets = localStorage.getItem(`hidden-widgets-${pageId}`);
+            if (savedHiddenWidgets) {
+                setHiddenWidgets(new Set(JSON.parse(savedHiddenWidgets)));
+            }
+        }
+    }, [pageId]);
+
+    // Save hidden widgets to localStorage
+    const saveHiddenWidgets = useCallback((newHiddenWidgets: Set<string>) => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(`hidden-widgets-${pageId}`, JSON.stringify(Array.from(newHiddenWidgets)));
+        }
+    }, [pageId]);
 
     useLayoutEffect(() => {
         if (status === 'loading' || !isComponentMounted) return;
@@ -203,7 +233,77 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         saveDashboardState(layouts, newItems);
     };
 
+    const handleHideWidget = (widgetId: string) => {
+        setWidgetToDelete(widgetId);
+        setShowDeleteDialog(true);
+    };
+
+    const confirmHideWidget = () => {
+        if (widgetToDelete) {
+            const newHiddenWidgets = new Set(hiddenWidgets);
+            newHiddenWidgets.add(widgetToDelete);
+            setHiddenWidgets(newHiddenWidgets);
+            saveHiddenWidgets(newHiddenWidgets);
+
+            // Also remove from current dashboard if it's present
+            if (items.find(item => item.id === widgetToDelete)) {
+                removeWidget(widgetToDelete);
+            }
+
+            toast({
+                title: "Widget nascosto",
+                description: "Il widget è stato rimosso dalla lista disponibile",
+            });
+        }
+        setShowDeleteDialog(false);
+        setWidgetToDelete(null);
+    };
+
+    const cancelHideWidget = () => {
+        setShowDeleteDialog(false);
+        setWidgetToDelete(null);
+    };
+
+    const handleShowAllWidgets = () => {
+        setHiddenWidgets(new Set());
+        saveHiddenWidgets(new Set());
+        toast({
+            title: "Widget ripristinati",
+            description: "Tutti i widget sono ora visibili nella lista",
+        });
+    };
+
+    const hideAllStaticWidgets = () => {
+        // List of static widget IDs from widget-list.tsx
+        const staticWidgetIds = [
+            'kpi-1', 'kpi-2', 'kpi-3', 'kpi-4',
+            'overview', 'revenue-by-product', 'capacity', 'cost-center', 'job-margin',
+            'sql-test-table', 'orders', 'planning', 'acquisti', 'cutting', 'sewing',
+            'printing', 'embroidery', 'lavanderia', 'stiro', 'controllo-qualita',
+            'packaging', 'magazzino', 'setup', 'pipelines'
+        ];
+
+        const newHiddenWidgets = new Set(hiddenWidgets);
+        staticWidgetIds.forEach(id => newHiddenWidgets.add(id));
+        setHiddenWidgets(newHiddenWidgets);
+        saveHiddenWidgets(newHiddenWidgets);
+
+        // Also remove static widgets from current dashboard if present
+        const itemsToRemove = items.filter(item => staticWidgetIds.includes(item.id));
+        itemsToRemove.forEach(item => removeWidget(item.id));
+
+        toast({
+            title: "Widget statici nascosti",
+            description: `Nascosti ${staticWidgetIds.length} widget statici dalla lista`,
+        });
+    };
+
     const currentWidgetIds = useMemo(() => new Set(items.map(i => i.id)), [items]);
+
+    // Filter available widgets to exclude hidden ones
+    const visibleWidgets = useMemo(() => {
+        return Object.entries(availableWidgets).filter(([key]) => !hiddenWidgets.has(key));
+    }, [availableWidgets, hiddenWidgets]);
 
     if (isLoading || status === 'loading' || !isComponentMounted) {
         return (
@@ -235,7 +335,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     return (
         <div className='flex flex-col gap-4'>
             {editMode && (
-                <div className='flex justify-end gap-2'>
+                <div className='flex justify-end gap-2 flex-wrap'>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button size="sm">
@@ -243,16 +343,60 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
                                 Aggiungi Widget
                             </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent className="max-h-96 overflow-y-auto">
-                            {Object.entries(availableWidgets).map(([key, widget]) => (
-                                <DropdownMenuItem
-                                    key={key}
-                                    onSelect={() => addWidget(key)}
-                                    disabled={currentWidgetIds.has(key)}
-                                >
-                                    {widget.name}
-                                </DropdownMenuItem>
-                            ))}
+                        <DropdownMenuContent className="max-h-96 overflow-y-auto w-80">
+                            {visibleWidgets.length === 0 ? (
+                                <div className="p-4 text-sm text-muted-foreground text-center">
+                                    Nessun widget disponibile
+                                </div>
+                            ) : (
+                                visibleWidgets.map(([key, widget]) => (
+                                    <div key={key} className="flex items-center justify-between px-2 py-1">
+                                        <DropdownMenuItem
+                                            className="flex-1"
+                                            onSelect={() => addWidget(key)}
+                                            disabled={currentWidgetIds.has(key)}
+                                        >
+                                            {widget.name}
+                                        </DropdownMenuItem>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 flex-shrink-0 hover:text-destructive"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleHideWidget(key);
+                                            }}
+                                        >
+                                            <X className="h-3 w-3" />
+                                        </Button>
+                                    </div>
+                                ))
+                            )}
+                            {(hiddenWidgets.size > 0 || Object.keys(availableWidgets).some(key =>
+                                ['kpi-1', 'kpi-2', 'kpi-3', 'kpi-4', 'overview', 'revenue-by-product',
+                                 'capacity', 'cost-center', 'job-margin', 'sql-test-table', 'orders',
+                                 'planning', 'acquisti', 'cutting', 'sewing', 'printing', 'embroidery',
+                                 'lavanderia', 'stiro', 'controllo-qualita', 'packaging', 'magazzino',
+                                 'setup', 'pipelines'].includes(key) && !hiddenWidgets.has(key)
+                            )) && (
+                                <>
+                                    <div className="border-t my-2" />
+                                    <DropdownMenuItem
+                                        className="text-sm text-destructive hover:text-destructive"
+                                        onSelect={hideAllStaticWidgets}
+                                    >
+                                        Nascondi tutti i widget statici
+                                    </DropdownMenuItem>
+                                    {hiddenWidgets.size > 0 && (
+                                        <DropdownMenuItem
+                                            className="text-sm text-muted-foreground"
+                                            onSelect={handleShowAllWidgets}
+                                        >
+                                            Mostra tutti i widget nascosti ({hiddenWidgets.size})
+                                        </DropdownMenuItem>
+                                    )}
+                                </>
+                            )}
                         </DropdownMenuContent>
                     </DropdownMenu>
                     <Button onClick={addTextWidget} size="sm" variant="outline">
@@ -297,6 +441,24 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
                 ))}
 
             </ResponsiveGridLayout>
+
+            {/* Confirmation dialog for hiding widgets */}
+            <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Nascondi widget</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Sei sicuro di voler nascondere questo widget dalla lista? Potrai ripristinarlo in seguito cliccando su "Mostra tutti i widget nascosti".
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={cancelHideWidget}>Annulla</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmHideWidget} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Nascondi
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
