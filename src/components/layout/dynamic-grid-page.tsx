@@ -314,7 +314,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     }
 
     const gridItemClasses = (isEditing: boolean) => cn(
-        "bg-card rounded-lg shadow-sm transition-all duration-200 overflow-hidden",
+        "bg-card rounded-lg shadow-sm transition-all duration-200 overflow-visible",
         isEditing && 'border-2 border-dashed border-primary/50 relative'
     );
 

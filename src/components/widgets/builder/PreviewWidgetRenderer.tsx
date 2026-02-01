@@ -118,11 +118,11 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                     <span className="text-sm font-medium">{resultName}</span>
                     {previewData.timestamp && (
                         <span className="text-xs text-muted-foreground ml-auto">
-                            {new Date(previewData.timestamp).toLocaleString('it-IT', { 
-                                day: '2-digit', 
-                                month: '2-digit', 
-                                hour: '2-digit', 
-                                minute: '2-digit' 
+                            {new Date(previewData.timestamp).toLocaleString('it-IT', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit'
                             })}
                         </span>
                     )}
@@ -142,32 +142,35 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                     <span className="text-sm font-medium">{resultName}</span>
                     {previewData.timestamp && (
                         <span className="text-xs text-muted-foreground ml-auto">
-                            {new Date(previewData.timestamp).toLocaleString('it-IT', { 
-                                day: '2-digit', 
-                                month: '2-digit', 
-                                hour: '2-digit', 
-                                minute: '2-digit' 
+                            {new Date(previewData.timestamp).toLocaleString('it-IT', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit'
                             })}
                         </span>
                     )}
                 </div>
-                <div className="flex-1 overflow-auto p-4">
-                    {previewData.rechartsConfig && previewData.rechartsData ? (
+                <div className="flex-1 overflow-visible p-4" style={{ minHeight: '400px' }}>
+                    {previewData.chartHtml ? (
+                        <iframe
+                            srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: hidden; }</style></head><body>${previewData.chartHtml}</body></html>`}
+                            className="w-full h-full border-none"
+                            title="Interactive Chart"
+                        />
+                    ) : previewData.rechartsConfig && previewData.rechartsData ? (
                         <SmartWidgetRenderer
                             config={previewData.rechartsConfig}
                             data={previewData.rechartsData}
+                            onRefresh={() => { }}
+                            isRefreshing={false}
                         />
                     ) : previewData.chartBase64 ? (
-                        <img 
-                            src={`data:image/png;base64,${previewData.chartBase64}`} 
-                            alt="Chart Preview" 
+                        <img
+                            src={`data:image/png;base64,${previewData.chartBase64}`}
+                            alt="Chart Preview"
                             className="w-full h-auto max-h-full object-contain"
                             style={{ minHeight: '300px' }}
-                        />
-                    ) : previewData.chartHtml ? (
-                        <div 
-                            className="w-full h-full"
-                            dangerouslySetInnerHTML={{ __html: previewData.chartHtml }}
                         />
                     ) : (
                         <div className="text-center text-muted-foreground">
