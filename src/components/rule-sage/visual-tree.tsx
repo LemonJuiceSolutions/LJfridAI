@@ -592,7 +592,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 // Preserve SQL preview timestamp if it exists in the current node
                 ...(currentNode?.sqlPreviewTimestamp && { sqlPreviewTimestamp: currentNode.sqlPreviewTimestamp }),
                 // Preserve Python preview data if it exists in the current node
-                ...(currentNode?.pythonPreviewData && { pythonPreviewData: currentNode.pythonPreviewData }),
+                ...(currentNode?.pythonPreviewResult && { pythonPreviewResult: currentNode.pythonPreviewResult }),
             };
 
             const result = await updateTreeNodeAction({
@@ -654,7 +654,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             } else {
                 // Python preview - salva l'oggetto completo
                 console.log('[DEBUG] Salvataggio Python preview data:', { type: previewData?.type, hasData: !!previewData?.data });
-                updatedNodeData.pythonPreviewData = previewData;
+                updatedNodeData.pythonPreviewResult = previewData;
             }
 
             console.log('[DEBUG] Salvataggio anteprima nel nodo:', { path, hasPreviewData: previewData !== null });
@@ -690,7 +690,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     }
                 } else {
                     console.log('[DEBUG] Updating Python preview in local tree');
-                    nodeToUpdate.pythonPreviewData = previewData;
+                    nodeToUpdate.pythonPreviewResult = previewData;
                 }
                 setTree(newTree);
                 console.log('[DEBUG] Local tree updated with preview data');
@@ -698,6 +698,13 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
             // Non chiamare onDataRefresh() qui perché causerebbe la chiusura della dialog
             // L'anteprima è già nello stato locale e verrà persistita quando l'utente salva le modifiche al nodo
+
+            // Forza il refresh dei widget nel dashboard invalidando la cache
+            // Questo assicura che i nuovi widget con anteprime appaiano nella lista
+            if (typeof window !== 'undefined') {
+                // Emetti un evento custom che può essere ascoltato dal widget-list
+                window.dispatchEvent(new CustomEvent('preview-saved', { detail: { treeId: treeData.id, nodeId: getNodeFromPath(tree, path)?.id } }));
+            }
             // Non mostrare toast per non disturbare l'utente durante l'anteprima
 
         } catch (e) {

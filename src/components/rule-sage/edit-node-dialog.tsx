@@ -513,7 +513,7 @@ export default function EditNodeDialog({
       setPythonSelectedPipelines((node as any).pythonSelectedPipelines || []);
       setPythonChatHistory((node as any).pythonChatHistory || []);
       // Load saved preview data if available, otherwise set to null
-      const savedPreviewData = (node as any).pythonPreviewData;
+      const savedPreviewData = (node as any).pythonPreviewResult;
       console.log('[DEBUG] Caricamento Python anteprima salvata:', { nodePath, hasPreviewData: !!savedPreviewData, hasTimestamp: !!savedPreviewData?.timestamp, timestampValue: savedPreviewData?.timestamp });
       if (savedPreviewData) {
         setPythonPreviewResult({
@@ -1047,7 +1047,7 @@ export default function EditNodeDialog({
         delete newNodeData.pythonSelectedPipelines;
       }
 
-      // Email Action (Apply to ALL node types, including Options)
+       // Email Action (Apply to ALL node types, including Options)
       if (emailConfig.enabled && emailConfig.connectorId && emailConfig.to && emailConfig.subject) {
         newNodeData.emailAction = emailConfig;
       } else {
@@ -1065,7 +1065,17 @@ export default function EditNodeDialog({
         delete newNodeData.sqlExportAction;
       }
 
-
+      // Preserve preview data when saving node
+      // This ensures that SQL and Python previews are not lost when user saves the node
+      if ((initialNode as any).sqlPreviewData) {
+        newNodeData.sqlPreviewData = (initialNode as any).sqlPreviewData;
+      }
+      if ((initialNode as any).sqlPreviewTimestamp) {
+        newNodeData.sqlPreviewTimestamp = (initialNode as any).sqlPreviewTimestamp;
+      }
+      if ((initialNode as any).pythonPreviewResult) {
+        newNodeData.pythonPreviewResult = (initialNode as any).pythonPreviewResult;
+      }
 
       onSave(nodePath, newNodeData);
       onClose();

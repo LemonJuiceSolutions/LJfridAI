@@ -65,6 +65,7 @@ const staticWidgets: Record<string, Widget> = {
 export const useAvailableWidgets = () => {
     const [availableWidgets, setAvailableWidgets] = useState<Record<string, Widget>>(staticWidgets);
     const { data: session, status } = useSession();
+    const [refreshKey, setRefreshKey] = useState(0);
 
     useEffect(() => {
         if (status === 'loading') return;
@@ -102,6 +103,7 @@ export const useAvailableWidgets = () => {
                 // 2. NEW: Decision tree node widgets
                 const { getTreesAction } = await import('@/app/actions');
                 const { NodeWidgetRenderer } = await import('./builder/NodeWidgetRenderer');
+                const { PreviewWidgetRenderer } = await import('./builder/PreviewWidgetRenderer');
 
                 const treesResult = await getTreesAction(undefined, 'RULE');
                 if (treesResult.data) {
@@ -110,19 +112,61 @@ export const useAvailableWidgets = () => {
                             ? JSON.parse(tree.jsonDecisionTree)
                             : tree.jsonDecisionTree;
 
-                        // Recursively scan tree for published widgets
+                        // Recursively scan tree for published widgets and preview data
                         const scanNode = (node: any, path: string[] = []) => {
                             if (!node) return;
 
+                            const nodeId = node.id || path.join('-');
+
                             // Check if this node has a published widget
                             if (node.widgetConfig?.isPublished) {
-                                const nodeId = node.id || path.join('-');
                                 const widgetId = `tree-${tree.id}-${nodeId}`;
                                 dynamicWidgets[widgetId] = {
                                     id: widgetId,
                                     name: node.widgetConfig.title || `Widget da ${tree.name}`,
                                     component: <NodeWidgetRenderer treeId={tree.id} nodeId={nodeId} />,
                                 };
+                            }
+
+                            // Check if this node has SQL preview data
+                            if (node.sqlResultName && node.sqlPreviewData) {
+                                const widgetId = `sql-preview-${tree.id}-${nodeId}`;
+                                dynamicWidgets[widgetId] = {
+                                    id: widgetId,
+                                    name: `SQL: ${node.sqlResultName} (${tree.name})`,
+                                    component: <PreviewWidgetRenderer treeId={tree.id} nodeId={nodeId} previewType="sql" resultName={node.sqlResultName} />,
+                                };
+                                console.log(`[Widget] Added SQL widget: ${node.sqlResultName} from tree ${tree.name}`);
+                            }
+
+                            // Check if this node has Python preview data (more flexible detection)
+                            if (node.pythonResultName) {
+                                console.log(`[Widget] Found Python node: ${node.pythonResultName} with previewResult:`, node.pythonPreviewResult);
+
+                                // Check for any preview data (chart, table, or variable)
+                                const hasPreview = node.pythonPreviewResult && (
+                                    node.pythonPreviewResult.type === 'chart' ||
+                                    node.pythonPreviewResult.type === 'table' ||
+                                    node.pythonPreviewResult.type === 'variable'
+                                );
+
+                                if (hasPreview) {
+                                    const widgetId = `python-preview-${tree.id}-${nodeId}`;
+                                    const previewType = node.pythonPreviewResult.type;
+                                    const typeLabel = previewType === 'chart' ? 'Grafico' :
+                                                    previewType === 'table' ? 'Tabella' : 'Variabile';
+                                    dynamicWidgets[widgetId] = {
+                                        id: widgetId,
+                                        name: `Python ${typeLabel}: ${node.pythonResultName} (${tree.name})`,
+                                        component: <PreviewWidgetRenderer treeId={tree.id} nodeId={nodeId} previewType="python" resultName={node.pythonResultName} />,
+                                    };
+                                    console.log(`[Widget] Added Python ${typeLabel} widget: ${node.pythonResultName} from tree ${tree.name}`);
+                                } else {
+                                    console.log(`[Widget] Python node found but no valid preview. ResultName: ${node.pythonResultName}, HasPreviewResult: ${!!node.pythonPreviewResult}`);
+                                    if (node.pythonPreviewResult) {
+                                        console.log(`[Widget] PreviewResult type:`, node.pythonPreviewResult.type);
+                                    }
+                                }
                             }
 
                             // Recurse into options
@@ -141,6 +185,7 @@ export const useAvailableWidgets = () => {
                             }
                         };
 
+                        console.log(`[Widget] Scanning tree: ${tree.name} (${tree.id})`);
                         scanNode(jsonTree);
                     });
                 }
@@ -154,7 +199,7 @@ export const useAvailableWidgets = () => {
         };
 
         fetchDynamicWidgets();
-    }, [status, session]);
+    }, [status, session, refreshKey]);
 
     return availableWidgets;
 };

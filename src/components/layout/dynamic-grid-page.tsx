@@ -90,7 +90,7 @@ const generateLayouts = (items: Item[], defaultLayouts: Layouts) => {
         Object.keys(layouts).forEach(bp => {
             if (!layouts[bp].find(l => l.i === item.id)) {
                 let h = 4; // default height
-                if (item.id.includes('overview') || item.id.includes('revenue-by-product') || item.id.includes('capacity') || item.id.includes('cost-center') || item.id.includes('job-margin')) {
+                if (item.id.includes('overview') || item.id.includes('revenue-by-product') || item.id.includes('capacity') || item.id.includes('cost-center') || item.id.includes('job-margin') || item.id.includes('python-preview') || item.id.includes('sql-preview')) {
                     h = 10;
                 }
                 layouts[bp].push({ i: item.id, x: 0, y: Infinity, w: layouts[bp][0]?.w || 12, h });
