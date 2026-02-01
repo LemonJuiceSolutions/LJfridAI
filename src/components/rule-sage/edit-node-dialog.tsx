@@ -1907,7 +1907,7 @@ export default function EditNodeDialog({
                     {/* LEFT COLUMN: Code Editor & Result Name - fills full height */}
                     <div className="flex flex-col order-2 lg:order-1 h-full">
                       {/* Python Code Editor */}
-                      <div className="grid gap-2 flex-1">
+                      <div className="flex flex-col gap-2 flex-1">
                         <Label>Codice Python</Label>
                         <Textarea
                           value={pythonCode}
@@ -2032,7 +2032,7 @@ export default function EditNodeDialog({
                     </div>
 
                     {/* RIGHT COLUMN: AI Agent */}
-                    <div className="order-1 lg:order-2">
+                    <div className="order-1 lg:order-2 h-[500px]">
                       <AgentChat
                         nodeId={nodePath}
                         agentType="python"

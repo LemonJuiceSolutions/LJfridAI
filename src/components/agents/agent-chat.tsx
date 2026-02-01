@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, MessageSquare, X, Loader2, AlertCircle } from 'lucide-react';
+import { Send, MessageSquare, X, Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
 import { AgentChatMessage, AgentResponse } from '@/lib/types';
 
 interface AgentChatProps {
@@ -12,6 +12,7 @@ interface AgentChatProps {
   inputTables?: Record<string, any[]>;
   onScriptUpdate?: (newScript: string) => void;
   onClose?: () => void;
+  onGoBack?: (messageIndex: number) => void;
 }
 
 export function AgentChat({
@@ -22,6 +23,7 @@ export function AgentChat({
   inputTables,
   onScriptUpdate,
   onClose,
+  onGoBack,
 }: AgentChatProps) {
   const [messages, setMessages] = useState<AgentChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -141,6 +143,16 @@ export function AgentChat({
     }
   };
 
+  const handleGoBack = (messageIndex: number) => {
+    // Truncate messages to the specified index
+    setMessages((prev) => prev.slice(0, messageIndex + 1));
+
+    // If onGoBack callback is provided, call it
+    if (onGoBack) {
+      onGoBack(messageIndex);
+    }
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -215,13 +227,12 @@ export function AgentChat({
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                msg.role === 'user'
+              className={`max-w-[80%] rounded-lg px-4 py-2 ${msg.role === 'user'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-900'
-              }`}
+                }`}
             >
-              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+              <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
             </div>
           </div>
         ))}
