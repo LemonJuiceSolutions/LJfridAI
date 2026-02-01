@@ -58,7 +58,7 @@ export default function CostCenterAnalysisChart() {
           Confronto mensile e YTD dei costi a budget vs. consuntivo per centro di costo.
         </CardDescription>
       </CardHeader>
-      <CardContent className="pl-2 flex-1 overflow-auto">
+      <CardContent className="pl-2 flex-1 overflow-y-auto custom-scrollbar">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={dataWithYTD}>
             <CartesianGrid strokeDasharray="3 3" />

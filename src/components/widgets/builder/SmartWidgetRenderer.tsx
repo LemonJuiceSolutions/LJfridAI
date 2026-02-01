@@ -125,64 +125,70 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                 );
             case 'bar-chart':
                 return (
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartData} margin={getChartMargins(config)}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
-                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
-                            <Tooltip
-                                contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
-                            />
-                            <Legend {...getLegendProps(config.legendPosition)} />
-                            {(config.dataKeys || []).map((key, index) => (
-                                <Bar key={key} dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} radius={[4, 4, 0, 0]} />
-                            ))}
-                        </BarChart>
-                    </ResponsiveContainer>
+                    <div className="overflow-y-auto h-full w-full custom-scrollbar">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={getChartMargins(config)}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                                <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
+                                <Tooltip
+                                    contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
+                                />
+                                <Legend {...getLegendProps(config.legendPosition)} />
+                                {(config.dataKeys || []).map((key, index) => (
+                                    <Bar key={key} dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} radius={[4, 4, 0, 0]} />
+                                ))}
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
                 );
             case 'line-chart':
                 return (
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData} margin={getChartMargins(config)}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
-                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
-                            <Tooltip
-                                contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
-                            />
-                            <Legend {...getLegendProps(config.legendPosition)} />
-                            {(config.dataKeys || []).map((key, index) => (
-                                <Line
-                                    key={key}
-                                    type="monotone"
-                                    dataKey={key}
-                                    stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]}
-                                    strokeWidth={2}
-                                    dot={{ r: 4 }}
-                                    activeDot={{ r: 6 }}
-                                    connectNulls
-                                    strokeDasharray={getStrokeDasharray(config.lineStyle)}
+                    <div className="overflow-y-auto h-full w-full custom-scrollbar">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={chartData} margin={getChartMargins(config)}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                                <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
+                                <Tooltip
+                                    contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
                                 />
-                            ))}
-                        </LineChart>
-                    </ResponsiveContainer>
+                                <Legend {...getLegendProps(config.legendPosition)} />
+                                {(config.dataKeys || []).map((key, index) => (
+                                    <Line
+                                        key={key}
+                                        type="monotone"
+                                        dataKey={key}
+                                        stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]}
+                                        strokeWidth={2}
+                                        dot={{ r: 4 }}
+                                        activeDot={{ r: 6 }}
+                                        connectNulls
+                                        strokeDasharray={getStrokeDasharray(config.lineStyle)}
+                                    />
+                                ))}
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
                 );
             case 'area-chart':
                 return (
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData} margin={getChartMargins(config)}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
-                            <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
-                            <Tooltip
-                                contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
-                            />
-                            <Legend {...getLegendProps(config.legendPosition)} />
-                            {(config.dataKeys || []).map((key, index) => (
-                                <Area key={key} type="monotone" dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} strokeDasharray={getStrokeDasharray(config.lineStyle)} />
-                            ))}
-                        </AreaChart>
-                    </ResponsiveContainer>
+                    <div className="overflow-y-auto h-full w-full custom-scrollbar">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={chartData} margin={getChartMargins(config)}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                                <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
+                                <Tooltip
+                                    contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
+                                />
+                                <Legend {...getLegendProps(config.legendPosition)} />
+                                {(config.dataKeys || []).map((key, index) => (
+                                    <Area key={key} type="monotone" dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} strokeDasharray={getStrokeDasharray(config.lineStyle)} />
+                                ))}
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
                 );
             case 'pie-chart':
                 return (

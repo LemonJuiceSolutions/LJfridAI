@@ -151,11 +151,11 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                         </span>
                     )}
                 </div>
-                <div className="flex-1 overflow-visible p-4" style={{ minHeight: '400px' }}>
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
                     {previewData.chartHtml ? (
                         <iframe
-                            srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: hidden; }</style></head><body>${previewData.chartHtml}</body></html>`}
-                            className="w-full h-full border-none"
+                            srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: auto; }</style></head><body>${previewData.chartHtml}</body></html>`}
+                            className="w-full border-none h-full"
                             title="Interactive Chart"
                         />
                     ) : previewData.rechartsConfig && previewData.rechartsData ? (
@@ -169,8 +169,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                         <img
                             src={`data:image/png;base64,${previewData.chartBase64}`}
                             alt="Chart Preview"
-                            className="w-full h-auto max-h-full object-contain"
-                            style={{ minHeight: '300px' }}
+                            className="w-full h-auto object-contain"
                         />
                     ) : (
                         <div className="text-center text-muted-foreground">

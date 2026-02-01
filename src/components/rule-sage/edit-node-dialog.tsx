@@ -2377,9 +2377,9 @@ export default function EditNodeDialog({
                             <pre className="p-3 text-xs">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
                           )}
                           {pythonPreviewResult.type === 'chart' && (
-                            <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 ${pythonPreviewFullHeight ? 'min-h-[500px]' : ''}`} style={{ height: pythonPreviewFullHeight ? 'auto' : '400px' }}>
+                            <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 overflow-y-auto custom-scrollbar ${pythonPreviewFullHeight ? 'min-h-[500px]' : ''}`} style={{ height: pythonPreviewFullHeight ? 'auto' : '400px' }}>
                               {pythonPreviewResult.rechartsConfig && pythonPreviewResult.rechartsData ? (
-                                <div className="w-full h-full p-4">
+                                <div className="w-full p-4">
                                   <SmartWidgetRenderer
                                     data={pythonPreviewResult.rechartsData}
                                     config={pythonPreviewResult.rechartsConfig}
@@ -2389,29 +2389,12 @@ export default function EditNodeDialog({
                                 </div>
                               ) : pythonPreviewResult.chartHtml ? (
                                 <iframe
-                                  srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: hidden; }</style></head><body>${pythonPreviewResult.chartHtml}</body></html>`}
-                                  className="w-full border-none"
+                                  srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: auto; }</style></head><body>${pythonPreviewResult.chartHtml}</body></html>`}
+                                  className="w-full border-none h-full"
                                   title="Interactive Chart"
-                                  scrolling="no"
-                                  style={{ height: pythonPreviewFullHeight ? 'auto' : '100%', minHeight: pythonPreviewFullHeight ? '500px' : undefined }}
-                                  onLoad={(e) => {
-                                    if (pythonPreviewFullHeight) {
-                                      const iframe = e.currentTarget;
-                                      const doc = iframe.contentWindow?.document;
-                                      if (doc) {
-                                        // Wait for Plotly or other content to render properly
-                                        setTimeout(() => {
-                                          const height = doc.body.scrollHeight || doc.documentElement.scrollHeight;
-                                          if (height > 50) {
-                                            iframe.style.height = (height + 20) + 'px';
-                                          }
-                                        }, 100);
-                                      }
-                                    }
-                                  }}
                                 />
                               ) : pythonPreviewResult.chartBase64 ? (
-                                <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className={`block mx-auto ${pythonPreviewFullHeight ? 'w-full h-auto' : 'max-w-full max-h-full'}`} />
+                                <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className="block mx-auto w-full h-auto" />
                               ) : (
                                 <div className="p-8 text-center text-muted-foreground italic text-xs">Nessun grafico generato</div>
                               )}

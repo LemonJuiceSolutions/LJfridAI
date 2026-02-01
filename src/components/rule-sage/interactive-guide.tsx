@@ -969,11 +969,11 @@ function PythonDataPreview({
                             <pre className="p-3 text-xs overflow-auto max-h-48 bg-slate-50 dark:bg-slate-900 rounded">{JSON.stringify(finalResult.variables, null, 2)}</pre>
                         )}
                         {finalResult.type === 'chart' && (
-                            <div className="w-full h-[70vh] border-none overflow-auto">
+                            <div className="w-full h-[70vh] border-none overflow-y-auto custom-scrollbar">
                                 {finalResult.chartHtml ? (
                                     <iframe
                                         srcDoc={`<html><head><style>body{margin:0;padding:0;background:transparent;overflow:auto;}</style></head><body>${finalResult.chartHtml}</body></html>`}
-                                        className="w-full h-full border-none"
+                                        className="w-full border-none h-full"
                                         title="Chart"
                                     />
                                 ) : finalResult.chartBase64 ? (

@@ -26,7 +26,7 @@ export default function OverviewChart() {
         <CardTitle>Fatturato, Intake & Budget</CardTitle>
         <CardDescription>Andamento mensile del fatturato, ordini acquisiti (intake) e budget.</CardDescription>
       </CardHeader>
-      <CardContent className="pl-2 flex-1 overflow-auto">
+      <CardContent className="pl-2 flex-1 overflow-y-auto custom-scrollbar">
         <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
