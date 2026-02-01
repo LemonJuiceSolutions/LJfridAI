@@ -40,6 +40,7 @@ model Company {
   pageLayouts     PageLayout[]
   pipelines       Pipeline[]
   connections     Connection[]
+  agentConversations AgentConversation[]
 }
 
 model Department {
@@ -453,4 +454,32 @@ model Connection {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// AI AGENT CONVERSATION HISTORY
+// ============================================
+
+model AgentConversation {
+  id          String   @id @default(cuid())
+  nodeId      String   // ID of the tree node
+  agentType   String   // 'sql' or 'python'
+  
+  // Context information
+  script      String   @db.Text // The SQL query or Python code
+  tableSchema Json?    // Schema information about input tables (columns, types)
+  inputTables Json?    // Sample data from input tables for context
+  
+  // Conversation messages
+  messages    Json     // Array of ChatMessage objects
+  
+  companyId   String?
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([nodeId])
+  @@index([companyId])
+  @@unique([nodeId, agentType])
 }

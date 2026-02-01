@@ -51,6 +51,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import SmartWidgetRenderer from '@/components/widgets/builder/SmartWidgetRenderer';
+import { AgentChat } from '@/components/agents/agent-chat';
 
 // Memoized input component to prevent re-renders when typing
 const MemoizedChatInput = memo(function MemoizedChatInput({
@@ -176,6 +177,56 @@ const CollapsibleSection = ({
       </CollapsibleContent>
     </Collapsible>
   );
+};
+
+// Helper functions for AgentChat integration
+const getTableSchema = (selectedPipelines: string[], availableInputTables: any[]): Record<string, string[]> => {
+  const schema: Record<string, string[]> = {};
+
+  selectedPipelines.forEach(pipelineName => {
+    const table = availableInputTables.find(t => t.name === pipelineName);
+    if (table && table.pipelineDependencies) {
+      table.pipelineDependencies.forEach((dep: any) => {
+        if (dep.query) {
+          // Extract columns from SQL query
+          const columns = extractColumnsFromQuery(dep.query);
+          schema[dep.tableName || pipelineName] = columns;
+        }
+      });
+    }
+  });
+
+  return schema;
+};
+
+const getInputTables = (selectedPipelines: string[], availableInputTables: any[]): Record<string, any[]> => {
+  const tables: Record<string, any[]> = {};
+
+  selectedPipelines.forEach(pipelineName => {
+    const table = availableInputTables.find(t => t.name === pipelineName);
+    if (table && table.pipelineDependencies) {
+      table.pipelineDependencies.forEach((dep: any) => {
+        if (dep.query) {
+          // Fetch sample data for table
+          tables[dep.tableName || pipelineName] = table.data || [];
+        }
+      });
+    }
+  });
+
+  return tables;
+};
+
+const extractColumnsFromQuery = (query: string): string[] => {
+  // Simple regex to extract column names from SELECT clause
+  const selectMatch = query.match(/SELECT\s+(.+?)\s+FROM/i);
+  if (selectMatch) {
+    return selectMatch[1]
+      .split(',')
+      .map(col => col.trim().split(/\s+as\s+/i)[0].trim())
+      .filter(col => col !== '*');
+  }
+  return [];
 };
 
 interface EditNodeDialogProps {
@@ -1047,7 +1098,7 @@ export default function EditNodeDialog({
         delete newNodeData.pythonSelectedPipelines;
       }
 
-       // Email Action (Apply to ALL node types, including Options)
+      // Email Action (Apply to ALL node types, including Options)
       if (emailConfig.enabled && emailConfig.connectorId && emailConfig.to && emailConfig.subject) {
         newNodeData.emailAction = emailConfig;
       } else {
@@ -1715,200 +1766,19 @@ export default function EditNodeDialog({
                       </div>
                     </div>
 
-                    {/* RIGHT COLUMN: AI Chatbot */}
+                    {/* RIGHT COLUMN: AI Agent */}
                     <div className="order-1 lg:order-2">
-                      <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col h-[300px]">
-                        <div className="bg-muted/50 p-2 px-3 border-b flex items-center justify-between">
-                          <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                            <Bot className="h-3.5 w-3.5" />
-                            AI SQL Assistant
-                          </span>
-                          {agentStatus && (
-                            <div className="bg-background text-[10px] h-5 gap-1 flex items-center px-2 rounded-full border">
-                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                              {agentStatus.replace('...', '')}
-                            </div>
-                          )}
-                        </div>
-
-                        <ScrollArea className="flex-1 p-4">
-                          <div className="flex flex-col gap-4">
-                            {/* Intro Message */}
-                            {sqlChatHistory.length === 0 && (
-                              <div className="flex gap-3">
-                                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                  <Bot className="h-4 w-4 text-primary" />
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
-                                  <p>Ciao! Posso aiutarti a scrivere query SQL per i tuoi dati. Dimmi cosa ti serve estrarre.</p>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* History Messages */}
-                            {sqlChatHistory?.map((msg, idx) => (
-                              <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''} group`}>
-                                {msg.role === 'assistant' && (
-                                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                    <Bot className="h-4 w-4 text-primary" />
-                                  </div>
-                                )}
-                                <div className={`${msg.role === 'user'
-                                  ? 'bg-primary text-primary-foreground rounded-br-sm'
-                                  : 'bg-white dark:bg-zinc-800 rounded-tl-sm border shadow-sm'
-                                  } p-2.5 rounded-2xl text-sm max-w-[85%] space-y-2 relative`}>
-                                  <p className="whitespace-pre-wrap">{msg.content}</p>
-
-                                  {/* Insert Query Button for Assistant Messages with Code */}
-                                  {msg.role === 'assistant' && (msg.content.includes('SELECT') || msg.content.includes('WITH')) && (
-                                    <Button
-                                      size="sm"
-                                      variant="secondary"
-                                      className="w-full h-7 text-[10px] gap-1 mt-2"
-                                      onClick={() => {
-                                        const codeBlockRegex = /```(?:sql|tsql|mssql)?\s*([\s\S]*?)```/i;
-                                        const match = msg.content.match(codeBlockRegex);
-                                        let queryToInsert = '';
-
-                                        if (match && match[1]) {
-                                          queryToInsert = match[1].trim();
-                                        } else {
-                                          const selectIdx = msg.content.indexOf('SELECT');
-                                          if (selectIdx >= 0) {
-                                            queryToInsert = msg.content.substring(selectIdx);
-                                          } else {
-                                            queryToInsert = msg.content;
-                                          }
-                                        }
-
-                                        if (queryToInsert) {
-                                          setSqlQuery(queryToInsert);
-                                          toast({ title: "Query Inserita", description: "L'editor SQL è stato aggiornato." });
-                                        }
-                                      }}
-                                    >
-                                      <ArrowDownToLine className="h-3 w-3" /> Inserisci nel Editor
-                                    </Button>
-                                  )}
-                                </div>
-                                {msg.role === 'user' && (
-                                  <div className="flex flex-col gap-1 items-end">
-                                    <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-white font-bold text-xs">
-                                      U
-                                    </div>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                      title="Torna a questo punto"
-                                      onClick={() => {
-                                        const newHistory = sqlChatHistory.slice(0, idx);
-                                        setSqlChatHistory(newHistory);
-                                        toast({ title: "Conversazione Riavvobolta", description: "Sei tornato a un punto precedente." });
-                                      }}
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-
-                            {/* Loading State */}
-                            {agentStatus && (
-                              <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
-                                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                  <Bot className="h-4 w-4 text-primary" />
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
-                                  <div className="flex items-center gap-2 text-muted-foreground">
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                    <span>{agentStatus}</span>
-                                  </div>
-                                  <div className="h-1 bg-muted rounded-full overflow-hidden w-32">
-                                    <div className="h-full bg-primary animate-pulse w-2/3" />
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </ScrollArea>
-
-                        {/* Input Area */}
-                        <div className="p-2 border-t bg-background flex gap-2">
-                          <Input
-                            placeholder="Descrivi cosa estrarre (es. 'Tutti i clienti attivi')"
-                            className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent"
-                            id="ai-prompt-input"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                const btn = document.getElementById('ai-send-btn');
-                                if (btn) btn.click();
-                              }
-                            }}
-                          />
-                          <Button
-                            id="ai-send-btn"
-                            size="sm"
-                            className="gap-2 rounded-lg"
-                            disabled={!!agentStatus}
-                            onClick={() => {
-                              const input = document.getElementById('ai-prompt-input') as HTMLInputElement;
-                              if (!input || !input.value) return;
-
-                              const userPrompt = input.value;
-                              input.value = '';
-
-                              const newHistory = [...sqlChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
-                              setSqlChatHistory(newHistory);
-
-                              const apiKey = openRouterApiKey || '';
-                              const model = openRouterModel || 'google/gemini-2.0-flash-001';
-
-                              if (!apiKey) {
-                                toast({ variant: 'destructive', title: "Configurazione Mancante", description: "Imposta la chiave API nelle Impostazioni." });
-                                return;
-                              }
-
-                              setAgentStatus("Analisi Schema in corso...");
-
-                              fetchTableSchemaAction(
-                                sqlConnectorId || '',
-                                selectedPipelines?.map(p => p.split(':')[1])
-                              ).then((schemaRes) => {
-                                let schemaContext = schemaRes.schemaContext;
-
-                                if (schemaRes.error) {
-                                  console.warn("Schema fetch warning:", schemaRes.error);
-                                }
-
-                                setAgentStatus("Generazione Query SQL...");
-
-                                generateSqlAction(
-                                  userPrompt,
-                                  { apiKey, model },
-                                  sqlConnectorId,
-                                  schemaContext || undefined,
-                                  newHistory
-                                ).then((res) => {
-                                  if (res.sql) {
-                                    const assistantMsg = { role: 'assistant' as const, content: `Ecco la query:\n\`\`\`sql\n${res.sql}\n\`\`\``, timestamp: Date.now() };
-                                    setSqlChatHistory([...newHistory, assistantMsg]);
-                                  } else {
-                                    const errorMsg = { role: 'assistant' as const, content: `Errore: ${res.error || "Errore sconosciuto"}`, timestamp: Date.now() };
-                                    setSqlChatHistory([...newHistory, errorMsg]);
-                                    toast({ variant: 'destructive', title: "Errore AI", description: res.error || "Errore sconosciuto" });
-                                  }
-                                  setAgentStatus(null);
-                                });
-                              });
-                            }}
-                          >
-                            {agentStatus ? 'Elaborazione...' : 'Invia'}
-                            <ChevronRight className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
+                      <AgentChat
+                        nodeId={nodePath}
+                        agentType="sql"
+                        script={sqlQuery}
+                        tableSchema={getTableSchema(selectedPipelines, availableInputTables)}
+                        inputTables={getInputTables(selectedPipelines, availableInputTables)}
+                        onScriptUpdate={(newScript) => {
+                          setSqlQuery(newScript);
+                          toast({ title: "Query Aggiornata", description: "L'editor SQL è stato aggiornato." });
+                        }}
+                      />
                     </div>
                   </div>
 
@@ -2161,111 +2031,19 @@ export default function EditNodeDialog({
                       </div>
                     </div>
 
-                    {/* RIGHT COLUMN: AI Chatbot */}
+                    {/* RIGHT COLUMN: AI Agent */}
                     <div className="order-1 lg:order-2">
-                      <div className="bg-muted/30 border rounded-lg overflow-hidden flex flex-col h-[300px]">
-                        <div className="bg-muted/50 p-2 px-3 border-b flex items-center justify-between">
-                          <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                            <Bot className="h-3.5 w-3.5" />
-                            AI Python Assistant
-                          </span>
-                          {pythonAgentStatus && (
-                            <div className="bg-background text-[10px] h-5 gap-1 flex items-center px-2 rounded-full border">
-                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                              {pythonAgentStatus.replace('...', '')}
-                            </div>
-                          )}
-                        </div>
-
-                        <ScrollArea className="flex-1 p-4" scrollbarAlwaysVisible>
-                          <div className="flex flex-col gap-4">
-                            {pythonChatHistory.length === 0 && (
-                              <div className="flex gap-3">
-                                <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
-                                  <Bot className="h-4 w-4 text-yellow-600" />
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%]">
-                                  <p>Ciao! Posso generare script Python per {pythonOutputType === 'table' ? 'tabelle' : pythonOutputType === 'variable' ? 'variabili' : 'grafici'}. Dimmi cosa ti serve.</p>
-                                </div>
-                              </div>
-                            )}
-
-                            {pythonChatHistory?.map((msg, idx) => (
-                              <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''} group`}>
-                                {msg.role === 'assistant' && (
-                                  <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
-                                    <Bot className="h-4 w-4 text-yellow-600" />
-                                  </div>
-                                )}
-                                <div className={`${msg.role === 'user'
-                                  ? 'bg-primary text-primary-foreground rounded-br-sm'
-                                  : 'bg-white dark:bg-zinc-800 rounded-tl-sm border shadow-sm'
-                                  } p-2.5 rounded-2xl text-sm max-w-[85%] space-y-2 relative`}>
-                                  <p className="whitespace-pre-wrap">{msg.content}</p>
-                                  {msg.role === 'assistant' && msg.content.includes('```python') && (
-                                    <Button
-                                      size="sm"
-                                      variant="secondary"
-                                      className="w-full h-7 text-[10px] gap-1 mt-2"
-                                      onClick={() => {
-                                        const match = msg.content.match(/```python\s*([\s\S]*?)```/);
-                                        if (match && match[1]) {
-                                          setPythonCode(match[1]);
-                                          toast({ title: "Codice Inserito", description: "Lo script è stato aggiornato." });
-                                        }
-                                      }}
-                                    >
-                                      <ArrowDownToLine className="h-3 w-3" /> Inserisci nel Editor
-                                    </Button>
-                                  )}
-                                </div>
-                                {msg.role === 'user' && (
-                                  <div className="flex flex-col gap-1 items-end">
-                                    <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-white font-bold text-xs">
-                                      U
-                                    </div>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                      title="Torna a questo punto"
-                                      onClick={() => {
-                                        const newHistory = pythonChatHistory.slice(0, idx);
-                                        setPythonChatHistory(newHistory);
-                                        toast({ title: "Conversazione Riavvobolta", description: "Sei tornato a un punto precedente." });
-                                      }}
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-
-                            {pythonAgentStatus && (
-                              <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
-                                <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
-                                  <Bot className="h-4 w-4 text-yellow-600" />
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-2xl rounded-tl-sm text-sm border shadow-sm max-w-[85%] space-y-2">
-                                  <div className="flex items-center gap-2 text-muted-foreground">
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                    <span>{pythonAgentStatus}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </ScrollArea>
-
-                        <MemoizedChatInput
-                          placeholder={`Descrivi ${pythonOutputType === 'table' ? 'la tabella' : pythonOutputType === 'variable' ? 'le variabili' : 'il grafico'} da generare...`}
-                          onSubmit={handlePythonSubmit}
-                          disabled={!!pythonAgentStatus}
-                          buttonText={pythonAgentStatus ? 'Elaborazione...' : 'Invia'}
-                          buttonClassName="bg-yellow-600 hover:bg-yellow-700"
-                        />
-                      </div>
+                      <AgentChat
+                        nodeId={nodePath}
+                        agentType="python"
+                        script={pythonCode}
+                        tableSchema={getTableSchema(pythonSelectedPipelines, availableInputTables)}
+                        inputTables={getInputTables(pythonSelectedPipelines, availableInputTables)}
+                        onScriptUpdate={(newScript) => {
+                          setPythonCode(newScript);
+                          toast({ title: "Codice Aggiornato", description: "Lo script Python è stato aggiornato." });
+                        }}
+                      />
                     </div>
                   </div>
 
@@ -2307,7 +2085,7 @@ export default function EditNodeDialog({
                   )}
 
                   {pythonPreviewResult && (
-                      <div className="mt-4 border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[40px]">
+                    <div className="mt-4 border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[40px]">
                       <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
                         <span className="font-semibold text-xs flex items-center gap-2">
                           <Code className="h-3 w-3" />
@@ -2377,9 +2155,9 @@ export default function EditNodeDialog({
                             <pre className="p-3 text-xs">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
                           )}
                           {pythonPreviewResult.type === 'chart' && (
-                            <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 overflow-y-auto custom-scrollbar ${pythonPreviewFullHeight ? 'min-h-[500px]' : ''}`} style={{ height: pythonPreviewFullHeight ? 'auto' : '400px' }}>
+                            <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 ${pythonPreviewFullHeight ? 'min-h-[500px]' : 'overflow-y-auto custom-scrollbar'}`} style={{ height: pythonPreviewFullHeight ? 'auto' : '400px' }}>
                               {pythonPreviewResult.rechartsConfig && pythonPreviewResult.rechartsData ? (
-                                <div className="w-full p-4">
+                                <div className="w-full p-4" style={{ height: pythonPreviewFullHeight ? '650px' : '100%' }}>
                                   <SmartWidgetRenderer
                                     data={pythonPreviewResult.rechartsData}
                                     config={pythonPreviewResult.rechartsConfig}
@@ -2389,9 +2167,30 @@ export default function EditNodeDialog({
                                 </div>
                               ) : pythonPreviewResult.chartHtml ? (
                                 <iframe
-                                  srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: auto; }</style></head><body>${pythonPreviewResult.chartHtml}</body></html>`}
-                                  className="w-full border-none h-full"
+                                  srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: hidden; }</style></head><body>${pythonPreviewResult.chartHtml}<script>window.onload = function() { const height = document.body.scrollHeight; window.parent.postMessage({ height: height, id: 'python-preview-iframe' }, '*'); };</script></body></html>`}
+                                  className="w-full border-none"
                                   title="Interactive Chart"
+                                  onLoad={(e) => {
+                                    // Auto-resize iframe to fit content
+                                    const iframe = e.target as HTMLIFrameElement;
+                                    if (iframe.contentWindow) {
+                                      setTimeout(() => {
+                                        try {
+                                          // Try to get height from body
+                                          const height = iframe.contentWindow?.document.body.scrollHeight;
+                                          if (height && height > 100) {
+                                            iframe.style.height = (height + 20) + 'px';
+                                          } else {
+                                            iframe.style.height = '600px'; // Fallback minimum
+                                          }
+                                        } catch (err) {
+                                          // Cross-origin fallback
+                                          iframe.style.height = '600px';
+                                        }
+                                      }, 500);
+                                    }
+                                  }}
+                                  style={{ height: '600px', minHeight: '100%' }}
                                 />
                               ) : pythonPreviewResult.chartBase64 ? (
                                 <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className="block mx-auto w-full h-auto" />

@@ -193,3 +193,44 @@ export type ConsolidationProposal = {
   treeVariable: Variable;
   dbVariable: Variable;
 };
+
+// ============================================
+// AI AGENT TYPES
+// ============================================
+
+export interface AgentChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: number;
+}
+
+export interface AgentConversation {
+  id: string;
+  nodeId: string;
+  agentType: 'sql' | 'python';
+  script: string;
+  tableSchema?: Record<string, string[]>;
+  inputTables?: Record<string, any[]>;
+  messages: AgentChatMessage[];
+  companyId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AgentRequest {
+  nodeId: string;
+  agentType: 'sql' | 'python';
+  userMessage: string;
+  script: string;
+  tableSchema?: Record<string, string[]>;
+  inputTables?: Record<string, any[]>;
+}
+
+export interface AgentResponse {
+  success: boolean;
+  message: string;
+  updatedScript?: string;
+  needsClarification: boolean;
+  clarificationQuestions?: string[];
+  conversationId?: string;
+}
