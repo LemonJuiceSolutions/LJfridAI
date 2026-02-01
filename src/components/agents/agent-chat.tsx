@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, MessageSquare, X, Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Send, MessageSquare, X, Loader2, AlertCircle, ArrowLeft, RotateCcw } from 'lucide-react';
 import { AgentChatMessage, AgentResponse } from '@/lib/types';
 
 interface AgentChatProps {
@@ -73,6 +73,7 @@ export function AgentChat({
         role: 'user',
         content: userMessage,
         timestamp: Date.now(),
+        scriptSnapshot: script, // Save snapshot of script BEFORE agent changes
       },
     ]);
 
@@ -102,6 +103,7 @@ export function AgentChat({
             role: 'assistant',
             content: data.message,
             timestamp: Date.now(),
+            scriptSnapshot: data.updatedScript || script, // Save snapshot of script AFTER agent changes
           },
         ]);
 
@@ -144,6 +146,12 @@ export function AgentChat({
   };
 
   const handleGoBack = (messageIndex: number) => {
+    // Check if there is a snapshot to restore for this message
+    const targetMessage = messages[messageIndex];
+    if (targetMessage && targetMessage.scriptSnapshot && onScriptUpdate) {
+      onScriptUpdate(targetMessage.scriptSnapshot);
+    }
+
     // Truncate messages to the specified index
     setMessages((prev) => prev.slice(0, messageIndex + 1));
 
@@ -224,18 +232,37 @@ export function AgentChat({
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group items-center gap-2`}
           >
+            {msg.role === 'user' && (
+              <button
+                onClick={() => handleGoBack(index)}
+                className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all"
+                title="Torna qui (cancella successivi)"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            )}
             <div
               className={`max-w-[80%] rounded-lg px-4 py-2 ${msg.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-900'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-900'
                 }`}
             >
               <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
             </div>
+            {msg.role === 'assistant' && (
+              <button
+                onClick={() => handleGoBack(index)}
+                className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all"
+                title="Torna qui (cancella successivi)"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            )}
           </div>
         ))}
+
 
         {isLoading && (
           <div className="flex justify-start">

@@ -202,6 +202,7 @@ export interface AgentChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: number;
+  scriptSnapshot?: string;
 }
 
 export interface AgentConversation {
