@@ -583,10 +583,20 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         setEditingNodeInfo(null);
  
         try {
+            // Preserve preview data from the current node
+            const currentNode = getNodeFromPath(tree, path);
+            const nodeDataToSave = {
+                ...newNodeData,
+                // Preserve SQL preview data if it exists in the current node
+                ...(currentNode?.sqlPreviewData && { sqlPreviewData: currentNode.sqlPreviewData }),
+                // Preserve Python preview data if it exists in the current node
+                ...(currentNode?.pythonPreviewData && { pythonPreviewData: currentNode.pythonPreviewData }),
+            };
+
             const result = await updateTreeNodeAction({
                 treeId: treeData.id,
                 nodePath: path,
-                nodeData: JSON.stringify(newNodeData)
+                nodeData: JSON.stringify(nodeDataToSave)
             });
             if (!result.success) {
                 throw new Error(result.error || "Salvataggio fallito");
@@ -604,25 +614,41 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     };
 
     const handleSavePreview = async (path: string, previewData: any) => {
-        console.log('[DEBUG] handleSavePreview chiamato:', { path, hasPreviewData: previewData !== null });
+        console.log('[DEBUG] handleSavePreview chiamato:', { path, hasPreviewData: previewData !== null, previewDataType: previewData?.type, hasSqlPreviewData: !!previewData?.sqlPreviewData });
 
         try {
             // Ottieni il nodo corrente usando l'albero parsato (tree) invece di treeData
             console.log('[DEBUG] Path da cercare:', path);
             const currentNode = getNodeFromPath(tree, path);
             console.log('[DEBUG] Nodo trovato:', currentNode);
+            console.log('[DEBUG] Struttura nodo corrente:', JSON.stringify(currentNode, null, 2));
             if (!currentNode) {
                 console.error('[DEBUG] Nodo non trovato per il salvataggio dell\'anteprima:', path);
                 return;
             }
 
-            // Aggiungi i dati dell'anteprima al nodo
+            // Aggiungi i dati dell'anteprima al nodo (supporta sia Python che SQL)
             const updatedNodeData = {
-                ...currentNode,
-                pythonPreviewData: previewData
+                ...currentNode
             };
 
+            // Salva i dati dell'anteprima nel campo appropriato
+            if (previewData.sqlPreviewData) {
+                // SQL preview - salva direttamente i dati (la proprietà sqlPreviewData contiene i dati)
+                console.log('[DEBUG] Salvataggio SQL preview data:', { dataLength: previewData.sqlPreviewData?.length });
+                updatedNodeData.sqlPreviewData = previewData.sqlPreviewData;
+            } else if (previewData.timestamp && !previewData.type) {
+                // SQL preview - formato alternativo con timestamp
+                console.log('[DEBUG] Salvataggio SQL preview data (alt):', { dataLength: previewData.sqlPreviewData?.length || previewData.data?.length });
+                updatedNodeData.sqlPreviewData = previewData.sqlPreviewData || previewData.data;
+            } else {
+                // Python preview - salva l'oggetto completo
+                console.log('[DEBUG] Salvataggio Python preview data:', { type: previewData?.type, hasData: !!previewData?.data });
+                updatedNodeData.pythonPreviewData = previewData;
+            }
+
             console.log('[DEBUG] Salvataggio anteprima nel nodo:', { path, hasPreviewData: previewData !== null });
+            console.log('[DEBUG] Updated node data:', JSON.stringify(updatedNodeData, null, 2));
 
             const result = await updateTreeNodeAction({
                 treeId: treeData.id,
@@ -634,6 +660,26 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
 
             console.log('[DEBUG] Anteprima salvata con successo nel nodo:', path);
+            // Aggiorna lo stato locale dell'albero per riflettere immediatamente i cambiamenti
+            // Questo è necessario perché il salvataggio nel database non aggiorna automaticamente lo stato locale
+            const newTree = _.cloneDeep(tree);
+            const nodeToUpdate = getNodeFromPath(newTree, path);
+            console.log('[DEBUG] Node to update in local tree:', nodeToUpdate ? 'found' : 'NOT FOUND');
+            if (nodeToUpdate) {
+                if (previewData.sqlPreviewData) {
+                    console.log('[DEBUG] Updating SQL preview in local tree');
+                    nodeToUpdate.sqlPreviewData = previewData.sqlPreviewData;
+                } else if (previewData.timestamp && !previewData.type) {
+                    console.log('[DEBUG] Updating SQL preview (alt) in local tree');
+                    nodeToUpdate.sqlPreviewData = previewData.sqlPreviewData || previewData.data;
+                } else {
+                    console.log('[DEBUG] Updating Python preview in local tree');
+                    nodeToUpdate.pythonPreviewData = previewData;
+                }
+                setTree(newTree);
+                console.log('[DEBUG] Local tree updated with preview data');
+            }
+
             // Non chiamare onDataRefresh() qui perché causerebbe la chiusura della dialog
             // L'anteprima è già nello stato locale e verrà persistita quando l'utente salva le modifiche al nodo
             // Non mostrare toast per non disturbare l'utente durante l'anteprima

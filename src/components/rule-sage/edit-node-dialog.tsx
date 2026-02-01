@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Minimize2, Maximize2 } from 'lucide-react';
+import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Minimize2, Maximize2, Info } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig } from '@/lib/types';
 import { Input } from '../ui/input';
@@ -301,6 +301,7 @@ export default function EditNodeDialog({
     rechartsConfig?: any;
     rechartsData?: any[];
     debugLogs?: string[];
+    timestamp?: number;
   } | null>(null);
   const [pythonConnectorId, setPythonConnectorId] = useState<string>('');
   const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
@@ -308,6 +309,7 @@ export default function EditNodeDialog({
   const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string, rechartsConfig?: any, rechartsData?: any[] } }[]>([]);
   const [pythonPreviewExpanded, setPythonPreviewExpanded] = useState(true);
   const [pythonPreviewFullHeight, setPythonPreviewFullHeight] = useState(false);
+  const [showPreviewTimestamp, setShowPreviewTimestamp] = useState(false);
 
   // SQL Export State
   const [sqlExportEnabled, setSqlExportEnabled] = useState(true);
@@ -440,7 +442,14 @@ export default function EditNodeDialog({
       // Load SQL Query
       const query = node.sqlQuery || '';
       setSqlQuery(query);
-      setSqlPreviewData(null);
+      // Load saved SQL preview data if available, otherwise set to null
+      const savedSqlPreviewData = (node as any).sqlPreviewData;
+      if (savedSqlPreviewData) {
+        console.log('[DEBUG] Caricamento SQL anteprima salvata:', { nodePath, hasPreviewData: savedSqlPreviewData !== null });
+        setSqlPreviewData(savedSqlPreviewData);
+      } else {
+        setSqlPreviewData(null);
+      }
       const connId = node.sqlConnectorId || '';
       setSqlConnectorId(connId);
 
@@ -512,7 +521,8 @@ export default function EditNodeDialog({
           chartHtml: savedPreviewData.chartHtml,
           rechartsConfig: savedPreviewData.rechartsConfig,
           rechartsData: savedPreviewData.rechartsData,
-          debugLogs: savedPreviewData.debugLogs
+          debugLogs: savedPreviewData.debugLogs,
+          timestamp: savedPreviewData.timestamp
         });
         // Auto-expand preview and set full height for charts if saved data exists
         setPythonPreviewExpanded(true);
@@ -864,7 +874,8 @@ export default function EditNodeDialog({
               chartHtml: previewRes.chartHtml,
               rechartsConfig: previewRes.rechartsConfig,
               rechartsData: previewRes.rechartsData,
-              debugLogs: previewRes.debugLogs
+              debugLogs: previewRes.debugLogs,
+              timestamp: Date.now()
             });
             setHasPythonCodeChanged(true);
 
@@ -1669,7 +1680,15 @@ export default function EditNodeDialog({
                               setAgentStatus(null);
                               if (res.data) {
                                 setSqlPreviewData(res.data);
-                                toast({ title: "Query Eseguita", description: `Estratti ${res.data.length} record.` });
+                                // Non mostrare toast per non disturbare l'utente durante l'anteprima
+
+                                // Salva automaticamente i dati dell'anteprima SQL nel nodo
+                                console.log('[DEBUG] Verifica salvataggio SQL anteprima:', { onSavePreview: !!onSavePreview, nodePath: !!nodePath });
+                                if (onSavePreview && nodePath) {
+                                  console.log('[DEBUG] Salvataggio SQL anteprima nel nodo:', { nodePath, hasPreviewData: res.data !== null });
+                                  onSavePreview(nodePath, { sqlPreviewData: res.data, timestamp: Date.now() });
+                                  console.log('[DEBUG] SQL anteprima salvata nel nodo:', nodePath);
+                                }
                               } else {
                                 toast({ variant: 'destructive', title: "Errore SQL", description: res.error || "Errore sconosciuto" });
                               }
@@ -2080,13 +2099,14 @@ export default function EditNodeDialog({
                                   chartHtml: res.chartHtml,
                                   rechartsConfig: res.rechartsConfig,
                                   rechartsData: res.rechartsData,
-                                  debugLogs: res.debugLogs
+                                  debugLogs: res.debugLogs,
+                                  timestamp: Date.now()
                                 });
                                 // Auto-expand on success
                                 setPythonPreviewExpanded(true);
                                 setPythonPreviewFullHeight(true);
-                                toast({ title: "Script Eseguito", description: "Anteprima pronta.", duration: 1000 });
-                                
+                                // Non mostrare toast per non disturbare l'utente durante l'anteprima
+
                                 // Salva automaticamente i dati dell'anteprima nel nodo
                                 console.log('[DEBUG] Verifica salvataggio anteprima:', { onSavePreview: !!onSavePreview, nodePath: !!nodePath });
                                 if (onSavePreview && nodePath) {
@@ -2265,13 +2285,25 @@ export default function EditNodeDialog({
                   )}
 
                   {pythonPreviewResult && (
-                    <div className="mt-4 border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[40px]">
+                      <div className="mt-4 border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[40px]">
                       <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
                         <span className="font-semibold text-xs flex items-center gap-2">
                           <Code className="h-3 w-3" />
                           Risultato Python ({pythonPreviewResult.type})
                         </span>
                         <div className="flex items-center gap-1">
+                          {/* Info Button - Show Timestamp */}
+                          {pythonPreviewResult.timestamp && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              title="Mostra data e ora dell'ultimo aggiornamento"
+                              onClick={() => setShowPreviewTimestamp(!showPreviewTimestamp)}
+                            >
+                              <Info className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           {/* Toggle Expand/Collapse */}
                           <Button
                             size="icon"
@@ -2318,6 +2350,13 @@ export default function EditNodeDialog({
                           <Button size="icon" variant="ghost" className="h-6 w-6 ml-1" onClick={() => setPythonPreviewResult(null)}><X className="h-3 w-3" /></Button>
                         </div>
                       </div>
+
+                      {/* Timestamp Display */}
+                      {showPreviewTimestamp && pythonPreviewResult.timestamp && (
+                        <div className="bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 border-b border-blue-200 dark:border-blue-800">
+                          <span className="font-medium">Ultimo aggiornamento:</span> {new Date(pythonPreviewResult.timestamp).toLocaleString('it-IT', { dateStyle: 'full', timeStyle: 'short' })}
+                        </div>
+                      )}
 
                       {pythonPreviewExpanded && (
                         <div className="transition-all duration-300">
