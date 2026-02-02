@@ -107,7 +107,7 @@ export async function updateConnectorAction(id: string, data: { name: string, ty
     }
 }
 
-export async function executeSqlPreviewAction(query: string, connectorId: string) {
+export async function executeSqlPreviewAction(query: string, connectorId: string, dependencies?: any[]) {
     const user = await getAuthenticatedUser();
     if (!user) return { error: 'Non autorizzato' };
 

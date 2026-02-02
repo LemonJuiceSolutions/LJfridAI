@@ -1,704 +1,543 @@
-/**
- * Scheduler Service
- * 
- * Handles scheduling and execution of recurring tasks including:
- * - Email previews and sends
- * - SQL query previews and executions
- * - Data synchronization
- * - Custom operations
- */
 
 import cron from 'node-cron';
 import { db } from '@/lib/db';
-import { executeEmailAction } from '@/app/actions';
-import { executeSqlPreviewAction } from '@/app/actions/connectors';
-
-import { executeSqlAction } from '@/app/actions/connectors';
+import { Prisma } from '@prisma/client';
 import { DateTime } from 'luxon';
+import { executePythonPreviewAction, exportTableToSqlAction } from '@/app/actions';
+import { sendTestEmailWithDataAction, executeSqlPreviewAction, executeSqlAction } from '@/app/actions/connectors';
+import _ from 'lodash';
 
-// ============================================
-// Types
-// ============================================
+// Basic logger
+const logger = {
+  log: (msg: string, ...args: any[]) => console.log(`[Scheduler] ${msg}`, ...args),
+  error: (msg: string, ...args: any[]) => console.error(`[Scheduler] ${msg}`, ...args),
+};
 
 export type TaskType =
   | 'EMAIL_PREVIEW'
   | 'EMAIL_SEND'
   | 'SQL_PREVIEW'
   | 'SQL_EXECUTE'
+  | 'PYTHON_EXECUTE'
   | 'DATA_SYNC'
   | 'CUSTOM';
 
 export type ScheduleType = 'cron' | 'interval' | 'specific';
 
 export interface ScheduledTaskConfig {
-  type: TaskType;
-  // Email-specific config
-  connectorId?: string;
-  to?: string;
-  subject?: string;
-  body?: string;
-  // SQL-specific config
-  query?: string;
-  connectorIdSql?: string;
-  // Data sync config
-  sourceConnectorId?: string;
-  targetConnectorId?: string;
-  syncQuery?: string;
-  // Custom config
-  customAction?: string;
-  customParams?: Record<string, any>;
-}
+  // Common
+  treeId?: string;
+  nodeId?: string;
+  nodePath?: string;
 
-export interface ScheduleConfig {
-  type: ScheduleType;
-  cronExpression?: string;
-  intervalMinutes?: number;
-  daysOfWeek?: number[];
-  hours?: number[];
-  timezone?: string;
+  // Specific
+  [key: string]: any;
 }
 
 export interface TaskExecutionResult {
   success: boolean;
-  data?: any;
+  message?: string;
   error?: string;
-  duration?: number;
+  data?: any;
 }
 
-// ============================================
-// Scheduler Class
-// ============================================
-
-class SchedulerService {
+export class SchedulerService {
+  private static instance: SchedulerService;
+  // Map taskId -> cronJob or Array<cronJob>
   private tasks: Map<string, any> = new Map();
-  private isRunning: boolean = false;
-  private checkInterval: NodeJS.Timeout | null = null;
+  private isInitialized = false;
 
-  /**
-   * Start the scheduler service
-   */
-  async start(): Promise<void> {
-    if (this.isRunning) {
-      console.log('[Scheduler] Already running');
-      return;
+  public static getInstance(): SchedulerService {
+    if (!SchedulerService.instance) {
+      SchedulerService.instance = new SchedulerService();
     }
-
-    console.log('[Scheduler] Starting...');
-    this.isRunning = true;
-
-    // Load and schedule all active tasks
-    await this.loadAndScheduleTasks();
-
-    // Start periodic check for tasks that need to be scheduled
-    this.checkInterval = setInterval(() => {
-      this.checkAndScheduleTasks();
-    }, 60000); // Check every minute
-
-    console.log('[Scheduler] Started successfully');
+    return SchedulerService.instance;
   }
 
-  /**
-   * Stop the scheduler service
-   */
-  async stop(): Promise<void> {
-    if (!this.isRunning) {
-      return;
+  public async init() {
+    if (this.isInitialized) return;
+    logger.log('Initializing Scheduler Service...');
+    await this.loadTasks();
+    this.isInitialized = true;
+    logger.log('Scheduler Service Initialized.');
+  }
+
+  public async reload() {
+    logger.log('Reloading tasks...');
+    this.stopAll();
+    await this.loadTasks();
+  }
+
+  private async loadTasks() {
+    try {
+      // Load active tasks from DB
+      const activeTasks = await db.scheduledTask.findMany({
+        where: { status: 'active' }
+      });
+
+      logger.log(`Found ${activeTasks.length} active tasks.`);
+
+      for (const task of activeTasks) {
+        this.scheduleTask(task);
+      }
+    } catch (e) {
+      logger.error('Failed to load tasks from DB:', e);
     }
-
-    console.log('[Scheduler] Stopping...');
-    this.isRunning = false;
-
-    // Stop all scheduled tasks
-    this.tasks.forEach((task) => {
-      task.stop();
+  }
+  public stopAll() {
+    this.tasks.forEach(taskOrTasks => {
+      if (Array.isArray(taskOrTasks)) {
+        taskOrTasks.forEach(t => t.stop());
+      } else {
+        taskOrTasks.stop();
+      }
     });
     this.tasks.clear();
-
-    // Stop periodic check
-    if (this.checkInterval) {
-      clearInterval(this.checkInterval);
-      this.checkInterval = null;
-    }
-
-    console.log('[Scheduler] Stopped');
   }
 
-  /**
-   * Load all active tasks from database and schedule them
-   */
-  private async loadAndScheduleTasks(): Promise<void> {
+  // ... (loadTasks)
+
+  private scheduleTask(task: any) {
     try {
-      const tasks = await db.scheduledTask.findMany({
-        where: {
-          status: 'active'
-        },
-        include: {
-          company: true
+      const config = typeof task.config === 'string' ? JSON.parse(task.config) : task.config;
+      const customTimes = config?.customTimes as string[] | undefined;
+
+      // Case 1: Custom HH:mm times
+      if (customTimes && Array.isArray(customTimes) && customTimes.length > 0) {
+        const jobs: any[] = [];
+
+        for (const timeStr of customTimes) {
+          // Format HH:mm
+          const [hours, minutes] = timeStr.split(':');
+          if (!hours || !minutes) continue;
+
+          // Cron: Minute Hour * * * (Daily at specific time)
+          // If we want to support daysOfWeek combined with custom times, we can use daysOfWeek from task
+          const days = task.daysOfWeek || '*';
+          const cronExpression = `${minutes} ${hours} * * ${days}`;
+
+          const job = cron.schedule(cronExpression, async () => {
+            logger.log(`Executing task (CustomTime ${timeStr}): ${task.name} (${task.id})`);
+            await this.executeTask(task.id);
+          }, {
+            timezone: task.timezone || 'Europe/Rome'
+          });
+          jobs.push(job);
         }
-      });
 
-      console.log(`[Scheduler] Loaded ${tasks.length} active tasks`);
-
-      for (const task of tasks) {
-        await this.scheduleTask(task);
-      }
-    } catch (error) {
-      console.error('[Scheduler] Error loading tasks:', error);
-    }
-  }
-
-  /**
-   * Check for tasks that need to be scheduled (called periodically)
-   */
-  private async checkAndScheduleTasks(): Promise<void> {
-    if (!this.isRunning) return;
-
-    try {
-      // Check for tasks that need to be scheduled now
-      const now = new Date();
-      const tasksToRun = await db.scheduledTask.findMany({
-        where: {
-          status: 'active',
-          nextRunAt: {
-            lte: now
-          }
+        if (jobs.length > 0) {
+          this.tasks.set(task.id, jobs);
+          logger.log(`Scheduled task ${task.name} (${task.id}) with ${jobs.length} custom times: ${customTimes.join(', ')}`);
         }
-      });
-
-      for (const task of tasksToRun) {
-        await this.executeTask(task);
+        return;
       }
 
-      // Recalculate next run times for active tasks
-      await this.updateNextRunTimes();
-    } catch (error) {
-      console.error('[Scheduler] Error in periodic check:', error);
-    }
-  }
+      // Case 2: Standard Cron/Interval
+      let cronExpression = task.cronExpression;
 
-  /**
-   * Schedule a task based on its configuration
-   */
-  private async scheduleTask(task: any): Promise<void> {
-    // Remove existing task if any
-    if (this.tasks.has(task.id)) {
-      this.tasks.get(task.id)!.stop();
-      this.tasks.delete(task.id);
-    }
+      if (task.scheduleType === 'interval' && task.intervalMinutes) {
+        // Simple interval: every X minutes
+        cronExpression = `*/${task.intervalMinutes} * * * *`;
+      } else if (task.scheduleType === 'specific') {
+        // Specific days/hours
+        // Format: Minute Hour DayOfMonth Month DayOfWeek
+        // default to minute 0 of the hour
+        const minutes = '0';
+        const hours = task.hours || '*';
+        const daysOfWeek = task.daysOfWeek || '*';
+        cronExpression = `${minutes} ${hours} * * ${daysOfWeek}`;
+      }
 
-    // Calculate next run time if not set
-    if (!task.nextRunAt) {
-      task.nextRunAt = this.calculateNextRunTime(task);
-      await db.scheduledTask.update({
-        where: { id: task.id },
-        data: { nextRunAt: task.nextRunAt }
-      });
-    }
+      if (!cronExpression) {
+        logger.error(`Task ${task.id} (${task.name}) has no valid schedule.`);
+        return;
+      }
 
-    // Schedule based on type
-    if (task.scheduleType === 'cron' && task.cronExpression) {
-      // Use cron expression
-      const cronTask = cron.schedule(task.cronExpression, () => {
-        this.executeTask(task);
+      // Create cron job
+      const cronJob = cron.schedule(cronExpression, async () => {
+        logger.log(`Executing task: ${task.name} (${task.id})`);
+        await this.executeTask(task.id);
       }, {
-        scheduled: true,
         timezone: task.timezone || 'Europe/Rome'
-      } as any);
+      });
 
-      this.tasks.set(task.id, cronTask);
-      console.log(`[Scheduler] Scheduled task "${task.name}" with cron: ${task.cronExpression}`);
-    } else {
-      // For interval and specific types, we'll check periodically
-      console.log(`[Scheduler] Task "${task.name}" will be checked periodically`);
+      this.tasks.set(task.id, cronJob);
+      logger.log(`Scheduled task ${task.name} (${task.id}) with cron: ${cronExpression}`);
+
+    } catch (e) {
+      logger.error(`Failed to schedule task ${task.id}:`, e);
     }
   }
 
-  /**
-   * Execute a scheduled task
-   */
-  private async executeTask(task: any): Promise<void> {
-    const executionId = task.id + '-' + Date.now();
-    console.log(`[Scheduler] Executing task "${task.name}" (${executionId})`);
+  public async executeTask(taskId: string): Promise<TaskExecutionResult> {
+    logger.log(`Starting execution for task ${taskId}`);
 
-    // Create execution record
-    const execution = await db.scheduledTaskExecution.create({
-      data: {
-        taskId: task.id,
-        status: 'running',
-        startedAt: new Date()
-      }
-    });
-
-    const startTime = Date.now();
+    let executionId = '';
 
     try {
-      // Execute the task based on its type
+      // 1. Fetch Task
+      const task = await db.scheduledTask.findUnique({ where: { id: taskId } });
+      if (!task) return { success: false, error: 'Task not found' };
+
+      // 2. Create Execution Log (Pending)
+      const execution = await db.scheduledTaskExecution.create({
+        data: {
+          taskId: taskId, // Fixed: use taskId instead of scheduledTaskId
+          status: 'running',
+          startedAt: new Date()
+        }
+      });
+      executionId = execution.id;
+
+      // 3. Execute Logic based on Type
       const result = await this.executeTaskByType(task, executionId);
 
-      const duration = Date.now() - startTime;
-
-      // Update execution record
+      // 4. Update Execution Log (Success/Failure)
       await db.scheduledTaskExecution.update({
-        where: { id: execution.id },
+        where: { id: executionId },
         data: {
-          status: result.success ? 'success' : 'failed',
+          status: result.success ? 'success' : 'failure',
           completedAt: new Date(),
-          durationMs: duration,
-          result: result.success ? result.data : null,
+          result: (result.data || result.message) as Prisma.InputJsonValue,
           error: result.error
         }
       });
 
-      // Update task statistics
+      // 5. Update Task Stats
       await db.scheduledTask.update({
-        where: { id: task.id },
+        where: { id: taskId },
         data: {
           lastRunAt: new Date(),
+          nextRunAt: this.calculateNextRun(task as any),
           runCount: { increment: 1 },
-          successCount: result.success ? { increment: 1 } : undefined,
-          failureCount: !result.success ? { increment: 1 } : undefined,
-          lastError: result.error || null,
-          nextRunAt: this.calculateNextRunTime(task)
+          // Failure handling
+          failureCount: result.success ? 0 : { increment: 1 }
         }
       });
 
-      console.log(`[Scheduler] Task "${task.name}" completed in ${duration}ms - ${result.success ? 'SUCCESS' : 'FAILED'}`);
-    } catch (error: any) {
-      const duration = Date.now() - startTime;
+      return result;
 
-      // Update execution record with error
-      await db.scheduledTaskExecution.update({
-        where: { id: execution.id },
-        data: {
-          status: 'failed',
-          completedAt: new Date(),
-          durationMs: duration,
-          error: error.message || 'Unknown error'
-        }
-      });
-
-      // Update task statistics
-      await db.scheduledTask.update({
-        where: { id: task.id },
-        data: {
-          lastRunAt: new Date(),
-          runCount: { increment: 1 },
-          failureCount: { increment: 1 },
-          lastError: error.message || 'Unknown error',
-          nextRunAt: this.calculateNextRunTime(task)
-        }
-      });
-
-      console.error(`[Scheduler] Task "${task.name}" failed:`, error);
-
-      // Retry logic
-      if (execution.retryCount < task.maxRetries) {
-        console.log(`[Scheduler] Retrying task "${task.name}" (${execution.retryCount + 1}/${task.maxRetries})`);
+    } catch (e: any) {
+      logger.error(`Execution failed for task ${taskId}:`, e);
+      // Try to log failure if execution created
+      if (executionId) {
         await db.scheduledTaskExecution.update({
-          where: { id: execution.id },
-          data: { retryCount: { increment: 1 } }
-        });
-
-        // Schedule retry
-        setTimeout(() => {
-          this.executeTask(task);
-        }, task.retryDelayMinutes * 60 * 1000);
+          where: { id: executionId },
+          data: {
+            status: 'failure',
+            completedAt: new Date(),
+            error: e.message
+          }
+        }).catch(() => { });
       }
+      return { success: false, error: e.message };
     }
   }
 
-  /**
-   * Execute task based on its type
-   */
+  private calculateNextRun(task: { scheduleType: string, cronExpression?: string, intervalMinutes?: number, hours?: string, daysOfWeek?: string, timezone?: string }): Date | null {
+    try {
+      // Simplified next run calc using node-cron or manual
+      // Note: node-cron doesn't easily give "next date" without parsing
+      // return null for now, or implement a parser if critical
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   private async executeTaskByType(task: any, executionId: string): Promise<TaskExecutionResult> {
     const config = task.config as ScheduledTaskConfig;
+    const type = task.type as TaskType;
 
-    switch (task.type) {
-      case 'EMAIL_PREVIEW':
-        return await this.executeEmailPreview(config, executionId);
+    logger.log(`Executing logic for type: ${type}`);
 
-      case 'EMAIL_SEND':
-        return await this.executeEmailSend(config, executionId);
-
-      case 'SQL_PREVIEW':
-        return await this.executeSqlPreview(config, executionId);
-
-      case 'SQL_EXECUTE':
-        return await this.executeSqlExecute(config, executionId);
-
-      case 'DATA_SYNC':
-        return await this.executeDataSync(config, executionId);
-
-      case 'CUSTOM':
-        return await this.executeCustom(config, executionId);
-
-      default:
-        return {
-          success: false,
-          error: `Unknown task type: ${task.type}`
-        };
-    }
-  }
-
-  /**
-   * Execute email preview task
-   */
-  private async executeEmailPreview(config: ScheduledTaskConfig, executionId: string): Promise<TaskExecutionResult> {
     try {
-      if (!config.connectorId || !config.to || !config.subject || !config.body) {
-        return {
-          success: false,
-          error: 'Missing required email parameters'
-        };
-      }
-
-      // Log preview (don't actually send)
-      console.log(`[Email Preview] To: ${config.to}, Subject: ${config.subject}`);
-      console.log(`[Email Preview] Body: ${config.body.substring(0, 100)}...`);
-
-      return {
-        success: true,
-        data: {
-          message: 'Email preview generated successfully',
-          preview: {
-            to: config.to,
-            subject: config.subject,
-            body: config.body
+      switch (type) {
+        case 'EMAIL_SEND':
+          return await this.executeEmailSend(config);
+        case 'SQL_EXECUTE':
+          return await this.executeSqlNode(config);
+        case 'PYTHON_EXECUTE':
+        case 'CUSTOM': // Mapped Custom to Python usually or generic
+          if (config.pythonCode) {
+            return await this.executePythonNode(config);
           }
-        }
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
+          return { success: false, error: "Custom task missing handler" };
 
-  /**
-   * Execute email send task
-   */
-  private async executeEmailSend(config: ScheduledTaskConfig, executionId: string): Promise<TaskExecutionResult> {
-    try {
-      if (!config.connectorId || !config.to || !config.subject || !config.body) {
-        return {
-          success: false,
-          error: 'Missing required email parameters'
-        };
+        default:
+          return {
+            success: false,
+            error: `Unknown task type: ${task.type}`
+          };
       }
-
-      const result = await executeEmailAction(
-        config.connectorId,
-        config.to,
-        config.subject,
-        config.body
-      );
-
-      return {
-        success: result.success,
-        data: result,
-        error: result.success ? undefined : result.message
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message
-      };
+    } catch (e: any) {
+      return { success: false, error: e.message };
     }
   }
 
-  /**
-   * Execute SQL preview task
-   */
-  private async executeSqlPreview(config: ScheduledTaskConfig, executionId: string): Promise<TaskExecutionResult> {
-    try {
-      if (!config.query || !config.connectorIdSql) {
+  // --- NODE TYPE EXECUTORS ---
+
+  private async executeEmailSend(config: ScheduledTaskConfig): Promise<TaskExecutionResult> {
+    // Reconstruct params for sendTestEmailWithDataAction
+    const {
+      to, cc, bcc, subject, body, // strings
+      connectorId, // SMTP
+      contextTables, // Available inputs defined in context
+      // Selections:
+      selectedTableNames, // Array of strings (names of sql tables to include)
+      selectedPythonNames, // Array of strings
+    } = config;
+
+    if (!connectorId) return { success: false, error: "Missing SMTP Connector ID" };
+
+    // Filter contextTables to get the selected ones
+    // Context table shape: { name, sqlQuery?, pythonCode?, ... }
+    const allContext = (contextTables as any[]) || [];
+
+    let selectedTablesPayload: any[] = [];
+    if (config.selectedTables && Array.isArray(config.selectedTables)) {
+      selectedTablesPayload = config.selectedTables.map((t: any) => {
+        // Find def in context to get query if missing
+        const def = allContext.find(c => c.name === t.name);
         return {
-          success: false,
-          error: 'Missing required SQL parameters'
+          name: t.name,
+          query: t.query || def?.sqlQuery || '',
+          inBody: t.inBody ?? true,
+          asExcel: t.asExcel ?? false,
+          pipelineDependencies: def?.pipelineDependencies
         };
-      }
-
-      const result = await executeSqlPreviewAction(config.query, config.connectorIdSql);
-
-      return {
-        success: result.error === null,
-        data: result,
-        error: result.error || undefined
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Execute SQL execute task
-   */
-  private async executeSqlExecute(config: ScheduledTaskConfig, executionId: string): Promise<TaskExecutionResult> {
-    try {
-      if (!config.query || !config.connectorIdSql) {
-        return {
-          success: false,
-          error: 'Missing required SQL parameters'
-        };
-      }
-
-      const result = await executeSqlAction(config.query, config.connectorIdSql);
-
-      return {
-        success: result.error === null,
-        data: result,
-        error: result.error || undefined
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Execute data sync task
-   */
-  private async executeDataSync(config: ScheduledTaskConfig, executionId: string): Promise<TaskExecutionResult> {
-    try {
-      if (!config.sourceConnectorId || !config.targetConnectorId || !config.syncQuery) {
-        return {
-          success: false,
-          error: 'Missing required sync parameters'
-        };
-      }
-
-      // Fetch data from source
-      const sourceResult = await executeSqlPreviewAction(config.syncQuery, config.sourceConnectorId);
-
-      if (sourceResult.error) {
-        return {
-          success: false,
-          error: `Failed to fetch from source: ${sourceResult.error}`
-        };
-      }
-
-      // Write to target (implement based on your needs)
-      // This is a placeholder - you'd need to implement actual data sync logic
-      console.log(`[Data Sync] Synced ${sourceResult.data?.length || 0} records`);
-
-      return {
-        success: true,
-        data: {
-          message: 'Data synced successfully',
-          recordsSynced: sourceResult.data?.length || 0
-        }
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Execute custom task
-   */
-  private async executeCustom(config: ScheduledTaskConfig, executionId: string): Promise<TaskExecutionResult> {
-    try {
-      if (!config.customAction) {
-        return {
-          success: false,
-          error: 'Missing custom action'
-        };
-      }
-
-      // Implement custom action logic based on config.customAction
-      console.log(`[Custom] Executing custom action: ${config.customAction}`);
-
-      return {
-        success: true,
-        data: {
-          message: 'Custom action executed',
-          action: config.customAction,
-          params: config.customParams
-        }
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Calculate next run time for a task
-   */
-  private calculateNextRunTime(task: any): Date | null {
-    const config = task;
-    const timezone = config.timezone || 'Europe/Rome';
-    const now = DateTime.now().setZone(timezone);
-
-    switch (task.scheduleType) {
-      case 'cron':
-        // For cron, node-cron handles the scheduling
-        // We just return null here as the cron scheduler manages it
-        return null;
-
-      case 'interval':
-        if (config.intervalMinutes) {
-          return now.plus({ minutes: config.intervalMinutes }).toJSDate();
-        }
-        break;
-
-      case 'specific':
-        const daysOfWeek = config.daysOfWeek ? config.daysOfWeek.split(',').map(Number) : [];
-        const hours = config.hours ? config.hours.split(',').map(Number) : [];
-
-        if (daysOfWeek.length === 0 && hours.length === 0) {
-          return null;
-        }
-
-        // Find next matching day and hour
-        let nextDate = now;
-        let found = false;
-        let maxIterations = 365 * 24; // Prevent infinite loop
-
-        while (!found && maxIterations > 0) {
-          maxIterations--;
-
-          const dayOfWeek = nextDate.weekday; // 0-6 (Monday-Sunday in luxon)
-          const hour = nextDate.hour;
-
-          const dayMatches = daysOfWeek.length === 0 || daysOfWeek.includes(dayOfWeek === 0 ? 6 : dayOfWeek - 1); // Convert to 0=Sunday format
-          const hourMatches = hours.length === 0 || hours.includes(hour);
-
-          if (dayMatches && hourMatches) {
-            // Set to the next hour if we're already past it
-            if (nextDate <= now) {
-              nextDate = nextDate.plus({ hours: 1 }).startOf('hour');
-            }
-            found = true;
-          } else {
-            nextDate = nextDate.plus({ hours: 1 });
-          }
-        }
-
-        return found ? nextDate.toJSDate() : null;
-
-      default:
-        return null;
-    }
-
-    return null;
-  }
-
-  /**
-   * Update next run times for all active tasks
-   */
-  private async updateNextRunTimes(): Promise<void> {
-    try {
-      const tasks = await db.scheduledTask.findMany({
-        where: {
-          status: 'active',
-          scheduleType: { in: ['interval', 'specific'] }
-        }
       });
-
-      for (const task of tasks) {
-        const nextRunAt = this.calculateNextRunTime(task);
-        if (nextRunAt && (!task.nextRunAt || nextRunAt < task.nextRunAt)) {
-          await db.scheduledTask.update({
-            where: { id: task.id },
-            data: { nextRunAt }
-          });
-        }
-      }
-    } catch (error) {
-      console.error('[Scheduler] Error updating next run times:', error);
     }
-  }
 
-  /**
-   * Reschedule a task (e.g., after configuration change)
-   */
-  async rescheduleTask(taskId: string): Promise<void> {
-    const task = await db.scheduledTask.findUnique({
-      where: { id: taskId }
+    let selectedPythonPayload: any[] = [];
+    if (config.selectedPythonOutputs && Array.isArray(config.selectedPythonOutputs)) {
+      selectedPythonPayload = config.selectedPythonOutputs.map((p: any) => {
+        const def = allContext.find(c => c.name === p.name);
+        return {
+          name: p.name,
+          code: p.code || def?.pythonCode || '',
+          outputType: p.outputType || def?.pythonOutputType || 'table',
+          connectorId: p.connectorId || def?.connectorId,
+          inBody: p.inBody ?? true,
+          asAttachment: p.asAttachment ?? false,
+          dependencies: def?.pipelineDependencies // Python dependencies
+        };
+      });
+    }
+
+    // Call Action
+    const result = await sendTestEmailWithDataAction({
+      connectorId,
+      sqlConnectorId: config.sqlConnectorId || (selectedTablesPayload[0] ? allContext.find(c => c.name === selectedTablesPayload[0].name)?.connectorId : '') || '',
+
+      to, cc, bcc, subject, bodyHtml: body || '',
+      selectedTables: selectedTablesPayload,
+      selectedPythonOutputs: selectedPythonPayload
     });
 
-    if (!task) {
-      throw new Error(`Task not found: ${taskId}`);
+    if (!result.success) {
+      throw new Error(result.error);
     }
 
-    // Remove existing schedule
-    if (this.tasks.has(taskId)) {
-      this.tasks.get(taskId)!.stop();
+    return { success: true, message: result.message };
+  }
+
+  private async executeSqlNode(config: ScheduledTaskConfig): Promise<TaskExecutionResult> {
+    // 1. Prepare Inputs
+    const {
+      query,
+      connectorIdSql,
+      sqlResultName,
+      contextTables,
+      selectedPipelines, // Names of dependencies
+      treeId, nodeId, nodePath,
+      sqlExportConfig
+    } = config;
+
+    if (!query || !connectorIdSql) return { success: false, error: "Missing Query or Connector" };
+
+    // 2. Build Dependencies
+    // Logic: map selectedPipelines to their inputs.
+    const allContext = (contextTables as any[]) || [];
+    const dependencies: any[] = (selectedPipelines as string[])?.map(name => {
+      const def = allContext.find(c => c.name === name);
+      if (!def) return null;
+      return def;
+    }).filter(Boolean) as any[] || [];
+
+    // 3. Execute Query
+    // Explicitly cast dependencies to any[] to satisfy TS
+    const result = await executeSqlPreviewAction(query, connectorIdSql, dependencies);
+    if (result.error) throw new Error(result.error);
+
+    const data = result.data; // Array of rows
+
+    // 4. Update Node Preview in Tree (Save Result)
+    if (treeId && nodePath && sqlResultName) {
+      await this.saveNodePreviewData(treeId, nodePath, {
+        sqlPreviewData: data,
+        sqlPreviewLastUpdate: new Date().toISOString()
+      });
+    }
+
+    // 5. Export if configured
+    if (sqlExportConfig && sqlExportConfig.targetConnectorId && sqlExportConfig.targetTableName) {
+      // Perform Export
+      // The source is the `data` we just got.
+      const exportRes = await exportTableToSqlAction(
+        sqlExportConfig.targetConnectorId,
+        sqlExportConfig.targetTableName,
+        data as any[], // Cast data to any[] (it is IRecordSet which is object-like rows)
+        true // mode: overwrite (boolean true per action signature)
+      );
+      if (!exportRes.success) throw new Error(`Export failed: ${exportRes.error}`);
+      return { success: true, message: `Executed & Exported to ${sqlExportConfig.targetTableName}` };
+    }
+
+    return { success: true, message: `Executed. returned ${data?.length || 0} rows.` };
+  }
+
+  private async executePythonNode(config: ScheduledTaskConfig): Promise<TaskExecutionResult> {
+    const {
+      pythonCode,
+      pythonOutputType, // table, chart, etc
+      pythonResultName,
+      pythonConnectorId,
+      contextTables,
+      pythonSelectedPipelines,
+      treeId, nodeId, nodePath,
+      sqlExportConfig
+    } = config;
+
+    if (!pythonCode) return { success: false, error: "Missing Python Code" };
+
+    // 1. Build Dependencies
+    const allContext = (contextTables as any[]) || [];
+    const dependencies = (pythonSelectedPipelines as string[])?.map(name => {
+      const def = allContext.find(c => c.name === name);
+      if (!def) return null;
+      return {
+        tableName: def.name,
+        connectorId: def.connectorId,
+        query: def.sqlQuery,
+        isPython: def.isPython,
+        pythonCode: def.pythonCode,
+        pipelineDependencies: def.pipelineDependencies
+      };
+    }).filter(Boolean) as any[] || []; // Cast to any[]
+
+    // 2. Execute Python
+    // outputType default 'table' if we want data
+    const runType = pythonOutputType || 'table';
+
+    const result = await executePythonPreviewAction(
+      pythonCode,
+      runType,
+      {}, // variables
+      dependencies,
+      pythonConnectorId
+    );
+
+    if (!result.success) throw new Error(result.error);
+
+    // 3. Save Preview
+    if (treeId && nodePath) {
+      const updatePayload: any = {
+        pythonPreviewLastUpdate: new Date().toISOString()
+      };
+      if (runType === 'table') {
+        updatePayload.pythonPreviewResult = result.data; // rows
+      } else if (runType === 'chart') {
+        updatePayload.pythonPreviewResult = {
+          chartBase64: result.chartBase64,
+          chartHtml: result.chartHtml,
+          widgetConfig: (result as any).widgetConfig
+        };
+      } else {
+        // Variable
+        updatePayload.pythonPreviewResult = result.variables;
+      }
+
+      await this.saveNodePreviewData(treeId, nodePath, updatePayload);
+    }
+
+    // 4. Export if configured (only if table data available)
+    if (sqlExportConfig && sqlExportConfig.targetConnectorId && sqlExportConfig.targetTableName) {
+      let dataToExport = result.data;
+      if (!Array.isArray(dataToExport) || dataToExport.length === 0) {
+        return { success: true, message: "Executed, but no data to export." };
+      }
+
+      const exportRes = await exportTableToSqlAction(
+        sqlExportConfig.targetConnectorId,
+        sqlExportConfig.targetTableName,
+        dataToExport,
+        true // mode: overwrite
+      );
+      if (!exportRes.success) throw new Error(`Export failed: ${exportRes.error}`);
+      return { success: true, message: `Executed & Exported to ${sqlExportConfig.targetTableName}` };
+    }
+
+    return { success: true, message: "Python executed successfully" };
+  }
+
+  private async saveNodePreviewData(treeId: string, nodePath: string, updateData: any) {
+    // We need to:
+    // 1. Fetch tree
+    // 2. Parse JSON
+    // 3. Update node at path
+    // 4. Save
+    // This is racy if users are editing. But for background tasks it's acceptable.
+
+    const tree = await db.tree.findUnique({ where: { id: treeId } });
+    if (!tree || !tree.jsonDecisionTree) return;
+
+    let json = JSON.parse(tree.jsonDecisionTree);
+
+    // NodePath string like "root.children.uuid..."
+    // Lodash set
+    // We need to merge, not overwrite entire node, to keep other props
+    const path = nodePath.replace(/^root\.?/, '');
+
+    if (!path) {
+      // Root update
+      json = { ...json, ...updateData };
+    } else {
+      const existing = _.get(json, path);
+      if (existing) {
+        _.set(json, path, { ...existing, ...updateData });
+      }
+    }
+
+    await db.tree.update({
+      where: { id: treeId },
+      data: { jsonDecisionTree: JSON.stringify(json) } // format?
+    });
+  }
+
+  // --- Public Management Methods ---
+  public async rescheduleTask(taskId: string) {
+    // Remove existing
+    const existing = this.tasks.get(taskId);
+    if (existing) {
+      existing.stop();
       this.tasks.delete(taskId);
     }
 
-    // Recalculate and update next run time
-    const nextRunAt = this.calculateNextRunTime(task);
-    await db.scheduledTask.update({
-      where: { id: taskId },
-      data: { nextRunAt }
-    });
-
-    // Reschedule
-    await this.scheduleTask(task);
-  }
-
-  /**
-   * Manually trigger a task execution
-   */
-  async triggerTask(taskId: string): Promise<TaskExecutionResult> {
-    const task = await db.scheduledTask.findUnique({
-      where: { id: taskId }
-    });
-
-    if (!task) {
-      throw new Error(`Task not found: ${taskId}`);
-    }
-
-    return await this.executeTaskByType(task, taskId + '-manual-' + Date.now());
-  }
-}
-
-// ============================================
-// Singleton Instance
-// ============================================
-
-export const schedulerService = new SchedulerService();
-
-// ============================================
-// Utility Functions
-// ============================================
-
-/**
- * Validate cron expression
- */
-export function validateCronExpression(expression: string): boolean {
-  return cron.validate(expression);
-}
-
-/**
- * Get next run times for preview
- */
-export function getNextRunTimes(task: any, count: number = 5): Date[] {
-  const times: Date[] = [];
-  let current = DateTime.now().setZone(task.timezone || 'Europe/Rome');
-
-  for (let i = 0; i < count; i++) {
-    const next = schedulerService['calculateNextRunTime'](task);
-    if (next) {
-      times.push(next);
-      current = DateTime.fromJSDate(next).plus({ minutes: 1 });
-    } else {
-      break;
+    // Load and schedule
+    const task = await db.scheduledTask.findUnique({ where: { id: taskId } });
+    if (task && task.status === 'active') {
+      this.scheduleTask(task);
     }
   }
 
-  return times;
+  public async deleteTask(taskId: string) {
+    const existing = this.tasks.get(taskId);
+    if (existing) {
+      existing.stop();
+      this.tasks.delete(taskId);
+    }
+  }
 }
+
+export const schedulerService = SchedulerService.getInstance();
