@@ -107,6 +107,96 @@ export async function updateConnectorAction(id: string, data: { name: string, ty
     }
 }
 
+export async function executeSqlPreviewAction(query: string, connectorId: string) {
+    const user = await getAuthenticatedUser();
+    if (!user) return { error: 'Non autorizzato' };
+
+    try {
+        const connector = await db.connector.findUnique({
+            where: { id: connectorId, companyId: user.companyId }
+        });
+
+        if (!connector || connector.type !== 'SQL') {
+            return { error: 'Connettore non trovato o non valido' };
+        }
+
+        const conf = JSON.parse(connector.config);
+        const sqlConfig: any = {
+            user: conf.user,
+            password: conf.password,
+            server: conf.host,
+            database: conf.database,
+            options: {
+                encrypt: conf.host && conf.host.includes('database.windows.net'),
+                trustServerCertificate: true,
+                connectTimeout: 15000
+            }
+        };
+
+        if (conf.port) sqlConfig.port = parseInt(conf.port);
+
+        const pool = new sql.ConnectionPool(sqlConfig);
+        await pool.connect();
+
+        try {
+            const result = await pool.request().query(query);
+            return { data: result.recordset, error: null };
+        } finally {
+            await pool.close();
+        }
+    } catch (e: any) {
+        console.error("SQL Preview Error:", e);
+        return { data: null, error: `Errore esecuzione query: ${e.message}` };
+    }
+}
+
+export async function executeSqlAction(query: string, connectorId: string) {
+    const user = await getAuthenticatedUser();
+    if (!user) return { error: 'Non autorizzato' };
+
+    try {
+        const connector = await db.connector.findUnique({
+            where: { id: connectorId, companyId: user.companyId }
+        });
+
+        if (!connector || connector.type !== 'SQL') {
+            return { error: 'Connettore non trovato o non valido' };
+        }
+
+        const conf = JSON.parse(connector.config);
+        const sqlConfig: any = {
+            user: conf.user,
+            password: conf.password,
+            server: conf.host,
+            database: conf.database,
+            options: {
+                encrypt: conf.host && conf.host.includes('database.windows.net'),
+                trustServerCertificate: true,
+                connectTimeout: 15000
+            }
+        };
+
+        if (conf.port) sqlConfig.port = parseInt(conf.port);
+
+        const pool = new sql.ConnectionPool(sqlConfig);
+        await pool.connect();
+
+        try {
+            const result = await pool.request().query(query);
+            return {
+                success: true,
+                rowsAffected: result.rowsAffected,
+                error: null
+            };
+        } finally {
+            await pool.close();
+        }
+    } catch (e: any) {
+        console.error("SQL Action Error:", e);
+        return { success: false, error: `Errore esecuzione query: ${e.message}` };
+    }
+}
+
 export async function testConnectorAction(type: string, config: string) {
     const user = await getAuthenticatedUser();
     if (!user) return { error: 'Non autorizzato' };

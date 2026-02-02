@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { TaskForm } from '@/components/scheduler/task-form';
 import { TaskExecutions } from '@/components/scheduler/task-executions';
-import { toast } from '@/components/ui/use-toast';
+import { toast } from '@/hooks/use-toast';
 
 interface ScheduledTask {
   id: string;
@@ -63,7 +63,7 @@ export default function SchedulerPage() {
       setLoading(true);
       const response = await fetch('/api/scheduler/tasks?includeExecutions=false');
       const data = await response.json();
-      
+
       if (response.ok) {
         setTasks(data.tasks);
       } else {
@@ -136,7 +136,7 @@ export default function SchedulerPage() {
 
   const handleToggleStatus = async (task: ScheduledTask) => {
     const newStatus = task.status === 'active' ? 'paused' : 'active';
-    
+
     try {
       const response = await fetch(`/api/scheduler/tasks/${task.id}`, {
         method: 'PUT',
@@ -218,7 +218,7 @@ export default function SchedulerPage() {
       'DATA_SYNC': 'bg-orange-500',
       'CUSTOM': 'bg-pink-500'
     };
-    
+
     return (
       <Badge className={colors[type] || 'bg-gray-500'}>
         {type.replace(/_/g, ' ')}

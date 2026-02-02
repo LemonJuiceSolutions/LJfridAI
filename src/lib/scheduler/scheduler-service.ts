@@ -11,16 +11,16 @@
 import cron from 'node-cron';
 import { db } from '@/lib/db';
 import { executeEmailAction } from '@/app/actions';
-import { executeSqlPreviewAction } from '@/app/actions/ancestors';
-import { executeDatabaseWriteAction } from '@/app/actions/database-backup';
-import { executeSqlAction } from '@/app/actions/connections';
+import { executeSqlPreviewAction } from '@/app/actions/connectors';
+
+import { executeSqlAction } from '@/app/actions/connectors';
 import { DateTime } from 'luxon';
 
 // ============================================
 // Types
 // ============================================
 
-export type TaskType = 
+export type TaskType =
   | 'EMAIL_PREVIEW'
   | 'EMAIL_SEND'
   | 'SQL_PREVIEW'
@@ -70,7 +70,7 @@ export interface TaskExecutionResult {
 // ============================================
 
 class SchedulerService {
-  private tasks: Map<string, cron.ScheduledTask> = new Map();
+  private tasks: Map<string, any> = new Map();
   private isRunning: boolean = false;
   private checkInterval: NodeJS.Timeout | null = null;
 
@@ -203,7 +203,7 @@ class SchedulerService {
       }, {
         scheduled: true,
         timezone: task.timezone || 'Europe/Rome'
-      });
+      } as any);
 
       this.tasks.set(task.id, cronTask);
       console.log(`[Scheduler] Scheduled task "${task.name}" with cron: ${task.cronExpression}`);
@@ -475,7 +475,7 @@ class SchedulerService {
 
       // Fetch data from source
       const sourceResult = await executeSqlPreviewAction(config.syncQuery, config.sourceConnectorId);
-      
+
       if (sourceResult.error) {
         return {
           success: false,
