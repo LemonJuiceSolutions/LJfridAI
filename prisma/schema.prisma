@@ -41,6 +41,7 @@ model Company {
   pipelines       Pipeline[]
   connections     Connection[]
   agentConversations AgentConversation[]
+  scheduledTasks  ScheduledTask[]
 }
 
 model Department {
@@ -86,6 +87,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   pageLayouts   PageLayout[]
+  createdTasks  ScheduledTask[]
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -482,4 +484,78 @@ model AgentConversation {
   @@index([nodeId])
   @@index([companyId])
   @@unique([nodeId, agentType])
+}
+
+// ============================================
+// SCHEDULER SYSTEM MODELS
+// ============================================
+
+model ScheduledTask {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  
+  // Task type and configuration
+  type        String   // EMAIL_PREVIEW, EMAIL_SEND, SQL_PREVIEW, SQL_EXECUTE, DATA_SYNC, CUSTOM
+  config      Json     // Task-specific configuration (connectorId, query, email params, etc.)
+  
+  // Schedule configuration
+  scheduleType String @default("interval") // 'cron', 'interval', 'specific'
+  cronExpression String? // For cron-based scheduling (e.g., "0 9 * * *")
+  intervalMinutes Int? // For interval-based scheduling (e.g., 60 = every hour)
+  daysOfWeek String? // Comma-separated days (0-6, 0=Sunday)
+  hours String? // Comma-separated hours (0-23)
+  timezone String @default("Europe/Rome")
+  
+  // Task status
+  status      String   @default("active") // 'active', 'paused', 'disabled'
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  runCount    Int      @default(0)
+  successCount Int     @default(0)
+  failureCount Int     @default(0)
+  
+  // Error handling
+  maxRetries  Int      @default(3)
+  retryDelayMinutes Int @default(5)
+  lastError   String?
+  
+  // Multi-tenancy
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  createdBy   String?
+  creator     User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  executions  ScheduledTaskExecution[]
+  
+  @@index([companyId])
+  @@index([status])
+  @@index([nextRunAt])
+  @@index([type])
+}
+
+model ScheduledTaskExecution {
+  id          String   @id @default(cuid())
+  
+  taskId      String
+  task        ScheduledTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  
+  status      String   // 'pending', 'running', 'success', 'failed', 'cancelled'
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  durationMs  Int?
+  
+  result      Json?    // Task execution result
+  error       String?
+  retryCount  Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([taskId])
+  @@index([status])
+  @@index([startedAt])
 }

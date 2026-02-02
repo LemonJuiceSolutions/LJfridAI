@@ -104,6 +104,12 @@ export interface DecisionLeaf {
   sqlSelectedPipelines?: string[];
   emailAction?: EmailActionConfig;
   widgetConfig?: WidgetConfig;
+  // SQL Export Config
+  sqlExportTargetTableName?: string;
+  sqlExportTargetConnectorId?: string;
+  sqlExportSourceTables?: string[];
+  sqlExportStatus?: 'idle' | 'running' | 'success' | 'error';
+  sqlExportLastRun?: number;
 }
 
 export type SingleDecisionOptionChild = DecisionNode | DecisionLeaf | string | { ref: string, id?: string } | { subTreeRef: string, id?: string };
@@ -154,6 +160,12 @@ export interface DecisionNode {
   pythonChatHistory?: ChatMessage[];
   emailAction?: EmailActionConfig;
   widgetConfig?: WidgetConfig;
+  // SQL Export Config
+  sqlExportTargetTableName?: string;
+  sqlExportTargetConnectorId?: string;
+  sqlExportSourceTables?: string[];
+  sqlExportStatus?: 'idle' | 'running' | 'success' | 'error';
+  sqlExportLastRun?: number;
 }
 
 export interface StoredTree extends AnalysisResult {

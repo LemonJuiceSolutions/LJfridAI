@@ -33,14 +33,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Trash2, Eye, Video, Image as ImageIcon, Link as LinkIcon, Zap, Pencil, Check, X, Database, Bot, GitBranch, Flag, Code, Table, Variable, BarChart3, Play, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Minimize2, Maximize2, Info } from 'lucide-react';
+import { Play, Database, FileCode, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig } from '@/lib/types';
 import { Input } from '../ui/input';
 import _ from 'lodash';
 import { useToast } from '@/hooks/use-toast';
-import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction, exportTableToSqlAction, fetchTableDataAction } from '@/app/actions';
+import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction, exportTableToSqlAction, fetchTableDataAction, executeEmailAction, getAuthenticatedUser, processDescriptionAction, rephraseQuestionAction, updateTreeNodeAction } from '@/app/actions';
 import { sendEmailWithConnectorAction, sendTestEmailWithDataAction } from '@/app/actions/connectors';
+import { executeAncestorChainAction } from '@/app/actions/ancestors';
 import { uploadFile } from '@/lib/storage-client';
 import Image from 'next/image';
 import { ScrollArea } from '../ui/scroll-area';
@@ -48,7 +49,7 @@ import { DataTable } from '../ui/data-table';
 import { EmailBodyEditor, EmailBodyEditorRef } from './email-body-editor';
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import SmartWidgetRenderer from '@/components/widgets/builder/SmartWidgetRenderer';
 import { AgentChat } from '@/components/agents/agent-chat';
@@ -240,7 +241,7 @@ interface EditNodeDialogProps {
   nodePath: string;
   treeId: string;
   isSaving: boolean;
-  availableInputTables?: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[];
+  availableInputTables?: { name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[] }[];
   availableParentMedia?: MediaItem[];
   availableParentLinks?: LinkItem[];
   availableParentTriggers?: TriggerItem[];
@@ -248,9 +249,18 @@ interface EditNodeDialogProps {
 
 type FileToUpload = {
   file: File;
+  preview: string;
   name: string;
   type: 'image' | 'video';
 }
+
+type PipelineStatus = {
+  name: string;
+  type: 'python' | 'sql' | 'export';
+  status: 'pending' | 'running' | 'success' | 'error' | 'skipped';
+  executionTime?: number;
+  message?: string;
+};
 
 export default function EditNodeDialog({
   isOpen,
@@ -337,7 +347,12 @@ export default function EditNodeDialog({
   const [sqlChatHistory, setSqlChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number }[]>([]);
 
   // Python State
+  // Pipeline Execution State
+  const [executionPipeline, setExecutionPipeline] = useState<PipelineStatus[]>([]);
+  const [isPipelineExecuting, setIsPipelineExecuting] = useState(false);
+
   const [pythonCode, setPythonCode] = useState('');
+
   const [pythonOutputType, setPythonOutputType] = useState<'table' | 'variable' | 'chart'>('table');
   const [pythonResultName, setPythonResultName] = useState('');
   const [pythonAgentStatus, setPythonAgentStatus] = useState<string | null>(null);
@@ -1740,22 +1755,37 @@ export default function EditNodeDialog({
                                 .filter(d => d.query || (d.isPython && d.pythonCode));
                             }
 
-                            executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps).then((res) => {
-                              setAgentStatus(null);
-                              if (res.data) {
-                                setSqlPreviewData(res.data);
-                                // Non mostrare toast per non disturbare l'utente durante l'anteprima
-
-                                // Salva automaticamente i dati dell'anteprima SQL nel nodo
-                                console.log('[DEBUG] Verifica salvataggio SQL anteprima:', { onSavePreview: !!onSavePreview, nodePath: !!nodePath });
-                                if (onSavePreview && nodePath) {
-                                  console.log('[DEBUG] Salvataggio SQL anteprima nel nodo:', { nodePath, hasPreviewData: res.data !== null });
-                                  onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
-                                  console.log('[DEBUG] SQL anteprima salvata nel nodo:', nodePath);
-                                }
-                              } else {
-                                toast({ variant: 'destructive', title: "Errore SQL", description: res.error || "Errore sconosciuto" });
+                            // Execute ancestor chain first, then execute current SQL preview
+                            setAgentStatus("Esecuzione antenati...");
+                            executeAncestorChainAction(treeId, nodePath).then((ancestorResult) => {
+                              if (ancestorResult.errors && ancestorResult.errors.length > 0) {
+                                console.error('[SQL PREVIEW] Errors in ancestor chain:', ancestorResult.errors);
+                                toast({
+                                  variant: 'destructive',
+                                  title: "Errori negli antenati",
+                                  description: ancestorResult.errors.join(', ')
+                                });
                               }
+
+                              // Now execute the current SQL query
+                              setAgentStatus("Esecuzione Query...");
+                              executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps).then((res) => {
+                                setAgentStatus(null);
+                                if (res.data) {
+                                  setSqlPreviewData(res.data);
+                                  // Non mostrare toast per non disturbare l'utente durante l'anteprima
+
+                                  // Salva automaticamente i dati dell'anteprima SQL nel nodo
+                                  console.log('[DEBUG] Verifica salvataggio SQL anteprima:', { onSavePreview: !!onSavePreview, nodePath: !!nodePath });
+                                  if (onSavePreview && nodePath) {
+                                    console.log('[DEBUG] Salvataggio SQL anteprima nel nodo:', { nodePath, hasPreviewData: res.data !== null });
+                                    onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
+                                    console.log('[DEBUG] SQL anteprima salvata nel nodo:', nodePath);
+                                  }
+                                } else {
+                                  toast({ variant: 'destructive', title: "Errore SQL", description: res.error || "Errore sconosciuto" });
+                                }
+                              });
                             });
                           }}
                           disabled={!!agentStatus}
@@ -1929,42 +1959,192 @@ export default function EditNodeDialog({
 
                         <Button
                           variant="secondary"
-                          onClick={() => {
+                          onClick={async () => {
                             if (!pythonCode) {
                               toast({ variant: 'destructive', title: "Errore", description: "Inserisci del codice Python prima di eseguire l'anteprima." });
                               return;
                             }
 
-                            setPythonAgentStatus("Recupero Dati in corso...");
+                            // 1. Initialize Pipeline Status
+                            const ancestors = availableInputTables?.filter(t => t.sqlQuery || (t.isPython && t.pythonCode)) || [];
+                            const initialPipeline: PipelineStatus[] = [];
+
+                            ancestors.forEach(t => {
+                              // 1. Execution Step
+                              initialPipeline.push({
+                                name: t.name,
+                                type: t.isPython ? 'python' : 'sql',
+                                status: 'pending'
+                              });
+
+                              // 2. Export Step (Explicit naming for visibility)
+                              console.log(`[PIPELINE INIT] Adding export step for ${t.name}`);
+                              initialPipeline.push({
+                                name: `💾 Salva ${t.name}`,
+                                type: 'export',
+                                status: 'pending'
+                              });
+                            });
+
+                            console.log("INITIAL PIPELINE:", JSON.stringify(initialPipeline, null, 2));
+
+                            setExecutionPipeline(initialPipeline);
+                            setIsPipelineExecuting(true);
+                            setPythonAgentStatus("Esecuzione Pipeline...");
                             setPythonProgressStep(1);
                             isExecutingRef.current = true;
 
-                            setTimeout(() => {
-                              if (isExecutingRef.current) {
-                                setPythonAgentStatus("Elaborazione Python...");
-                                setPythonProgressStep(2);
-                              }
-                            }, 2000);
+                            // 2. Execute Ancestors Sequentially
+                            for (const ancestor of ancestors) {
+                              if (!isExecutingRef.current) break;
 
-                            setTimeout(() => {
-                              if (isExecutingRef.current) {
-                                setPythonAgentStatus("Rendering Grafico...");
-                                setPythonProgressStep(3);
-                              }
-                            }, 5000);
+                              // Set status to running
+                              setExecutionPipeline(prev => prev.map(p => p.name === ancestor.name ? { ...p, status: 'running' } : p));
+                              const startTime = Date.now();
+                              try {
+                                let success = false;
+                                let error = null;
+                                let executionResult: any = null;
 
+                                if (ancestor.isPython && ancestor.pythonCode) {
+                                  // Python Execution
+                                  const res = await executePythonPreviewAction(
+                                    ancestor.pythonCode,
+                                    ancestor.pythonOutputType || 'table',
+                                    {},
+                                    (ancestor.pipelineDependencies || []).map(d => ({
+                                      tableName: d.tableName,
+                                      query: d.query,
+                                      isPython: d.isPython,
+                                      pythonCode: d.pythonCode,
+                                      connectorId: d.connectorId,
+                                      pipelineDependencies: (d as any).pipelineDependencies
+                                    })),
+                                    ancestor.connectorId
+                                  );
+                                  if (res.success) {
+                                    success = true;
+                                    executionResult = res.data;
+                                  } else {
+                                    error = res.error;
+                                  }
+                                } else if (ancestor.sqlQuery) {
+                                  // SQL Execution
+                                  const inputTablesWithDeps = (ancestor.pipelineDependencies || []).map(t => ({
+                                    tableName: t.tableName,
+                                    query: t.query,
+                                    isPython: t.isPython,
+                                    pythonCode: t.pythonCode,
+                                    connectorId: t.connectorId,
+                                    pipelineDependencies: (t as any).pipelineDependencies
+                                  }));
+                                  const res = await executeSqlPreviewAction(
+                                    ancestor.sqlQuery,
+                                    ancestor.connectorId || '',
+                                    inputTablesWithDeps
+                                  );
+                                  if (res.data) {
+                                    success = true;
+                                    executionResult = res.data;
+                                  } else {
+                                    error = res.error;
+                                  }
+                                }
+
+                                if (success) {
+                                  // DEBUG: Check Export Config Existence
+                                  console.log(`[ANCESTOR EXECUTION] Finished ${ancestor.name}. Checking export config...`);
+                                  console.log(`  - Target Table: ${ancestor.sqlExportTargetTableName}`);
+                                  console.log(`  - Target Connector: ${ancestor.sqlExportTargetConnectorId}`);
+                                  console.log(`  - Source Tables: ${JSON.stringify(ancestor.sqlExportSourceTables)}`);
+
+                                  const hasExportConfig = ancestor.sqlExportTargetTableName && ancestor.sqlExportTargetConnectorId && ancestor.sqlExportSourceTables && ancestor.sqlExportSourceTables.length > 0;
+
+                                  if (!hasExportConfig) {
+                                    // If user expects export but it's missing, this log will help.
+                                    // We can't toast here for *every* node without spamming, but we can log.
+                                    console.log(`[ANCESTOR SKIP] Node ${ancestor.name} has no complete export configuration.`);
+                                  }
+
+                                  // 3. Handle SQL Export Step (if present in pipeline)
+                                  const exportStepName = `💾 Salva ${ancestor.name}`;
+                                  const hasExportStep = initialPipeline.some(p => p.name === exportStepName);
+
+                                  if (hasExportStep) {
+                                    // Set Export Step to RUNNING
+                                    setExecutionPipeline(prev => prev.map(p => p.name === exportStepName ? { ...p, status: 'running' } : p));
+
+                                    const hasExportConfig = ancestor.sqlExportTargetTableName && ancestor.sqlExportTargetConnectorId && ancestor.sqlExportSourceTables && ancestor.sqlExportSourceTables.length > 0;
+                                    const isSourceSelected = ancestor.sqlExportSourceTables?.includes(ancestor.name);
+                                    const hasValidData = executionResult && Array.isArray(executionResult) && executionResult.length > 0;
+
+                                    if (hasExportConfig && isSourceSelected && hasValidData) {
+                                      try {
+                                        const exportRes = await exportTableToSqlAction(
+                                          ancestor.sqlExportTargetConnectorId!,
+                                          ancestor.sqlExportTargetTableName!,
+                                          executionResult
+                                        );
+
+                                        if (exportRes.success) {
+                                          setExecutionPipeline(prev => prev.map(p => p.name === exportStepName ? { ...p, status: 'success', message: `${exportRes.rowsInserted} righe` } : p));
+                                          toast({ title: "Export Completato", description: `Scritte ${exportRes.rowsInserted} righe in ${ancestor.sqlExportTargetTableName}`, className: "bg-emerald-50 border-emerald-200 text-emerald-800" });
+                                        } else {
+                                          setExecutionPipeline(prev => prev.map(p => p.name === exportStepName ? { ...p, status: 'error', message: exportRes.error } : p));
+                                          toast({ variant: 'destructive', title: "Errore Export", description: exportRes.error });
+                                        }
+                                      } catch (e: any) {
+                                        setExecutionPipeline(prev => prev.map(p => p.name === exportStepName ? { ...p, status: 'error', message: e.message } : p));
+                                      }
+                                    } else {
+                                      // SKIPPED
+                                      let skipReason = "Configurazione Incompleta";
+                                      if (!hasExportConfig) skipReason = "No Config";
+                                      else if (!isSourceSelected) skipReason = "Nome non selezionato";
+                                      else if (!hasValidData) skipReason = "Dati Vuoti";
+
+                                      console.warn(`[EXPORT SKIP] ${ancestor.name}: ${skipReason}`);
+                                      setExecutionPipeline(prev => prev.map(p => p.name === exportStepName ? { ...p, status: 'skipped', message: skipReason } : p));
+
+                                      // Warn user if it looks like they WANTED to export but failed
+                                      if (ancestor.sqlExportTargetTableName) {
+                                        console.warn(`[EXPORT SKIP] ${skipReason}`);
+                                      }
+                                    }
+                                  }
+
+                                  setExecutionPipeline(prev => prev.map(p => p.name === ancestor.name ? { ...p, status: 'success', executionTime: Date.now() - startTime } : p));
+                                } else {
+                                  setExecutionPipeline(prev => prev.map(p => p.name === ancestor.name ? { ...p, status: 'error', executionTime: Date.now() - startTime } : p));
+                                  toast({ variant: 'destructive', title: `Errore in ${ancestor.name}`, description: error || "Errore sconosciuto" });
+                                  setIsPipelineExecuting(false);
+                                  setPythonAgentStatus(null);
+                                  return; // Stop execution
+                                }
+                              } catch (e: any) {
+                                setExecutionPipeline(prev => prev.map(p => p.name === ancestor.name ? { ...p, status: 'error', executionTime: Date.now() - startTime } : p));
+                                toast({ variant: 'destructive', title: "Errore Pipeline", description: e.message });
+                                setIsPipelineExecuting(false);
+                                setPythonAgentStatus(null);
+                                return;
+                              }
+                            }
+
+                            // 3. Execute Current Node
+                            setIsPipelineExecuting(false); // Pipeline done
+                            setPythonAgentStatus("Esecuzione Script Corrente...");
+                            setPythonProgressStep(2);
+
+                            // Build dependencies including just-executed ancestors
                             const dependencies: { tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
                             if (availableInputTables) {
                               pythonSelectedPipelines.forEach(pName => {
                                 const table = availableInputTables.find(t => t.name === pName);
                                 if (table) {
-                                  // Fallback query if missing for SQL tables (e.g. raw tables)
                                   let finalQuery = table.sqlQuery;
                                   if (!finalQuery && !table.isPython) {
-                                    // Use TOP 1000 and brackets for MSSQL safety
                                     finalQuery = `SELECT TOP 1000 * FROM [${table.name}]`;
                                   }
-
                                   dependencies.push({
                                     tableName: pName,
                                     connectorId: table.connectorId,
@@ -1993,15 +2173,10 @@ export default function EditNodeDialog({
                                   debugLogs: res.debugLogs,
                                   timestamp: Date.now()
                                 });
-                                // Auto-expand on success
                                 setPythonPreviewExpanded(true);
                                 setPythonPreviewFullHeight(true);
-                                // Non mostrare toast per non disturbare l'utente durante l'anteprima
 
-                                // Salva automaticamente i dati dell'anteprima nel nodo
-                                console.log('[DEBUG] Verifica salvataggio anteprima:', { onSavePreview: !!onSavePreview, nodePath: !!nodePath });
                                 if (onSavePreview && nodePath) {
-                                  console.log('[DEBUG] Salvataggio anteprima nel nodo:', { nodePath, hasPreviewData: res.data !== null });
                                   const previewData = {
                                     type: pythonOutputType,
                                     data: res.data,
@@ -2014,9 +2189,6 @@ export default function EditNodeDialog({
                                     timestamp: Date.now()
                                   };
                                   onSavePreview(nodePath, previewData);
-                                  console.log('[DEBUG] Anteprima salvata nel nodo:', nodePath);
-                                } else {
-                                  console.error('[DEBUG] Salvataggio anteprima non eseguito:', { onSavePreview: !!onSavePreview, nodePath: !!nodePath });
                                 }
                               } else {
                                 toast({ variant: 'destructive', title: "Errore Python", description: res.error || "Errore sconosciuto" });
@@ -2046,6 +2218,67 @@ export default function EditNodeDialog({
                       />
                     </div>
                   </div>
+
+                  {/* Pipeline Execution Visualization */}
+                  {executionPipeline.length > 0 && (
+                    <div className="mt-4 border rounded-md overflow-hidden bg-muted/20 animate-in fade-in slide-in-from-top-2 duration-300">
+                      {/* Header */}
+                      <div className="p-2 px-3 bg-muted/40 border-b flex items-center justify-between">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-2">
+                          <GitBranch className="h-3.5 w-3.5" />
+                          Pipeline di Esecuzione
+                        </h4>
+                        {isPipelineExecuting && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                      </div>
+
+                      {/* Steps List */}
+                      <div className="max-h-[200px] overflow-y-auto">
+                        {executionPipeline.map((step, idx) => (
+                          <div key={idx} className={`flex items-center justify-between p-2 px-3 border-b last:border-0 text-xs text-foreground ${step.status === 'running' ? 'bg-background shadow-sm' : ''}`}>
+                            <div className="flex items-center gap-3">
+                              <span className="w-4 flex justify-center">
+                                {step.status === 'pending' && <div className="h-1.5 w-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />}
+                                {step.status === 'running' && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+                                {step.status === 'success' && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                                {step.status === 'error' && <X className="h-3.5 w-3.5 text-red-600" />}
+                                {step.status === 'skipped' && <div className="h-1.5 w-1.5 rounded-full bg-yellow-400" />}
+                              </span>
+                              <div className="flex flex-col">
+                                <span className={step.status === 'running' ? 'font-medium text-primary' : ''}>
+                                  {step.name}
+                                  {step.type === 'export' && <Upload className="inline h-3 w-3 ml-1 text-muted-foreground" />}
+                                </span>
+                                {step.message && <span className={`text-[10px] ${step.status === 'error' ? 'text-red-500' : step.status === 'skipped' ? 'text-yellow-600' : 'text-muted-foreground'}`}>{step.message}</span>}
+                              </div>
+                              <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted uppercase tracking-wider scale-90 origin-left">{step.type}</span>
+                            </div>
+                            {step.executionTime && <span className="text-[10px] text-muted-foreground font-mono">{step.executionTime}ms</span>}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* DEBUGGING: Ancestor Export Configs (Only visible when expanded or key pressed? For now visible) */}
+                      <div className="p-2 bg-slate-100 dark:bg-slate-900 border-t text-[10px] font-mono text-muted-foreground">
+                        <div className="font-bold mb-1 flex items-center gap-1"><AlertCircle className="h-3 w-3" /> DEBUG: Stato Export Nodi</div>
+                        {availableInputTables?.map(t => {
+                          const hasConfig = t.sqlExportTargetTableName && t.sqlExportTargetConnectorId;
+                          const isMe = t.sqlExportSourceTables?.includes(t.name);
+                          return (
+                            <div key={t.name} className={`mb-1 p-1 rounded ${hasConfig ? (isMe ? 'bg-green-100 dark:bg-green-900/20 text-green-700' : 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700') : 'text-slate-400'}`}>
+                              <strong>{t.name}</strong>:
+                              {hasConfig ? (
+                                <>
+                                  To: {t.sqlExportTargetTableName} (Conn: {t.sqlExportTargetConnectorId?.substring(0, 6)}...)
+                                  Sources: [{t.sqlExportSourceTables?.join(', ')}]
+                                  {isMe ? ' ✅ READY' : ' ⚠️ NAME MISMATCH'}
+                                </>
+                              ) : ' No Export Configured'}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Visual Stepper - shown during execution */}
                   {pythonAgentStatus && (
@@ -2410,7 +2643,14 @@ export default function EditNodeDialog({
                                   ancestorTable.pythonCode,
                                   'table',
                                   {},
-                                  (ancestorTable.pipelineDependencies || []).map(d => ({ tableName: d.tableName, query: d.query })),
+                                  (ancestorTable.pipelineDependencies || []).map(d => ({
+                                    tableName: d.tableName,
+                                    query: d.query,
+                                    isPython: d.isPython,
+                                    pythonCode: d.pythonCode,
+                                    connectorId: d.connectorId,
+                                    pipelineDependencies: (d as any).pipelineDependencies
+                                  })),
                                   ancestorTable.connectorId
                                 );
                                 if (res.success && Array.isArray(res.data)) {

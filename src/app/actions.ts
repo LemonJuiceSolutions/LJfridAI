@@ -2,6 +2,7 @@
 
 'use server';
 
+import { revalidatePath } from 'next/cache';
 import { extractVariables } from '@/ai/flows/extract-variables';
 import { generateDecisionTree } from '@/ai/flows/generate-decision-tree';
 import { rephraseQuestion } from '@/ai/flows/rephrase-question';
@@ -706,6 +707,9 @@ export async function updateTreeNodeAction({
             }
         });
 
+        revalidatePath(`/view/${treeId}`);
+        revalidatePath('/');
+
         return { success: true, error: null };
 
     } catch (e) {
@@ -976,8 +980,8 @@ Diagnostica il prossimo passo.`;
 
 export async function executeSqlPreviewAction(
     query: string,
-    connectorId?: string,
-    pipelineDependencies?: { tableName: string, query?: string, isPython?: boolean, pythonCode?: string, connectorId?: string, pipelineDependencies?: any[] }[]
+    connectorId: string,
+    pipelineDependencies: { tableName: string, query?: string, isPython?: boolean, pythonCode?: string, connectorId?: string, pipelineDependencies?: any[] }[] = []
 ): Promise<{ data: any[] | null; error: string | null }> {
     let pool: sql.ConnectionPool | null = null;
     let transaction: sql.Transaction | null = null;
@@ -1738,7 +1742,7 @@ export async function executePythonPreviewAction(
     code: string,
     outputType: 'table' | 'variable' | 'chart',
     inputData: Record<string, any[]> = {},
-    dependencies?: { tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[],
+    dependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[] }[],
     connectorId?: string
 ): Promise<{ success: boolean; data?: any[]; columns?: string[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; rechartsConfig?: any; rechartsData?: any[]; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
     const debugLogs: string[] = [];
@@ -1856,7 +1860,7 @@ export async function executePythonPreviewAction(
                                 // Use executeSqlPreviewAction WITH pipelineDependencies for cascading!
                                 const res = await executeSqlPreviewAction(
                                     dep.query,
-                                    dep.connectorId, // Can be undefined/empty
+                                    dep.connectorId || '', // Can be undefined/empty
                                     dep.pipelineDependencies
                                 );
                                 if (res.data) {
