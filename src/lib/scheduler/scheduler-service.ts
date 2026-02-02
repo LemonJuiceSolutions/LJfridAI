@@ -234,13 +234,120 @@ export class SchedulerService {
     }
   }
 
-  private calculateNextRun(task: { scheduleType: string, cronExpression?: string, intervalMinutes?: number, hours?: string, daysOfWeek?: string, timezone?: string }): Date | null {
+  private calculateNextRun(task: any): Date | null {
     try {
-      // Simplified next run calc using node-cron or manual
-      // Note: node-cron doesn't easily give "next date" without parsing
-      // return null for now, or implement a parser if critical
-      return null;
-    } catch {
+      const now = DateTime.now().setZone(task.timezone || 'Europe/Rome');
+      let nextRun: DateTime | null = null;
+
+      const config = typeof task.config === 'string' ? JSON.parse(task.config) : task.config;
+      const customTimes = config?.customTimes as string[] | undefined;
+
+      // 1. Custom Times (HH:mm)
+      if (customTimes && Array.isArray(customTimes) && customTimes.length > 0) {
+        let candidates: DateTime[] = [];
+        for (const timeStr of customTimes) {
+          const [h, m] = timeStr.split(':').map(Number);
+          if (isNaN(h) || isNaN(m)) continue;
+
+          // Candidate for today
+          let candidate = now.set({ hour: h, minute: m, second: 0, millisecond: 0 });
+          if (candidate <= now) {
+            // If passed today, try tomorrow
+            candidate = candidate.plus({ days: 1 });
+          }
+          candidates.push(candidate);
+        }
+
+        // If daysOfWeek applied to custom times (from scheduler logic):
+        const daysOfWeek = task.daysOfWeek; // e.g. "1,3,5" or "*"
+        if (daysOfWeek && daysOfWeek !== '*') {
+          const allowedDays = daysOfWeek.split(',').map(Number);
+          // Filter candidates by day
+          // This is complex because we just added +1 day. Better:
+          // Finding next run for pattern: Times + Days
+          // Let's simplified: just find next valid Time on a valid Day.
+          candidates = [];
+          // Look ahead 14 days to be safe
+          for (let d = 0; d < 14; d++) {
+            const refDate = now.plus({ days: d });
+            // Check if day is allowed (0-6, Luxon 1-7, cron 0-6 usually sun-sat)
+            // Node-cron: 0-6 (Sun-Sat). Luxon: 1-7 (Mon-Sun).
+            // Need to map. 
+            // Let's assume user input follows cron 0-6.
+            // Luxon weekday: 1=Mon...7=Sun.
+            // Cron: 0=Sun, 1=Mon...6=Sat.
+            // Mapping Luxon->Cron: val % 7. (7%7=0=Sun, 1%7=1=Mon)
+            const cronDay = refDate.weekday % 7;
+            if (!allowedDays.includes(cronDay)) continue;
+
+            for (const timeStr of customTimes) {
+              const [h, m] = timeStr.split(':').map(Number);
+              const candidate = refDate.set({ hour: h, minute: m, second: 0, millisecond: 0 });
+              if (candidate > now) {
+                candidates.push(candidate);
+              }
+            }
+            // Optimization: if we found candidates in this day, we stop looking further? 
+            // No, we want absolute closest. But since we check ordered days, first match is closest.
+            if (candidates.length > 0) break;
+          }
+        }
+
+        if (candidates.length > 0) {
+          // Sort and take first
+          nextRun = candidates.sort((a, b) => a.toMillis() - b.toMillis())[0];
+        }
+      }
+      // 2. Interval
+      else if (task.scheduleType === 'interval' && task.intervalMinutes) {
+        const lastRun = task.lastRunAt ? DateTime.fromJSDate(new Date(task.lastRunAt)).setZone(task.timezone || 'Europe/Rome') : now;
+        // If last run was long ago, next run is ... now? or aligned?
+        // Simple approach: LastRun + Interval. If < Now, then Now.
+        // Or if strictly interval: LastRun + N*Interval > Now.
+        nextRun = lastRun.plus({ minutes: task.intervalMinutes });
+        if (nextRun <= now) {
+          // Catch up
+          const diff = now.diff(lastRun, 'minutes').minutes;
+          const intervalsToAdd = Math.ceil(diff / task.intervalMinutes);
+          nextRun = lastRun.plus({ minutes: intervalsToAdd * task.intervalMinutes });
+        }
+      }
+      // 3. Specific Days/Hours
+      else if (task.scheduleType === 'specific') {
+        // Hours: "9,14"
+        // Days: "1,3,5" (Cron 0-6)
+        const hours = (task.hours || '0').split(',').map(Number);
+        const days = (task.daysOfWeek || '*').split(',').map(Number); // if * handled separately
+
+        const isDaily = task.daysOfWeek === '*' || !task.daysOfWeek;
+
+        let candidates: DateTime[] = [];
+        // Look ahead 14 days
+        for (let d = 0; d < 14; d++) {
+          const refDate = now.plus({ days: d });
+
+          if (!isDaily) {
+            const cronDay = refDate.weekday % 7;
+            if (!days.includes(cronDay)) continue;
+          }
+
+          for (const h of hours) {
+            // Minute 0 default
+            const candidate = refDate.set({ hour: h, minute: 0, second: 0, millisecond: 0 });
+            if (candidate > now) {
+              candidates.push(candidate);
+            }
+          }
+          if (candidates.length > 0) break;
+        }
+        if (candidates.length > 0) {
+          nextRun = candidates.sort((a, b) => a.toMillis() - b.toMillis())[0];
+        }
+      }
+
+      return nextRun ? nextRun.toJSDate() : null;
+    } catch (e) {
+      console.error('Error calcluating next run', e);
       return null;
     }
   }

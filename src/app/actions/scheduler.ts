@@ -184,3 +184,41 @@ export async function deleteNodeScheduleAction(treeId: string, nodeId: string) {
         return { success: false, message: error.message };
     }
 }
+
+/**
+ * Get execution history for a node's task
+ */
+export async function getNodeExecutionHistoryAction(treeId: string, nodeId: string) {
+    try {
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return { success: false, message: 'Non autenticato' };
+        }
+
+        const namePattern = `Node-${treeId}-${nodeId}`;
+        const task = await db.scheduledTask.findFirst({
+            where: {
+                companyId: user.companyId,
+                name: { contains: namePattern }
+            }
+        });
+
+        if (!task) {
+            return { success: true, data: [] };
+        }
+
+        const executions = await db.scheduledTaskExecution.findMany({
+            where: {
+                taskId: task.id
+            },
+            orderBy: {
+                startedAt: 'desc'
+            },
+            take: 20
+        });
+
+        return { success: true, data: executions };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
