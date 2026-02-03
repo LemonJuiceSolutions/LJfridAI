@@ -1,5 +1,6 @@
 
-import cron from 'node-cron';
+
+// import cron from 'node-cron'; // Removed static import
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { DateTime } from 'luxon';
@@ -78,7 +79,7 @@ export class SchedulerService {
       logger.log(`Found ${activeTasks.length} active tasks.`);
 
       for (const task of activeTasks) {
-        this.scheduleTask(task);
+        await this.scheduleTask(task);
       }
     } catch (e) {
       logger.error('Failed to load tasks from DB:', e);
@@ -97,8 +98,11 @@ export class SchedulerService {
 
   // ... (loadTasks)
 
-  private scheduleTask(task: any) {
+  private async scheduleTask(task: any) {
     try {
+      // Dynamic import of our isolated runner to avoid Edge runtime bundling node-cron directly
+      const { scheduleCronJob } = await import('./cron-runner');
+
       const config = typeof task.config === 'string' ? JSON.parse(task.config) : task.config;
       const customTimes = config?.customTimes as string[] | undefined;
 
@@ -116,7 +120,7 @@ export class SchedulerService {
           const days = task.daysOfWeek || '*';
           const cronExpression = `${minutes} ${hours} * * ${days}`;
 
-          const job = cron.schedule(cronExpression, async () => {
+          const job = await scheduleCronJob(cronExpression, async () => {
             logger.log(`Executing task (CustomTime ${timeStr}): ${task.name} (${task.id})`);
             await this.executeTask(task.id);
           }, {
@@ -154,7 +158,7 @@ export class SchedulerService {
       }
 
       // Create cron job
-      const cronJob = cron.schedule(cronExpression, async () => {
+      const cronJob = await scheduleCronJob(cronExpression, async () => {
         logger.log(`Executing task: ${task.name} (${task.id})`);
         await this.executeTask(task.id);
       }, {
@@ -634,7 +638,7 @@ export class SchedulerService {
     // Load and schedule
     const task = await db.scheduledTask.findUnique({ where: { id: taskId } });
     if (task && task.status === 'active') {
-      this.scheduleTask(task);
+      await this.scheduleTask(task);
     }
   }
 
