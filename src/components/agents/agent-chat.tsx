@@ -49,7 +49,19 @@ export function AgentChat({
         agentType,
       });
       const response = await fetch(`/api/agents/chat?${params}`);
-      const data = await response.json();
+
+      // FIX: Handle "The string did not match the expected pattern" or other JSON errors
+      // caused by malformed responses (e.g. empty body, server crash HTML).
+      const text = await response.text();
+      let data;
+
+      try {
+        data = JSON.parse(text);
+      } catch (parseError) {
+        console.error('[AGENT CHAT] JSON Parse Error:', parseError);
+        console.error('[AGENT CHAT] Raw Response Preview:', text.substring(0, 500)); // Log first 500 chars
+        return; // Exit if invalid JSON
+      }
 
       if (data.success && data.conversation) {
         setMessages(data.conversation.messages || []);

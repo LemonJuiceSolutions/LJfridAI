@@ -430,6 +430,7 @@ export async function sendTestEmailWithDataAction(params: {
     availableLinks?: LinkItem[];
     availableTriggers?: TriggerItem[];
     mediaAttachments?: string[];
+    preCalculatedResults?: Record<string, any>;
 }) {
     console.log('[EMAIL DEBUG] sendTestEmailWithDataAction called with:', {
         connectorId: params.connectorId,
@@ -438,7 +439,8 @@ export async function sendTestEmailWithDataAction(params: {
         subject: params.subject,
         selectedTablesCount: params.selectedTables?.length || 0,
         selectedPythonOutputsCount: params.selectedPythonOutputs?.length || 0,
-        mediaAttachmentsCount: params.mediaAttachments?.length || 0
+        mediaAttachmentsCount: params.mediaAttachments?.length || 0,
+        preCalculatedResultsCount: params.preCalculatedResults ? Object.keys(params.preCalculatedResults).length : 0
     });
 
     const user = await getAuthenticatedUser();
@@ -665,8 +667,47 @@ export async function sendTestEmailWithDataAction(params: {
                     }
                 }
 
+                // Inject pre-calculated results (ancestors) as temp tables if they haven't been created yet
+                if (params.preCalculatedResults) {
+                    for (const [name, result] of Object.entries(params.preCalculatedResults)) {
+                        if (executedTables.has(name)) continue;
+
+                        // Check if result is valid data array (SQL or Python table result)
+                        let data: any[] | null = null;
+                        if (Array.isArray(result)) {
+                            data = result;
+                        } else if (result && typeof result === 'object' && Array.isArray(result.data)) {
+                            data = result.data;
+                        }
+
+                        if (data && data.length > 0) {
+                            console.log(`[EMAIL DEBUG] Injecting pre-calculated result for ${name} (${data.length} rows)`);
+                            await createTempTableFromData(name, data);
+                        }
+                    }
+                }
+
                 // Now execute the selected tables and collect their results
                 for (const table of params.selectedTables) {
+                    // Check logic for pre-calculated execution
+                    if (params.preCalculatedResults && params.preCalculatedResults[table.name]) {
+                        const preRes = params.preCalculatedResults[table.name];
+                        let data: any[] | null = null;
+                        if (Array.isArray(preRes)) { data = preRes; }
+                        else if (preRes && preRes.data) { data = preRes.data; }
+
+                        if (data) {
+                            console.log(`[EMAIL DEBUG] Using pre-calculated result for selected table ${table.name}`);
+                            tableResults.push({
+                                name: table.name,
+                                data: data,
+                                inBody: table.inBody,
+                                asExcel: table.asExcel
+                            });
+                            continue; // Skip execution
+                        }
+                    }
+
                     try {
                         console.log(`[EMAIL DEBUG] Executing query for ${table.name}: ${table.query.substring(0, 100)}...`);
 
@@ -725,6 +766,23 @@ export async function sendTestEmailWithDataAction(params: {
             for (const pyOutput of params.selectedPythonOutputs) {
                 try {
                     console.log(`[EMAIL DEBUG] Executing Python for ${pyOutput.name} (type: ${pyOutput.outputType})...`);
+
+                    // Check for pre-calculated result
+                    if (params.preCalculatedResults && params.preCalculatedResults[pyOutput.name]) {
+                        console.log(`[EMAIL DEBUG] Using pre-calculated result for Python ${pyOutput.name}`);
+                        const preRes = params.preCalculatedResults[pyOutput.name];
+                        pythonResults.push({
+                            name: pyOutput.name,
+                            inBody: pyOutput.inBody,
+                            asAttachment: pyOutput.asAttachment,
+                            data: preRes.data || (Array.isArray(preRes) ? preRes : []),
+                            chartBase64: preRes.chartBase64,
+                            chartHtml: preRes.chartHtml,
+                            variables: preRes.variables,
+                            type: pyOutput.outputType
+                        });
+                        continue; // Skip execution
+                    }
 
                     // Execute Python script
                     const result = await executePythonPreviewAction(

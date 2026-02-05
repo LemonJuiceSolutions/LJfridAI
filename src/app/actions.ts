@@ -981,7 +981,7 @@ Diagnostica il prossimo passo.`;
 export async function executeSqlPreviewAction(
     query: string,
     connectorId: string,
-    pipelineDependencies: { tableName: string, query?: string, isPython?: boolean, pythonCode?: string, connectorId?: string, pipelineDependencies?: any[] }[] = []
+    pipelineDependencies: { tableName: string, query?: string, isPython?: boolean, pythonCode?: string, connectorId?: string, pipelineDependencies?: any[], data?: any[] }[] = []
 ): Promise<{ data: any[] | null; error: string | null }> {
     let pool: sql.ConnectionPool | null = null;
     let transaction: sql.Transaction | null = null;
@@ -1098,7 +1098,17 @@ export async function executeSqlPreviewAction(
                     let rowsToInsert: any[] = [];
                     let columns: string[] = [];
 
-                    if (dep.isPython && dep.pythonCode) {
+                    if (dep.data && Array.isArray(dep.data)) {
+                        // --- PRE-CALCULATED DATA (OPTIMIZATION) ---
+                        console.log(`[PIPELINE] >>> USING PRE-CALCULATED DATA for ${dep.tableName}`);
+                        rowsToInsert = dep.data;
+                        if (rowsToInsert.length > 0) {
+                            columns = Object.keys(rowsToInsert[0]);
+                        } else {
+                            console.warn(`[PIPELINE] Pre-calculated data for ${dep.tableName} is empty.`);
+                        }
+
+                    } else if (dep.isPython && dep.pythonCode) {
                         // --- PYTHON DEPENDENCY ---
                         console.log(`[PIPELINE] >>> ENTERING PYTHON BRANCH for ${dep.tableName}`);
                         console.log(`[PIPELINE] Executing Python dependency for ${dep.tableName}...`);
