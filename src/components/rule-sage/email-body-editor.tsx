@@ -12,7 +12,7 @@ import {
     Bold, Italic, Underline as UnderlineIcon,
     Heading1, Heading2, List, ListOrdered,
     Table as TableIcon, BarChart3, Palette,
-    Undo, Redo, Paperclip
+    Undo, Redo, Paperclip, Code
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/popover";
 
 export interface EmailBodyEditorRef {
-    insertPlaceholder: (type: 'TABELLA' | 'GRAFICO' | 'ALLEGATO' | 'LINK' | 'TRIGGER', name: string) => void;
+    insertPlaceholder: (type: 'TABELLA' | 'GRAFICO' | 'ALLEGATO' | 'LINK' | 'TRIGGER' | 'VARIABILE', name: string) => void;
 }
 
 interface EmailBodyEditorProps {
@@ -35,6 +35,7 @@ interface EmailBodyEditorProps {
     onChange: (html: string) => void;
     availableTables?: Array<{ name: string }>;
     availableCharts?: Array<{ name: string }>;
+    availableVariables?: Array<{ name: string }>;
     availableAttachments?: Array<{ filename: string; size?: number }>;
     placeholder?: string;
 }
@@ -52,6 +53,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorRef, EmailBodyEditorPro
     onChange,
     availableTables = [],
     availableCharts = [],
+    availableVariables = [],
     availableAttachments = [],
     placeholder = 'Scrivi il corpo dell\'email...'
 }, ref) => {
@@ -90,7 +92,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorRef, EmailBodyEditorPro
         }
     }, [value, editor]);
 
-    const insertPlaceholder = useCallback((type: 'TABELLA' | 'GRAFICO' | 'ALLEGATO' | 'LINK' | 'TRIGGER', name: string) => {
+    const insertPlaceholder = useCallback((type: 'TABELLA' | 'GRAFICO' | 'ALLEGATO' | 'LINK' | 'TRIGGER' | 'VARIABILE', name: string) => {
         if (editor) {
             editor.chain().focus().insertContent(`{{${type}:${name}}}`).run();
         }
@@ -256,6 +258,28 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorRef, EmailBodyEditorPro
                                     onClick={() => insertPlaceholder('GRAFICO', chart.name)}
                                 >
                                     📈 {chart.name}
+                                </DropdownMenuItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )}
+
+                {/* Insert Variable */}
+                {availableVariables.length > 0 && (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs">
+                                <Code className="h-3.5 w-3.5" />
+                                Variabile
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                            {availableVariables.map((v) => (
+                                <DropdownMenuItem
+                                    key={v.name}
+                                    onClick={() => insertPlaceholder('VARIABILE', v.name)}
+                                >
+                                    🔢 {v.name}
                                 </DropdownMenuItem>
                             ))}
                         </DropdownMenuContent>

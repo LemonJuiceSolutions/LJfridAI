@@ -242,7 +242,7 @@ interface EditNodeDialogProps {
   nodePath: string;
   treeId: string;
   isSaving: boolean;
-  availableInputTables?: { name: string, nodeId?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean }[];
+  availableInputTables?: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean }[];
   availableParentMedia?: MediaItem[];
   availableParentLinks?: LinkItem[];
   availableParentTriggers?: TriggerItem[];
@@ -1038,11 +1038,13 @@ export default function EditNodeDialog({
           }
 
           const nameOrTable = node.name || node.tableName;
-          const key = node.nodeId ? `${node.nodeId}_${nameOrTable}` : nameOrTable;
+          // Use path as the primary key if available, fallback to nodeId + name for uniqueness
+          const key = node.path ? `${node.path}_${nameOrTable}` : (node.nodeId ? `${node.nodeId}_${nameOrTable}` : nameOrTable);
           if (!visited.has(key)) {
             visited.set(key, {
               id: node.nodeId,
-              name: node.name || node.tableName,
+              path: node.path, // Persist path
+              name: nameOrTable,
               isPython: node.isPython,
               pythonCode: node.pythonCode,
               pythonOutputType: (node as any).pythonOutputType,
@@ -1083,7 +1085,7 @@ export default function EditNodeDialog({
         // Step A: Execution (Preview)
         const execLabel = t.nodeName ? `${t.nodeName} > ${t.name}` : t.name;
         steps.push({
-          id: `${t.name}_exec`,
+          id: `${t.path || t.name}_exec`,
           type: 'execution',
           ancestor: t,
           label: execLabel,
@@ -1096,7 +1098,7 @@ export default function EditNodeDialog({
             ? `${t.nodeName} > 💾 Write ${t.sqlExportTargetTableName || 'DB'}`
             : `💾 Write ${t.sqlExportTargetTableName || 'DB'}`;
           steps.push({
-            id: `${t.name}_write`,
+            id: `${t.path || t.name}_write`,
             type: 'write',
             ancestor: t, // We still reference the ancestor config
             label: writeLabel,
@@ -3064,6 +3066,10 @@ export default function EditNodeDialog({
                             ...(pythonResultName && pythonOutputType === 'chart' ? [{ name: pythonResultName }] : []),
                             ...(availableInputTables?.filter(t => t.pythonOutputType === 'chart').map(t => ({ name: t.name })) || [])
                           ]}
+                          availableVariables={[
+                            ...(pythonResultName && pythonOutputType === 'variable' ? [{ name: pythonResultName }] : []),
+                            ...(availableInputTables?.filter(t => t.pythonOutputType === 'variable').map(t => ({ name: t.name })) || [])
+                          ]}
                           availableAttachments={[
                             ...(availableParentMedia?.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' })) || []),
                             ...media.map(m => ({ filename: m.name || m.url.split('/').pop() || 'file' }))
@@ -3087,68 +3093,110 @@ export default function EditNodeDialog({
                                 {availableInputTables?.map((table) => (
                                   <div key={table.name} className="bg-background border rounded p-2 text-xs hover:border-primary/50 transition-colors">
                                     <div className="font-medium mb-1.5 truncate" title={table.name}>{table.name}</div>
-                                    <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center justify-between gap-1.5 overflow-x-auto pb-0.5">
                                       <Button
                                         variant="secondary"
                                         size="sm"
-                                        className="h-6 text-[10px] px-2 h-6"
+                                        className="h-6 text-[10px] px-1.5 flex-shrink-0"
                                         onClick={() => editorRef.current?.insertPlaceholder('TABELLA', table.name)}
                                       >
                                         <Download className="h-3 w-3 mr-1" /> Inserisci
                                       </Button>
-                                      <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted">
-                                        <input
-                                          type="checkbox"
-                                          checked={safeEmailAttachments.tablesAsExcel.includes(table.name)}
-                                          onChange={(e) => {
-                                            setEmailConfig(prev => ({
-                                              ...prev,
-                                              attachments: {
-                                                ...prev.attachments,
-                                                tablesAsExcel: e.target.checked
-                                                  ? [...prev.attachments.tablesAsExcel, table.name]
-                                                  : prev.attachments.tablesAsExcel.filter(t => t !== table.name)
-                                              }
-                                            }));
-                                          }}
-                                          className="rounded w-3.5 h-3.5"
-                                        />
-                                        <span className="text-muted-foreground text-[10px]">Excel</span>
-                                      </label>
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
+                                          <input
+                                            type="checkbox"
+                                            checked={safeEmailAttachments.tablesInBody.includes(table.name)}
+                                            onChange={(e) => {
+                                              setEmailConfig(prev => ({
+                                                ...prev,
+                                                attachments: {
+                                                  ...prev.attachments,
+                                                  tablesInBody: e.target.checked
+                                                    ? [...prev.attachments.tablesInBody, table.name]
+                                                    : prev.attachments.tablesInBody.filter(t => t !== table.name)
+                                                }
+                                              }));
+                                            }}
+                                            className="rounded w-3 w-3"
+                                          />
+                                          <span className="text-muted-foreground text-[10px]">In Corpo</span>
+                                        </label>
+                                        <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
+                                          <input
+                                            type="checkbox"
+                                            checked={safeEmailAttachments.tablesAsExcel.includes(table.name)}
+                                            onChange={(e) => {
+                                              setEmailConfig(prev => ({
+                                                ...prev,
+                                                attachments: {
+                                                  ...prev.attachments,
+                                                  tablesAsExcel: e.target.checked
+                                                    ? [...prev.attachments.tablesAsExcel, table.name]
+                                                    : prev.attachments.tablesAsExcel.filter(t => t !== table.name)
+                                                }
+                                              }));
+                                            }}
+                                            className="rounded w-3 w-3"
+                                          />
+                                          <span className="text-muted-foreground text-[10px]">Excel</span>
+                                        </label>
+                                      </div>
                                     </div>
                                   </div>
                                 ))}
                                 {sqlResultName && (
                                   <div className="bg-background border rounded p-2 text-xs hover:border-primary/50 transition-colors border-l-4 border-l-primary/30">
                                     <div className="font-medium mb-1.5 truncate" title={sqlResultName}>Output: {sqlResultName}</div>
-                                    <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center justify-between gap-1.5 overflow-x-auto pb-0.5">
                                       <Button
                                         variant="secondary"
                                         size="sm"
-                                        className="h-6 text-[10px] px-2"
+                                        className="h-6 text-[10px] px-1.5 flex-shrink-0"
                                         onClick={() => editorRef.current?.insertPlaceholder('TABELLA', sqlResultName)}
                                       >
                                         <Download className="h-3 w-3 mr-1" /> Inserisci
                                       </Button>
-                                      <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted">
-                                        <input
-                                          type="checkbox"
-                                          checked={safeEmailAttachments.tablesAsExcel.includes(sqlResultName)}
-                                          onChange={(e) => {
-                                            setEmailConfig(prev => ({
-                                              ...prev,
-                                              attachments: {
-                                                ...prev.attachments,
-                                                tablesAsExcel: e.target.checked
-                                                  ? [...prev.attachments.tablesAsExcel, sqlResultName]
-                                                  : prev.attachments.tablesAsExcel.filter(t => t !== sqlResultName)
-                                              }
-                                            }));
-                                          }}
-                                          className="rounded w-3.5 h-3.5"
-                                        />
-                                        <span className="text-muted-foreground text-[10px]">Excel</span>
-                                      </label>
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
+                                          <input
+                                            type="checkbox"
+                                            checked={safeEmailAttachments.tablesInBody.includes(sqlResultName)}
+                                            onChange={(e) => {
+                                              setEmailConfig(prev => ({
+                                                ...prev,
+                                                attachments: {
+                                                  ...prev.attachments,
+                                                  tablesInBody: e.target.checked
+                                                    ? [...prev.attachments.tablesInBody, sqlResultName]
+                                                    : prev.attachments.tablesInBody.filter(t => t !== sqlResultName)
+                                                }
+                                              }));
+                                            }}
+                                            className="rounded w-3 w-3"
+                                          />
+                                          <span className="text-muted-foreground text-[10px]">In Corpo</span>
+                                        </label>
+                                        <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
+                                          <input
+                                            type="checkbox"
+                                            checked={safeEmailAttachments.tablesAsExcel.includes(sqlResultName)}
+                                            onChange={(e) => {
+                                              setEmailConfig(prev => ({
+                                                ...prev,
+                                                attachments: {
+                                                  ...prev.attachments,
+                                                  tablesAsExcel: e.target.checked
+                                                    ? [...prev.attachments.tablesAsExcel, sqlResultName]
+                                                    : prev.attachments.tablesAsExcel.filter(t => t !== sqlResultName)
+                                                }
+                                              }));
+                                            }}
+                                            className="rounded w-3 w-3"
+                                          />
+                                          <span className="text-muted-foreground text-[10px]">Excel</span>
+                                        </label>
+                                      </div>
                                     </div>
                                   </div>
                                 )}
@@ -3186,36 +3234,77 @@ export default function EditNodeDialog({
                                     <div className="font-medium mb-1.5 truncate" title={output.name}>
                                       {output.name} <span className="opacity-70 text-[10px]">({output.type} {output.isCurrent ? '- Corrente' : '- Collegato'})</span>
                                     </div>
-                                    <div className="flex items-center justify-between gap-2 overflow-x-auto">
+                                    <div className="flex items-center justify-between gap-1.5 overflow-x-auto pb-0.5">
                                       {output.type === 'chart' && (
                                         <Button
                                           variant="secondary"
                                           size="sm"
-                                          className="h-6 text-[10px] px-2 flex-shrink-0"
+                                          className="h-6 text-[10px] px-1.5 flex-shrink-0"
                                           onClick={() => editorRef.current?.insertPlaceholder('GRAFICO', output.name)}
                                         >
-                                          <BarChart3 className="h-3 w-3 mr-1" /> Inserisci
+                                          <BarChart3 className="h-3 w-3 mr-1" /> Grafico
                                         </Button>
                                       )}
-                                      <label className="flex items-center gap-1.5 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
-                                        <input
-                                          type="checkbox"
-                                          checked={safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name)}
-                                          onChange={(e) => {
-                                            setEmailConfig(prev => ({
-                                              ...prev,
-                                              attachments: {
-                                                ...prev.attachments,
-                                                pythonOutputsAsAttachment: e.target.checked
-                                                  ? [...prev.attachments.pythonOutputsAsAttachment, output.name]
-                                                  : prev.attachments.pythonOutputsAsAttachment.filter(t => t !== output.name)
-                                              }
-                                            }));
-                                          }}
-                                          className="rounded w-3.5 h-3.5"
-                                        />
-                                        <span className="text-muted-foreground text-[10px]">Allega File</span>
-                                      </label>
+                                      {output.type === 'table' && (
+                                        <Button
+                                          variant="secondary"
+                                          size="sm"
+                                          className="h-6 text-[10px] px-1.5 flex-shrink-0"
+                                          onClick={() => editorRef.current?.insertPlaceholder('TABELLA', output.name)}
+                                        >
+                                          <Download className="h-3 w-3 mr-1" /> Tabella
+                                        </Button>
+                                      )}
+                                      {output.type === 'variable' && (
+                                        <Button
+                                          variant="secondary"
+                                          size="sm"
+                                          className="h-6 text-[10px] px-1.5 flex-shrink-0"
+                                          onClick={() => editorRef.current?.insertPlaceholder('VARIABILE', output.name)}
+                                        >
+                                          <Code className="h-3 w-3 mr-1" /> Variabile
+                                        </Button>
+                                      )}
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
+                                          <input
+                                            type="checkbox"
+                                            checked={safeEmailAttachments.pythonOutputsInBody.includes(output.name)}
+                                            onChange={(e) => {
+                                              setEmailConfig(prev => ({
+                                                ...prev,
+                                                attachments: {
+                                                  ...prev.attachments,
+                                                  pythonOutputsInBody: e.target.checked
+                                                    ? [...prev.attachments.pythonOutputsInBody, output.name]
+                                                    : prev.attachments.pythonOutputsInBody.filter(t => t !== output.name)
+                                                }
+                                              }));
+                                            }}
+                                            className="rounded w-3 w-3"
+                                          />
+                                          <span className="text-muted-foreground text-[10px]">In Corpo</span>
+                                        </label>
+                                        <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
+                                          <input
+                                            type="checkbox"
+                                            checked={safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name)}
+                                            onChange={(e) => {
+                                              setEmailConfig(prev => ({
+                                                ...prev,
+                                                attachments: {
+                                                  ...prev.attachments,
+                                                  pythonOutputsAsAttachment: e.target.checked
+                                                    ? [...prev.attachments.pythonOutputsAsAttachment, output.name]
+                                                    : prev.attachments.pythonOutputsAsAttachment.filter(t => t !== output.name)
+                                                }
+                                              }));
+                                            }}
+                                            className="rounded w-3 w-3"
+                                          />
+                                          <span className="text-muted-foreground text-[10px]">Allega</span>
+                                        </label>
+                                      </div>
                                     </div>
                                   </div>
                                 ))}
@@ -3400,104 +3489,165 @@ export default function EditNodeDialog({
                                 dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
                               }> = [];
 
-                              // Extract table names referenced in placeholders from email body
+                              // Extract names referenced in placeholders from email body
                               const bodyContent = emailConfig.body || '';
-                              const placeholderTableMatches = bodyContent.match(/\{\{TABELLA:([^}]+)\}\}/g) || [];
-                              const placeholderTableNames = placeholderTableMatches.map(m => m.replace(/\{\{TABELLA:|}\}/g, ''));
+                              const placeholderTableNames = (bodyContent.match(/\{\{TABELLA:([^}]+)\}\}/g) || []).map(m => m.replace(/\{\{TABELLA:|}\}/g, ''));
+                              const placeholderChartNames = (bodyContent.match(/\{\{GRAFICO:([^}]+)\}\}/g) || []).map(m => m.replace(/\{\{GRAFICO:|}\}/g, ''));
+                              const placeholderVarNames = (bodyContent.match(/\{\{VARIABILE:([^}]+)\}\}/g) || []).map(m => m.replace(/\{\{VARIABILE:|}\}/g, ''));
 
-                              // Add tables from parent nodes separating SQL from Python
+                              // All referenced names for Python selection
+                              const allReferencedPythonNames = [...placeholderTableNames, ...placeholderChartNames, ...placeholderVarNames];
+
+                              // 1. Process SQL Results (Ancestors)
                               if (availableInputTables && availableInputTables.length > 0) {
-                                console.log('[EMAIL DEBUG] Available Tables:', availableInputTables);
                                 for (const table of availableInputTables) {
-                                  console.log(`[EMAIL DEBUG] Processing table: ${table.name}, isPython: ${table.isPython}, code: ${!!table.pythonCode}`);
+                                  if (table.isPython) continue; // Skip Python, handled in potentialPythonOutputs loop
+
                                   const inBody = safeEmailAttachments.tablesInBody.includes(table.name) || placeholderTableNames.includes(table.name);
                                   const asExcel = safeEmailAttachments.tablesAsExcel.includes(table.name);
 
                                   if (inBody || asExcel) {
-                                    if (table.isPython && table.pythonCode) {
-                                      // It's a Python table (e.g. from a previous node) -> Treat as Python Output
-                                      const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }> = [];
-
-                                      // Dependencies for this Python Script
-                                      if (table.pipelineDependencies) {
-                                        table.pipelineDependencies.forEach(dep => {
-                                          dependencies.push({
-                                            tableName: dep.tableName || '',
-                                            query: dep.query,
-                                            // pipelineDependencies for recursive
-                                          });
-                                        });
-                                      }
-
-                                      selectedPythonOutputs.push({
-                                        name: table.name,
-                                        code: table.pythonCode,
-                                        outputType: table.pythonOutputType || 'table',
-                                        connectorId: table.connectorId,
-                                        inBody: inBody,
-                                        asAttachment: asExcel, // Python tables "attached" means usually Excel/CSV equivalent
-                                        dependencies: dependencies
-                                      });
-                                    } else if (table.sqlQuery) {
-                                      // It's a SQL table
-                                      selectedTables.push({
-                                        name: table.name,
-                                        query: table.sqlQuery,
-                                        inBody: inBody,
-                                        asExcel: asExcel,
-                                        pipelineDependencies: table.pipelineDependencies
-                                      });
-                                    }
+                                    selectedTables.push({
+                                      name: table.name,
+                                      query: table.sqlQuery || `SELECT * FROM ${table.name}`,
+                                      inBody,
+                                      asExcel,
+                                      pipelineDependencies: table.pipelineDependencies
+                                    });
                                   }
                                 }
                               }
 
-                              // Add current node Python output if available
-                              const currentPythonInBody = safeEmailAttachments.pythonOutputsInBody.includes(pythonResultName || '') || placeholderTableNames.includes(pythonResultName || '');
-                              const currentPythonAsAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(pythonResultName || '');
+                              // 2. Process SQL Result (Current Node)
+                              if (sqlResultName && sqlQuery) {
+                                const inBody = safeEmailAttachments.tablesInBody.includes(sqlResultName) || placeholderTableNames.includes(sqlResultName);
+                                const asExcel = safeEmailAttachments.tablesAsExcel.includes(sqlResultName);
+                                if (inBody || asExcel) {
+                                  // Build pipelineDependencies from selectedPipelines
+                                  const currentNodeDeps: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[] }> = [];
+                                  if (availableInputTables && selectedPipelines.length > 0) {
+                                    for (const pName of selectedPipelines) {
+                                      const sourceTable = availableInputTables.find(t => t.name === pName);
+                                      if (sourceTable) {
+                                        currentNodeDeps.push({
+                                          tableName: sourceTable.name,
+                                          query: sourceTable.sqlQuery,
+                                          isPython: sourceTable.isPython,
+                                          pythonCode: sourceTable.pythonCode,
+                                          connectorId: sourceTable.connectorId,
+                                          pipelineDependencies: sourceTable.pipelineDependencies
+                                        });
+                                      }
+                                    }
+                                  }
 
-                              if (pythonCode && pythonResultName && (currentPythonInBody || currentPythonAsAttachment)) {
-                                selectedPythonOutputs.push({
+                                  selectedTables.push({
+                                    name: sqlResultName,
+                                    query: sqlQuery,
+                                    inBody,
+                                    asExcel,
+                                    pipelineDependencies: currentNodeDeps.length > 0 ? currentNodeDeps : undefined
+                                  });
+                                }
+                              }
+
+                              // 3. Process Python Outputs
+                              // Helper to build dependencies for a Python execution
+                              const buildDependencies = (sourceName: string, isCurrentNode: boolean = false, overrideDeps?: any[]) => {
+                                if (!isCurrentNode) return overrideDeps || [];
+
+                                const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: any[] }> = [];
+                                if (availableInputTables) {
+                                  pythonSelectedPipelines.forEach(pName => {
+                                    const table = availableInputTables.find(t => t.name === pName);
+                                    if (table) {
+                                      dependencies.push({
+                                        tableName: pName,
+                                        connectorId: table.connectorId,
+                                        query: table.sqlQuery,
+                                        isPython: table.isPython,
+                                        pythonCode: table.pythonCode,
+                                        pipelineDependencies: table.pipelineDependencies
+                                      });
+                                    }
+                                  });
+                                }
+                                return dependencies;
+                              };
+
+                              // Combined list of ALL potential outputs (Current + Ancestors)
+                              const allPotentialOutputs = [
+                                ...(pythonResultName && pythonCode ? [{
                                   name: pythonResultName,
                                   code: pythonCode,
                                   outputType: pythonOutputType,
                                   connectorId: pythonConnectorId,
-                                  inBody: currentPythonInBody,
-                                  asAttachment: currentPythonAsAttachment,
-                                  dependencies: availableInputTables?.map(t => ({
-                                    tableName: t.name,
-                                    nodeId: t.nodeId, // FIX: Pass nodeId for deduplication
+                                  isCurrent: true,
+                                  dependenciesOverride: null as any
+                                }] : []),
+                                ...(availableInputTables || [])
+                                  .filter(t => t.isPython && t.pythonCode && t.name !== pythonResultName)
+                                  .map(t => ({
+                                    name: t.name,
+                                    code: t.pythonCode!,
+                                    outputType: t.pythonOutputType || 'table',
                                     connectorId: t.connectorId,
-                                    query: t.sqlQuery,
-                                    isPython: t.isPython,
-                                    pythonCode: t.pythonCode,
-                                    pipelineDependencies: t.pipelineDependencies,
-                                    writesToDatabase: t.writesToDatabase
-                                  })) || []
-                                });
-                              }
-
-                              // Add current node SQL output if available
-                              const currentSqlInBody = safeEmailAttachments.tablesInBody.includes(sqlResultName || '') || placeholderTableNames.includes(sqlResultName || '');
-                              const currentSqlAsExcel = safeEmailAttachments.tablesAsExcel.includes(sqlResultName || '');
-
-                              if (sqlQuery && sqlResultName && (currentSqlInBody || currentSqlAsExcel)) {
-                                selectedTables.push({
-                                  name: sqlResultName,
-                                  query: sqlQuery,
-                                  inBody: currentSqlInBody,
-                                  asExcel: currentSqlAsExcel,
-                                  pipelineDependencies: availableInputTables?.map(t => ({ // Ancestors are dependencies for this query
-                                    tableName: t.name,
-                                    nodeId: t.nodeId, // FIX: Pass nodeId for deduplication
-                                    query: t.sqlQuery,
-                                    isPython: t.isPython,
-                                    pythonCode: t.pythonCode,
-                                    connectorId: t.connectorId,
-                                    pipelineDependencies: t.pipelineDependencies,
-                                    writesToDatabase: t.writesToDatabase
+                                    isCurrent: false,
+                                    dependenciesOverride: t.pipelineDependencies
                                   }))
-                                });
+                              ];
+
+                              // Iterate over all potential outputs and add if selected or placed in body
+                              for (const output of allPotentialOutputs) {
+                                const inBody = safeEmailAttachments.pythonOutputsInBody.includes(output.name) || allReferencedPythonNames.includes(output.name);
+                                const asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name);
+
+                                if (inBody || asAttachment) {
+                                  let dependencies = output.dependenciesOverride || [];
+
+                                  if (output.isCurrent) {
+                                    // Re-calculate dependencies for current node to ensure latest state
+                                    dependencies = buildDependencies(output.name, true);
+
+                                    // Add current node's SQL result as dependency if exists
+                                    if (sqlResultName && sqlQuery) {
+                                      // Build SQL deps
+                                      const sqlDeps: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }> = [];
+                                      if (availableInputTables && selectedPipelines.length > 0) {
+                                        for (const pName of selectedPipelines) {
+                                          const sourceTable = availableInputTables.find(t => t.name === pName);
+                                          if (sourceTable) {
+                                            sqlDeps.push({
+                                              tableName: sourceTable.name,
+                                              query: sourceTable.sqlQuery,
+                                              isPython: sourceTable.isPython,
+                                              pythonCode: sourceTable.pythonCode,
+                                              connectorId: sourceTable.connectorId
+                                            });
+                                          }
+                                        }
+                                      }
+
+                                      dependencies.push({
+                                        tableName: sqlResultName,
+                                        connectorId: sqlConnectorId || sqlExportTargetConnectorId,
+                                        query: sqlQuery,
+                                        isPython: false,
+                                        pipelineDependencies: sqlDeps.length > 0 ? sqlDeps : undefined
+                                      });
+                                    }
+                                  }
+
+                                  selectedPythonOutputs.push({
+                                    name: output.name,
+                                    code: output.code,
+                                    outputType: output.outputType as any,
+                                    connectorId: output.connectorId,
+                                    inBody,
+                                    asAttachment,
+                                    dependencies: dependencies.length > 0 ? dependencies : undefined
+                                  });
+                                }
                               }
 
 
@@ -3599,61 +3749,41 @@ export default function EditNodeDialog({
                             dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
                           }> = [];
 
-                          // Extract table names referenced in placeholders from email body
+                          // Extract names referenced in placeholders from email body
                           const bodyContent = emailConfig.body || '';
-                          const placeholderTableMatches = bodyContent.match(/\{\{TABELLA:([^}]+)\}\}/g) || [];
-                          const placeholderTableNames = placeholderTableMatches.map(m => m.replace(/\{\{TABELLA:|}\}/g, ''));
+                          const placeholderTableNames = (bodyContent.match(/\{\{TABELLA:([^}]+)\}\}/g) || []).map(m => m.replace(/\{\{TABELLA:|}\}/g, ''));
+                          const placeholderChartNames = (bodyContent.match(/\{\{GRAFICO:([^}]+)\}\}/g) || []).map(m => m.replace(/\{\{GRAFICO:|}\}/g, ''));
+                          const placeholderVarNames = (bodyContent.match(/\{\{VARIABILE:([^}]+)\}\}/g) || []).map(m => m.replace(/\{\{VARIABILE:|}\}/g, ''));
 
-                          // Add tables from parent nodes separating SQL from Python
+                          // All referenced names for Python selection
+                          const allReferencedPythonNames = [...placeholderTableNames, ...placeholderChartNames, ...placeholderVarNames];
+
+                          // 1. Process SQL Results (Ancestors)
                           if (availableInputTables && availableInputTables.length > 0) {
                             for (const table of availableInputTables) {
+                              if (table.isPython) continue; // Skip Python, handled in potentialPythonOutputs loop
+
                               const inBody = safeEmailAttachments.tablesInBody.includes(table.name) || placeholderTableNames.includes(table.name);
                               const asExcel = safeEmailAttachments.tablesAsExcel.includes(table.name);
 
                               if (inBody || asExcel) {
-                                if (table.isPython && table.pythonCode) {
-                                  // It's a Python table (e.g. from a previous node) -> Treat as Python Output
-                                  const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }> = [];
-                                  if (table.pipelineDependencies) {
-                                    table.pipelineDependencies.forEach(dep => {
-                                      dependencies.push({
-                                        tableName: dep.tableName,
-                                        connectorId: dep.connectorId,
-                                        query: dep.query,
-                                        pipelineDependencies: [] // recursive deps flattened/handled by backend usually
-                                      });
-                                    });
-                                  }
-
-                                  selectedPythonOutputs.push({
-                                    name: table.name,
-                                    code: table.pythonCode,
-                                    outputType: 'table',
-                                    connectorId: table.connectorId,
-                                    inBody,
-                                    asAttachment: asExcel, // Map 'asExcel' to 'asAttachment' for Python
-                                    dependencies: dependencies.length > 0 ? dependencies : undefined
-                                  });
-                                } else {
-                                  // It's a standard SQL table
-                                  selectedTables.push({
-                                    name: table.name,
-                                    query: table.sqlQuery || `SELECT * FROM ${table.name}`,
-                                    inBody,
-                                    asExcel,
-                                    pipelineDependencies: table.pipelineDependencies
-                                  });
-                                }
+                                selectedTables.push({
+                                  name: table.name,
+                                  query: table.sqlQuery || `SELECT * FROM ${table.name}`,
+                                  inBody,
+                                  asExcel,
+                                  pipelineDependencies: table.pipelineDependencies
+                                });
                               }
                             }
                           }
 
-                          // Add current node SQL output if selected OR referenced in placeholder
+                          // 2. Process SQL Result (Current Node)
                           if (sqlResultName && sqlQuery) {
                             const inBody = safeEmailAttachments.tablesInBody.includes(sqlResultName) || placeholderTableNames.includes(sqlResultName);
                             const asExcel = safeEmailAttachments.tablesAsExcel.includes(sqlResultName);
                             if (inBody || asExcel) {
-                              // Build pipelineDependencies from selectedPipelines and availableInputTables
+                              // Build pipelineDependencies from selectedPipelines
                               const currentNodeDeps: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[] }> = [];
                               if (availableInputTables && selectedPipelines.length > 0) {
                                 for (const pName of selectedPipelines) {
@@ -3681,16 +3811,13 @@ export default function EditNodeDialog({
                             }
                           }
 
-                          // Extract chart names referenced in placeholders from email body
-                          const placeholderChartMatches = bodyContent.match(/\{\{GRAFICO:([^}]+)\}\}/g) || [];
-                          const placeholderChartNames = placeholderChartMatches.map(m => m.replace(/\{\{GRAFICO:|}\}/g, ''));
-
-                          // Add current node Python output if selected OR referenced in placeholder
+                          // 3. Process Python Outputs
                           // Helper to build dependencies for a Python execution
-                          const buildDependencies = (sourceName: string, isCurrentNode: boolean = false) => {
-                            const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: any[] }> = [];
+                          const buildDependencies = (sourceName: string, isCurrentNode: boolean = false, overrideDeps?: any[]) => {
+                            if (!isCurrentNode) return overrideDeps || [];
 
-                            if (isCurrentNode && availableInputTables) {
+                            const dependencies: Array<{ tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: any[] }> = [];
+                            if (availableInputTables) {
                               pythonSelectedPipelines.forEach(pName => {
                                 const table = availableInputTables.find(t => t.name === pName);
                                 if (table) {
@@ -3705,7 +3832,6 @@ export default function EditNodeDialog({
                                 }
                               });
                             }
-
                             return dependencies;
                           };
 
@@ -3733,7 +3859,7 @@ export default function EditNodeDialog({
 
                           // Iterate over all potential outputs and add if selected or placed in body
                           for (const output of allPotentialOutputs) {
-                            const inBody = safeEmailAttachments.pythonOutputsInBody.includes(output.name) || placeholderChartNames.includes(output.name);
+                            const inBody = safeEmailAttachments.pythonOutputsInBody.includes(output.name) || allReferencedPythonNames.includes(output.name);
                             const asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name);
 
                             if (inBody || asAttachment) {

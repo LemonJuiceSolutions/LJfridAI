@@ -381,10 +381,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         return calculateLayout(enrichedTree, nodeMap);
     }, [tree, dbVariables]);
 
-    const flattenTree = useCallback((node: any, path: string, list: any[]) => {
+    const flattenTree = useCallback((node: any, path: string, list: any[], visitedTrees: Set<string> = new Set()) => {
         if (!node) return;
 
-        const id = (typeof node === 'object' && node.id) ? node.id : path;
+        const id = path; // Using path as unique ID to prevent collisions across sub-trees
         let text: string;
 
         if (typeof node === 'string') {
@@ -392,7 +392,35 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         } else if ('ref' in node && node.ref) {
             text = `Link: ${node.ref}`;
         } else if ('subTreeRef' in node && node.subTreeRef) {
-            text = `Sub-Tree: ${node.subTreeRef}`;
+            const subTreeId = node.subTreeRef;
+            const linkedTree = allTrees.find(t => t.id === subTreeId);
+            text = `Sub-Tree: ${linkedTree?.name || subTreeId}`;
+
+            // Push the Sub-Tree node itself
+            if (!list.some(n => n.id === id)) {
+                list.push({ id, text, path, node });
+            }
+
+            // RECURSIVE EXPANSION: Follow the sub-tree reference
+            if (linkedTree && !visitedTrees.has(subTreeId)) {
+                try {
+                    const subTreeJson = typeof linkedTree.jsonDecisionTree === 'string'
+                        ? JSON.parse(linkedTree.jsonDecisionTree)
+                        : linkedTree.jsonDecisionTree;
+
+                    const newVisited = new Set(visitedTrees);
+                    newVisited.add(subTreeId);
+
+                    // Recursively flatten the sub-tree's content
+                    // We append ".sub" to the path to differentiate nodes inside the sub-tree
+                    if (subTreeJson) {
+                        flattenTree(subTreeJson, `${path}.sub`, list, newVisited);
+                    }
+                } catch (e) {
+                    console.error("Failed to parse sub-tree JSON:", e);
+                }
+            }
+            return; // Children are handled by the recursive call above or don't exist
         } else if ('decision' in node && node.decision) {
             text = `Decision: ${node.decision}`;
         } else if ('question' in node) {
@@ -409,13 +437,13 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             Object.entries(node.options).forEach(([option, childNode]) => {
                 const optPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
                 if (Array.isArray(childNode)) {
-                    childNode.forEach((c, idx) => flattenTree(c, `${optPath}[${idx}]`, list));
+                    childNode.forEach((c, idx) => flattenTree(c, `${optPath}[${idx}]`, list, visitedTrees));
                 } else {
-                    flattenTree(childNode, optPath, list);
+                    flattenTree(childNode, optPath, list, visitedTrees);
                 }
             });
         }
-    }, [tree]); // Simplified for brevity in replace
+    }, [allTrees]);
 
     const flatTree = useMemo(() => {
         if (!tree) return [];
@@ -1264,16 +1292,26 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     const nodePath = item.path;
                     const startsWithPath = currentPath.startsWith(nodePath);
                     const charAfter = currentPath.charAt(nodePath.length);
-                    const isAncestor =
+                    let isAncestor =
                         currentPath !== nodePath &&
                         startsWithPath &&
                         charAfter === '.';
 
+                    // FALLBACK FOR SUB-TREES: 
+                    // If nodePath is inside a sub-tree (root.A.sub.B) 
+                    // and currentPath is downstream of that sub-tree node (root.A.options.X), 
+                    // then nodePath is an ancestor even if it's not a direct prefix.
+                    if (!isAncestor && nodePath.includes('.sub')) {
+                        const subTreeRootPath = nodePath.split('.sub')[0];
+                        if (currentPath.startsWith(subTreeRootPath + '.options')) {
+                            // The node is inside a sub-tree that the current path is "after" or "on an exit of"
+                            isAncestor = true;
+                        }
+                    }
+
                     // Log for nodes with SQL or Python results
                     if (actualNode.sqlResultName || actualNode.pythonResultName) {
-                        console.log(`[ANCESTOR DEBUG] Checking "${actualNode.sqlResultName || actualNode.pythonResultName}" at "${nodePath}"`);
-                        console.log(`  - currentPath.startsWith(nodePath): ${startsWithPath}`);
-                        console.log(`  - charAfter: "${charAfter}" (should be ".")`);
+                        console.log(`[ANCESTOR DEBUG] Checking "${actualNode.sqlResultName || actualNode.pythonResultName}" at "${nodePath}" against "${currentPath}"`);
                         console.log(`  - isAncestor: ${isAncestor}`);
                     }
 
@@ -1326,7 +1364,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             ancestorItems.sort((a, b) => a.path.length - b.path.length);
 
             // Build result with pipelineDependencies for each table
-            const tables: { name: string, nodeName?: string, nodeId?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean }[] = [];
+            const tables: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean }[] = [];
 
             for (let i = 0; i < ancestorItems.length; i++) {
                 const item = ancestorItems[i];
@@ -1337,6 +1375,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     .filter(t => t.sqlQuery || (t.isPython && t.pythonCode)) // Filter only valid execution nodes
                     .map(t => ({
                         tableName: t.name,
+                        path: t.path,
                         nodeId: t.nodeId, // FIX: Pass NodeID for deduplication
                         query: t.sqlQuery,
                         isPython: t.isPython,
@@ -1350,6 +1389,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     name: item.name,
                     nodeName: item.nodeName,
                     nodeId: (item as any).nodeId, // Pass nodeId from ancestor item
+                    path: item.path,
                     connectorId: item.connectorId,
                     sqlQuery: item.sqlQuery,
                     isPython: item.isPython,
