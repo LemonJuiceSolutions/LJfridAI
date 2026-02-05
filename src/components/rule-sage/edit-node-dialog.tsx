@@ -340,7 +340,7 @@ export default function EditNodeDialog({
   const [sqlConnectorId, setSqlConnectorId] = useState<string>('');
   const [sqlResultName, setSqlResultName] = useState('');
   const [selectedPipelines, setSelectedPipelines] = useState<string[]>([]);
-  const [agentStatus, setAgentStatus] = useState<string | null>(null);
+
   const [sqlConnectors, setSqlConnectors] = useState<{ id: string, name: string }[]>([]);
   const [dataConnectors, setDataConnectors] = useState<{ id: string, name: string }[]>([]);
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
@@ -356,8 +356,8 @@ export default function EditNodeDialog({
 
   const [pythonOutputType, setPythonOutputType] = useState<'table' | 'variable' | 'chart'>('table');
   const [pythonResultName, setPythonResultName] = useState('');
-  const [pythonAgentStatus, setPythonAgentStatus] = useState<string | null>(null);
-  const [pythonProgressStep, setPythonProgressStep] = useState<number>(0); // 0=none, 1=dati, 2=python, 3=rendering
+  const [pipelineAgentStatus, setPipelineAgentStatus] = useState<string | null>(null);
+  const [pipelineProgressStep, setPipelineProgressStep] = useState<number>(0); // 0=none, 1=dati, 2=python, 3=rendering
   const [hasPythonCodeChanged, setHasPythonCodeChanged] = useState(false);
   const [pythonPreviewResult, setPythonPreviewResult] = useState<{
     type: 'table' | 'variable' | 'chart';
@@ -827,7 +827,7 @@ export default function EditNodeDialog({
 
     const newHistory = [...pythonChatHistory, { role: 'user' as const, content: userPrompt, timestamp: Date.now() }];
     setPythonChatHistory(newHistory);
-    setPythonAgentStatus("Analisi contesto...");
+    setPipelineAgentStatus("Analisi contesto...");
 
     // 1. GATHER CONTEXT
     const context: {
@@ -899,7 +899,7 @@ export default function EditNodeDialog({
       await Promise.all(schemaPromises);
     }
 
-    setPythonAgentStatus("Generazione Codice Python...");
+    setPipelineAgentStatus("Generazione Codice Python...");
 
     const performGeneration = async (currentHistory: any[], retryCount = 0) => {
       try {
@@ -913,7 +913,7 @@ export default function EditNodeDialog({
         );
 
         if (response.code) {
-          setPythonAgentStatus(retryCount > 0 ? `Correzione in corso (Tentativo ${retryCount}/3)...` : "Esecuzione Anteprima Automatica...");
+          setPipelineAgentStatus(retryCount > 0 ? `Correzione in corso (Tentativo ${retryCount}/3)...` : "Esecuzione Anteprima Automatica...");
 
           const previewRes = await executePythonPreviewAction(
             response.code,
@@ -1010,7 +1010,7 @@ export default function EditNodeDialog({
       }
     };
 
-    performGeneration(newHistory, 0).finally(() => setPythonAgentStatus(null));
+    performGeneration(newHistory, 0).finally(() => setPipelineAgentStatus(null));
   }, [openRouterApiKey, openRouterModel, pythonChatHistory, pythonOutputType, pythonSelectedPipelines, pythonConnectorId, availableInputTables, toast, pythonCode, sqlResultName, sqlPreviewData]);
 
   // --- REUSABLE PIPELINE EXECUTION LOGIC ---
@@ -1021,8 +1021,8 @@ export default function EditNodeDialog({
     if (isExecutingRef.current) return;
     setIsPipelineExecuting(true);
     isExecutingRef.current = true;
-    setPythonAgentStatus("Analisi Pipeline dei Padri...");
-    setPythonProgressStep(0);
+    setPipelineAgentStatus("Analisi Pipeline dei Padri...");
+    setPipelineProgressStep(0);
 
     try {
       // 0. Use availableInputTables as the source of truth for execution
@@ -1130,6 +1130,14 @@ export default function EditNodeDialog({
           label: `✉️ Invia Email`,
           pipelineType: 'export'
         });
+      } else if (targetAction === 'preview' && !pythonCode) {
+        // Special case for SQL Preview as final step
+        steps.push({
+          id: 'final_sql_preview',
+          type: 'final',
+          label: sqlResultName || "Anteprima SQL",
+          pipelineType: 'sql'
+        });
       }
 
       // 2. Initialize UI from Steps
@@ -1140,7 +1148,7 @@ export default function EditNodeDialog({
       }));
 
       setExecutionPipeline(initialPipeline);
-      setPythonProgressStep(1);
+      setPipelineProgressStep(1);
 
       // Collect results to pass to final action
       const ancestorResults: Record<string, any> = {};
@@ -1275,14 +1283,14 @@ export default function EditNodeDialog({
             setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'success', executionTime: Date.now() - startTime } : p));
           } else {
             setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'error', message: error || 'Errore sconosciuto' } : p));
-            setPythonAgentStatus(null);
+            setPipelineAgentStatus(null);
             setIsPipelineExecuting(false);
             isExecutingRef.current = false;
             return;
           }
         } catch (e: any) {
           setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'error', message: e.message } : p));
-          setPythonAgentStatus(null);
+          setPipelineAgentStatus(null);
           setIsPipelineExecuting(false);
           isExecutingRef.current = false;
           return;
@@ -1292,7 +1300,7 @@ export default function EditNodeDialog({
       // 4. Execute Final Action (Current Node)
       const finalStepLabel = steps.find(s => s.type === 'final')?.label;
       if (finalStepLabel) {
-        setPythonProgressStep(2);
+        setPipelineProgressStep(2);
         setExecutionPipeline(prev => prev.map(p => p.name === finalStepLabel ? { ...p, status: 'running' } : p));
         const startTime = Date.now();
         try {
@@ -1304,15 +1312,15 @@ export default function EditNodeDialog({
         }
       }
 
-      setPythonProgressStep(3);
+      setPipelineProgressStep(3);
     } catch (e: any) {
       console.error("Pipeline Error:", e);
       toast({ variant: 'destructive', title: "Errore Pipeline", description: e.message });
     } finally {
       setIsPipelineExecuting(false);
       isExecutingRef.current = false;
-      setPythonAgentStatus(null);
-      setPythonProgressStep(0);
+      setPipelineAgentStatus(null);
+      setPipelineProgressStep(0);
     }
   };
 
@@ -2028,81 +2036,47 @@ export default function EditNodeDialog({
                               toast({ variant: 'destructive', title: "Errore", description: "Inserisci una query SQL prima di eseguire l'anteprima." });
                               return;
                             }
-                            setAgentStatus("Esecuzione Query...");
+                            // Execute full pipeline for SQL preview
+                            executeFullPipeline('preview', async (ancestorResults) => {
+                              // Execute the current SQL query with pre-calculated results
+                              const deps = (availableInputTables || []).filter(t => selectedPipelines.includes(t.name) || sqlQuery.toUpperCase().includes(`FROM ${t.name.toUpperCase()}`)).map(t => {
+                                const resultObj = ancestorResults?.[t.name];
+                                const preCalcData = resultObj ? resultObj.data : undefined;
 
-                            // Build Dependencies for Execution
-                            let pipelineDeps: any[] = [];
-                            if (availableInputTables && availableInputTables.length > 0) {
-                              // Auto-detect which tables are referenced in the SQL query
-                              const referencedTables = new Set<string>();
-
-                              // Parse the SQL query for table references (FROM, JOIN)
-                              const sqlUpper = sqlQuery.toUpperCase();
-                              availableInputTables.forEach(table => {
-                                const tableNameUpper = table.name.toUpperCase();
-                                // Check for FROM or JOIN references
-                                if (sqlUpper.includes(`FROM ${tableNameUpper}`) ||
-                                  sqlUpper.includes(`FROM\n${tableNameUpper}`) ||
-                                  sqlUpper.includes(`JOIN ${tableNameUpper}`) ||
-                                  sqlUpper.includes(`JOIN\n${tableNameUpper}`)) {
-                                  referencedTables.add(table.name);
+                                // SAFEGUARD: Payload size check
+                                const MAX_PAYLOAD_BYTES = 250 * 1024;
+                                let shouldPassData = false;
+                                if (preCalcData && Array.isArray(preCalcData)) {
+                                  try {
+                                    if (JSON.stringify(preCalcData).length <= MAX_PAYLOAD_BYTES) shouldPassData = true;
+                                  } catch (e) { }
                                 }
+
+                                return {
+                                  tableName: t.name,
+                                  query: t.sqlQuery,
+                                  isPython: t.isPython,
+                                  pythonCode: t.pythonCode,
+                                  connectorId: t.connectorId,
+                                  pipelineDependencies: t.pipelineDependencies,
+                                  data: shouldPassData ? preCalcData : undefined
+                                };
                               });
 
-                              console.log('[SQL PREVIEW] Auto-detected referenced tables:', Array.from(referencedTables));
-
-                              // Include both selected tables AND auto-detected referenced tables
-                              const tablesToInclude = new Set([...selectedPipelines, ...referencedTables]);
-
-                              pipelineDeps = availableInputTables
-                                .filter(t => tablesToInclude.has(t.name))
-                                .map(table => ({
-                                  tableName: table.name,
-                                  query: table.sqlQuery || undefined,
-                                  isPython: table.isPython,
-                                  pythonCode: table.pythonCode,
-                                  connectorId: table.connectorId,
-                                  pipelineDependencies: table.pipelineDependencies
-                                }))
-                                .filter(d => d.query || (d.isPython && d.pythonCode));
-                            }
-
-                            // Execute ancestor chain first, then execute current SQL preview
-                            setAgentStatus("Esecuzione antenati...");
-                            executeAncestorChainAction(treeId, nodePath).then((ancestorResult) => {
-                              if (ancestorResult.errors && ancestorResult.errors.length > 0) {
-                                console.error('[SQL PREVIEW] Errors in ancestor chain:', ancestorResult.errors);
-                                toast({
-                                  variant: 'destructive',
-                                  title: "Errori negli antenati",
-                                  description: ancestorResult.errors.join(', ')
-                                });
+                              const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, deps);
+                              if (res.data) {
+                                setSqlPreviewData(res.data);
+                                if (onSavePreview && nodePath) {
+                                  onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
+                                }
+                              } else {
+                                throw new Error(res.error || "Errore sconosciuto");
                               }
-
-                              // Now execute the current SQL query
-                              setAgentStatus("Esecuzione Query...");
-                              executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps).then((res) => {
-                                setAgentStatus(null);
-                                if (res.data) {
-                                  setSqlPreviewData(res.data);
-                                  // Non mostrare toast per non disturbare l'utente durante l'anteprima
-
-                                  // Salva automaticamente i dati dell'anteprima SQL nel nodo
-                                  console.log('[DEBUG] Verifica salvataggio SQL anteprima:', { onSavePreview: !!onSavePreview, nodePath: !!nodePath });
-                                  if (onSavePreview && nodePath) {
-                                    console.log('[DEBUG] Salvataggio SQL anteprima nel nodo:', { nodePath, hasPreviewData: res.data !== null });
-                                    onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
-                                    console.log('[DEBUG] SQL anteprima salvata nel nodo:', nodePath);
-                                  }
-                                } else {
-                                  toast({ variant: 'destructive', title: "Errore SQL", description: res.error || "Errore sconosciuto" });
-                                }
-                              });
                             });
                           }}
-                          disabled={!!agentStatus}
+                          disabled={!!pipelineAgentStatus}
                         >
-                          {agentStatus === "Esecuzione Query..." ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                          {pipelineAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
                           Esegui Anteprima
                         </Button>
 
@@ -2171,6 +2145,65 @@ export default function EditNodeDialog({
 
                       <div className="max-h-[200px] overflow-auto">
                         <DataTable data={sqlPreviewData} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Pipeline Execution Visualization (for SQL) */}
+                  {executionPipeline.length > 0 && !pythonCode && (
+                    <div className="mt-4 border rounded-md overflow-hidden bg-muted/20 animate-in fade-in slide-in-from-top-2 duration-300">
+                      {/* Header */}
+                      <div className="p-2 px-3 bg-muted/40 border-b flex items-center justify-between">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-2">
+                          <GitBranch className="h-3.5 w-3.5" />
+                          Pipeline di Esecuzione (Anteprima)
+                        </h4>
+                        {isPipelineExecuting && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                      </div>
+
+                      {/* Steps List */}
+                      <div className="max-h-[200px] overflow-y-auto">
+                        {executionPipeline.map((step, idx) => (
+                          <div key={idx} className={`flex items-center justify-between p-2 px-3 border-b last:border-0 text-xs text-foreground ${step.status === 'running' ? 'bg-background shadow-sm' : ''}`}>
+                            <div className="flex items-center gap-3">
+                              <span className="w-4 flex justify-center">
+                                {step.status === 'pending' && <div className="h-1.5 w-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />}
+                                {step.status === 'running' && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+                                {step.status === 'success' && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                                {step.status === 'error' && <X className="h-3.5 w-3.5 text-red-600" />}
+                                {step.status === 'skipped' && <div className="h-1.5 w-1.5 rounded-full bg-yellow-400" />}
+                              </span>
+                              <div className="flex flex-col">
+                                <span className={step.status === 'running' ? 'font-medium text-primary' : ''}>
+                                  {step.name}
+                                  {step.type === 'export' && <Upload className="inline h-3 w-3 ml-1 text-muted-foreground" />}
+                                </span>
+                                {step.message && <span className={`text-[10px] ${step.status === 'error' ? 'text-red-500' : step.status === 'skipped' ? 'text-yellow-600' : 'text-muted-foreground'}`}>{step.message}</span>}
+                              </div>
+                              <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted uppercase tracking-wider scale-90 origin-left">{step.type}</span>
+                            </div>
+                            {step.executionTime && <span className="text-[10px] text-muted-foreground font-mono">{step.executionTime}ms</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Visual Stepper - shown during SQL execution */}
+                  {pipelineAgentStatus && !pythonCode && (
+                    <div className="flex items-center justify-center gap-8 py-4 mt-4 animate-in fade-in zoom-in-95 duration-300">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pipelineProgressStep >= 1 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
+                          {pipelineProgressStep > 1 ? <Check className="h-5 w-5" /> : <Database className="h-4 w-4" />}
+                        </div>
+                        <span className={`text-[10px] font-medium ${pipelineProgressStep >= 1 ? 'text-primary' : 'text-muted-foreground'}`}>Recupero Dati</span>
+                      </div>
+                      <div className={`h-0.5 w-16 transition-all ${pipelineProgressStep >= 2 ? 'bg-primary' : 'bg-muted'}`} />
+                      <div className="flex flex-col items-center gap-2">
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pipelineProgressStep >= 2 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
+                          <Eye className="h-4 w-4" />
+                        </div>
+                        <span className={`text-[10px] font-medium ${pipelineProgressStep >= 2 ? 'text-primary' : 'text-muted-foreground'}`}>Anteprima SQL</span>
                       </div>
                     </div>
                   )}
@@ -2360,9 +2393,9 @@ export default function EditNodeDialog({
                                 }
                               });
                             }}
-                            disabled={!!pythonAgentStatus}
+                            disabled={!!pipelineAgentStatus}
                           >
-                            {pythonAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                            {pipelineAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
                             Esegui Anteprima
                           </Button>
 
@@ -2475,27 +2508,27 @@ export default function EditNodeDialog({
                   )}
 
                   {/* Visual Stepper - shown during execution */}
-                  {pythonAgentStatus && (
+                  {pipelineAgentStatus && (
                     <div className="flex items-center justify-center gap-8 py-4 mt-4 animate-in fade-in zoom-in-95 duration-300">
                       <div className="flex flex-col items-center gap-2">
-                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pythonProgressStep >= 1 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
-                          {pythonProgressStep > 1 ? <Check className="h-5 w-5" /> : <Database className="h-4 w-4" />}
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pipelineProgressStep >= 1 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
+                          {pipelineProgressStep > 1 ? <Check className="h-5 w-5" /> : <Database className="h-4 w-4" />}
                         </div>
-                        <span className={`text-[10px] font-medium ${pythonProgressStep >= 1 ? 'text-primary' : 'text-muted-foreground'}`}>Recupero Dati</span>
+                        <span className={`text-[10px] font-medium ${pipelineProgressStep >= 1 ? 'text-primary' : 'text-muted-foreground'}`}>Recupero Dati</span>
                       </div>
-                      <div className={`h-0.5 w-16 transition-all ${pythonProgressStep >= 2 ? 'bg-primary' : 'bg-muted'}`} />
+                      <div className={`h-0.5 w-16 transition-all ${pipelineProgressStep >= 2 ? 'bg-primary' : 'bg-muted'}`} />
                       <div className="flex flex-col items-center gap-2">
-                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pythonProgressStep >= 2 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
-                          {pythonProgressStep > 2 ? <Check className="h-5 w-5" /> : <Code className="h-4 w-4" />}
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pipelineProgressStep >= 2 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
+                          {pipelineProgressStep > 2 ? <Check className="h-5 w-5" /> : <Code className="h-4 w-4" />}
                         </div>
-                        <span className={`text-[10px] font-medium ${pythonProgressStep >= 2 ? 'text-primary' : 'text-muted-foreground'}`}>Elaborazione</span>
+                        <span className={`text-[10px] font-medium ${pipelineProgressStep >= 2 ? 'text-primary' : 'text-muted-foreground'}`}>Elaborazione</span>
                       </div>
-                      <div className={`h-0.5 w-16 transition-all ${pythonProgressStep >= 3 ? 'bg-primary' : 'bg-muted'}`} />
+                      <div className={`h-0.5 w-16 transition-all ${pipelineProgressStep >= 3 ? 'bg-primary' : 'bg-muted'}`} />
                       <div className="flex flex-col items-center gap-2">
-                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pythonProgressStep >= 3 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pipelineProgressStep >= 3 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
                           <LineChart className="h-4 w-4" />
                         </div>
-                        <span className={`text-[10px] font-medium ${pythonProgressStep >= 3 ? 'text-primary' : 'text-muted-foreground'}`}>Rendering</span>
+                        <span className={`text-[10px] font-medium ${pipelineProgressStep >= 3 ? 'text-primary' : 'text-muted-foreground'}`}>Rendering</span>
                       </div>
                     </div>
                   )}
