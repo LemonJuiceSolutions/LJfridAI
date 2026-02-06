@@ -981,28 +981,48 @@ Diagnostica il prossimo passo.`;
 export async function executeSqlPreviewAction(
     query: string,
     connectorId: string,
-    pipelineDependencies: { tableName: string, query?: string, isPython?: boolean, pythonCode?: string, connectorId?: string, pipelineDependencies?: any[], data?: any[] }[] = []
+    pipelineDependencies: { tableName: string, query?: string, isPython?: boolean, pythonCode?: string, connectorId?: string, pipelineDependencies?: any[], data?: any[] }[] = [],
+    _bypassAuth?: boolean
 ): Promise<{ data: any[] | null; error: string | null }> {
     let pool: sql.ConnectionPool | null = null;
     let transaction: sql.Transaction | null = null;
     const createdTempTables: string[] = [];
 
     try {
-        const user = await getAuthenticatedUser();
+        let user: any = null;
+
+        if (_bypassAuth) {
+            // System Context: Infer company from connector
+            if (connectorId) {
+                const conn = await db.connector.findUnique({ where: { id: connectorId } });
+                if (conn) {
+                    user = { id: 'system-scheduler', companyId: conn.companyId };
+                }
+            }
+            // If connectorId is missing or not found, we might have issues finding company-scoped resources.
+            // But we'll proceed and let the findFirst below handle it (or return null).
+            if (!user) user = { id: 'system-scheduler', companyId: 'system-override' };
+        } else {
+            user = await getAuthenticatedUser();
+        }
 
         let connector;
         if (connectorId) {
             connector = await db.connector.findFirst({
                 where: {
                     id: connectorId,
-                    companyId: user.companyId,
+                    // If system-override and no real companyId found, this might fail unless we remove companyId check for system?
+                    // Safe approach: We found companyId above. If 'system-override', it means we didn't find connector by ID, 
+                    // so we probably won't find it here either. 
+                    // Let's trust the logic above found the companyId.
+                    companyId: user.companyId !== 'system-override' ? user.companyId : undefined,
                     type: 'SQL'
                 }
             });
         } else {
             connector = await db.connector.findFirst({
                 where: {
-                    companyId: user.companyId,
+                    companyId: user.companyId !== 'system-override' ? user.companyId : undefined,
                     type: 'SQL'
                 }
             });
@@ -1753,13 +1773,25 @@ export async function executePythonPreviewAction(
     outputType: 'table' | 'variable' | 'chart',
     inputData: Record<string, any[]> = {},
     dependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[] }[],
-    connectorId?: string
+    connectorId?: string,
+    _bypassAuth?: boolean
 ): Promise<{ success: boolean; data?: any[]; columns?: string[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; rechartsConfig?: any; rechartsData?: any[]; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
     const debugLogs: string[] = [];
     const tStart = performance.now();
 
     try {
-        const user = await getAuthenticatedUser();
+        let user: any = null;
+        if (_bypassAuth) {
+            if (connectorId && connectorId !== 'none') {
+                const conn = await db.connector.findUnique({ where: { id: connectorId } });
+                if (conn) {
+                    user = { id: 'system-scheduler', companyId: conn.companyId };
+                }
+            }
+            if (!user) user = { id: 'system-scheduler', companyId: 'system-override' };
+        } else {
+            user = await getAuthenticatedUser();
+        }
         let envVars: Record<string, string> = {};
 
 
@@ -1871,7 +1903,8 @@ export async function executePythonPreviewAction(
                                 const res = await executeSqlPreviewAction(
                                     dep.query,
                                     dep.connectorId || '', // Can be undefined/empty
-                                    dep.pipelineDependencies
+                                    dep.pipelineDependencies,
+                                    _bypassAuth // Pass through bypass flag
                                 );
                                 if (res.data) {
                                     queryResults = res.data;
@@ -1909,7 +1942,8 @@ export async function executePythonPreviewAction(
                             'table',
                             {},
                             dep.pipelineDependencies, // Pass its own dependencies!
-                            dep.connectorId
+                            dep.connectorId,
+                            _bypassAuth // Pass through bypass flag
                         );
 
                         if (recursiveRes.success && recursiveRes.data) {

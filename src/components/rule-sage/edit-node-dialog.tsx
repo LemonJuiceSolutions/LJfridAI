@@ -2097,7 +2097,13 @@ export default function EditNodeDialog({
                               isPython: t.isPython,
                               pythonCode: t.pythonCode,
                               pythonOutputType: t.pythonOutputType,
-                              pipelineDependencies: t.pipelineDependencies
+                              pipelineDependencies: t.pipelineDependencies,
+                              writesToDatabase: t.writesToDatabase,
+                              sqlExportTargetTableName: t.sqlExportTargetTableName,
+                              sqlExportTargetConnectorId: t.sqlExportTargetConnectorId,
+                              sqlExportSourceTables: t.sqlExportSourceTables,
+                              nodeId: t.nodeId,
+                              path: t.path
                             })) || [],
                             sqlExportConfig: {
                               sourceTables: sqlExportSourceTables,
@@ -2417,7 +2423,13 @@ export default function EditNodeDialog({
                                 isPython: t.isPython,
                                 pythonCode: t.pythonCode,
                                 pythonOutputType: t.pythonOutputType,
-                                pipelineDependencies: t.pipelineDependencies
+                                pipelineDependencies: t.pipelineDependencies,
+                                writesToDatabase: t.writesToDatabase,
+                                sqlExportTargetTableName: t.sqlExportTargetTableName,
+                                sqlExportTargetConnectorId: t.sqlExportTargetConnectorId,
+                                sqlExportSourceTables: t.sqlExportSourceTables,
+                                nodeId: t.nodeId,
+                                path: t.path
                               })) || [],
                               sqlExportConfig: {
                                 sourceTables: sqlExportSourceTables,
@@ -3987,7 +3999,14 @@ export default function EditNodeDialog({
                               isPython: t.isPython,
                               pythonCode: t.pythonCode,
                               pythonOutputType: t.pythonOutputType,
-                              pipelineDependencies: t.pipelineDependencies
+                              pythonOutputType: t.pythonOutputType,
+                              pipelineDependencies: t.pipelineDependencies,
+                              writesToDatabase: t.writesToDatabase,
+                              sqlExportTargetTableName: t.sqlExportTargetTableName,
+                              sqlExportTargetConnectorId: t.sqlExportTargetConnectorId,
+                              sqlExportSourceTables: t.sqlExportSourceTables,
+                              nodeId: t.nodeId,
+                              path: t.path
                             })) || []
                           };
                         }}
