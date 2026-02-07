@@ -1173,10 +1173,31 @@ export default function EditNodeDialog({
             // --- EXISTING EXECUTION LOGIC (Python/SQL) ---
             if (ancestor.isPython && ancestor.pythonCode) {
               // Python Execution
+              // Build inputData from accumulated ancestorResults
+              const inputData: Record<string, any[]> = {};
+              console.log(`[BUTTON DEBUG] Building inputData for ${ancestor.name}. ancestorResults keys: ${Object.keys(ancestorResults).join(', ')}`);
+              for (const [key, val] of Object.entries(ancestorResults)) {
+                const valType = val === null ? 'null' : (Array.isArray(val) ? 'array' : typeof val);
+                const hasData = val && typeof val === 'object' && 'data' in val;
+                const dataIsArray = hasData && Array.isArray((val as any).data);
+                console.log(`[BUTTON DEBUG]   Key '${key}': valType=${valType}, hasData=${hasData}, dataIsArray=${dataIsArray}`);
+
+                if (Array.isArray(val)) {
+                  inputData[key] = val;
+                  console.log(`[BUTTON DEBUG]     -> Added as array (${val.length} items)`);
+                } else if (val && val.data && Array.isArray(val.data)) {
+                  inputData[key] = val.data;
+                  console.log(`[BUTTON DEBUG]     -> Extracted .data array (${val.data.length} items)`);
+                } else {
+                  console.log(`[BUTTON DEBUG]     -> SKIPPED (not array and data not array)`);
+                }
+              }
+              console.log(`[BUTTON DEBUG] Final inputData for ${ancestor.name}: ${Object.keys(inputData).join(', ')}`);
+
               const res = await executePythonPreviewAction(
                 ancestor.pythonCode,
                 ancestor.pythonOutputType || 'table',
-                {}, // variables
+                inputData, // Pass accumulated ancestor data
                 (Array.isArray(ancestor.pipelineDependencies) ? ancestor.pipelineDependencies : []).map((d: any) => ({
                   tableName: d.tableName,
                   query: d.query,
@@ -1187,6 +1208,7 @@ export default function EditNodeDialog({
                 })),
                 ancestor.connectorId
               );
+              console.log(`[BUTTON DEBUG] Result for ${ancestor.name}: success=${res.success}, hasData=${!!res.data}, dataIsArray=${Array.isArray(res.data)}, dataLength=${res.data?.length || 'N/A'}, hasVariables=${!!res.variables}`);
               if (res.success) {
                 success = true;
                 ancestorResults[ancestor.name] = {

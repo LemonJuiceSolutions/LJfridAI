@@ -292,78 +292,151 @@ export class SchedulerService {
 
   private async executeAncestorChain(
     contextTables: any[],
-    // Optional: filter to only execute ancestors of specific nodes.
-    // If null/empty, executes all in contextTables (safer for full context refresh)
-    targetNodeNames?: string[],
-    _bypassAuth: boolean = true // Added bypass flag
+    targetNodeNames?: string[], // Optional: filter
+    _bypassAuth: boolean = true
   ): Promise<Record<string, any>> {
     const results: Record<string, any> = {};
-    const pipelineReport: Array<{ name: string, type: string, status: 'success' | 'error' | 'skipped', error?: string, timestamp: string }> = [];
+    // Store results with normalized keys for lookup, but allow original keys too
+    const resultsNormalized: Record<string, any> = {};
+
+    const pipelineReport: Array<{ name: string, type: string, status: 'success' | 'error' | 'skipped', error?: string, timestamp: string, nodePath?: string }> = [];
     if (!contextTables || contextTables.length === 0) return { results, pipelineReport };
 
-    // 1. Build Dependency Graph
+    // 1. Build Dependency Graph (Case-Insensitive Normalization)
     const graph = new Map<string, string[]>();
+    const nodeNameMap = new Map<string, string>(); // normalized -> original
+
     contextTables.forEach(t => {
-      // Direct dependencies
-      const deps = (t.pipelineDependencies || []).map((d: any) => d.tableName);
-      graph.set(t.name, deps);
+      const normalizedName = t.name.toLowerCase().trim();
+      nodeNameMap.set(normalizedName, t.name);
+
+      // Direct dependencies (normalize them too)
+      const deps = (t.pipelineDependencies || []).map((d: any) => d.tableName.toLowerCase().trim());
+      graph.set(normalizedName, deps);
     });
 
     // 2. Radiological Sort (Topological)
     const visited = new Set<string>();
-    const sorted: string[] = [];
+    const sortedNormalized: string[] = [];
     const visiting = new Set<string>(); // Cycle detection
 
-    const visit = (node: string) => {
-      if (visited.has(node)) return;
-      if (visiting.has(node)) return; // Cycle detected, skip
+    const visit = (normalizedNode: string) => {
+      if (visited.has(normalizedNode)) return;
+      if (visiting.has(normalizedNode)) return; // Cycle detected
 
-      visiting.add(node);
-      const deps = graph.get(node) || [];
-      deps.forEach(d => visit(d));
-      visiting.delete(node);
-      visited.add(node);
-      sorted.push(node);
+      visiting.add(normalizedNode);
+      const deps = graph.get(normalizedNode) || [];
+
+      // Visit dependencies first
+      deps.forEach(d => {
+        // Only visit if it's in our context (exists in graph)
+        if (graph.has(d)) {
+          visit(d);
+        }
+      });
+
+      visiting.delete(normalizedNode);
+      visited.add(normalizedNode);
+      sortedNormalized.push(normalizedNode);
     };
 
-    contextTables.forEach(t => visit(t.name));
+    // Visit all nodes in context
+    contextTables.forEach(t => visit(t.name.toLowerCase().trim()));
+
+    logger.log(`[AncestorChain] Execution Order: ${sortedNormalized.map(n => nodeNameMap.get(n)).join(' -> ')}`);
 
     // 3. Execute in Order
-    for (const tableName of sorted) {
-      const tableDef = contextTables.find(t => t.name === tableName);
+    for (const normalizedName of sortedNormalized) {
+      const originalName = nodeNameMap.get(normalizedName);
+      if (!originalName) continue;
+
+      const tableDef = contextTables.find(t => t.name === originalName);
       if (!tableDef) continue;
 
       // Skip if it doesn't have execution logic
       const hasLogic = (tableDef.isPython && tableDef.pythonCode) || (!tableDef.isPython && tableDef.sqlQuery);
       if (!hasLogic) continue;
 
-      // Skip if explicitly excluded (not in target ancestors) - optimization
-      // For now, we execute all in contextTables to be safe and mimicking "Full Refresh"
-
-      logger.log(`[AncestorChain] Executing ancestor: ${tableName} (${tableDef.isPython ? 'Python' : 'SQL'})`);
+      logger.log(`[AncestorChain] Executing ancestor: ${originalName} (${tableDef.isPython ? 'Python' : 'SQL'})`);
 
       try {
         let resultData: any = null;
 
         // A. EXECUTE
         if (tableDef.isPython && tableDef.pythonCode) {
-          // Prepare dependencies from RESULTS
-          const deps = (tableDef.pipelineDependencies || []).map((d: any) => {
-            // If we have a result for this dep, pass it?
-            // executePythonPreviewAction expects dependencies definitions, not data directly?
-            // Actually, executePythonPreviewAction in backend fetches data if it's a "pipeline" dependency type.
-            // But if we already have data, we should probably pass it or let the action fetch it efficiently.
-            // The action signature: (code, mode, vars, dependencies, connectorId)
-            // 'dependencies' arg is definitions. The action will re-execute them?
-            // NO. executePythonPreviewAction re-executes dependencies unless...
-            // Wait, executePythonPreviewAction DOES recursive execution?
-            // Checking 'executePythonPreviewAction' source would be good. 
-            // But if it does, why do we need this chain?
-            // 'executePythonPreviewAction' usually executes the provided dependencies. 
-            // IF those dependencies are Python, it executes them.
-            // IF those dependencies are SQL, it executes them.
-            // BUT it doesn't handle "Write to Database" for them.
+          // Pass ALL available results to Python (not just explicit deps)
+          // This allows scripts to access any table computed earlier in the pipeline
+          const inputData: Record<string, any> = {};
 
+          // DEBUG: Log what's in resultsNormalized before extraction
+          logger.log(`[AncestorChain] Building inputData for ${originalName}. resultsNormalized keys: ${Object.keys(resultsNormalized).join(', ')}`);
+
+          // First, add all available results by their original names
+          // IMPORTANT: Extract .data from result objects (matching button UI behavior)
+          for (const [normKey, val] of Object.entries(resultsNormalized)) {
+            // Find the original name for this normalized key
+            const origName = nodeNameMap.get(normKey) || normKey;
+
+            // DEBUG: Log each value type
+            const valType = val === null ? 'null' : (Array.isArray(val) ? 'array' : typeof val);
+            const hasData = val && typeof val === 'object' && 'data' in val;
+            const dataValue = hasData ? (val as any).data : null;
+            const dataType = dataValue === null ? 'null' : (dataValue === undefined ? 'undefined' : (Array.isArray(dataValue) ? 'array' : typeof dataValue));
+            logger.log(`[AncestorChain]   Key '${normKey}' -> '${origName}': type=${valType}, hasData=${hasData}, dataType=${dataType}`);
+
+            if (val !== undefined && val !== null) {
+              // Match button UI logic: extract .data if it's an object with .data property
+              if (Array.isArray(val)) {
+                inputData[origName] = val;
+                logger.log(`[AncestorChain]     -> Added as array directly (${val.length} items)`);
+              } else if (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) {
+                inputData[origName] = val.data; // Extract .data from result object
+                logger.log(`[AncestorChain]     -> Extracted .data array (${val.data.length} items)`);
+              } else if (val && typeof val === 'object' && 'data' in val && val.data !== null && val.data !== undefined) {
+                // .data exists and is not null/undefined (but not array)
+                inputData[origName] = val.data;
+                logger.log(`[AncestorChain]     -> Extracted .data (non-array value)`);
+              } else if (val && typeof val === 'object' && 'variables' in val && (val as any).variables) {
+                // Python returned variables instead of data - pass them too
+                inputData[origName] = (val as any).variables;
+                logger.log(`[AncestorChain]     -> Extracted .variables object`);
+              } else if (val && typeof val === 'object' && !('data' in val)) {
+                // Object without .data - pass as-is (might be raw result)
+                inputData[origName] = val;
+                logger.log(`[AncestorChain]     -> Added object as-is (no .data property)`);
+              } else {
+                // val.data is null/undefined - SKIP this entry, don't pollute inputData
+                logger.log(`[AncestorChain]     -> SKIPPED (data is null/undefined)`);
+              }
+            }
+          }
+
+          // Also add using explicit dependency names (might be aliased differently)
+          (tableDef.pipelineDependencies || []).forEach((d: any) => {
+            const depNorm = d.tableName.toLowerCase().trim();
+            const val = resultsNormalized[depNorm];
+            if (val !== undefined) {
+              // Same extraction logic for explicit dependencies
+              if (Array.isArray(val)) {
+                inputData[d.tableName] = val;
+              } else if (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) {
+                inputData[d.tableName] = val.data;
+              } else if (val && typeof val === 'object' && 'data' in val && val.data !== null && val.data !== undefined) {
+                inputData[d.tableName] = val.data;
+              } else if (val && typeof val === 'object' && 'variables' in val && (val as any).variables) {
+                inputData[d.tableName] = (val as any).variables;
+              } else if (val && typeof val === 'object' && !('data' in val)) {
+                inputData[d.tableName] = val;
+              }
+              // else: skip if data is null/undefined
+            }
+          });
+
+          // DEBUG: Log final inputData keys
+          logger.log(`[AncestorChain] Final inputData for ${originalName}: ${Object.keys(inputData).join(', ')}`);
+
+          // Prepare dependencies definitions
+          const deps = (tableDef.pipelineDependencies || []).map((d: any) => {
             return {
               tableName: d.tableName,
               query: d.query,
@@ -377,41 +450,42 @@ export class SchedulerService {
           const res = await executePythonPreviewAction(
             tableDef.pythonCode,
             tableDef.pythonOutputType || 'table',
-            {},
+            inputData, // PASS DATA HERE
             deps,
             tableDef.connectorId,
             _bypassAuth
           );
+
           if (res.success) {
-            if (tableDef.pythonOutputType === 'chart') {
-              // Capture detailed chart results
-              resultData = {
-                type: 'chart',
-                name: tableName,
-                chartBase64: res.chartBase64,
-                chartHtml: res.chartHtml,
-                rechartsConfig: res.rechartsConfig,
-                rechartsData: res.rechartsData,
-                stdout: res.stdout
-              };
-            } else if (res.data) {
-              resultData = res.data;
-            } else if (res.variables) {
-              resultData = res.variables;
-            }
+            // IMPORTANT: Store in SAME format as button UI - always wrap with .data property
+            // Button does: ancestorResults[name] = { data: res.data, chartBase64: ..., variables: ... }
+            resultData = {
+              data: res.data,
+              chartBase64: res.chartBase64,
+              chartHtml: res.chartHtml,
+              rechartsConfig: res.rechartsConfig,
+              rechartsData: res.rechartsData,
+              variables: res.variables,
+              stdout: res.stdout
+            };
           } else {
-            logger.error(`[AncestorChain] Error executing Python node ${tableName}: ${res.error}`);
+            logger.error(`[AncestorChain] Error executing Python node ${originalName}: ${res.error}`);
+            pipelineReport.push({ name: originalName, type: 'Python', status: 'error', error: res.error, timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
           }
         } else if (tableDef.sqlQuery) {
           // SQL
-          // Dependencies
-          const deps = (tableDef.pipelineDependencies || []).map((d: any) => ({
-            tableName: d.tableName,
-            query: d.query,
-            isPython: d.isPython,
-            pythonCode: d.pythonCode,
-            connectorId: d.connectorId
-          }));
+          // Dependencies - inject data if available
+          const deps = (tableDef.pipelineDependencies || []).map((d: any) => {
+            const depNorm = d.tableName.toLowerCase().trim();
+            return {
+              tableName: d.tableName,
+              query: d.query,
+              isPython: d.isPython,
+              pythonCode: d.pythonCode,
+              connectorId: d.connectorId,
+              data: resultsNormalized[depNorm] // INJECT DATA HERE via normalized lookup
+            };
+          });
 
           const res = await executeSqlPreviewAction(
             tableDef.sqlQuery,
@@ -420,48 +494,82 @@ export class SchedulerService {
             _bypassAuth
           );
           if (res.error) {
-            logger.error(`[AncestorChain] Error executing SQL node ${tableName}: ${res.error}`);
+            logger.error(`[AncestorChain] Error executing SQL node ${originalName}: ${res.error}`);
+            pipelineReport.push({ name: originalName, type: 'SQL', status: 'error', error: res.error, timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
           } else {
             resultData = res.data;
           }
         }
 
         if (resultData) {
-          // Store under primary name
-          results[tableName] = resultData;
-          // Also store under all alternative names for lookup by placeholder
-          const allNames = tableDef.allNames || [tableName];
-          for (const altName of allNames) {
-            if (altName !== tableName) {
-              results[altName] = resultData;
+          // Check if there's already a result for this name
+          const existingResult = resultsNormalized[normalizedName];
+          const newResultIsArray = Array.isArray(resultData);
+          const existingResultIsArray = Array.isArray(existingResult);
+          const existingHasDataArray = existingResult && typeof existingResult === 'object' && 'data' in existingResult && Array.isArray(existingResult.data);
+
+          // PRIORITY LOGIC: SQL (array) results should override Python chart (object without data array)
+          // This fixes the duplicate node name issue where HR2 Python chart blocks HR2 SQL
+          let shouldStore = true;
+          if (existingResult !== undefined) {
+            if (newResultIsArray && !existingResultIsArray && !existingHasDataArray) {
+              // New is array (SQL), existing is object without data array (Python chart) -> OVERRIDE
+              logger.log(`[AncestorChain] Overriding ${originalName}: new SQL array replaces existing Python chart`);
+            } else if (!newResultIsArray && (existingResultIsArray || existingHasDataArray)) {
+              // New is object (Python chart), existing is array (SQL) or has data array -> DON'T OVERRIDE
+              logger.log(`[AncestorChain] Keeping existing ${originalName}: SQL array preserved over Python chart`);
+              shouldStore = false;
             }
           }
-          pipelineReport.push({ name: tableName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'success', timestamp: new Date().toISOString() });
+
+          if (shouldStore) {
+            // Store under primary name
+            results[originalName] = resultData;
+            resultsNormalized[normalizedName] = resultData;
+
+            // Also store under all alternative names
+            const allNames = tableDef.allNames || [originalName];
+            for (const altName of allNames) {
+              if (altName !== originalName) {
+                results[altName] = resultData;
+                resultsNormalized[altName.toLowerCase().trim()] = resultData;
+              }
+            }
+          }
+          pipelineReport.push({ name: originalName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'success', timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
         } else {
-          pipelineReport.push({ name: tableName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'skipped', timestamp: new Date().toISOString() });
+          if (!pipelineReport.find(r => r.name === originalName)) {
+            pipelineReport.push({ name: originalName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'skipped', error: 'No result produced', timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
+          }
         }
 
-        // B. WRITE TO DATABASE (The Missing Piece!)
-        if (tableDef.writesToDatabase && tableDef.sqlExportConfig) {
-          const { targetConnectorId, targetTableName } = tableDef.sqlExportConfig;
-          if (targetConnectorId && targetTableName && resultData) {
-            logger.log(`[AncestorChain] Writing ${tableName} to ${targetTableName}`);
-            // Ensure data is array
-            const dataArr = Array.isArray(resultData) ? resultData : [resultData];
-            if (dataArr.length > 0) {
+        // B. WRITE TO DATABASE
+        // Fix: Check for export config using the actual field names from the node structure
+        const targetTableName = tableDef.sqlExportTargetTableName || tableDef.sqlExportConfig?.targetTableName;
+        const targetConnectorId = tableDef.sqlExportTargetConnectorId || tableDef.sqlExportConfig?.targetConnectorId || tableDef.connectorId;
+
+        if (tableDef.writesToDatabase && targetTableName && targetConnectorId && resultData) {
+          logger.log(`[AncestorChain] Writing ${originalName} to ${targetTableName}`);
+          const dataArr = Array.isArray(resultData) ? resultData : [resultData];
+          if (dataArr.length > 0) {
+            try {
               await exportTableToSqlAction(
                 targetConnectorId,
                 targetTableName,
                 dataArr,
                 true // overwrite
               );
+              pipelineReport.push({ name: `💾 Write ${targetTableName}`, type: 'export', status: 'success', timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
+            } catch (exportErr: any) {
+              logger.error(`[AncestorChain] Export failed for ${originalName} to ${targetTableName}: ${exportErr.message}`);
+              pipelineReport.push({ name: `💾 Write ${targetTableName}`, type: 'export', status: 'error', error: exportErr.message, timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
             }
           }
         }
 
       } catch (e: any) {
-        logger.error(`[AncestorChain] Exception executing ${tableName}: ${e.message}`);
-        pipelineReport.push({ name: tableName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'error', error: e.message, timestamp: new Date().toISOString() });
+        logger.error(`[AncestorChain] Exception executing ${originalName}: ${e.message}`);
+        pipelineReport.push({ name: originalName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'error', error: e.message, timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
       }
     }
 
@@ -583,7 +691,13 @@ export class SchedulerService {
       const nodeInfo: any = allNames.length > 0 ? {
         name: allNames[0], // Primary name
         allNames: allNames, // Used for matching
-        isPython: !!node.pythonCode,
+        // IMPORTANT: Final robust classification
+        // 1. If it's a CHART, it MUST be Python (SQL can't do charts directly)
+        // 2. If it has a SQL query, it MUST be SQL (prioritize SQL over Python table/variable)
+        // 3. Otherwise, check for Python code
+        // CRITICAL: If has sqlQuery, ALWAYS treat as SQL (even if pythonOutputType=chart)
+        // Charts don't produce table data, so children can't use them. SQL provides data.
+        isPython: node.sqlQuery ? false : !!(node.pythonCode || node.pythonOutputType),
         connectorId: node.sqlConnectorId || node.connectorId,
         sqlQuery: node.sqlQuery,
         pythonCode: node.pythonCode,
@@ -631,26 +745,51 @@ export class SchedulerService {
    */
   private getAllNodesFromTree(treeJson: any): any[] {
     const nodes: any[] = [];
-    const collect = (node: any) => {
+    const collect = (node: any, currentPath: string = 'root') => {
       if (!node || typeof node !== 'object') return;
 
       const allNames = [node.name, node.sqlResultName, node.pythonResultName].filter(Boolean) as string[];
+      const nodeName = allNames[0] || node.id || 'unknown';
+      const nodePath = currentPath;
+
       if (node.id && allNames.length > 0) {
+        // Extract export config - handle both flat and nested structures
+        const exportTargetTableName = node.sqlExportTargetTableName || node.sqlExportAction?.targetTableName;
+        const exportTargetConnectorId = node.sqlExportTargetConnectorId || node.sqlExportAction?.targetConnectorId;
+        const hasExportConfig = !!(exportTargetTableName && exportTargetConnectorId);
+
         nodes.push({
           ...node,
           name: allNames[0],
           allNames,
-          isPython: !!(node.pythonCode || node.pythonResultName)
+          nodePath, // Track the path to this node
+          // IMPORTANT: Final robust classification
+          // 1. If it's a CHART, it MUST be Python
+          // 2. If it has a SQL query, it MUST be SQL
+          // 3. Otherwise, check for Python code/result name
+          // CRITICAL: If has sqlQuery, ALWAYS treat as SQL (even if pythonOutputType=chart)
+          // Charts don't produce table data, so children can't use them. SQL provides data.
+          isPython: node.sqlQuery ? false : !!(node.pythonCode || node.pythonResultName || node.pythonOutputType),
+          connectorId: node.sqlConnectorId || node.connectorId,
+          // Ensure export fields are always present and correct
+          writesToDatabase: hasExportConfig,
+          sqlExportTargetTableName: exportTargetTableName,
+          sqlExportTargetConnectorId: exportTargetConnectorId,
         });
+
+        if (allNames[0] === 'HR2') {
+          logger.log(`[DEBUG HR2] Node properties: isPython=${nodes[nodes.length - 1].isPython}, sqlQuery=${!!node.sqlQuery}, pythonCode=${!!node.pythonCode}, pythonResultName=${node.pythonResultName}, pythonOutputType=${node.pythonOutputType}, nodePath=${nodePath}`);
+        }
       }
 
       if (node.options && typeof node.options === 'object') {
         for (const key in node.options) {
           const val = node.options[key];
+          const childPath = `${nodePath} > ${key}`;
           if (Array.isArray(val)) {
-            val.forEach(item => collect(item));
+            val.forEach((item, idx) => collect(item, `${childPath}[${idx}]`));
           } else {
-            collect(val);
+            collect(val, childPath);
           }
         }
       }
@@ -726,111 +865,99 @@ export class SchedulerService {
     const globalNodes = this.getAllNodesFromTree(treeJson);
     logger.log(`[EmailSend] Flattened tree into ${globalNodes.length} named nodes. Available names: ${globalNodes.map(n => n.allNames.join('|')).join(', ')}`);
 
-    // Map names to actual node objects (CASE-INSENSITIVE)
-    const normalizedRequiredNames = allRequiredNames.map(n => n.toLowerCase().trim());
-    const directlyRequiredNodes = globalNodes.filter(node =>
-      node.allNames.some((name: string) => normalizedRequiredNames.includes(name.toLowerCase().trim()))
-    );
+    // 4. FOR EMAIL TASKS: EXECUTE ALL TREE NODES (like the UI button does)
+    // This ensures all data is fresh, including nodes that might not be in explicit pipelineDependencies
+    // This mirrors exactly what happens when you press the "Send Email" button in the UI
+    logger.log(`[EmailSend] Email task will execute ALL ${globalNodes.length} tree nodes to ensure fresh data`);
 
-    logger.log(`[EmailSend] Matched ${directlyRequiredNodes.length} directly required nodes: ${directlyRequiredNodes.map(n => n.name).join(', ')}`);
+    const availableInputTables = globalNodes;
+    logger.log(`[EmailSend] Total nodes to execute: ${availableInputTables.length} (${availableInputTables.map(n => n.name).join(', ')})`);
 
-    // If the email node itself is a data producer, add it
-    const emailNodeNames = [emailNode.name, emailNode.sqlResultName, emailNode.pythonResultName].filter(Boolean) as string[];
-    if (emailNodeNames.length > 0 && !directlyRequiredNodes.some(n => n.id === emailNode.id)) {
-      directlyRequiredNodes.push({
-        ...emailNode,
-        name: emailNodeNames[0],
-        allNames: emailNodeNames
-      });
-    }
-
-    logger.log(`[EmailSend] Matched ${directlyRequiredNodes.length} total entry points in the tree`);
-
-    // 4. TRANSITIVE DEPENDENCY RESOLUTION
-    const nodesToExecuteMap = new Map<string, any>();
-
-    const resolveDeps = (node: any) => {
-      if (nodesToExecuteMap.has(node.id)) return;
-      nodesToExecuteMap.set(node.id, node);
-
-      const deps = node.pipelineDependencies || [];
-      for (const dep of deps) {
-        // Find the node providing this dependency (by name)
-        const depNode = globalNodes.find(n => n.allNames.includes(dep.tableName));
-        if (depNode) {
-          resolveDeps(depNode);
-        }
-      }
-    };
-
-    directlyRequiredNodes.forEach(node => resolveDeps(node));
-    const availableInputTables = Array.from(nodesToExecuteMap.values());
-
-    logger.log(`[EmailSend] Resolved transitive dependencies: ${availableInputTables.length} total nodes to execute (${availableInputTables.map(n => n.name).join(', ')})`);
-
-    logger.log(`[EmailSend] Found ${availableInputTables.length} available nodes (including target)`);
-
-    // 4. Execute ALL ancestors to refresh data (like UI's executeFullPipeline)
+    // 6. Execute ALL ancestors to refresh data (like UI's executeFullPipeline)
     const { results: ancestorResults, pipelineReport } = await this.executeAncestorChain(availableInputTables, undefined, true);
     logger.log(`[EmailSend] Ancestor chain completed with ${Object.keys(ancestorResults).length} results and ${pipelineReport.length} report entries`);
 
-    // 5. Selected data is already extracted above
-    const selectedTables: any[] = [];
-    logger.log(`[EmailSend] Matching SQL tables. Placeholders in body: ${JSON.stringify(placeholderTableNames)}`);
-    for (const table of availableInputTables) {
-      if (table.isPython) {
-        logger.log(`[EmailSend] Skipping Python node during SQL phase: ${table.name}`);
-        continue; // Skip Python outputs
+    // 5. PREFER saved config if available (from taskConfigProvider snapshot)
+    // This is more reliable than re-discovering from tree since the UI already computed these correctly
+    let selectedTables: any[] = [];
+    let selectedPythonOutputs: any[] = [];
+
+    if (Array.isArray((config as any).selectedTables) && (config as any).selectedTables.length > 0) {
+      logger.log(`[EmailSend] Using saved config.selectedTables (${(config as any).selectedTables.length} items)`);
+      selectedTables = (config as any).selectedTables;
+    }
+
+    if (Array.isArray((config as any).selectedPythonOutputs) && (config as any).selectedPythonOutputs.length > 0) {
+      logger.log(`[EmailSend] Using saved config.selectedPythonOutputs (${(config as any).selectedPythonOutputs.length} items)`);
+      selectedPythonOutputs = (config as any).selectedPythonOutputs;
+    }
+
+    // Only re-discover from tree if saved config arrays are empty
+    if (selectedTables.length === 0 && selectedPythonOutputs.length === 0) {
+      logger.log(`[EmailSend] No saved config, falling back to tree discovery`);
+      logger.log(`[EmailSend] Matching SQL tables. Placeholders in body: ${JSON.stringify(placeholderTableNames)}`);
+      for (const table of availableInputTables) {
+        if (table.isPython) {
+          logger.log(`[EmailSend] Skipping Python node during SQL phase: ${table.name}`);
+          continue; // Skip Python outputs
+        }
+
+        // Check if ANY of the node's names match the placeholders (Inclusive of all types for SQL nodes)
+        const names = table.allNames || [table.name];
+        const inBody = (tablesInBody || []).some((n: string) => names.includes(n)) ||
+          placeholderTableNames.some((n: string) => names.includes(n)) ||
+          placeholderChartNames.some((n: string) => names.includes(n)) ||
+          placeholderVarNames.some((n: string) => names.includes(n));
+        const asExcel = (tablesAsExcel || []).some((n: string) => names.includes(n));
+        logger.log(`[EmailSend] SQL Table ${table.name} (Alternatives: ${names.join(',')}): inBody=${inBody}, asExcel=${asExcel}`);
+
+        if (inBody || asExcel) {
+          selectedTables.push({
+            name: table.name,
+            query: table.sqlQuery || `SELECT * FROM ${table.name}`,
+            inBody,
+            asExcel,
+            pipelineDependencies: table.pipelineDependencies
+          });
+        }
       }
 
-      // Check if ANY of the node's names match the placeholders (Inclusive of all types for SQL nodes)
-      const names = table.allNames || [table.name];
-      const inBody = (tablesInBody || []).some((n: string) => names.includes(n)) ||
-        placeholderTableNames.some((n: string) => names.includes(n)) ||
-        placeholderChartNames.some((n: string) => names.includes(n)) ||
-        placeholderVarNames.some((n: string) => names.includes(n));
-      const asExcel = (tablesAsExcel || []).some((n: string) => names.includes(n));
-      logger.log(`[EmailSend] SQL Table ${table.name} (Alternatives: ${names.join(',')}): inBody=${inBody}, asExcel=${asExcel}`);
+      // 7. Build selectedPythonOutputs payload
+      logger.log(`[EmailSend] Matching Python outputs. Placeholders in body: ${JSON.stringify(allReferencedPythonNames)}`);
+      for (const pythonNode of availableInputTables.filter(t => t.isPython)) {
+        const names = pythonNode.allNames || [pythonNode.name];
+        const inBody = (pythonOutputsInBody || []).some((n: string) => names.includes(n)) || allReferencedPythonNames.some((n: string) => names.includes(n));
+        const asAttachment = (pythonOutputsAsAttachment || []).some((n: string) => names.includes(n));
+        logger.log(`[EmailSend] Python Node ${pythonNode.name} (Alternatives: ${names.join(',')}): inBody=${inBody}, asAttachment=${asAttachment}`);
 
-      if (inBody || asExcel) {
-        selectedTables.push({
-          name: table.name,
-          query: table.sqlQuery || `SELECT * FROM ${table.name}`,
-          inBody,
-          asExcel,
-          pipelineDependencies: table.pipelineDependencies
-        });
+        if (inBody || asAttachment) {
+          selectedPythonOutputs.push({
+            name: pythonNode.name,
+            code: pythonNode.pythonCode,
+            outputType: pythonNode.pythonOutputType || 'table',
+            connectorId: pythonNode.connectorId,
+            inBody,
+            asAttachment,
+            pipelineDependencies: pythonNode.pipelineDependencies
+          });
+        }
       }
     }
 
-    // 7. Build selectedPythonOutputs payload
-    const selectedPythonOutputs: any[] = [];
-    logger.log(`[EmailSend] Matching Python outputs. Placeholders in body: ${JSON.stringify(allReferencedPythonNames)}`);
-    for (const pythonNode of availableInputTables.filter(t => t.isPython)) {
-      const names = pythonNode.allNames || [pythonNode.name];
-      const inBody = (pythonOutputsInBody || []).some((n: string) => names.includes(n)) || allReferencedPythonNames.some((n: string) => names.includes(n));
-      const asAttachment = (pythonOutputsAsAttachment || []).some((n: string) => names.includes(n));
-      logger.log(`[EmailSend] Python Node ${pythonNode.name} (Alternatives: ${names.join(',')}): inBody=${inBody}, asAttachment=${asAttachment}`);
-
-      if (inBody || asAttachment) {
-        selectedPythonOutputs.push({
-          name: pythonNode.name,
-          code: pythonNode.pythonCode,
-          outputType: pythonNode.pythonOutputType || 'table',
-          connectorId: pythonNode.connectorId,
-          inBody,
-          asAttachment,
-          pipelineDependencies: pythonNode.pipelineDependencies
-        });
-      }
-    }
-
-    // 8. Infer SQL connector ID
+    // 8. Infer SQL connector ID - PREFER saved config first
     let effectiveSqlConnectorId = '';
-    if (selectedTables.length > 0) {
+
+    // First check saved config (from taskConfigProvider snapshot)
+    if ((config as any).sqlConnectorId) {
+      effectiveSqlConnectorId = (config as any).sqlConnectorId;
+      logger.log(`[EmailSend] Using saved config.sqlConnectorId: ${effectiveSqlConnectorId}`);
+    }
+    // Fallback to inferring from availableInputTables
+    else if (selectedTables.length > 0) {
       const firstTable = availableInputTables.find(t => t.name === selectedTables[0].name);
       if (firstTable?.connectorId) {
         effectiveSqlConnectorId = firstTable.connectorId;
+        logger.log(`[EmailSend] Inferred sqlConnectorId from tree: ${effectiveSqlConnectorId}`);
       }
     }
 

@@ -394,15 +394,21 @@ export async function pollForTokenAction(tenantId: string, clientId: string, dev
 }
 
 // Get cached access token (for use in other parts of the app)
-export async function getCachedSharePointTokenAction(tenantId: string, clientId: string) {
-    const sessionUser = await getAuthenticatedUser();
-    if (!sessionUser) return { error: 'Non autorizzato' };
+// Get cached access token (for use in other parts of the app)
+export async function getCachedSharePointTokenAction(tenantId: string, clientId: string, clientSecret?: string, systemCompanyId?: string) {
+    let companyId = systemCompanyId;
 
-    const user = await db.user.findUnique({ where: { id: sessionUser.id } });
-    if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
+    if (!companyId) {
+        const sessionUser = await getAuthenticatedUser();
+        if (!sessionUser) return { error: 'Non autorizzato' };
+
+        const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+        if (!user || !user.companyId) return { error: 'Utente non associato a nessuna azienda' };
+        companyId = user.companyId;
+    }
 
     try {
-        const cachedData = await loadTokenCache(user.companyId);
+        const cachedData = await loadTokenCache(companyId);
         if (!cachedData) {
             return { needsAuth: true };
         }
@@ -445,7 +451,7 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
                 if (data.access_token) {
                     console.log(`[SharePoint Auth] Refresh successful! New expiry: ${new Date(Date.now() + data.expires_in * 1000).toISOString()}`);
                     // Update cache with new token
-                    await saveTokenCache(user.companyId, JSON.stringify({
+                    await saveTokenCache(companyId, JSON.stringify({
                         accessToken: data.access_token,
                         refreshToken: data.refresh_token || tokenData.refreshToken,
                         expiresOn: new Date(Date.now() + data.expires_in * 1000).toISOString(),

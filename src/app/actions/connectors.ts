@@ -431,7 +431,7 @@ export async function sendTestEmailWithDataAction(params: {
     availableTriggers?: TriggerItem[];
     mediaAttachments?: string[];
     preCalculatedResults?: Record<string, any>;
-    pipelineReport?: Array<{ name: string, type: string, status: 'success' | 'error' | 'skipped', error?: string, timestamp: string }>;
+    pipelineReport?: Array<{ name: string, type: string, status: 'success' | 'error' | 'skipped', error?: string, timestamp: string, nodePath?: string }>;
     _bypassAuth?: boolean; // INTERNAL USE ONLY: For scheduler
 }) {
     console.log('[EMAIL DEBUG] sendTestEmailWithDataAction called with:', {
@@ -1079,116 +1079,120 @@ export async function sendTestEmailWithDataAction(params: {
                     fullHtml += `<div class="table-section"><div class="table-title">${pyResult.name}</div><pre style="background: #f8fafc; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px; border: 1px solid #e5e7eb;">${JSON.stringify(pyResult.variables, null, 2)}</pre></div>`;
                 }
             }
+        }
 
-            // Add Pipeline Execution Report Footer (if provided)
-            if (params.pipelineReport && params.pipelineReport.length > 0) {
-                fullHtml += `
-            <div style="margin-top: 30px; padding: 15px; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border-radius: 8px; color: #f1f5f9;">
-                <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; color: #94a3b8;">
-                    🔄 Pipeline di Esecuzione
-                </div>
-                <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
-                    <thead>
-                        <tr style="border-bottom: 1px solid #475569;">
-                            <th style="text-align: left; padding: 6px; color: #94a3b8;">Nome</th>
-                            <th style="text-align: left; padding: 6px; color: #94a3b8;">Tipo</th>
-                            <th style="text-align: left; padding: 6px; color: #94a3b8;">Stato</th>
-                            <th style="text-align: left; padding: 6px; color: #94a3b8;">Ora</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${params.pipelineReport.map(entry => {
-                    const statusIcon = entry.status === 'success' ? '✅' : entry.status === 'error' ? '❌' : '⏭️';
-                    const statusColor = entry.status === 'success' ? '#4ade80' : entry.status === 'error' ? '#f87171' : '#94a3b8';
-                    const typeIcon = entry.type === 'Python' ? '🐍' : '📊';
-                    const time = new Date(entry.timestamp).toLocaleTimeString('it-IT');
-                    return `
-                                <tr style="border-bottom: 1px solid #334155;">
-                                    <td style="padding: 6px; color: #e2e8f0;">${entry.name}</td>
-                                    <td style="padding: 6px; color: #94a3b8;">${typeIcon} ${entry.type}</td>
-                                    <td style="padding: 6px; color: ${statusColor};">${statusIcon} ${entry.status}${entry.error ? ` - ${entry.error.substring(0, 50)}...` : ''}</td>
-                                    <td style="padding: 6px; color: #94a3b8;">${time}</td>
-                                </tr>
-                            `;
-                }).join('')}
-                    </tbody>
-                </table>
+        // Add Pipeline Execution Report Footer (if provided)
+        if (params.pipelineReport && params.pipelineReport.length > 0) {
+            fullHtml += `
+        <div style="margin-top: 30px; padding: 15px; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border-radius: 8px; color: #f1f5f9;">
+            <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; color: #94a3b8;">
+                🔄 Pipeline di Esecuzione
             </div>
-            `;
-            }
+            <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
+                <thead>
+                    <tr style="border-bottom: 1px solid #475569;">
+                        <th style="text-align: left; padding: 6px; color: #94a3b8;">Nome</th>
+                        <th style="text-align: left; padding: 6px; color: #94a3b8;">Nodo</th>
+                        <th style="text-align: left; padding: 6px; color: #94a3b8;">Tipo</th>
+                        <th style="text-align: left; padding: 6px; color: #94a3b8;">Stato</th>
+                        <th style="text-align: left; padding: 6px; color: #94a3b8;">Ora</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${params.pipelineReport.map(entry => {
+                const statusIcon = entry.status === 'success' ? '✅' : entry.status === 'error' ? '❌' : '⏭️';
+                const statusColor = entry.status === 'success' ? '#4ade80' : entry.status === 'error' ? '#f87171' : '#94a3b8';
+                const typeIcon = entry.type === 'Python' ? '🐍' : '📊';
+                const time = new Date(entry.timestamp).toLocaleTimeString('it-IT');
+                const nodePathShort = entry.nodePath ? entry.nodePath.split('.').pop()?.replace(/[\[\]']/g, '') || entry.nodePath.slice(-20) : '-';
+                return `
+                            <tr style="border-bottom: 1px solid #334155;">
+                                <td style="padding: 6px; color: #e2e8f0;">${entry.name}</td>
+                                <td style="padding: 6px; color: #64748b; font-size: 9px;">${nodePathShort}</td>
+                                <td style="padding: 6px; color: #94a3b8;">${typeIcon} ${entry.type}</td>
+                                <td style="padding: 6px; color: ${statusColor};">${statusIcon} ${entry.status}${entry.error ? ` - ${entry.error.substring(0, 50)}...` : ''}</td>
+                                <td style="padding: 6px; color: #94a3b8;">${time}</td>
+                            </tr>
+                        `;
+            }).join('')}
+                </tbody>
+            </table>
+        </div>
+        `;
+        }
 
-            fullHtml += `</body></html>`;
+        fullHtml += `</body></html>`;
 
 
-            // Generate Excel attachments (with row limit to prevent size issues)
-            const attachments: any[] = [...inlineAttachments]; // Start with inline chart attachments
+        // Generate Excel attachments (with row limit to prevent size issues)
+        const attachments: any[] = [...inlineAttachments]; // Start with inline chart attachments
 
-            // Process Media Attachments
-            if (params.mediaAttachments && params.mediaAttachments.length > 0 && params.availableMedia) {
-                console.log(`[EMAIL DEBUG] Processing ${params.mediaAttachments.length} media attachments...`);
-                for (const mediaName of params.mediaAttachments) {
-                    const mediaItem = params.availableMedia.find(m =>
-                        (m.name || m.url.split('/').pop() || 'file') === mediaName
-                    );
+        // Process Media Attachments
+        if (params.mediaAttachments && params.mediaAttachments.length > 0 && params.availableMedia) {
+            console.log(`[EMAIL DEBUG] Processing ${params.mediaAttachments.length} media attachments...`);
+            for (const mediaName of params.mediaAttachments) {
+                const mediaItem = params.availableMedia.find(m =>
+                    (m.name || m.url.split('/').pop() || 'file') === mediaName
+                );
 
-                    if (mediaItem) {
-                        try {
-                            let content: Buffer;
-                            if (mediaItem.url.startsWith('http')) {
-                                const res = await fetch(mediaItem.url);
-                                const arrayBuffer = await res.arrayBuffer();
-                                content = Buffer.from(arrayBuffer);
-                            } else {
-                                // Assume local path relative to public
-                                const filePath = path.join(process.cwd(), 'public', mediaItem.url.startsWith('/') ? mediaItem.url.substring(1) : mediaItem.url);
-                                content = await fs.readFile(filePath);
-                            }
-
-                            attachments.push({
-                                filename: mediaItem.name || mediaItem.url.split('/').pop() || 'file',
-                                content: content,
-                            });
-                            console.log(`[EMAIL DEBUG] Attached media: ${mediaName}`);
-                        } catch (err: any) {
-                            console.error(`[EMAIL DEBUG] Failed to attach media ${mediaName}:`, err.message);
+                if (mediaItem) {
+                    try {
+                        let content: Buffer;
+                        if (mediaItem.url.startsWith('http')) {
+                            const res = await fetch(mediaItem.url);
+                            const arrayBuffer = await res.arrayBuffer();
+                            content = Buffer.from(arrayBuffer);
+                        } else {
+                            // Assume local path relative to public
+                            const filePath = path.join(process.cwd(), 'public', mediaItem.url.startsWith('/') ? mediaItem.url.substring(1) : mediaItem.url);
+                            content = await fs.readFile(filePath);
                         }
+
+                        attachments.push({
+                            filename: mediaItem.name || mediaItem.url.split('/').pop() || 'file',
+                            content: content,
+                        });
+                        console.log(`[EMAIL DEBUG] Attached media: ${mediaName}`);
+                    } catch (err: any) {
+                        console.error(`[EMAIL DEBUG] Failed to attach media ${mediaName}:`, err.message);
                     }
                 }
             }
-            const XLSX = await import('xlsx');
-            const MAX_EXCEL_ROWS = 5000; // Limit Excel to 5K rows to keep file size reasonable
+        }
+        const XLSX = await import('xlsx');
+        const MAX_EXCEL_ROWS = 5000; // Limit Excel to 5K rows to keep file size reasonable
 
-            console.log(`[EMAIL DEBUG] Inline chart attachments: ${inlineAttachments.length}`);
-            console.log('[EMAIL DEBUG] Generating Excel attachments...');
+        console.log(`[EMAIL DEBUG] Inline chart attachments: ${inlineAttachments.length}`);
+        console.log('[EMAIL DEBUG] Generating Excel attachments...');
 
-            for (const tr of tableResults) {
-                if (tr.asExcel && tr.data.length > 0) {
-                    console.log(`[EMAIL DEBUG] Creating Excel for ${tr.name} (${tr.data.length} total rows, limiting to ${MAX_EXCEL_ROWS})...`);
+        for (const tr of tableResults) {
+            if (tr.asExcel && tr.data.length > 0) {
+                console.log(`[EMAIL DEBUG] Creating Excel for ${tr.name} (${tr.data.length} total rows, limiting to ${MAX_EXCEL_ROWS})...`);
 
-                    // Limit Excel data to prevent huge files
-                    const excelData = tr.data.slice(0, MAX_EXCEL_ROWS);
-                    const ws = XLSX.utils.json_to_sheet(excelData);
-                    const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, ws, tr.name.substring(0, 31)); // Excel sheet name max 31 chars
-                    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+                // Limit Excel data to prevent huge files
+                const excelData = tr.data.slice(0, MAX_EXCEL_ROWS);
+                const ws = XLSX.utils.json_to_sheet(excelData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, tr.name.substring(0, 31)); // Excel sheet name max 31 chars
+                const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
-                    console.log(`[EMAIL DEBUG] Excel file ${tr.name}.xlsx size: ${(buffer.length / 1024).toFixed(2)} KB`);
+                console.log(`[EMAIL DEBUG] Excel file ${tr.name}.xlsx size: ${(buffer.length / 1024).toFixed(2)} KB`);
 
-                    attachments.push({
-                        filename: `${tr.name}.xlsx`,
-                        content: buffer,
-                        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                    });
-                }
+                attachments.push({
+                    filename: `${tr.name}.xlsx`,
+                    content: buffer,
+                    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                });
             }
+        }
 
-            // Add Python output attachments
-            for (const pyResult of pythonResults) {
-                if (pyResult.asAttachment) {
-                    if (pyResult.type === 'chart') {
-                        if (pyResult.chartHtml) {
-                            // Attach chart as interactive HTML file
-                            const htmlContent = `
+        // Add Python output attachments
+        for (const pyResult of pythonResults) {
+            if (pyResult.asAttachment) {
+                if (pyResult.type === 'chart') {
+                    if (pyResult.chartHtml) {
+                        // Attach chart as interactive HTML file
+                        const htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -1201,89 +1205,89 @@ export async function sendTestEmailWithDataAction(params: {
 </body>
 </html>
                         `.trim();
-                            const buffer = Buffer.from(htmlContent, 'utf8');
-                            console.log(`[EMAIL DEBUG] Chart HTML file ${pyResult.name}.html size: ${(buffer.length / 1024).toFixed(2)} KB`);
-
-                            attachments.push({
-                                filename: `${pyResult.name}.html`,
-                                content: buffer,
-                                contentType: 'text/html'
-                            });
-                        } else if (pyResult.chartBase64) {
-                            // Fallback: Attach as PNG if no HTML available
-                            const buffer = Buffer.from(pyResult.chartBase64, 'base64');
-                            console.log(`[EMAIL DEBUG] Chart PNG file ${pyResult.name}.png size: ${(buffer.length / 1024).toFixed(2)} KB`);
-
-                            attachments.push({
-                                filename: `${pyResult.name}.png`,
-                                content: buffer,
-                                contentType: 'image/png'
-                            });
-                        }
-                    } else if (pyResult.type === 'table' && pyResult.data && pyResult.data.length > 0) {
-                        // Attach table as Excel
-                        const MAX_EXCEL_ROWS = 5000;
-                        const excelData = pyResult.data.slice(0, MAX_EXCEL_ROWS);
-                        const ws = XLSX.utils.json_to_sheet(excelData);
-                        const wb = XLSX.utils.book_new();
-                        XLSX.utils.book_append_sheet(wb, ws, pyResult.name.substring(0, 31));
-                        const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-
-                        console.log(`[EMAIL DEBUG] Python Excel file ${pyResult.name}.xlsx size: ${(buffer.length / 1024).toFixed(2)} KB`);
+                        const buffer = Buffer.from(htmlContent, 'utf8');
+                        console.log(`[EMAIL DEBUG] Chart HTML file ${pyResult.name}.html size: ${(buffer.length / 1024).toFixed(2)} KB`);
 
                         attachments.push({
-                            filename: `${pyResult.name}.xlsx`,
+                            filename: `${pyResult.name}.html`,
                             content: buffer,
-                            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                            contentType: 'text/html'
+                        });
+                    } else if (pyResult.chartBase64) {
+                        // Fallback: Attach as PNG if no HTML available
+                        const buffer = Buffer.from(pyResult.chartBase64, 'base64');
+                        console.log(`[EMAIL DEBUG] Chart PNG file ${pyResult.name}.png size: ${(buffer.length / 1024).toFixed(2)} KB`);
+
+                        attachments.push({
+                            filename: `${pyResult.name}.png`,
+                            content: buffer,
+                            contentType: 'image/png'
                         });
                     }
+                } else if (pyResult.type === 'table' && pyResult.data && pyResult.data.length > 0) {
+                    // Attach table as Excel
+                    const MAX_EXCEL_ROWS = 5000;
+                    const excelData = pyResult.data.slice(0, MAX_EXCEL_ROWS);
+                    const ws = XLSX.utils.json_to_sheet(excelData);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, pyResult.name.substring(0, 31));
+                    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+                    console.log(`[EMAIL DEBUG] Python Excel file ${pyResult.name}.xlsx size: ${(buffer.length / 1024).toFixed(2)} KB`);
+
+                    attachments.push({
+                        filename: `${pyResult.name}.xlsx`,
+                        content: buffer,
+                        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    });
                 }
             }
-
-            // Send email
-            const transporter = nodemailer.createTransport({
-                host: smtpConf.host,
-                port: parseInt(smtpConf.port) || 587,
-                secure: parseInt(smtpConf.port) === 465,
-                auth: { user: smtpConf.user, pass: smtpConf.password },
-                tls: { rejectUnauthorized: false }
-            });
-
-            const mailOptions: any = {
-                from: smtpConf.from || smtpConf.user,
-                to: params.to,
-                subject: params.subject,
-                html: fullHtml,
-                attachments
-            };
-            if (params.cc) mailOptions.cc = params.cc;
-            if (params.bcc) mailOptions.bcc = params.bcc;
-
-            // Log email size info
-            const htmlSizeKB = (Buffer.byteLength(fullHtml, 'utf8') / 1024).toFixed(2);
-            const totalAttachmentSizeKB = attachments.reduce((sum, att) => sum + att.content.length, 0) / 1024;
-            const totalEmailSizeMB = ((Buffer.byteLength(fullHtml, 'utf8') + attachments.reduce((sum, att) => sum + att.content.length, 0)) / 1024 / 1024).toFixed(2);
-
-            console.log('[EMAIL DEBUG] ===== EMAIL SIZE INFO =====');
-            console.log(`[EMAIL DEBUG] HTML body size: ${htmlSizeKB} KB`);
-            console.log(`[EMAIL DEBUG] Total attachments size: ${totalAttachmentSizeKB.toFixed(2)} KB`);
-            console.log(`[EMAIL DEBUG] TOTAL email size: ${totalEmailSizeMB} MB`);
-            console.log(`[EMAIL DEBUG] Number of attachments: ${attachments.length}`);
-            console.log('[EMAIL DEBUG] Sending email now...');
-
-            const info = await transporter.sendMail(mailOptions);
-
-            console.log('[EMAIL DEBUG] ✅ Email sent successfully!');
-            console.log(`[EMAIL DEBUG] MessageId: ${info.messageId}`);
-
-            return {
-                success: true,
-                message: `Email inviata a ${params.to} con ${tableResults.length} tabelle SQL e ${pythonResults.length} output Python (${attachments.length} allegati)`,
-                messageId: info.messageId
-            };
-
-        } catch (e: any) {
-            console.error('Send Test Email With Data Error:', e);
-            return { success: false, error: `Errore: ${e.message}` };
         }
+
+        // Send email
+        const transporter = nodemailer.createTransport({
+            host: smtpConf.host,
+            port: parseInt(smtpConf.port) || 587,
+            secure: parseInt(smtpConf.port) === 465,
+            auth: { user: smtpConf.user, pass: smtpConf.password },
+            tls: { rejectUnauthorized: false }
+        });
+
+        const mailOptions: any = {
+            from: smtpConf.from || smtpConf.user,
+            to: params.to,
+            subject: params.subject,
+            html: fullHtml,
+            attachments
+        };
+        if (params.cc) mailOptions.cc = params.cc;
+        if (params.bcc) mailOptions.bcc = params.bcc;
+
+        // Log email size info
+        const htmlSizeKB = (Buffer.byteLength(fullHtml, 'utf8') / 1024).toFixed(2);
+        const totalAttachmentSizeKB = attachments.reduce((sum, att) => sum + att.content.length, 0) / 1024;
+        const totalEmailSizeMB = ((Buffer.byteLength(fullHtml, 'utf8') + attachments.reduce((sum, att) => sum + att.content.length, 0)) / 1024 / 1024).toFixed(2);
+
+        console.log('[EMAIL DEBUG] ===== EMAIL SIZE INFO =====');
+        console.log(`[EMAIL DEBUG] HTML body size: ${htmlSizeKB} KB`);
+        console.log(`[EMAIL DEBUG] Total attachments size: ${totalAttachmentSizeKB.toFixed(2)} KB`);
+        console.log(`[EMAIL DEBUG] TOTAL email size: ${totalEmailSizeMB} MB`);
+        console.log(`[EMAIL DEBUG] Number of attachments: ${attachments.length}`);
+        console.log('[EMAIL DEBUG] Sending email now...');
+
+        const info = await transporter.sendMail(mailOptions);
+
+        console.log('[EMAIL DEBUG] ✅ Email sent successfully!');
+        console.log(`[EMAIL DEBUG] MessageId: ${info.messageId}`);
+
+        return {
+            success: true,
+            message: `Email inviata a ${params.to} con ${tableResults.length} tabelle SQL e ${pythonResults.length} output Python (${attachments.length} allegati)`,
+            messageId: info.messageId
+        };
+
+    } catch (e: any) {
+        console.error('Send Test Email With Data Error:', e);
+        return { success: false, error: `Errore: ${e.message}` };
     }
+}
