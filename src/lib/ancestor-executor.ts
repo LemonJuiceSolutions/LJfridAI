@@ -126,7 +126,7 @@ async function executeSqlNode(node: Node, context: ExecutionContext): Promise<an
   // Execute SQL query
   const result = await executeSqlPreviewAction(
     node.sqlQuery,
-    node.sqlConnectorId,
+    node.sqlConnectorId || '',
     dependencies
   );
   
@@ -247,8 +247,8 @@ async function executeSharePointNode(node: Node, context: ExecutionContext): Pro
   if (!result.success) {
     throw new Error(result.error || 'SharePoint operation failed');
   }
-  
-  return result.data;
+
+  return result.data ?? null;
 }
 
 /**

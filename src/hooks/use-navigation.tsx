@@ -16,7 +16,7 @@ export type NavItem = {
 type NavigationContextType = {
     navItems: NavItem[];
     settingsNavItems: NavItem[];
-    addNavItem: (group: 'main' | 'settings', item: Omit<NavItem, 'href'>) => void;
+    addNavItem: (group: 'main' | 'settings', item: Omit<NavItem, 'href'> & { href?: string }) => void;
     updateNavItem: (group: 'main' | 'settings', item: NavItem, originalHref: string) => void;
     removeNavItem: (group: 'main' | 'settings', href: string) => void;
     moveNavItem: (group: 'main' | 'settings', fromIndex: number, toIndex: number) => void;
@@ -47,11 +47,12 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
             const { main, settings } = await getNavigationItems();
 
             // Map DB items to NavItem type (handling icon string to keyof icons)
-            const mapItems = (items: any[]): NavItem[] => items.map(i => ({
-                href: i.href,
-                label: i.label,
-                icon: i.icon as keyof typeof icons
-            }));
+            const mapItems = (items: { href: string; label: string; icon: string }[]): NavItem[] =>
+                items.map((i) => ({
+                    href: i.href,
+                    label: i.label,
+                    icon: i.icon as keyof typeof icons
+                }));
 
             if (main.length === 0 && settings.length === 0) {
                 // Fallback to defaults if DB is empty for this company
@@ -77,11 +78,10 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         fetchItems();
     }, [fetchItems]);
 
-    const addNavItem = async (group: 'main' | 'settings', itemData: Omit<NavItem, 'href'>) => {
+    const addNavItem = async (group: 'main' | 'settings', itemData: Omit<NavItem, 'href'> & { href?: string }) => {
         // Optimistic update could go here, but for simplicity we'll just reload
 
         let newHref = '';
-        const currentItems = group === 'main' ? navItems : settingsNavItems;
         const allItems = [...navItems, ...settingsNavItems];
         const allUsedHrefs = new Set(allItems.map(i => i.href));
 
@@ -95,8 +95,8 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         // The previous hook logic generated it if not passed.
         // Let's do generation here.
 
-        if ('href' in itemData && itemData.href) {
-            newHref = itemData.href!;
+        if (itemData.href) {
+            newHref = itemData.href;
         } else {
             for (let i = 1; i <= 100; i++) {
                 const pageNum = i.toString().padStart(3, '0');

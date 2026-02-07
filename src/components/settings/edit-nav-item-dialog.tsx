@@ -28,7 +28,7 @@ type EditNavItemDialogProps = {
 export function EditNavItemDialog({ isOpen, setIsOpen, item, onSave }: EditNavItemDialogProps) {
   const [label, setLabel] = useState('');
   const [href, setHref] = useState('');
-  const [icon, setIcon] = useState('HelpCircle');
+  const [icon, setIcon] = useState<keyof typeof icons>('HelpCircle');
   const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
   const { toast } = useToast();
 
@@ -61,16 +61,16 @@ export function EditNavItemDialog({ isOpen, setIsOpen, item, onSave }: EditNavIt
     }
 
     if (isEditing) {
-      onSave({ label, href, icon: icon as any });
+      onSave({ label, href, icon });
     } else {
       // Pass href if it exists, otherwise the hook will auto-generate it
-      onSave({ label, icon: icon as any, href: href.trim() || undefined });
+      onSave({ label, icon, href: href.trim() || undefined });
     }
 
     setIsOpen(false);
   };
 
-  const IconComponent = (icons as any)[icon] || icons.HelpCircle;
+  const IconComponent = (icons[icon] || icons.HelpCircle) as React.ElementType;
 
   return (
     <>
@@ -114,7 +114,7 @@ export function EditNavItemDialog({ isOpen, setIsOpen, item, onSave }: EditNavIt
       <IconPicker
         isOpen={isIconPickerOpen}
         setIsOpen={setIsIconPickerOpen}
-        onSelect={setIcon}
+        onSelect={(iconName) => setIcon(iconName)}
       />
     </>
   );

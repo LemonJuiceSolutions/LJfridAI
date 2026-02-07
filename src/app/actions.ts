@@ -1089,6 +1089,13 @@ export async function executeSqlPreviewAction(
 
         // Execute Pipeline Dependencies in order
         const nameMap = new Map<string, string>();
+        const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const replaceTableRef = (sqlText: string, originalName: string, tempName: string, keyword: 'FROM' | 'JOIN') => {
+            const escaped = escapeRegExp(originalName);
+            const pattern = `\\b${keyword}\\s+((?:\\[[^\\]]+\\]|\\w+)\\.)?\\[?${escaped}\\]?\\b`;
+            const regex = new RegExp(pattern, 'gi');
+            return sqlText.replace(regex, `${keyword} ${tempName}`);
+        };
 
         if (allDeps.length > 0) {
             console.log(`[PIPELINE] Executing ${allDeps.length} flattened dependencies: ${allDeps.map(d => d.tableName).join(', ')}`);
@@ -1167,10 +1174,8 @@ export async function executeSqlPreviewAction(
                             // Avoid replacing itself if recursive (shouldn't happen in DAG)
                             if (orig === dep.tableName) continue;
 
-                            const regex = new RegExp(`\\bFROM\\s+${orig}\\b`, 'gi');
-                            sourceQuery = sourceQuery.replace(regex, `FROM ${temp}`);
-                            const joinRegex = new RegExp(`\\bJOIN\\s+${orig}\\b`, 'gi');
-                            sourceQuery = sourceQuery.replace(joinRegex, `JOIN ${temp}`);
+                            sourceQuery = replaceTableRef(sourceQuery, orig, temp, 'FROM');
+                            sourceQuery = replaceTableRef(sourceQuery, orig, temp, 'JOIN');
                         }
 
                         // 🔥 FIX: Use transaction request instead of pool.request() 
@@ -1266,12 +1271,8 @@ export async function executeSqlPreviewAction(
         // Replace pipeline table references with global temp table names
         if (nameMap.size > 0) {
             for (const [originalName, tempName] of nameMap.entries()) {
-                // Replace "FROM TableName" with "FROM ##TableName"
-                const regex = new RegExp(`\\bFROM\\s+${originalName}\\b`, 'gi');
-                finalQuery = finalQuery.replace(regex, `FROM ${tempName}`);
-                // Also replace "JOIN TableName" 
-                const joinRegex = new RegExp(`\\bJOIN\\s+${originalName}\\b`, 'gi');
-                finalQuery = finalQuery.replace(joinRegex, `JOIN ${tempName}`);
+                finalQuery = replaceTableRef(finalQuery, originalName, tempName, 'FROM');
+                finalQuery = replaceTableRef(finalQuery, originalName, tempName, 'JOIN');
             }
         }
 
@@ -1402,12 +1403,20 @@ export async function exportTableToSqlAction(
     targetConnectorId: string,
     targetTableName: string,
     sourceData: any[],
-    createTableIfNotExists: boolean = true
+    createTableIfNotExists: boolean = true,
+    truncate: boolean = true,
+    isSystem: boolean = false
 ): Promise<{ success: boolean; error?: string; rowsInserted?: number }> {
     let pool: sql.ConnectionPool | null = null;
 
     try {
-        const user = await getAuthenticatedUser();
+        let user: any = null;
+        if (!isSystem) {
+            user = await getAuthenticatedUser();
+            if (!user) {
+                return { success: false, error: 'Unauthorized' };
+            }
+        }
 
         if (!targetConnectorId || !targetTableName) {
             return { success: false, error: 'Connettore e nome tabella sono obbligatori.' };
@@ -1418,8 +1427,13 @@ export async function exportTableToSqlAction(
         }
 
         // Fetch target connector
+        const whereClause: any = { id: targetConnectorId, type: 'SQL' };
+        if (user) {
+            whereClause.companyId = user.companyId;
+        }
+
         const connector = await db.connector.findFirst({
-            where: { id: targetConnectorId, companyId: user.companyId, type: 'SQL' }
+            where: whereClause
         });
 
         if (!connector || !connector.config) {
@@ -1825,9 +1839,12 @@ export async function executePythonPreviewAction(
                     const clientId = config.clientId || "7ff50e8a-eb8c-4bf8-9fa6-f4068c6fe82b";
 
                     const { getCachedSharePointTokenAction } = await import('./actions/sharepoint');
-                    const authResult = await getCachedSharePointTokenAction(tenantId, clientId);
+                    const authResult = await getCachedSharePointTokenAction(tenantId, clientId, config.clientSecret || undefined, user.companyId);
 
                     if (authResult.accessToken) {
+                        const tokenPreview = authResult.accessToken.length <= 8
+                            ? '****'
+                            : `${authResult.accessToken.slice(0, 4)}...${authResult.accessToken.slice(-4)}`;
                         envVars['SHAREPOINT_TOKEN'] = authResult.accessToken;
                         // Inject helpful IDs if browsing was used
                         if (config._siteId) envVars['SHAREPOINT_SITE_ID'] = config._siteId;
@@ -1838,9 +1855,9 @@ export async function executePythonPreviewAction(
                         if (config.filePath) envVars['SHAREPOINT_FILE_PATH'] = config.filePath;
                         if (config.sheetName) envVars['SHAREPOINT_SHEET_NAME'] = config.sheetName;
 
-                        console.log(`[Python] Injected SharePoint token and context`);
+                        console.log(`[Python] Injected SharePoint token and context (${tokenPreview}, ${authResult.accessToken.length} chars)`);
                     } else {
-                        console.warn('[Python] Failed to Retrieve SharePoint Token for connector');
+                        console.warn(`[Python] Failed to Retrieve SharePoint Token for connector ${connector.name} (ID: ${connectorId}). Result: needsAuth=${authResult.needsAuth}, error=${authResult.error}. Hint: ensure clientSecret is configured in the connector for scheduler/background use.`);
                     }
                 }
 
@@ -1849,6 +1866,43 @@ export async function executePythonPreviewAction(
                 console.log(`[Python] Env vars set: ${Object.keys(envVars).join(', ')}`);
             } else {
                 console.log(`[Python] Connector ${connectorId} found but no config or invalid`);
+            }
+        }
+
+        // FIX: If no SHAREPOINT_TOKEN was injected yet (e.g. node's connectorId points to SQL, not SharePoint),
+        // search for ANY SharePoint connector for this company and inject the token.
+        // This is critical for the scheduler where the node's connectorId might not be the SharePoint one.
+        if (!envVars['SHAREPOINT_TOKEN'] && user?.companyId && user.companyId !== 'system-override') {
+            try {
+                const spConnector = await db.connector.findFirst({
+                    where: { companyId: user.companyId, type: 'SHAREPOINT' }
+                });
+                if (spConnector && spConnector.config) {
+                    let spConfig: any = spConnector.config;
+                    if (typeof spConfig === 'string') {
+                        try { spConfig = JSON.parse(spConfig); } catch { spConfig = {}; }
+                    }
+                    const spTenantId = spConfig.tenantId || "0089ad7d-e10f-49b4-bf68-60e706423382";
+                    const spClientId = spConfig.clientId || "7ff50e8a-eb8c-4bf8-9fa6-f4068c6fe82b";
+
+                    const { getCachedSharePointTokenAction } = await import('./actions/sharepoint');
+                    const authResult = await getCachedSharePointTokenAction(spTenantId, spClientId, spConfig.clientSecret || undefined, user.companyId);
+
+                    if (authResult.accessToken) {
+                        envVars['SHAREPOINT_TOKEN'] = authResult.accessToken;
+                        if (spConfig._siteId) envVars['SHAREPOINT_SITE_ID'] = spConfig._siteId;
+                        if (spConfig._driveId) envVars['SHAREPOINT_DRIVE_ID'] = spConfig._driveId;
+                        if (spConfig._fileId) envVars['SHAREPOINT_FILE_ID'] = spConfig._fileId;
+                        if (spConfig.siteUrl) envVars['SHAREPOINT_SITE_URL'] = spConfig.siteUrl;
+                        if (spConfig.filePath) envVars['SHAREPOINT_FILE_PATH'] = spConfig.filePath;
+                        if (spConfig.sheetName) envVars['SHAREPOINT_SHEET_NAME'] = spConfig.sheetName;
+                        console.log(`[Python] SharePoint token injected via company-wide fallback (connector: ${spConnector.name})`);
+                    } else {
+                        console.warn(`[Python] SharePoint company-wide fallback failed. needsAuth=${authResult.needsAuth}, error=${authResult.error}`);
+                    }
+                }
+            } catch (spErr: any) {
+                console.warn(`[Python] SharePoint company-wide fallback exception: ${spErr.message}`);
             }
         }
 
@@ -3318,4 +3372,3 @@ export async function resolveAncestorResourcesAction(targetNodeId: string): Prom
         return { data: null, error: e instanceof Error ? e.message : "Errore durante la risoluzione delle risorse ancestor." };
     }
 }
-

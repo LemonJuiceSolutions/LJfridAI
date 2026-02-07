@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Send } from 'lucide-react';
 
-type Job = {
+type BaseJob = {
   jobId: string;
   quantity: number;
   product: string;
@@ -35,12 +35,12 @@ type Supplier = {
   name: string;
 };
 
-type AssignJobDialogProps = {
+type AssignJobDialogProps<TJob extends BaseJob> = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  job: Job | null;
+  job: TJob | null;
   onAssign: (
-    job: Job,
+    job: TJob,
     quantity: number,
     destination: string,
     supplier?: string
@@ -48,13 +48,13 @@ type AssignJobDialogProps = {
   suppliers: Supplier[];
 };
 
-export function AssignJobDialog({
+export function AssignJobDialog<TJob extends BaseJob>({
   isOpen,
   setIsOpen,
   job,
   onAssign,
   suppliers,
-}: AssignJobDialogProps) {
+}: AssignJobDialogProps<TJob>) {
   const [quantity, setQuantity] = useState(0);
   const [destination, setDestination] = useState('Internal');
   const [supplier, setSupplier] = useState<string | undefined>(undefined);

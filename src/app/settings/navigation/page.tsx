@@ -39,7 +39,7 @@ import type { NavItem } from '@/hooks/use-navigation';
 export default function NavigationSettingsPage() {
   const { navItems, settingsNavItems, addNavItem, updateNavItem, removeNavItem, restoreDefaults, moveNavItem } = useNavigation();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editingItem, setEditingItem] = useState<NavItem | null>(null);
   const [editingGroup, setEditingGroup] = useState<'main' | 'settings' | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; group: 'main' | 'settings' | null; item: NavItem | null }>({ open: false, group: null, item: null });
 
@@ -60,15 +60,15 @@ export default function NavigationSettingsPage() {
     setIsDialogOpen(true);
   };
 
-  const handleEdit = (item: any, group: 'main' | 'settings') => {
+  const handleEdit = (item: NavItem, group: 'main' | 'settings') => {
     setEditingItem(item);
     setEditingGroup(group);
     setIsDialogOpen(true);
   };
 
-  const handleSave = (itemData: any) => {
-    if (editingItem) {
-      updateNavItem(editingGroup!, itemData, editingItem.href);
+  const handleSave = (itemData: NavItem | (Omit<NavItem, 'href'> & { href?: string })) => {
+    if (editingItem && 'href' in itemData && itemData.href) {
+      updateNavItem(editingGroup!, itemData as NavItem, editingItem.href);
     } else {
       addNavItem(editingGroup!, itemData);
     }
@@ -93,7 +93,7 @@ export default function NavigationSettingsPage() {
             </TableHeader>
             <TableBody>
               {items.map((item, index) => {
-                const IconComponent = icons[item.icon as keyof typeof icons] as React.ElementType || icons.HelpCircle;
+                const IconComponent = (icons[item.icon] || icons.HelpCircle) as React.ElementType;
                 return (
                   <TableRow key={item.href}>
                     <TableCell className="py-1"><IconComponent className="h-5 w-5" /></TableCell>

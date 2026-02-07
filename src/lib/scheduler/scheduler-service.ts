@@ -396,6 +396,10 @@ export class SchedulerService {
                 // .data exists and is not null/undefined (but not array)
                 inputData[origName] = val.data;
                 logger.log(`[AncestorChain]     -> Extracted .data (non-array value)`);
+              } else if (val && typeof val === 'object' && 'rechartsData' in val && Array.isArray((val as any).rechartsData)) {
+                // Chart Python result with rechartsData - pass the chart data points
+                inputData[origName] = (val as any).rechartsData;
+                logger.log(`[AncestorChain]     -> Extracted .rechartsData array (${(val as any).rechartsData.length} items)`);
               } else if (val && typeof val === 'object' && 'variables' in val && (val as any).variables) {
                 // Python returned variables instead of data - pass them too
                 inputData[origName] = (val as any).variables;
@@ -404,9 +408,13 @@ export class SchedulerService {
                 // Object without .data - pass as-is (might be raw result)
                 inputData[origName] = val;
                 logger.log(`[AncestorChain]     -> Added object as-is (no .data property)`);
+              } else if (val && typeof val === 'object' && ('chartBase64' in val || 'chartHtml' in val || 'rechartsConfig' in val)) {
+                // Chart result with no usable data - pass the whole object so downstream can access chart info
+                inputData[origName] = val;
+                logger.log(`[AncestorChain]     -> Added chart result object as-is (chartBase64/chartHtml/rechartsConfig)`);
               } else {
-                // val.data is null/undefined - SKIP this entry, don't pollute inputData
-                logger.log(`[AncestorChain]     -> SKIPPED (data is null/undefined)`);
+                // val.data is null/undefined and no chart/variable info - SKIP
+                logger.log(`[AncestorChain]     -> SKIPPED (data is null/undefined, no chart/variable info)`);
               }
             }
           }
@@ -423,12 +431,16 @@ export class SchedulerService {
                 inputData[d.tableName] = val.data;
               } else if (val && typeof val === 'object' && 'data' in val && val.data !== null && val.data !== undefined) {
                 inputData[d.tableName] = val.data;
+              } else if (val && typeof val === 'object' && 'rechartsData' in val && Array.isArray((val as any).rechartsData)) {
+                inputData[d.tableName] = (val as any).rechartsData;
               } else if (val && typeof val === 'object' && 'variables' in val && (val as any).variables) {
                 inputData[d.tableName] = (val as any).variables;
               } else if (val && typeof val === 'object' && !('data' in val)) {
                 inputData[d.tableName] = val;
+              } else if (val && typeof val === 'object' && ('chartBase64' in val || 'chartHtml' in val || 'rechartsConfig' in val)) {
+                inputData[d.tableName] = val;
               }
-              // else: skip if data is null/undefined
+              // else: skip if data is null/undefined and no chart info
             }
           });
 
@@ -436,14 +448,18 @@ export class SchedulerService {
           logger.log(`[AncestorChain] Final inputData for ${originalName}: ${Object.keys(inputData).join(', ')}`);
 
           // Prepare dependencies definitions
+          // FIX: Strip nested pipelineDependencies to prevent recursive re-fetching.
+          // The ancestor chain already pre-computed everything and put it in inputData.
+          // If executePythonPreviewAction needs a dep not in inputData, it should use
+          // the query/code to fetch it, but WITHOUT nested deps that would cause cascading failures.
           const deps = (tableDef.pipelineDependencies || []).map((d: any) => {
             return {
               tableName: d.tableName,
               query: d.query,
               isPython: d.isPython,
               pythonCode: d.pythonCode,
-              connectorId: d.connectorId,
-              pipelineDependencies: d.pipelineDependencies
+              connectorId: d.connectorId
+              // NOTE: No pipelineDependencies! Prevents recursive re-fetching cascading failures.
             };
           });
 
@@ -474,18 +490,29 @@ export class SchedulerService {
           }
         } else if (tableDef.sqlQuery) {
           // SQL
-          // Dependencies - inject data if available
-          const deps = (tableDef.pipelineDependencies || []).map((d: any) => {
-            const depNorm = d.tableName.toLowerCase().trim();
-            return {
-              tableName: d.tableName,
-              query: d.query,
-              isPython: d.isPython,
-              pythonCode: d.pythonCode,
-              connectorId: d.connectorId,
-              data: resultsNormalized[depNorm] // INJECT DATA HERE via normalized lookup
-            };
-          });
+          // FIX: The ancestor chain has ALREADY executed all nodes in order.
+          // We ONLY need to pass pre-calculated data as deps. DO NOT pass query/pipelineDependencies
+          // because executeSqlPreviewAction's flattenDependencies would try to re-execute them
+          // recursively, which fails since temp tables from previous connections don't exist.
+          // Instead: pass ALL available pre-calculated results as data-only deps.
+          const deps: any[] = [];
+          for (const [normKey, val] of Object.entries(resultsNormalized)) {
+            if (normKey !== normalizedName) {
+              const origName = nodeNameMap.get(normKey) || normKey;
+              // Extract array data from the result
+              const dataToInject = Array.isArray(val) ? val :
+                (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) ? val.data : null;
+              if (dataToInject && dataToInject.length > 0) {
+                deps.push({
+                  tableName: origName,
+                  data: dataToInject
+                  // NOTE: No query, isPython, pythonCode, pipelineDependencies!
+                  // This forces executeSqlPreviewAction to use the pre-calculated data path only.
+                });
+              }
+            }
+          }
+          logger.log(`[AncestorChain] SQL node ${originalName}: injected ${deps.length} pre-calculated deps (${deps.map((d: any) => d.tableName).join(', ')})`);
 
           const res = await executeSqlPreviewAction(
             tableDef.sqlQuery,
@@ -557,7 +584,9 @@ export class SchedulerService {
                 targetConnectorId,
                 targetTableName,
                 dataArr,
-                true // overwrite
+                true, // createTable
+                true, // truncate
+                true // isSystem (bypass auth)
               );
               pipelineReport.push({ name: `💾 Write ${targetTableName}`, type: 'export', status: 'success', timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
             } catch (exportErr: any) {
@@ -647,7 +676,7 @@ export class SchedulerService {
           name: allNames[0] || current.name,
           allNames: allNames,
           isPython: !!current.pythonCode,
-          connectorId: current.sqlConnectorId || current.connectorId,
+          connectorId: current.pythonConnectorId || current.sqlConnectorId || current.connectorId,
           sqlQuery: current.sqlQuery,
           pythonCode: current.pythonCode,
           pythonOutputType: current.pythonOutputType,
@@ -698,7 +727,7 @@ export class SchedulerService {
         // CRITICAL: If has sqlQuery, ALWAYS treat as SQL (even if pythonOutputType=chart)
         // Charts don't produce table data, so children can't use them. SQL provides data.
         isPython: node.sqlQuery ? false : !!(node.pythonCode || node.pythonOutputType),
-        connectorId: node.sqlConnectorId || node.connectorId,
+        connectorId: node.pythonConnectorId || node.sqlConnectorId || node.connectorId,
         sqlQuery: node.sqlQuery,
         pythonCode: node.pythonCode,
         pythonOutputType: node.pythonOutputType,
@@ -770,7 +799,7 @@ export class SchedulerService {
           // CRITICAL: If has sqlQuery, ALWAYS treat as SQL (even if pythonOutputType=chart)
           // Charts don't produce table data, so children can't use them. SQL provides data.
           isPython: node.sqlQuery ? false : !!(node.pythonCode || node.pythonResultName || node.pythonOutputType),
-          connectorId: node.sqlConnectorId || node.connectorId,
+          connectorId: node.pythonConnectorId || node.sqlConnectorId || node.connectorId,
           // Ensure export fields are always present and correct
           writesToDatabase: hasExportConfig,
           sqlExportTargetTableName: exportTargetTableName,
@@ -1338,4 +1367,3 @@ export function calculateNextRunForTask(task: any, timezone: string, referenceDa
     return null;
   }
 }
-

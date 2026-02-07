@@ -410,6 +410,35 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
     try {
         const cachedData = await loadTokenCache(companyId);
         if (!cachedData) {
+            // No cached token - try Client Credentials if clientSecret available
+            if (clientSecret) {
+                console.log(`[SharePoint Auth] No cached token, trying Client Credentials flow...`);
+                try {
+                    const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+                    const response = await fetch(tokenEndpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({
+                            grant_type: 'client_credentials',
+                            client_id: clientId,
+                            client_secret: clientSecret,
+                            scope: 'https://graph.microsoft.com/.default'
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.access_token) {
+                        console.log(`[SharePoint Auth] Client Credentials flow successful (no cache)!`);
+                        await saveTokenCache(companyId, JSON.stringify({
+                            accessToken: data.access_token,
+                            expiresOn: new Date(Date.now() + data.expires_in * 1000).toISOString(),
+                            tokenType: data.token_type
+                        }), null);
+                        return { success: true, accessToken: data.access_token };
+                    }
+                } catch (e: any) {
+                    console.error(`[SharePoint Auth] Client Credentials (no cache) failed: ${e.message}`);
+                }
+            }
             return { needsAuth: true };
         }
 
@@ -429,21 +458,27 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
         if (needsRefresh) {
             console.log(`[SharePoint Auth] Token expired at ${expiresOn?.toISOString()} (Current: ${now.toISOString()}). Attempting refresh...`);
 
-            // Token expired, try refresh
+            // Token expired, try refresh with refresh_token
             if (tokenData.refreshToken) {
                 const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+
+                // Build refresh request params - include client_secret if available (confidential clients)
+                const refreshParams: Record<string, string> = {
+                    grant_type: 'refresh_token',
+                    client_id: clientId,
+                    refresh_token: tokenData.refreshToken,
+                    scope: SCOPES.join(' ')
+                };
+                if (clientSecret) {
+                    refreshParams.client_secret = clientSecret;
+                }
 
                 const response = await fetch(tokenEndpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded'
                     },
-                    body: new URLSearchParams({
-                        grant_type: 'refresh_token',
-                        client_id: clientId,
-                        refresh_token: tokenData.refreshToken,
-                        scope: SCOPES.join(' ')
-                    })
+                    body: new URLSearchParams(refreshParams)
                 });
 
                 const data = await response.json();
@@ -465,6 +500,47 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
             } else {
                 console.warn(`[SharePoint Auth] No refresh token available.`);
             }
+
+            // Fallback: Client Credentials flow (app-only auth, no user context)
+            // This works when the Azure AD app has Application permissions and a client_secret
+            if (clientSecret) {
+                console.log(`[SharePoint Auth] Attempting Client Credentials flow as fallback...`);
+                try {
+                    const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+                    const response = await fetch(tokenEndpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: new URLSearchParams({
+                            grant_type: 'client_credentials',
+                            client_id: clientId,
+                            client_secret: clientSecret,
+                            scope: 'https://graph.microsoft.com/.default'
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.access_token) {
+                        console.log(`[SharePoint Auth] Client Credentials flow successful! Expiry: ${new Date(Date.now() + data.expires_in * 1000).toISOString()}`);
+                        // Save to cache (no refresh token with client_credentials)
+                        await saveTokenCache(companyId, JSON.stringify({
+                            accessToken: data.access_token,
+                            refreshToken: tokenData?.refreshToken, // Keep old refresh token if any
+                            expiresOn: new Date(Date.now() + data.expires_in * 1000).toISOString(),
+                            tokenType: data.token_type
+                        }), cachedData?.account || null);
+
+                        return { success: true, accessToken: data.access_token };
+                    } else {
+                        console.error(`[SharePoint Auth] Client Credentials failed: ${data.error_description || JSON.stringify(data)}`);
+                    }
+                } catch (ccErr: any) {
+                    console.error(`[SharePoint Auth] Client Credentials exception: ${ccErr.message}`);
+                }
+            }
+
             return { needsAuth: true };
         }
 
@@ -670,4 +746,12 @@ export async function listExcelSheetsAction(
         console.error('List Sheets Error:', e);
         return { error: e.message };
     }
+}
+
+export async function getSharePointItems(params: { path: string; connectorId?: string }): Promise<{ success: boolean; data?: unknown; error?: string }> {
+    return { success: false, error: 'Funzione SharePoint non disponibile' };
+}
+
+export async function saveToSharePoint(params: { path: string; data: Record<string, unknown>; connectorId?: string }): Promise<{ success: boolean; data?: unknown; error?: string }> {
+    return { success: false, error: 'Funzione SharePoint non disponibile' };
 }

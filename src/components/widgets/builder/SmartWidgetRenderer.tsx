@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { WidgetConfig } from '@/lib/types';
 
 interface SmartWidgetRendererProps {
-    data: any[];
+    data: Record<string, unknown>[];
     config: WidgetConfig;
     onRefresh?: () => void;
     isRefreshing?: boolean;
@@ -66,7 +66,7 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
         );
     }
 
-    const cleanNumber = (val: any): number | string => {
+    const cleanNumber = (val: unknown): number | string | unknown => {
         if (typeof val === 'number') return val;
         if (typeof val !== 'string') return val;
 
@@ -90,8 +90,8 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
 
     const chartData = React.useMemo(() => {
         if (!data) return [];
-        return data.map(item => {
-            const newItem = { ...item };
+        return data.map((item) => {
+            const newItem: Record<string, unknown> = { ...item };
             Object.keys(newItem).forEach(key => {
                 newItem[key] = cleanNumber(newItem[key]);
             });
@@ -116,7 +116,7 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                             <TableBody>
                                 {data.map((row, i) => (
                                     <TableRow key={i}>
-                                        {columns.map(col => <TableCell key={col}>{String(row[col])}</TableCell>)}
+                                        {columns.map(col => <TableCell key={col}>{String(row[col] ?? '')}</TableCell>)}
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -217,7 +217,12 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                     </ResponsiveContainer>
                 );
             case 'kpi-card':
-                const kpiValue = data[0] && config.kpiValueKey ? data[0][config.kpiValueKey] : 'N/A';
+                const rawValue = data[0] && config.kpiValueKey ? data[0][config.kpiValueKey] : 'N/A';
+                const kpiValue = typeof rawValue === 'number' || typeof rawValue === 'string'
+                    ? rawValue
+                    : rawValue == null
+                        ? 'N/A'
+                        : JSON.stringify(rawValue);
                 return (
                     <div className="flex flex-col items-center justify-center h-full">
                         <div className="text-5xl font-bold">{kpiValue}</div>

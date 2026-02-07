@@ -149,12 +149,6 @@ export function NodeDetailSheet({ isOpen, setIsOpen, node, onSave, connections, 
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const [schedule, setSchedule] = useState({
-    frequency: 'manual',
-    time: '09:00',
-    dayOfWeek: '1',
-    dayOfMonth: '1',
-  });
   const [selectedInputType, setSelectedInputType] = useState<'connection' | 'parentNode'>('parentNode');
   const [selectedInputId, setSelectedInputId] = useState<string | undefined>(undefined);
   const [isPublished, setIsPublished] = useState(false);
@@ -166,7 +160,6 @@ export function NodeDetailSheet({ isOpen, setIsOpen, node, onSave, connections, 
       setNodeName(node.name || '');
       setNodeIcon(node.icon || 'Code');
       setNodeOutputs(node.outputs || []);
-      setSchedule(node.schedule || { frequency: 'manual', time: '09:00', dayOfWeek: '1', dayOfMonth: '1' });
       setSelectedInputType(node.inputId && node.parentNodes && node.parentNodes.length > 0 ? 'parentNode' : 'connection');
       setSelectedInputId(node.inputId);
       setIsPublished(node.isPublished || false);
@@ -198,7 +191,6 @@ export function NodeDetailSheet({ isOpen, setIsOpen, node, onSave, connections, 
         name: nodeName,
         icon: nodeIcon,
         outputs: nodeOutputs,
-        schedule: schedule,
         inputType: selectedInputType,
         inputId: selectedInputId,
         isPublished: isPublished,
@@ -291,10 +283,6 @@ export function NodeDetailSheet({ isOpen, setIsOpen, node, onSave, connections, 
   };
 
 
-  const handleScheduleChange = (field: keyof typeof schedule, value: string) => {
-    setSchedule(prev => ({ ...prev, [field]: value }));
-  };
-  
   const handleOutputNameChange = (index: number, newName: string) => {
     setNodeOutputs(currentOutputs => {
       const newOutputs = [...currentOutputs];
@@ -328,74 +316,6 @@ export function NodeDetailSheet({ isOpen, setIsOpen, node, onSave, connections, 
     }
     return <p className='text-xs text-muted-foreground text-center p-8'>Nessuna anteprima disponibile. Esegui lo script per visualizzarla.</p>;
   }
-
-  const renderScheduleOptions = () => {
-    return (
-        <div className="flex flex-col gap-1">
-            <h3 className="font-semibold flex items-center gap-2 text-xs px-2"><RefreshCw className="h-3 w-3" />Pianificazione</h3>
-            <div className='flex flex-col flex-1 gap-2 bg-muted/20 rounded-lg border p-3 text-sm'>
-                <div className='grid grid-cols-2 gap-4 items-center'>
-                    <Label htmlFor="frequency">Frequenza</Label>
-                    <Select value={schedule.frequency} onValueChange={(v) => handleScheduleChange('frequency', v)}>
-                        <SelectTrigger id="frequency">
-                            <SelectValue placeholder="Seleziona..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="manual">Manuale</SelectItem>
-                            <SelectItem value="hourly">Oraria</SelectItem>
-                            <SelectItem value="daily">Giornaliera</SelectItem>
-                            <SelectItem value="weekly">Settimanale</SelectItem>
-                            <SelectItem value="monthly">Mensile</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                {schedule.frequency === 'daily' && (
-                    <div className='grid grid-cols-2 gap-4 items-center'>
-                        <Label htmlFor="time">Ora</Label>
-                        <Input id="time" type="time" value={schedule.time} onChange={(e) => handleScheduleChange('time', e.target.value)} />
-                    </div>
-                )}
-                 {schedule.frequency === 'weekly' && (
-                    <>
-                        <div className='grid grid-cols-2 gap-4 items-center'>
-                            <Label htmlFor="dayOfWeek">Giorno</Label>
-                            <Select value={schedule.dayOfWeek} onValueChange={(v) => handleScheduleChange('dayOfWeek', v)}>
-                                <SelectTrigger id="dayOfWeek">
-                                    <SelectValue placeholder="Seleziona giorno..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="1">Lunedì</SelectItem>
-                                    <SelectItem value="2">Martedì</SelectItem>
-                                    <SelectItem value="3">Mercoledì</SelectItem>
-                                    <SelectItem value="4">Giovedì</SelectItem>
-                                    <SelectItem value="5">Venerdì</SelectItem>
-                                    <SelectItem value="6">Sabato</SelectItem>
-                                    <SelectItem value="0">Domenica</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                         <div className='grid grid-cols-2 gap-4 items-center'>
-                            <Label htmlFor="time">Ora</Label>
-                            <Input id="time" type="time" value={schedule.time} onChange={(e) => handleScheduleChange('time', e.target.value)} />
-                        </div>
-                    </>
-                )}
-                {schedule.frequency === 'monthly' && (
-                    <>
-                        <div className='grid grid-cols-2 gap-4 items-center'>
-                            <Label htmlFor="dayOfMonth">Giorno del Mese</Label>
-                            <Input id="dayOfMonth" type="number" min="1" max="31" value={schedule.dayOfMonth} onChange={(e) => handleScheduleChange('dayOfMonth', e.target.value)}/>
-                        </div>
-                         <div className='grid grid-cols-2 gap-4 items-center'>
-                            <Label htmlFor="time">Ora</Label>
-                            <Input id="time" type="time" value={schedule.time} onChange={(e) => handleScheduleChange('time', e.target.value)} />
-                        </div>
-                    </>
-                )}
-            </div>
-        </div>
-    );
-  };
 
   const renderInputSelector = () => {
     const hasParentNodes = node.parentNodes && node.parentNodes.length > 0;
@@ -591,7 +511,7 @@ export function NodeDetailSheet({ isOpen, setIsOpen, node, onSave, connections, 
                         </div>
                     </div>
                 </div>
-            ) : renderScheduleOptions()}
+            ) : null}
           </div>
           
           {/* Center Panel */}

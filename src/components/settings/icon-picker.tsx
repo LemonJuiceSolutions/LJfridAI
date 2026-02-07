@@ -24,7 +24,7 @@ import {
 type IconPickerProps = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  onSelect: (iconName: string) => void;
+  onSelect: (iconName: keyof typeof icons) => void;
 };
 
 
@@ -36,7 +36,7 @@ export function IconPicker({ isOpen, setIsOpen, onSelect }: IconPickerProps) {
     return iconList.filter(name => name.toLowerCase().includes(search.toLowerCase()));
   }, [search]);
 
-  const handleSelectIcon = (iconName: string) => {
+  const handleSelectIcon = (iconName: keyof typeof icons) => {
     onSelect(iconName);
     setIsOpen(false);
   };
@@ -60,17 +60,18 @@ export function IconPicker({ isOpen, setIsOpen, onSelect }: IconPickerProps) {
         <ScrollArea className="h-[400px]">
           <div className="grid grid-cols-8 gap-2 p-4">
             <TooltipProvider>
-                {filteredIcons.map(iconName => {
-                const IconComponent = (icons as any)[iconName];
+                {filteredIcons.map((iconName) => {
+                const typedIconName = iconName as keyof typeof icons;
+                const IconComponent = icons[typedIconName] as React.ElementType;
                 if (!IconComponent) return null;
 
                 return (
-                    <Tooltip key={iconName}>
+                    <Tooltip key={typedIconName}>
                         <TooltipTrigger asChild>
                         <Button
                             variant="outline"
                             size="icon"
-                            onClick={() => handleSelectIcon(iconName)}
+                            onClick={() => handleSelectIcon(typedIconName)}
                             className="h-12 w-12"
                         >
                             <IconComponent className="h-6 w-6" />

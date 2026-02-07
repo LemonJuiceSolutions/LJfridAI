@@ -16,7 +16,6 @@ import Image from 'next/image';
 
 type StorageFile = FileInfo & {
     type: 'image' | 'video' | 'other';
-    ref?: any; // kept for compatibility if needed, though mostly unused now
 };
 
 const getFileType = (fileName: string): 'image' | 'video' | 'other' => {
@@ -59,8 +58,8 @@ export default function StoragePage() {
             setMediaFiles(fileDetails.filter(f => f.type === 'image' || f.type === 'video'));
             setOtherFiles(fileDetails.filter(f => f.type === 'other'));
 
-        } catch (err: any) {
-            let errorMessage = err.message || 'Errore durante il caricamento dei file.';
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Errore durante il caricamento dei file.';
 
             setError(errorMessage);
             toast({ variant: 'destructive', title: 'Caricamento Fallito', description: errorMessage });
@@ -105,11 +104,11 @@ export default function StoragePage() {
                 });
                 form.reset();
                 await fetchFiles();
-            } catch (err: any) {
+            } catch (err: unknown) {
                 toast({
                     variant: 'destructive',
                     title: 'Upload Fallito',
-                    description: err.message || 'Si è verificato un errore sconosciuto durante il caricamento di uno o più file.',
+                    description: err instanceof Error ? err.message : 'Si è verificato un errore sconosciuto durante il caricamento di uno o più file.',
                 });
             } finally {
                 setUploadingFileCount(0);
@@ -129,8 +128,12 @@ export default function StoragePage() {
             await deleteFile(fileToDelete.name);
             toast({ title: 'File Eliminato', description: `Il file "${fileToDelete.name}" è stato eliminato.` });
             await fetchFiles();
-        } catch (err: any) {
-            toast({ variant: 'destructive', title: 'Eliminazione Fallita', description: err.message });
+        } catch (err: unknown) {
+            toast({
+                variant: 'destructive',
+                title: 'Eliminazione Fallita',
+                description: err instanceof Error ? err.message : 'Errore sconosciuto durante l’eliminazione.',
+            });
         } finally {
             setIsDeleting(false);
             setFileToDelete(null);
