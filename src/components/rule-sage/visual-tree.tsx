@@ -1289,7 +1289,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                             tableName: pName,
                             nodeId: sn.id, // Pass NodeID for deduplication
                             nodeName: sn.question || sn.decision || sn.name,
-                            writesToDatabase: sn.writesToDatabase, // Pass Write flag
+                            writesToDatabase: sn.writesToDatabase || !!sn.sqlExportAction, // Check both flags
+                            sqlExportTargetTableName: sn.sqlExportAction?.targetTableName || sn.sqlExportTargetTableName,
+                            sqlExportTargetConnectorId: sn.sqlExportAction?.targetConnectorId || sn.sqlExportTargetConnectorId,
+                            sqlExportSourceTables: sn.sqlExportAction?.sourceTables || sn.sqlExportSourceTables,
                             connectorId: sn.pythonResultName === pName ? sn.pythonConnectorId : sn.sqlConnectorId,
                             query: sn.sqlResultName === pName ? sn.sqlQuery : undefined,
                             isPython: !!(sn.pythonResultName === pName),
@@ -1510,7 +1513,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                             tableName: pName,
                             nodeId: sn.id, // Pass NodeID for deduplication
                             nodeName: sn.question || sn.decision || sn.name,
-                            writesToDatabase: sn.writesToDatabase, // Pass Write flag
+                            writesToDatabase: sn.writesToDatabase || !!sn.sqlExportAction, // Check both flags
+                            sqlExportTargetTableName: sn.sqlExportAction?.targetTableName || sn.sqlExportTargetTableName,
+                            sqlExportTargetConnectorId: sn.sqlExportAction?.targetConnectorId || sn.sqlExportTargetConnectorId,
+                            sqlExportSourceTables: sn.sqlExportAction?.sourceTables || sn.sqlExportSourceTables,
                             connectorId: sn.pythonResultName === pName ? sn.pythonConnectorId : sn.sqlConnectorId,
                             query: sn.sqlResultName === pName ? sn.sqlQuery : undefined,
                             isPython: !!(sn.pythonResultName === pName),
