@@ -306,14 +306,49 @@ export class SchedulerService {
     // 1. Build Dependency Graph (Case-Insensitive Normalization)
     const graph = new Map<string, string[]>();
     const nodeNameMap = new Map<string, string>(); // normalized -> original
+    const aliasToCanonicalMap = new Map<string, string>(); // normalized alias -> normalized canonical name
 
+    // First pass: Register all nodes and their aliases
     contextTables.forEach(t => {
-      const normalizedName = t.name.toLowerCase().trim();
-      nodeNameMap.set(normalizedName, t.name);
+      const canonicalOriginalName = t.name;
+      const canonicalNormalizedName = t.name.toLowerCase().trim();
 
-      // Direct dependencies (normalize them too)
-      const deps = (t.pipelineDependencies || []).map((d: any) => d.tableName.toLowerCase().trim());
-      graph.set(normalizedName, deps);
+      nodeNameMap.set(canonicalNormalizedName, canonicalOriginalName);
+      aliasToCanonicalMap.set(canonicalNormalizedName, canonicalNormalizedName);
+
+      // Register aliases
+      if (t.allNames && Array.isArray(t.allNames)) {
+        t.allNames.forEach((alias: string) => {
+          const aliasNorm = alias.toLowerCase().trim();
+          aliasToCanonicalMap.set(aliasNorm, canonicalNormalizedName);
+          // Also map alias to original name if not already set (though canonical is preferred)
+          if (!nodeNameMap.has(aliasNorm)) {
+            nodeNameMap.set(aliasNorm, canonicalOriginalName);
+          }
+        });
+      }
+    });
+
+    // Second pass: Build graph using CANONICAL names
+    contextTables.forEach(t => {
+      const canonicalNormalizedName = t.name.toLowerCase().trim();
+
+      // Resolve dependencies to their canonical names
+      const distinctDeps = new Set<string>();
+      (t.pipelineDependencies || []).forEach((d: any) => {
+        const rawDep = d.tableName.toLowerCase().trim();
+        const canonicalDep = aliasToCanonicalMap.get(rawDep);
+
+        // Only add dependency if it exists in our context
+        if (canonicalDep) {
+          distinctDeps.add(canonicalDep);
+        } else {
+          // Optional: Log warning about missing dependency?
+          // logger.warn(`[AncestorChain] Node ${t.name} depends on '${rawDep}' which is not in context.`);
+        }
+      });
+
+      graph.set(canonicalNormalizedName, Array.from(distinctDeps));
     });
 
     // 2. Radiological Sort (Topological)
@@ -322,23 +357,23 @@ export class SchedulerService {
     const visiting = new Set<string>(); // Cycle detection
 
     const visit = (normalizedNode: string) => {
-      if (visited.has(normalizedNode)) return;
-      if (visiting.has(normalizedNode)) return; // Cycle detected
+      // Resolve to canonical just in case, though input should be canonical
+      const canonical = aliasToCanonicalMap.get(normalizedNode) || normalizedNode;
 
-      visiting.add(normalizedNode);
-      const deps = graph.get(normalizedNode) || [];
+      if (visited.has(canonical)) return;
+      if (visiting.has(canonical)) return; // Cycle detected
+
+      visiting.add(canonical);
+      const deps = graph.get(canonical) || [];
 
       // Visit dependencies first
       deps.forEach(d => {
-        // Only visit if it's in our context (exists in graph)
-        if (graph.has(d)) {
-          visit(d);
-        }
+        visit(d);
       });
 
-      visiting.delete(normalizedNode);
-      visited.add(normalizedNode);
-      sortedNormalized.push(normalizedNode);
+      visiting.delete(canonical);
+      visited.add(canonical);
+      sortedNormalized.push(canonical); // Push CANONICAL name
     };
 
     // Visit all nodes in context

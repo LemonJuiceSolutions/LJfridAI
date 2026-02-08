@@ -1017,7 +1017,7 @@ export default function EditNodeDialog({
   // --- REUSABLE PIPELINE EXECUTION LOGIC ---
   const executeFullPipeline = async (
     targetAction: 'preview' | 'export' | 'email',
-    onSuccess?: (pipelineResults?: Record<string, any>) => Promise<void>
+    onSuccess?: (pipelineResults?: Record<string, any>, report?: any[]) => Promise<void>
   ) => {
     if (isExecutingRef.current) return;
     setIsPipelineExecuting(true);
@@ -1080,6 +1080,7 @@ export default function EditNodeDialog({
       }
 
       const steps: ExecutionStep[] = [];
+      const executionReport: any[] = [];
 
       // Add Ancestor Steps
       ancestors.forEach((t: any) => {
@@ -1305,8 +1306,21 @@ export default function EditNodeDialog({
           }
 
           if (success) {
+            executionReport.push({
+              name: step.label,
+              type: step.type === 'execution' && step.ancestor?.isPython ? 'Python' : 'SQL',
+              status: 'success',
+              timestamp: new Date().toISOString()
+            });
             setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'success', executionTime: Date.now() - startTime } : p));
           } else {
+            executionReport.push({
+              name: step.label,
+              type: step.type === 'execution' && step.ancestor?.isPython ? 'Python' : 'SQL',
+              status: 'error',
+              error: error || 'Errore sconosciuto',
+              timestamp: new Date().toISOString()
+            });
             setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'error', message: error || 'Errore sconosciuto' } : p));
             setPipelineAgentStatus(null);
             setIsPipelineExecuting(false);
@@ -1314,6 +1328,13 @@ export default function EditNodeDialog({
             return;
           }
         } catch (e: any) {
+          executionReport.push({
+            name: step.label,
+            type: step.type === 'execution' && step.ancestor?.isPython ? 'Python' : 'SQL',
+            status: 'error',
+            error: e.message,
+            timestamp: new Date().toISOString()
+          });
           setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'error', message: e.message } : p));
           setPipelineAgentStatus(null);
           setIsPipelineExecuting(false);
@@ -1358,7 +1379,7 @@ export default function EditNodeDialog({
         setExecutionPipeline(prev => prev.map(p => p.name === finalStepLabel ? { ...p, status: 'running' } : p));
         const startTime = Date.now();
         try {
-          if (onSuccess) await onSuccess(ancestorResults);
+          if (onSuccess) await onSuccess(ancestorResults, executionReport);
           setExecutionPipeline(prev => prev.map(p => p.name === finalStepLabel ? { ...p, status: 'success', executionTime: Date.now() - startTime } : p));
         } catch (e: any) {
           setExecutionPipeline(prev => prev.map(p => p.name === finalStepLabel ? { ...p, status: 'error', message: e.message } : p));
@@ -3506,15 +3527,16 @@ export default function EditNodeDialog({
                         className="gap-2"
                         disabled={!emailConfig.connectorId || !emailConfig.to || !emailConfig.subject || isSendingTestEmail}
                         onClick={async () => {
-                          executeFullPipeline('email', async (ancestorResults) => {
+                          executeFullPipeline('email', async (ancestorResults, executionReport) => {
                             setIsSendingTestEmail(true);
                             try {
                               // Build selectedTables from user selections
-                              const selectedTables: Array<{ name: string; query: string; inBody: boolean; asExcel: boolean; pipelineDependencies?: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }> }> = [];
+                              const selectedTables: Array<{ name: string; displayName?: string; query: string; inBody: boolean; asExcel: boolean; pipelineDependencies?: Array<{ tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }> }> = [];
 
                               // Build selectedPythonOutputs from user selections
                               const selectedPythonOutputs: Array<{
                                 name: string;
+                                displayName?: string;
                                 code: string;
                                 outputType: 'table' | 'variable' | 'chart';
                                 connectorId?: string;
@@ -3543,6 +3565,7 @@ export default function EditNodeDialog({
                                   if (inBody || asExcel) {
                                     selectedTables.push({
                                       name: table.name,
+                                      displayName: table.nodeName ? `${table.nodeName} > ${table.name}` : table.name,
                                       query: table.sqlQuery || `SELECT * FROM ${table.name}`,
                                       inBody,
                                       asExcel,
@@ -3577,6 +3600,7 @@ export default function EditNodeDialog({
 
                                   selectedTables.push({
                                     name: sqlResultName,
+                                    displayName: (questionText?.trim() || decisionText?.trim()) ? `${questionText?.trim() || decisionText?.trim()} > ${sqlResultName}` : sqlResultName,
                                     query: sqlQuery,
                                     inBody,
                                     asExcel,
@@ -3623,6 +3647,7 @@ export default function EditNodeDialog({
                                   .filter(t => t.isPython && t.pythonCode && t.name !== pythonResultName)
                                   .map(t => ({
                                     name: t.name,
+                                    nodeName: t.nodeName,
                                     code: t.pythonCode!,
                                     outputType: t.pythonOutputType || 'table',
                                     connectorId: t.connectorId,
@@ -3674,6 +3699,9 @@ export default function EditNodeDialog({
 
                                   selectedPythonOutputs.push({
                                     name: output.name,
+                                    displayName: output.isCurrent ?
+                                      ((questionText?.trim() || decisionText?.trim()) ? `${questionText?.trim() || decisionText?.trim()} > ${output.name}` : output.name) :
+                                      ('nodeName' in output && output.nodeName ? `${output.nodeName} > ${output.name}` : output.name),
                                     code: output.code,
                                     outputType: output.outputType as any,
                                     connectorId: output.connectorId,
@@ -3730,7 +3758,8 @@ export default function EditNodeDialog({
                                 availableLinks: [...(availableParentLinks || []), ...links],
                                 availableTriggers: availableParentTriggers,
                                 mediaAttachments: emailConfig.attachments?.mediaAsAttachment || [],
-                                preCalculatedResults: ancestorResults
+                                preCalculatedResults: ancestorResults,
+                                pipelineReport: executionReport
                               });
 
                               if (res.success) {

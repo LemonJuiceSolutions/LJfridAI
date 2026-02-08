@@ -24936,3 +24936,4 @@ Controlla anche che la dipendenza sia selezionata nel dropdown 'USA DATI DA (PIP
 2026-02-07T19:49:48.853Z [Scheduler] [AncestorChain] SQL node Fatturato: injected 6 pre-calculated deps (EstrazioneSharePoint, TABWID, PRODFIL2, HR2, Consegne, HR2Local) 
 2026-02-07T19:49:51.870Z [Scheduler] [AncestorChain] Executing ancestor: CONCATENA (SQL) 
 2026-02-07T19:49:51.870Z [Scheduler] [AncestorChain] SQL node CONCATENA: injected 2 pre-calculated deps (HR1, HR2) 
+2026-02-08T06:38:33.136Z [Scheduler] [DEBUG HR2] Node properties: isPython=false, sqlQuery=true, pythonCode=true, pythonResultName=undefined, pythonOutputType=chart, nodePath=root > ConnessioneSharePoint[0] > ElaboraDati[0] > Minuti Capacity > Chart 

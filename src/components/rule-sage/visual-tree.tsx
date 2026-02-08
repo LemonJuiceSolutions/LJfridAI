@@ -1482,8 +1482,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     }, [flatTree]);
 
     const getLinkedNodesTables = useMemo(() => {
-        return (currentPath: string): { name: string, nodeId?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; nodeId?: string; writesToDatabase?: boolean }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[] }[] => {
-            const linkedTables: { name: string, nodeId?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; nodeId?: string; writesToDatabase?: boolean }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[] }[] = [];
+        return (currentPath: string): { name: string, nodeName?: string, nodeId?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; nodeId?: string; writesToDatabase?: boolean }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[] }[] => {
+            const linkedTables: { name: string, nodeName?: string, nodeId?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; nodeId?: string; writesToDatabase?: boolean }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[] }[] = [];
 
             // Helper to recursively resolve dependencies
             const resolveDependencies = (node: any, visited: Set<string> = new Set()): any[] => {
@@ -1560,6 +1560,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                     console.log(`[LINKED NODES DEBUG] Found SQL table: "${parentNode.sqlResultName}"`);
                                     linkedTables.push({
                                         name: parentNode.sqlResultName,
+                                        nodeName: parentNode.question || parentNode.decision,
+                                        nodeId: parentNode.id,
                                         connectorId: parentNode.sqlConnectorId,
                                         sqlQuery: parentNode.sqlQuery,
                                         isPython: false,
@@ -1575,6 +1577,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                     console.log(`[LINKED NODES DEBUG] Found Python table: "${parentNode.pythonResultName}"`);
                                     linkedTables.push({
                                         name: parentNode.pythonResultName,
+                                        nodeName: parentNode.question || parentNode.decision,
+                                        nodeId: parentNode.id,
                                         connectorId: parentNode.pythonConnectorId,
                                         isPython: true,
                                         pythonCode: parentNode.pythonCode,

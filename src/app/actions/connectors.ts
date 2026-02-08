@@ -412,6 +412,7 @@ export async function sendTestEmailWithDataAction(params: {
     bodyHtml: string;
     selectedTables: Array<{
         name: string;
+        displayName?: string;
         query: string;
         inBody: boolean;
         asExcel: boolean;
@@ -419,6 +420,7 @@ export async function sendTestEmailWithDataAction(params: {
     }>;
     selectedPythonOutputs?: Array<{
         name: string;
+        displayName?: string;
         code: string;
         outputType: 'table' | 'variable' | 'chart';
         connectorId?: string;
@@ -488,7 +490,7 @@ export async function sendTestEmailWithDataAction(params: {
         const smtpConf = JSON.parse(smtpConnector.config);
 
         // SQL Results Container
-        const tableResults: { name: string; data: any[]; inBody: boolean; asExcel: boolean }[] = [];
+        const tableResults: { name: string; displayName?: string; data: any[]; inBody: boolean; asExcel: boolean }[] = [];;
 
         // --- SQL Execution Block (Optional) ---
         if (params.sqlConnectorId) {
@@ -750,6 +752,7 @@ export async function sendTestEmailWithDataAction(params: {
 
                         tableResults.push({
                             name: table.name,
+                            displayName: table.displayName,
                             data: data,
                             inBody: table.inBody,
                             asExcel: table.asExcel
@@ -758,6 +761,7 @@ export async function sendTestEmailWithDataAction(params: {
                         console.error(`Error executing query for ${table.name}:`, err.message);
                         tableResults.push({
                             name: table.name,
+                            displayName: table.displayName,
                             data: [{ error: err.message }],
                             inBody: table.inBody,
                             asExcel: table.asExcel
@@ -782,6 +786,7 @@ export async function sendTestEmailWithDataAction(params: {
         // Execute Python outputs if any
         const pythonResults: Array<{
             name: string;
+            displayName?: string;
             inBody: boolean;
             asAttachment: boolean;
             data?: any[];
@@ -805,6 +810,7 @@ export async function sendTestEmailWithDataAction(params: {
                         const preRes = params.preCalculatedResults[pyOutput.name];
                         pythonResults.push({
                             name: pyOutput.name,
+                            displayName: pyOutput.displayName,
                             inBody: pyOutput.inBody,
                             asAttachment: pyOutput.asAttachment,
                             data: preRes.data || (Array.isArray(preRes) ? preRes : []),
@@ -841,6 +847,7 @@ export async function sendTestEmailWithDataAction(params: {
                     if (result.success) {
                         pythonResults.push({
                             name: pyOutput.name,
+                            displayName: pyOutput.displayName,
                             inBody: pyOutput.inBody,
                             asAttachment: pyOutput.asAttachment,
                             data: result.data,
@@ -854,6 +861,7 @@ export async function sendTestEmailWithDataAction(params: {
                         console.error(`[EMAIL DEBUG] Python ${pyOutput.name} failed:`, result.error);
                         pythonResults.push({
                             name: pyOutput.name,
+                            displayName: pyOutput.displayName,
                             inBody: pyOutput.inBody,
                             asAttachment: pyOutput.asAttachment,
                             data: [{ error: result.error }],
@@ -864,6 +872,7 @@ export async function sendTestEmailWithDataAction(params: {
                     console.error(`[EMAIL DEBUG] Error executing Python ${pyOutput.name}:`, err.message);
                     pythonResults.push({
                         name: pyOutput.name,
+                        displayName: pyOutput.displayName,
                         inBody: pyOutput.inBody,
                         asAttachment: pyOutput.asAttachment,
                         data: [{ error: err.message }],
@@ -1011,7 +1020,7 @@ export async function sendTestEmailWithDataAction(params: {
             const tableData = tableResults.find(t => t.name === tableName);
             if (tableData && tableData.data.length > 0) {
                 console.log(`[EMAIL DEBUG] Replacing placeholder {{TABELLA:${tableName}}} with table HTML`);
-                return generateTableHtml(tableName, tableData.data);
+                return generateTableHtml(tableData.displayName || tableName, tableData.data);
             }
             return `<p><em>Tabella ${tableName} non trovata</em></p>`;
         });
@@ -1032,7 +1041,7 @@ export async function sendTestEmailWithDataAction(params: {
                     cid: cid
                 });
 
-                return `<div class="chart-container"><div class="table-title">${chartName}</div><img src="cid:${cid}" alt="${chartName}" style="max-width: 100%; height: auto;" /></div>`;
+                return `<div class="chart-container"><div class="table-title">${chartResult.displayName || chartName}</div><img src="cid:${cid}" alt="${chartName}" style="max-width: 100%; height: auto;" /></div>`;
             }
 
             // Helpful error message for debugging
@@ -1054,7 +1063,7 @@ export async function sendTestEmailWithDataAction(params: {
         for (const tr of tableResults) {
             // Only add if marked inBody AND not already inserted via placeholder
             if (tr.inBody && tr.data.length > 0 && !params.bodyHtml?.includes(`{{TABELLA:${tr.name}}}`)) {
-                fullHtml += generateTableHtml(tr.name, tr.data);
+                fullHtml += generateTableHtml(tr.displayName || tr.name, tr.data);
             }
         }
 
@@ -1072,11 +1081,11 @@ export async function sendTestEmailWithDataAction(params: {
                         cid: cid
                     });
 
-                    fullHtml += `<div class="chart-container"><div class="table-title">${pyResult.name}</div><img src="cid:${cid}" alt="${pyResult.name}" style="max-width: 100%; height: auto;" /></div>`;
+                    fullHtml += `<div class="chart-container"><div class="table-title">${pyResult.displayName || pyResult.name}</div><img src="cid:${cid}" alt="${pyResult.name}" style="max-width: 100%; height: auto;" /></div>`;
                 } else if (pyResult.type === 'table' && pyResult.data && pyResult.data.length > 0) {
-                    fullHtml += generateTableHtml(pyResult.name, pyResult.data);
+                    fullHtml += generateTableHtml(pyResult.displayName || pyResult.name, pyResult.data);
                 } else if (pyResult.type === 'variable' && pyResult.variables) {
-                    fullHtml += `<div class="table-section"><div class="table-title">${pyResult.name}</div><pre style="background: #f8fafc; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px; border: 1px solid #e5e7eb;">${JSON.stringify(pyResult.variables, null, 2)}</pre></div>`;
+                    fullHtml += `<div class="table-section"><div class="table-title">${pyResult.displayName || pyResult.name}</div><pre style="background: #f8fafc; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px; border: 1px solid #e5e7eb;">${JSON.stringify(pyResult.variables, null, 2)}</pre></div>`;
                 }
             }
         }
