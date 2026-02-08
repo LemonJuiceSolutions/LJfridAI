@@ -108,6 +108,13 @@ export const sendPasswordResetEmail = async (
                 try {
                     console.log("[MAIL] Found SMTP Connector, using it.");
                     configSource = "CONNECTOR";
+                    
+                    // Validate config before parsing
+                    if (!smtpConnector.config || typeof smtpConnector.config !== 'string') {
+                        console.error("[MAIL] Invalid SMTP connector config:", smtpConnector.config);
+                        throw new Error("Configurazione SMTP non valida");
+                    }
+                    
                     const conf = JSON.parse(smtpConnector.config);
                     console.log(`[MAIL] Config: Host=${conf.host}, User=${conf.user}, Port=${conf.port}`);
 

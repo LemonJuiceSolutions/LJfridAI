@@ -119,8 +119,20 @@ export async function executeSqlPreviewAction(query: string, connectorId: string
         if (!connector || connector.type !== 'SQL') {
             return { error: 'Connettore non trovato o non valido' };
         }
-
-        const conf = JSON.parse(connector.config);
+        
+        // Validate and parse connector config
+        let conf: any = null;
+        try {
+            if (!connector.config || typeof connector.config !== 'string') {
+                console.error("[CONNECTOR] Invalid connector config:", connector.config);
+                return { error: 'Configurazione connettore non valida' };
+            }
+            
+            conf = JSON.parse(connector.config);
+        } catch (parseError: any) {
+            console.error("[CONNECTOR] Failed to parse connector config:", parseError);
+            return { error: `Errore nel parsing della configurazione: ${parseError.message}` };
+        }
         const sqlConfig: any = {
             user: conf.user,
             password: conf.password,

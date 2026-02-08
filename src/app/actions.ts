@@ -13,8 +13,6 @@ import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import sql from 'mssql';
 
-
-
 import _ from 'lodash';
 import { nanoid } from 'nanoid';
 import { ai } from '@/ai/genkit';
@@ -23,6 +21,15 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
 import { getAuthenticatedUser as getAuthUserSession } from "@/lib/session";
+
+// Server-side cache for trees and variables
+const serverCache = {
+  trees: null as StoredTree[] | null,
+  variables: null as Variable[] | null,
+  treesTimestamp: 0,
+  variablesTimestamp: 0,
+  CACHE_DURATION: 30 * 60 * 1000, // 30 minuti in millisecondi
+};
 
 export async function getAuthenticatedUser() {
     const user = await getAuthUserSession();
@@ -559,6 +566,13 @@ export async function rephraseQuestionAction(question: string, context: string, 
 export async function getTreesAction(ids?: string[], type?: string): Promise<{ data: StoredTree[] | null; error: string | null; }> {
     try {
         const user = await getAuthenticatedUser();
+        const now = Date.now();
+
+        // Check cache first
+        if (!ids && !type && serverCache.trees && (now - serverCache.treesTimestamp) < serverCache.CACHE_DURATION) {
+            return { data: serverCache.trees, error: null };
+        }
+
         let treesData;
 
         if (ids && ids.length > 0) {
@@ -589,6 +603,12 @@ export async function getTreesAction(ids?: string[], type?: string): Promise<{ d
             ...t,
             createdAt: t.createdAt.toISOString()
         }));
+
+        // Update cache
+        if (!ids && !type) {
+            serverCache.trees = trees;
+            serverCache.treesTimestamp = now;
+        }
 
         return { data: trees, error: null };
     } catch (e) {
@@ -2134,15 +2154,29 @@ export async function executePythonPreviewAction(
 export async function getVariablesAction(): Promise<{ data: Variable[] | null; error: string | null; }> {
     try {
         const user = await getAuthenticatedUser();
-        const [variablesData, treesData] = await Promise.all([
-            db.variable.findMany({
-                where: { companyId: user.companyId },
-                orderBy: { name: 'asc' }
-            }),
-            db.tree.findMany({
+        const now = Date.now();
+
+        // Check cache for variables
+        if (serverCache.variables && (now - serverCache.variablesTimestamp) < serverCache.CACHE_DURATION) {
+            return { data: serverCache.variables, error: null };
+        }
+
+        // Check cache for trees (needed for variable usage tracking)
+        let treesData;
+        if (serverCache.trees && (now - serverCache.treesTimestamp) < serverCache.CACHE_DURATION) {
+            treesData = serverCache.trees;
+        } else {
+            treesData = await db.tree.findMany({
                 where: { companyId: user.companyId }
-            }),
-        ]);
+            });
+            serverCache.trees = treesData;
+            serverCache.treesTimestamp = now;
+        }
+
+        const variablesData = await db.variable.findMany({
+            where: { companyId: user.companyId },
+            orderBy: { name: 'asc' }
+        });
 
         const variables: Variable[] = variablesData.map(v => ({
             id: v.id,
@@ -2189,6 +2223,9 @@ export async function getVariablesAction(): Promise<{ data: Variable[] | null; e
             }
         }
 
+        // Update cache
+        serverCache.variables = variables;
+        serverCache.variablesTimestamp = now;
 
         return { data: variables, error: null };
     } catch (e) {

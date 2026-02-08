@@ -17,8 +17,9 @@ import {
     executePythonPreviewAction,
     exportTableToSqlAction
 } from '@/app/actions';
-import { sendTestEmailWithDataAction, getConnectorsAction } from '@/app/actions/connectors';
+import { sendTestEmailWithDataAction } from '@/app/actions/connectors';
 import { useToast } from '@/hooks/use-toast';
+import { useConnectors } from '@/hooks/use-connectors';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -1498,6 +1499,9 @@ function EmailActionBox({
     // State for resolving SMTP connector if missing
     const [resolvedSmtpConnectorId, setResolvedSmtpConnectorId] = useState<string | null>(null);
 
+    // Use connectors hook with caching for better performance
+    const { smtpConnectors } = useConnectors();
+
     // Resolve ancestor resources when currentNode has an ID (indicating it may be a linked node)
     useEffect(() => {
         let mounted = true;
@@ -1648,38 +1652,22 @@ function EmailActionBox({
 
 
 
-    // Resolve SMTP Connector if missing
+    // Resolve SMTP Connector if missing - optimized with caching
     useEffect(() => {
-        let mounted = true;
-        const resolveSmtp = async () => {
-            // If we already have a functional connectorId from props, or already resolved one, do nothing (unless it failed?)
-            if (emailAction.connectorId && !resolvedSmtpConnectorId) return;
-            if (resolvedSmtpConnectorId) return;
+        // If we already have a functional connectorId from props, or already resolved one, do nothing
+        if (emailAction.connectorId && !resolvedSmtpConnectorId) return;
+        if (resolvedSmtpConnectorId) return;
 
-            console.log('[EmailActionBox] 🔍 ConnectorId is missing or invalid. Attempting to find a default SMTP connector...');
-
-            try {
-                const result = await getConnectorsAction();
-                if (mounted && result.data) {
-                    const smtpConnectors = result.data.filter((c: any) => c.type === 'SMTP');
-                    if (smtpConnectors.length > 0) {
-                        const bestMatch = smtpConnectors[0];
-                        console.log(`[EmailActionBox] ✅ Found fallback SMTP connector: ${bestMatch.name} (${bestMatch.id})`);
-                        setResolvedSmtpConnectorId(bestMatch.id);
-                    } else {
-                        console.warn('[EmailActionBox] ⚠️ No SMTP connectors found in the company.');
-                    }
-                }
-            } catch (e) {
-                console.warn('[EmailActionBox] Failed to fetch connectors:', e);
-            }
-        };
-
-        if (!emailAction.connectorId) {
-            resolveSmtp();
+        // Use cached connectors from useConnectors hook instead of fetching again
+        if (!emailAction.connectorId && smtpConnectors.length > 0) {
+            console.log('[EmailActionBox] 🔍 ConnectorId is missing. Using cached SMTP connectors...');
+            const bestMatch = smtpConnectors[0];
+            console.log(`[EmailActionBox] ✅ Found fallback SMTP connector: ${bestMatch.name} (${bestMatch.id})`);
+            setResolvedSmtpConnectorId(bestMatch.id);
+        } else if (!emailAction.connectorId && smtpConnectors.length === 0) {
+            console.warn('[EmailActionBox] ⚠️ No SMTP connectors found in the company.');
         }
-        return () => { mounted = false; };
-    }, [emailAction.connectorId, resolvedSmtpConnectorId]);
+    }, [emailAction.connectorId, resolvedSmtpConnectorId, smtpConnectors]);
 
     // Handle send email
     const handleSendEmail = useCallback(async () => {
@@ -1840,20 +1828,17 @@ function EmailActionBox({
             )) {
                 console.warn('[EmailActionBox] ⚠️ Configured connector failed. Attempting auto-recovery...');
                 try {
-                    // Fetch fresh list of connectors
-                    const connResult = await getConnectorsAction();
-                    if (connResult.data) {
-                        const fallback = connResult.data.find((c: any) => c.type === 'SMTP');
-                        if (fallback) {
-                            console.log(`[EmailActionBox] 🔄 Retrying with fallback connector: ${fallback.name} (${fallback.id})`);
-                            result = await trySend(fallback.id);
-                            if (result.success) {
-                                // If successful, update state to remember this working connector
-                                setResolvedSmtpConnectorId(fallback.id);
-                            }
-                        } else {
-                            console.error('[EmailActionBox] ❌ No fallback SMTP connectors available.');
+                    // Use cached connectors from useConnectors hook instead of fetching again
+                    const fallback = smtpConnectors.find((c: any) => c.type === 'SMTP');
+                    if (fallback) {
+                        console.log(`[EmailActionBox] 🔄 Retrying with fallback connector: ${fallback.name} (${fallback.id})`);
+                        result = await trySend(fallback.id);
+                        if (result.success) {
+                            // If successful, update state to remember this working connector
+                            setResolvedSmtpConnectorId(fallback.id);
                         }
+                    } else {
+                        console.error('[EmailActionBox] ❌ No fallback SMTP connectors available.');
                     }
                 } catch (retryErr) {
                     console.error('[EmailActionBox] ❌ Auto-recovery failed:', retryErr);
@@ -1877,7 +1862,7 @@ function EmailActionBox({
             setEmailError(e.message);
             toast({ variant: 'destructive', title: "Errore Email", description: e.message });
         }
-    }, [emailAction, fullDependencyChain, currentNode, toast, resolvedSmtpConnectorId]);
+    }, [emailAction, fullDependencyChain, currentNode, toast, resolvedSmtpConnectorId, smtpConnectors]);
 
     // Auto-execute when dependencies are ready
     useEffect(() => {

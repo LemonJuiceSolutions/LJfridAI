@@ -4,6 +4,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback, memo } from 'react';
+import { useConnectors } from '@/hooks/use-connectors';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -39,7 +40,7 @@ import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, Emai
 import { Input } from '../ui/input';
 import _ from 'lodash';
 import { useToast } from '@/hooks/use-toast';
-import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, getConnectorsAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction, exportTableToSqlAction, fetchTableDataAction, executeEmailAction, getAuthenticatedUser, processDescriptionAction, rephraseQuestionAction, updateTreeNodeAction } from '@/app/actions';
+import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction, exportTableToSqlAction, fetchTableDataAction, executeEmailAction, getAuthenticatedUser, processDescriptionAction, rephraseQuestionAction, updateTreeNodeAction } from '@/app/actions';
 import { sendEmailWithConnectorAction, sendTestEmailWithDataAction } from '@/app/actions/connectors';
 import { executeAncestorChainAction, findAncestorsAction } from '@/app/actions/ancestors';
 import { uploadFile } from '@/lib/storage-client';
@@ -128,11 +129,17 @@ const CollapsibleSection = ({
 
   useEffect(() => {
     const loadState = () => {
-      const savedState = localStorage.getItem(storageKey);
-      if (savedState !== null) {
-        setIsOpen(savedState === 'true');
-      } else {
-        // Default rule: open if has items, closed otherwise
+      try {
+        const savedState = localStorage.getItem(storageKey);
+        if (savedState !== null) {
+          setIsOpen(savedState === 'true');
+        } else {
+          // Default rule: open if has items, closed otherwise
+          setIsOpen(count > 0);
+        }
+      } catch (e) {
+        // Fallback to default if localStorage fails
+        console.warn('[CollapsibleSection] Failed to load state from localStorage:', e);
         setIsOpen(count > 0);
       }
     };
@@ -342,11 +349,12 @@ export default function EditNodeDialog({
   const [sqlResultName, setSqlResultName] = useState('');
   const [selectedPipelines, setSelectedPipelines] = useState<string[]>([]);
 
-  const [sqlConnectors, setSqlConnectors] = useState<{ id: string, name: string }[]>([]);
-  const [dataConnectors, setDataConnectors] = useState<{ id: string, name: string }[]>([]);
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
   const [sqlPreviewTimestamp, setSqlPreviewTimestamp] = useState<number | null>(null);
   const [sqlChatHistory, setSqlChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number }[]>([]);
+
+  // Use connectors hook with caching for better performance
+  const { sqlConnectors, dataConnectors, smtpConnectors, refreshConnectors } = useConnectors();
 
   // Python State
   // Pipeline Execution State
@@ -406,7 +414,6 @@ export default function EditNodeDialog({
     }
   };
   const [emailConfig, setEmailConfig] = useState<EmailActionConfig>(defaultEmailConfig);
-  const [smtpConnectors, setSmtpConnectors] = useState<{ id: string, name: string }[]>([]);
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
 
   // Safe accessors for email attachments (prevent undefined errors)
@@ -635,27 +642,6 @@ export default function EditNodeDialog({
 
     }
   }, [isOpen, initialNode, nodeType, availableInputTables]);
-
-  // Load Connectors
-  useEffect(() => {
-    if (isOpen) {
-      const loadConnectors = async () => {
-        const res = await getConnectorsAction();
-        if (res.data) {
-          const sqls = res.data.filter((c: any) => c.type === 'SQL').map((c: any) => ({ id: c.id, name: c.name }));
-          setSqlConnectors(sqls);
-
-          // Data Connectors for Python (SQL + HubSpot + etc) - exclude SMTP
-          const dataConns = res.data.filter((c: any) => c.type !== 'SMTP').map((c: any) => ({ id: c.id, name: c.name }));
-          setDataConnectors(dataConns);
-
-          const smtps = res.data.filter((c: any) => c.type === 'SMTP').map((c: any) => ({ id: c.id, name: c.name }));
-          setSmtpConnectors(smtps);
-        }
-      };
-      loadConnectors();
-    }
-  }, [isOpen]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -3030,10 +3016,10 @@ export default function EditNodeDialog({
               )}
 
               {/* Email Action Section */}
-              {true && (
+              {emailConfig.enabled && (
                 <CollapsibleSection
                   title="Invio Email"
-                  count={emailConfig.enabled ? 1 : 0}
+                  count={1}
                   storageKey={`collapse-email-${treeId}-${nodePath}`}
                   icon={Mail}
                 >

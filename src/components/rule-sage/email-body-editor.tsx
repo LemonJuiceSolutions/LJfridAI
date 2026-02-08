@@ -85,10 +85,13 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorRef, EmailBodyEditorPro
         immediatelyRender: false, // Fix for React 18 SSR
     });
 
-    // Update editor content if value changes externally
+    // Update editor content if value changes externally - optimized with debounce
     useEffect(() => {
         if (editor && value !== editor.getHTML()) {
-            editor.commands.setContent(value);
+            const timeoutId = setTimeout(() => {
+                editor.commands.setContent(value);
+            }, 100); // 100ms debounce to prevent rapid updates
+            return () => clearTimeout(timeoutId);
         }
     }, [value, editor]);
 

@@ -18,7 +18,9 @@ import { Badge } from '../ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { getTreesAction, getVariablesAction, updateVariableAction, updateTreeNodeAction, getTreeAction } from '@/app/actions';
+import { updateVariableAction, updateTreeNodeAction, getTreeAction } from '@/app/actions';
+import { useTrees } from '@/hooks/use-trees';
+import { useVariables } from '@/hooks/use-variables';
 import EditOptionDialog from './edit-option-dialog';
 import AddChildNodeDialog from './add-child-node-dialog';
 
@@ -330,31 +332,20 @@ function getNodeFromPath(obj: any, path: string): any {
 export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIsSaving }: VisualTreeProps) {
     const { toast } = useToast();
     const [tree, setTree] = useState<DecisionNode | null>(null);
-    const [dbVariables, setDbVariables] = useState<Variable[]>([]);
-    const [allTrees, setAllTrees] = useState<StoredTree[]>([]);
     const autoCorrectAttempted = useRef(false);
 
     const [internalSaving, setInternalSaving] = useState(false);
     const isSaving = parentIsSaving || internalSaving;
 
-    const fetchExternalData = useCallback(async () => {
-        const [varsResult, treesResult] = await Promise.all([
-            getVariablesAction(),
-            getTreesAction()
-        ]);
-        if (varsResult.data) {
-            setDbVariables(varsResult.data);
-        }
-        if (treesResult.data) {
-            // Exclude current tree from the list of linkable trees
-            setAllTrees(treesResult.data.filter(t => t.id !== treeData.id));
-        }
-    }, [treeData.id]);
+    // Use hooks for caching trees and variables
+    const { trees: allTrees, refreshTrees } = useTrees();
+    const { variables: dbVariables, refreshVariables } = useVariables();
 
-    // Fix: Refresh variables when treeData changes (e.g. after consolidation)
+    // Fix: Refresh variables and trees when treeData changes (e.g. after consolidation)
     useEffect(() => {
-        fetchExternalData();
-    }, [treeData, fetchExternalData]);
+        refreshVariables();
+        refreshTrees();
+    }, [treeData, refreshVariables, refreshTrees]);
 
 
     const layout = useMemo(() => {
@@ -505,13 +496,14 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 }
 
                 setTree(treeWithIds as DecisionNode);
-                fetchExternalData();
+                refreshVariables();
+                refreshTrees();
             }
         } catch (e) {
             console.error("Failed to parse tree JSON:", e);
             setTree(null);
         }
-    }, [treeData, fetchExternalData, onDataRefresh]);
+    }, [treeData, refreshVariables, refreshTrees, onDataRefresh]);
 
     const [editingNodeInfo, setEditingNodeInfo] = useState<{ path: string; node: DecisionLeaf | { question: string } | { option: string }; type: 'question' | 'decision' } | null>(null);
     const [editingOptionInfo, setEditingOptionInfo] = useState<{ path: string; option: VariableOption; varId: string; } | null>(null);
@@ -788,7 +780,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             if (result.success) {
                 toast({ title: "Successo!", description: "Opzione aggiornata. L'albero si ricaricherà per riflettere le modifiche." });
                 onDataRefresh();
-                fetchExternalData();
+                refreshVariables();
+                refreshTrees();
             } else {
                 throw new Error(result.error || "Aggiornamento della variabile fallito");
             }
@@ -842,7 +835,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     if (!varUpdateResult.success) {
                         throw new Error(varUpdateResult.error || "Aggiornamento della variabile standard fallito");
                     }
-                    await fetchExternalData(); // Refresh db variables state
+                    await refreshVariables(); // Refresh db variables state
                 } else {
                     throw new Error("Variabile standard non trovata nel database");
                 }
@@ -1142,7 +1135,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
 
             onDataRefresh();
-            fetchExternalData();
+            refreshVariables();
+            refreshTrees();
         } catch (e) {
             toast({ variant: 'destructive', title: "Errore di Eliminazione", description: e instanceof Error ? e.message : 'Errore Sconosciuto' });
         } finally {
