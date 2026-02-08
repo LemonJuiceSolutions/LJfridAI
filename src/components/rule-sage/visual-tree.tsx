@@ -18,7 +18,7 @@ import { Badge } from '../ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { getTreesAction, getVariablesAction, updateVariableAction, updateTreeNodeAction } from '@/app/actions';
+import { getTreesAction, getVariablesAction, updateVariableAction, updateTreeNodeAction, getTreeAction } from '@/app/actions';
 import EditOptionDialog from './edit-option-dialog';
 import AddChildNodeDialog from './add-child-node-dialog';
 
@@ -706,30 +706,33 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
             console.log('[DEBUG] Anteprima salvata con successo nel nodo:', path);
             // Aggiorna lo stato locale dell'albero per riflettere immediatamente i cambiamenti
-            // Questo è necessario perché il salvataggio nel database non aggiorna automaticamente lo stato locale
-            const newTree = _.cloneDeep(tree);
-            const nodeToUpdate = getNodeFromPath(newTree, path);
-            console.log('[DEBUG] Node to update in local tree:', nodeToUpdate ? 'found' : 'NOT FOUND');
-            if (nodeToUpdate) {
-                if (previewData.sqlPreviewData) {
-                    console.log('[DEBUG] Updating SQL preview in local tree');
-                    nodeToUpdate.sqlPreviewData = previewData.sqlPreviewData;
-                    if (previewData.sqlPreviewTimestamp) {
-                        nodeToUpdate.sqlPreviewTimestamp = previewData.sqlPreviewTimestamp;
+            // Usa functional update (prev =>) per evitare race conditions quando più anteprime
+            // vengono salvate in rapida successione (es. pipeline con più antenati)
+            setTree(prevTree => {
+                const newTree = _.cloneDeep(prevTree);
+                const nodeToUpdate = getNodeFromPath(newTree, path);
+                console.log('[DEBUG] Node to update in local tree:', nodeToUpdate ? 'found' : 'NOT FOUND');
+                if (nodeToUpdate) {
+                    if (previewData.sqlPreviewData) {
+                        console.log('[DEBUG] Updating SQL preview in local tree');
+                        nodeToUpdate.sqlPreviewData = previewData.sqlPreviewData;
+                        if (previewData.sqlPreviewTimestamp) {
+                            nodeToUpdate.sqlPreviewTimestamp = previewData.sqlPreviewTimestamp;
+                        }
+                    } else if (previewData.timestamp && !previewData.type) {
+                        console.log('[DEBUG] Updating SQL preview (alt) in local tree');
+                        nodeToUpdate.sqlPreviewData = previewData.sqlPreviewData || previewData.data;
+                        if (previewData.timestamp) {
+                            nodeToUpdate.sqlPreviewTimestamp = previewData.timestamp;
+                        }
+                    } else {
+                        console.log('[DEBUG] Updating Python preview in local tree');
+                        nodeToUpdate.pythonPreviewResult = previewData;
                     }
-                } else if (previewData.timestamp && !previewData.type) {
-                    console.log('[DEBUG] Updating SQL preview (alt) in local tree');
-                    nodeToUpdate.sqlPreviewData = previewData.sqlPreviewData || previewData.data;
-                    if (previewData.timestamp) {
-                        nodeToUpdate.sqlPreviewTimestamp = previewData.timestamp;
-                    }
-                } else {
-                    console.log('[DEBUG] Updating Python preview in local tree');
-                    nodeToUpdate.pythonPreviewResult = previewData;
+                    console.log('[DEBUG] Local tree updated with preview data');
                 }
-                setTree(newTree);
-                console.log('[DEBUG] Local tree updated with preview data');
-            }
+                return newTree;
+            });
 
             // Non chiamare onDataRefresh() qui perché causerebbe la chiusura della dialog
             // L'anteprima è già nello stato locale e verrà persistita quando l'utente salva le modifiche al nodo
@@ -746,6 +749,20 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
             console.error('[DEBUG] Errore durante il salvataggio dell\'anteprima:', error);
             toast({ variant: 'destructive', title: "Errore durante il salvataggio dell'anteprima", description: error });
+        }
+    };
+
+    const handleRefreshTree = async () => {
+        try {
+            const result = await getTreeAction(treeData.id);
+            if (result.data) {
+                const freshTree = typeof result.data.jsonDecisionTree === 'string'
+                    ? JSON.parse(result.data.jsonDecisionTree)
+                    : result.data.jsonDecisionTree;
+                setTree(freshTree);
+            }
+        } catch (e) {
+            console.warn('[RefreshTree] Failed to refresh tree from DB:', e);
         }
     };
 
@@ -1850,6 +1867,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     onClose={() => setEditingNodeInfo(null)}
                     onSave={handleNodeUpdate}
                     onSavePreview={handleSavePreview}
+                    onRefreshTree={handleRefreshTree}
                     initialNode={editingNodeInfo.node}
                     nodeType={editingNodeInfo.type}
                     variableId={(getNodeFromPath(tree, editingNodeInfo.path))?.variableId}

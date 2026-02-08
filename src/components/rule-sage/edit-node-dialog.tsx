@@ -235,6 +235,7 @@ interface EditNodeDialogProps {
   onClose: () => void;
   onSave: (path: string, newNodeData: any) => void;
   onSavePreview?: (nodePath: string, previewData: any) => void;
+  onRefreshTree?: () => void;
   initialNode: DecisionNode | DecisionLeaf | { question: string } | { option: string };
   nodeType: 'question' | 'decision';
   variableId?: string;
@@ -267,6 +268,7 @@ export default function EditNodeDialog({
   onClose,
   onSave,
   onSavePreview,
+  onRefreshTree,
   initialNode,
   nodeType,
   variableId,
@@ -1214,6 +1216,8 @@ export default function EditNodeDialog({
                   data: res.data,
                   chartBase64: res.chartBase64,
                   chartHtml: res.chartHtml,
+                  rechartsConfig: res.rechartsConfig,
+                  rechartsData: res.rechartsData,
                   variables: res.variables
                 };
               } else {
@@ -1315,6 +1319,35 @@ export default function EditNodeDialog({
           setIsPipelineExecuting(false);
           isExecutingRef.current = false;
           return;
+        }
+      }
+
+      // 3.5. PERSIST ANCESTOR PREVIEWS (single DB write + refresh in-memory tree)
+      if (treeId && Object.keys(ancestorResults).length > 0) {
+        try {
+          const ancestorPreviews: Array<{ nodeId: string; isPython: boolean; pythonOutputType?: string; result: any }> = [];
+          for (const step of steps) {
+            if (step.type !== 'execution' || !step.ancestor) continue;
+            const ancestor = step.ancestor;
+            const resultData = ancestorResults[ancestor.name];
+            if (!resultData) continue;
+            const nodeId = ancestor.id || ancestor.nodeId;
+            if (!nodeId) continue;
+            ancestorPreviews.push({
+              nodeId,
+              isPython: !!ancestor.isPython,
+              pythonOutputType: ancestor.pythonOutputType,
+              result: resultData
+            });
+          }
+          if (ancestorPreviews.length > 0) {
+            const { saveAncestorPreviewsBatchAction } = await import('@/app/actions/scheduler');
+            await saveAncestorPreviewsBatchAction(treeId, ancestorPreviews);
+            // Refresh the in-memory tree to reflect DB changes
+            if (onRefreshTree) onRefreshTree();
+          }
+        } catch (err) {
+          console.warn('[PIPELINE] Error saving ancestor previews:', err);
         }
       }
 

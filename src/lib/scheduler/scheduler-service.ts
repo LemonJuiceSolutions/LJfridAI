@@ -293,7 +293,8 @@ export class SchedulerService {
   private async executeAncestorChain(
     contextTables: any[],
     targetNodeNames?: string[], // Optional: filter
-    _bypassAuth: boolean = true
+    _bypassAuth: boolean = true,
+    treeId?: string // Save ancestor previews to tree JSON + ScheduledTaskExecution
   ): Promise<Record<string, any>> {
     const results: Record<string, any> = {};
     // Store results with normalized keys for lookup, but allow original keys too
@@ -602,6 +603,42 @@ export class SchedulerService {
       }
     }
 
+    // --- PERSIST ANCESTOR PREVIEWS ---
+    if (treeId) {
+      try {
+        const ancestorPreviews: Array<{ nodeId: string; isPython: boolean; pythonOutputType?: string; result: any }> = [];
+
+        for (const entry of pipelineReport) {
+          if (entry.status !== 'success') continue;
+
+          const normalizedName = entry.name.toLowerCase().trim();
+          const resultData = resultsNormalized[normalizedName];
+          if (!resultData) continue;
+
+          const tableDef = contextTables.find(t => t.name.toLowerCase().trim() === normalizedName);
+          const nodeId = tableDef?.nodeId || tableDef?.id;
+          if (!tableDef || !nodeId) continue;
+
+          ancestorPreviews.push({
+            nodeId: nodeId,
+            isPython: !!tableDef.isPython,
+            pythonOutputType: tableDef.pythonOutputType,
+            result: resultData
+          });
+        }
+
+        if (ancestorPreviews.length > 0) {
+          logger.log(`[AncestorChain] Saving ${ancestorPreviews.length} ancestor previews to tree ${treeId}`);
+          const { saveAncestorPreviewsBatchAction } = await import('@/app/actions/scheduler');
+          await saveAncestorPreviewsBatchAction(treeId, ancestorPreviews).catch(err => {
+            logger.error(`[AncestorChain] Failed to save ancestor previews: ${err.message}`);
+          });
+        }
+      } catch (err: any) {
+        logger.error(`[AncestorChain] Error persisting ancestor previews: ${err.message}`);
+      }
+    }
+
     return { results, pipelineReport };
   }
 
@@ -903,7 +940,7 @@ export class SchedulerService {
     logger.log(`[EmailSend] Total nodes to execute: ${availableInputTables.length} (${availableInputTables.map(n => n.name).join(', ')})`);
 
     // 6. Execute ALL ancestors to refresh data (like UI's executeFullPipeline)
-    const { results: ancestorResults, pipelineReport } = await this.executeAncestorChain(availableInputTables, undefined, true);
+    const { results: ancestorResults, pipelineReport } = await this.executeAncestorChain(availableInputTables, undefined, true, treeId);
     logger.log(`[EmailSend] Ancestor chain completed with ${Object.keys(ancestorResults).length} results and ${pipelineReport.length} report entries`);
 
     // 5. PREFER saved config if available (from taskConfigProvider snapshot)
@@ -1048,7 +1085,7 @@ export class SchedulerService {
     // 0. EXECUTE ANCESTORS (Full Pipeline Refresh)
     // Execute all context tables to ensure they are up to date and exported if needed
     logger.log(`[SqlNode] Starting ancestor chain execution.`);
-    await this.executeAncestorChain(allContext, undefined, true);
+    await this.executeAncestorChain(allContext, undefined, true, treeId);
 
 
     // 3. Execute Query
@@ -1114,7 +1151,7 @@ export class SchedulerService {
 
     // 0. EXECUTE ANCESTORS (Full Pipeline Refresh)
     logger.log(`[PythonNode] Starting ancestor chain execution.`);
-    await this.executeAncestorChain(allContext, undefined, true);
+    await this.executeAncestorChain(allContext, undefined, true, treeId);
 
 
     // 2. Execute Python

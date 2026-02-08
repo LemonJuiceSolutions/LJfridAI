@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import { getAuthenticatedUser } from "@/lib/session";
 // import { schedulerService } from '@/lib/scheduler/scheduler-service';
 import { revalidatePath } from 'next/cache';
+import { Prisma } from '@prisma/client';
 
 /**
  * Get existing schedule for a node
@@ -222,3 +223,301 @@ export async function getNodeExecutionHistoryAction(treeId: string, nodeId: stri
         return { success: false, message: error.message };
     }
 }
+
+/**
+ * Save execution result for a node (creates implicit task if needed)
+ */
+export async function saveNodeExecutionResultAction(
+    treeId: string,
+    nodeId: string,
+    result: any,
+    status: 'success' | 'failed',
+    error?: string,
+    executionTime?: number
+) {
+    try {
+        // We might be running in a background job context (e.g. system scheduler), 
+        // so we can't always rely on getAuthenticatedUser().
+        // However, this action is 'use server', so it's callable from client or other server actions.
+        // If called from a background job (e.g. cron), we might need to bypass auth check or pass a system user.
+        // For now, let's try to get user, if not, use a system identifier if possible or fail if strict.
+        // BUT: executeChain logic might run on server without a session if triggered by scheduler service.
+        // Let's check session first.
+
+        let user: any;
+        try {
+            user = await getAuthenticatedUser();
+        } catch (e) {
+            // If no session, we might be system. 
+            // We need companyId to find the task.
+            // If we don't have user, we can try to find the Tree to get the companyId.
+            // This requires an extra lookup.
+        }
+
+        let companyId = user?.companyId;
+        let userId = user?.id;
+
+        if (!companyId) {
+            // Find tree to get company
+            const tree = await db.tree.findUnique({ where: { id: treeId } });
+            if (tree) {
+                companyId = tree.companyId;
+            }
+        }
+
+        if (!companyId) {
+            console.error('Could not determine companyId for saving execution result', { treeId, nodeId });
+            return { success: false, message: 'Company ID not found' };
+        }
+
+        const namePattern = `Node-${treeId}-${nodeId}`;
+
+        // Find or create the task
+        let task = await db.scheduledTask.findFirst({
+            where: {
+                companyId: companyId,
+                name: { contains: namePattern }
+            }
+        });
+
+        if (!task) {
+            // Create a new "implicit" task for this node
+            task = await db.scheduledTask.create({
+                data: {
+                    name: `Node-${treeId}-${nodeId} (Implicit)`,
+                    companyId: companyId,
+                    type: 'NODE_EXECUTION', // Use custom type for these
+                    config: {
+                        treeId,
+                        nodeId
+                    },
+                    status: 'active', // Active but maybe no schedule
+                    scheduleType: 'manual',
+                    daysOfWeek: '',
+                    hours: '',
+                    intervalMinutes: null,
+                    cronExpression: null,
+                    createdBy: userId
+                }
+            });
+        }
+
+        // Create execution record
+        const execution = await db.scheduledTaskExecution.create({
+            data: {
+                taskId: task.id,
+                status: status,
+                startedAt: new Date(Date.now() - (executionTime || 0)), // Approximate start
+                completedAt: new Date(),
+                durationMs: executionTime || 0,
+                result: result,
+                error: error
+            }
+        });
+
+        // Update task stats
+        await db.scheduledTask.update({
+            where: { id: task.id },
+            data: {
+                lastRunAt: new Date(),
+                runCount: { increment: 1 },
+                successCount: status === 'success' ? { increment: 1 } : undefined,
+                failureCount: status === 'failed' ? { increment: 1 } : undefined,
+                lastError: error || null
+            }
+        });
+
+        revalidatePath(`/connections`); // Optional: revalidate where tasks are listed
+        return { success: true, executionId: execution.id };
+
+    } catch (error: any) {
+        console.error('Error saving node execution result:', error);
+        return { success: false, message: error.message };
+    }
+}
+
+/**
+ * Get the last execution result for a node
+ */
+export async function getLastNodeExecutionResultAction(treeId: string, nodeId: string) {
+    try {
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return { success: false, message: 'Non autenticato' };
+        }
+
+        const namePattern = `Node-${treeId}-${nodeId}`;
+
+        // Find the task
+        const task = await db.scheduledTask.findFirst({
+            where: {
+                companyId: user.companyId,
+                name: { contains: namePattern }
+            }
+        });
+
+        if (!task) {
+            return { success: true, data: null };
+        }
+
+        // Get last successful execution with a result
+        const lastExecution = await db.scheduledTaskExecution.findFirst({
+            where: {
+                taskId: task.id,
+                status: 'success',
+                result: { not: Prisma.DbNull }
+            },
+            orderBy: {
+                completedAt: 'desc'
+            }
+        });
+
+        return { success: true, data: lastExecution };
+    } catch (error: any) {
+        console.error('Error fetching last node execution:', error);
+        return { success: false, message: error.message };
+    }
+}
+
+/**
+ * Batch-save ancestor previews to both tree JSON and ScheduledTaskExecution.
+ * Called after executeAncestorChain (server) or executeFullPipeline (client)
+ * to persist all ancestor node previews in a single tree JSON write.
+ */
+export async function saveAncestorPreviewsBatchAction(
+    treeId: string,
+    ancestorPreviews: Array<{
+        nodeId: string;
+        isPython: boolean;
+        pythonOutputType?: string;
+        result: any;
+    }>
+): Promise<{ success: boolean; savedCount: number }> {
+    try {
+        if (!treeId || !ancestorPreviews || ancestorPreviews.length === 0) {
+            return { success: true, savedCount: 0 };
+        }
+
+        // Auth: try user first, fall back to tree-based company lookup
+        let companyId: string | undefined;
+        try {
+            const user = await getAuthenticatedUser();
+            companyId = user?.companyId;
+        } catch { /* scheduler context - no session */ }
+
+        // 1. Load tree JSON once
+        const tree = await db.tree.findUnique({ where: { id: treeId } });
+        if (!tree || !tree.jsonDecisionTree) {
+            return { success: false, savedCount: 0 };
+        }
+
+        if (!companyId) {
+            companyId = tree.companyId ?? undefined;
+        }
+
+        const json = JSON.parse(tree.jsonDecisionTree);
+
+        // Recursive findNodeById (same logic as scheduler-service.ts)
+        const findNodeById = (node: any, targetId: string): any => {
+            if (!node || typeof node !== 'object') return null;
+            if (node.id === targetId) return node;
+            if (node.options && typeof node.options === 'object') {
+                for (const key in node.options) {
+                    const val = node.options[key];
+                    if (Array.isArray(val)) {
+                        for (const item of val) {
+                            const found = findNodeById(item, targetId);
+                            if (found) return found;
+                        }
+                    } else {
+                        const found = findNodeById(val, targetId);
+                        if (found) return found;
+                    }
+                }
+            }
+            return null;
+        };
+
+        // 2. Update each ancestor's preview in the parsed JSON
+        let savedCount = 0;
+        const nowMs = Date.now(); // Epoch ms, same format as UI's Date.now()
+
+        for (const preview of ancestorPreviews) {
+            if (!preview.nodeId || preview.result == null) continue;
+
+            const node = findNodeById(json, preview.nodeId);
+            if (!node) continue;
+
+            if (!preview.isPython) {
+                // SQL node: field names match UI's onSavePreview format
+                const data = Array.isArray(preview.result)
+                    ? preview.result
+                    : (preview.result?.data && Array.isArray(preview.result.data) ? preview.result.data : null);
+                if (data) {
+                    node.sqlPreviewData = data;
+                    node.sqlPreviewTimestamp = nowMs;
+                    savedCount++;
+                }
+            } else {
+                // Python node: timestamp goes INSIDE pythonPreviewResult (same as UI)
+                const outputType = preview.pythonOutputType || 'table';
+                if (outputType === 'chart') {
+                    node.pythonPreviewResult = {
+                        type: 'chart',
+                        chartBase64: preview.result.chartBase64,
+                        chartHtml: preview.result.chartHtml,
+                        rechartsConfig: preview.result.rechartsConfig,
+                        rechartsData: preview.result.rechartsData,
+                        timestamp: nowMs,
+                    };
+                } else if (outputType === 'variable') {
+                    node.pythonPreviewResult = {
+                        type: 'variable',
+                        variables: preview.result.variables || preview.result,
+                        timestamp: nowMs,
+                    };
+                } else {
+                    // table
+                    const data = preview.result?.data || preview.result;
+                    node.pythonPreviewResult = {
+                        type: 'table',
+                        data: Array.isArray(data) ? data : undefined,
+                        timestamp: nowMs,
+                    };
+                }
+                savedCount++;
+            }
+        }
+
+        // 3. Save tree JSON once (only if we actually updated something)
+        if (savedCount > 0) {
+            await db.tree.update({
+                where: { id: treeId },
+                data: { jsonDecisionTree: JSON.stringify(json) }
+            });
+        }
+
+        // 4. Save to ScheduledTaskExecution for each ancestor (for PipelineOutputWidget)
+        for (const preview of ancestorPreviews) {
+            if (!preview.nodeId || preview.result == null) continue;
+            try {
+                await saveNodeExecutionResultAction(
+                    treeId,
+                    preview.nodeId,
+                    preview.result,
+                    'success',
+                    undefined,
+                    0
+                );
+            } catch (err: any) {
+                console.warn(`[saveAncestorPreviews] Failed to save execution for node ${preview.nodeId}:`, err.message);
+            }
+        }
+
+        return { success: true, savedCount };
+    } catch (error: any) {
+        console.error('[saveAncestorPreviews] Error:', error);
+        return { success: false, savedCount: 0 };
+    }
+}
+

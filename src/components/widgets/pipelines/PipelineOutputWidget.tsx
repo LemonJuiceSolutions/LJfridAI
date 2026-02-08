@@ -2,12 +2,14 @@
 import { useState, useEffect } from 'react';
 import TextWidget from "@/components/dashboard/text-widget";
 import SmartWidgetRenderer from "@/components/widgets/builder/SmartWidgetRenderer";
-import { WidgetConfig } from "@/components/widgets/builder/WidgetEditor";
+import { WidgetConfig } from "@/lib/types";
 import { executeScript } from '@/ai/flows/execute-script-flow';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getPipelines } from '@/actions/pipelines';
+
 import { useSession } from 'next-auth/react';
+import { getLastNodeExecutionResultAction } from '@/app/actions/scheduler';
 
 type PipelineOutputWidgetProps = {
     pipelineId: string;
@@ -95,7 +97,26 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
                     setReportContent(node.content || '{{result}}');
                     setReportType(node.previewType);
                     setWidgetConfig(node.widgetConfig);
-                    const result = await runUpToNode(pipelines, pipelineId, nodeId);
+
+                    // Try to get persisted result from DB first
+                    let result: any = null;
+                    let fromDb = false;
+
+                    try {
+                        const dbResult = await getLastNodeExecutionResultAction(pipelineId, nodeId);
+                        if (dbResult.success && dbResult.data && dbResult.data.result) {
+                            result = dbResult.data.result;
+                            fromDb = true;
+                        }
+                    } catch (e) {
+                        console.warn('Failed to fetch persisted result:', e);
+                    }
+
+                    // Fallback to runtime calculation if no DB result
+                    if (!result && !fromDb) {
+                        result = await runUpToNode(pipelines, pipelineId, nodeId);
+                    }
+
                     setReportData(result);
 
                     if (refreshTrigger > 0) {
