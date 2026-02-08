@@ -1288,6 +1288,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                         deps.push({
                             tableName: pName,
                             nodeId: sn.id, // Pass NodeID for deduplication
+                            nodeName: sn.question || sn.decision || sn.name,
                             writesToDatabase: sn.writesToDatabase, // Pass Write flag
                             connectorId: sn.pythonResultName === pName ? sn.pythonConnectorId : sn.sqlConnectorId,
                             query: sn.sqlResultName === pName ? sn.sqlQuery : undefined,
@@ -1301,7 +1302,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 return deps;
             };
 
-            console.log(`[ANCESTOR DEBUG] Looking for ancestors of: "${currentPath}"`);
+            // console.log(`[ANCESTOR DEBUG] Looking for ancestors of: "${currentPath}"`);
 
             flatTree.forEach((item: any) => {
                 const actualNode = item.node;
@@ -1335,11 +1336,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     if (isAncestor) {
                         // Check for SQL result (name is enough to list it, query might be empty)
                         if (actualNode.sqlResultName) {
-                            console.log(`[ANCESTOR] Found SQL result "${actualNode.sqlResultName}" at "${nodePath}"`);
+                            // console.log(`[ANCESTOR] Found SQL result "${actualNode.sqlResultName}" at "${nodePath}"`);
                             ancestorItems.push({
                                 path: nodePath,
                                 nodeId: actualNode.id, // Ensure nodeId is captured
-                                nodeName: actualNode.question || actualNode.decision,
+                                nodeName: actualNode.question || actualNode.decision || actualNode.name,
                                 name: actualNode.sqlResultName,
                                 connectorId: actualNode.sqlConnectorId,
                                 sqlQuery: actualNode.sqlQuery, // Can be undefined/empty
@@ -1355,11 +1356,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
                         // Check for Python result (independently)
                         if (actualNode.pythonResultName && actualNode.pythonCode) {
-                            console.log(`[ANCESTOR] Found Python result "${actualNode.pythonResultName}" at "${nodePath}"`);
+                            // console.log(`[ANCESTOR] Found Python result "${actualNode.pythonResultName}" at "${nodePath}"`);
                             ancestorItems.push({
                                 path: nodePath,
                                 nodeId: actualNode.id, // Ensure nodeId is captured
-                                nodeName: actualNode.question || actualNode.decision,
+                                nodeName: actualNode.question || actualNode.decision || actualNode.name,
                                 name: actualNode.pythonResultName,
                                 connectorId: actualNode.pythonConnectorId,
                                 sqlQuery: undefined,
@@ -1420,10 +1421,10 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     writesToDatabase: (item as any).writesToDatabase
                 });
 
-                console.log(`[ANCESTOR] "${item.name}" (${item.isPython ? 'Python' : 'SQL'}) has ${pipelineDeps.length} pipeline dependencies:`, pipelineDeps.map(d => d.tableName));
+                // console.log(`[ANCESTOR] "${item.name}" (${item.isPython ? 'Python' : 'SQL'}) has ${pipelineDeps.length} pipeline dependencies:`, pipelineDeps.map(d => d.tableName));
             }
 
-            console.log('DEBUG: Ancestor Tables for path', currentPath, ':', tables.map(t => `${t.name} (${t.isPython ? 'Python' : 'SQL'})`));
+            // console.log('DEBUG: Ancestor Tables for path', currentPath, ':', tables.map(t => `${t.name} (${t.isPython ? 'Python' : 'SQL'})`));
             return tables;
         };
     }, [flatTree]);
@@ -1482,8 +1483,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     }, [flatTree]);
 
     const getLinkedNodesTables = useMemo(() => {
-        return (currentPath: string): { name: string, nodeName?: string, nodeId?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; nodeId?: string; writesToDatabase?: boolean }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[] }[] => {
-            const linkedTables: { name: string, nodeName?: string, nodeId?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; nodeId?: string; writesToDatabase?: boolean }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[] }[] = [];
+        return (currentPath: string): { name: string, nodeName?: string, nodeId?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; nodeId?: string; writesToDatabase?: boolean; nodeName?: string }[], writesToDatabase?: boolean, sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[] }[] => {
+            const linkedTables: { name: string, nodeName?: string, nodeId?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; nodeId?: string; writesToDatabase?: boolean; nodeName?: string }[], writesToDatabase?: boolean, sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[] }[] = [];
 
             // Helper to recursively resolve dependencies
             const resolveDependencies = (node: any, visited: Set<string> = new Set()): any[] => {
@@ -1508,6 +1509,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                         deps.push({
                             tableName: pName,
                             nodeId: sn.id, // Pass NodeID for deduplication
+                            nodeName: sn.question || sn.decision || sn.name,
                             writesToDatabase: sn.writesToDatabase, // Pass Write flag
                             connectorId: sn.pythonResultName === pName ? sn.pythonConnectorId : sn.sqlConnectorId,
                             query: sn.sqlResultName === pName ? sn.sqlQuery : undefined,
@@ -1521,7 +1523,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 return deps;
             };
 
-            console.log(`[LINKED NODES DEBUG] Looking for linked nodes from path: "${currentPath}"`);
+            // console.log(`[LINKED NODES DEBUG] Looking for linked nodes from path: "${currentPath}"`);
 
             // Find all link nodes ({ ref: string }) in the flat tree
             flatTree.forEach((item: any) => {
@@ -1530,7 +1532,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 // Check if this is a link node with a ref property
                 if (actualNode && typeof actualNode === 'object' && 'ref' in actualNode) {
                     const refId = actualNode.ref;
-                    console.log(`[LINKED NODES DEBUG] Found link node with ref: "${refId}" at path: "${item.path}"`);
+                    // console.log(`[LINKED NODES DEBUG] Found link node with ref: "${refId}" at path: "${item.path}"`);
 
                     // Find the target node by ID to check if it's the current node we're editing
                     const targetItem = flatTree.find((t: any) => {
@@ -1540,32 +1542,33 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
                     if (targetItem && targetItem.path === currentPath) {
                         // This link points to the current node! Extract tables from the parent (question) node of this link
-                        console.log(`[LINKED NODES DEBUG] Link at "${item.path}" points to current node! Extracting tables from parent.`);
+                        // console.log(`[LINKED NODES DEBUG] Link at "${item.path}" points to current node! Extracting tables from parent.`);
 
                         // Navigate up the path to find the parent question node
                         const pathParts = item.path.split('.options');
                         if (pathParts.length >= 2) {
                             const parentQuestionPath = pathParts.slice(0, -1).join('.options');
-                            console.log(`[LINKED NODES DEBUG] Looking for parent question at path: "${parentQuestionPath}"`);
+                            // console.log(`[LINKED NODES DEBUG] Looking for parent question at path: "${parentQuestionPath}"`);
 
                             // Find the parent question node
                             const parentItem = flatTree.find((t: any) => t.path === parentQuestionPath);
 
                             if (parentItem) {
                                 const parentNode = parentItem.node;
-                                console.log(`[LINKED NODES DEBUG] Found parent node at "${parentQuestionPath}"`);
+                                // console.log(`[LINKED NODES DEBUG] Found parent node at "${parentQuestionPath}"`);
 
                                 // Extract SQL result from parent node
                                 if (parentNode.sqlResultName) {
-                                    console.log(`[LINKED NODES DEBUG] Found SQL table: "${parentNode.sqlResultName}"`);
+                                    // console.log(`[LINKED NODES DEBUG] Found SQL table: "${parentNode.sqlResultName}"`);
                                     linkedTables.push({
                                         name: parentNode.sqlResultName,
-                                        nodeName: parentNode.question || parentNode.decision,
+                                        nodeName: parentNode.question || parentNode.decision || parentNode.name,
                                         nodeId: parentNode.id,
                                         connectorId: parentNode.sqlConnectorId,
                                         sqlQuery: parentNode.sqlQuery,
                                         isPython: false,
                                         pipelineDependencies: resolveDependencies(parentNode),
+                                        writesToDatabase: parentNode.writesToDatabase,
                                         sqlExportTargetTableName: parentNode.sqlExportAction?.targetTableName || parentNode.sqlExportTargetTableName,
                                         sqlExportTargetConnectorId: parentNode.sqlExportAction?.targetConnectorId || parentNode.sqlExportTargetConnectorId,
                                         sqlExportSourceTables: parentNode.sqlExportAction?.sourceTables || parentNode.sqlExportSourceTables
@@ -1574,30 +1577,31 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
                                 // Extract Python result from parent node
                                 if (parentNode.pythonResultName && parentNode.pythonCode) {
-                                    console.log(`[LINKED NODES DEBUG] Found Python table: "${parentNode.pythonResultName}"`);
+                                    // console.log(`[LINKED NODES DEBUG] Found Python table: "${parentNode.pythonResultName}"`);
                                     linkedTables.push({
                                         name: parentNode.pythonResultName,
-                                        nodeName: parentNode.question || parentNode.decision,
+                                        nodeName: parentNode.question || parentNode.decision || parentNode.name,
                                         nodeId: parentNode.id,
                                         connectorId: parentNode.pythonConnectorId,
                                         isPython: true,
                                         pythonCode: parentNode.pythonCode,
                                         pythonOutputType: parentNode.pythonOutputType,
                                         pipelineDependencies: resolveDependencies(parentNode),
+                                        writesToDatabase: parentNode.writesToDatabase,
                                         sqlExportTargetTableName: parentNode.sqlExportAction?.targetTableName || parentNode.sqlExportTargetTableName,
                                         sqlExportTargetConnectorId: parentNode.sqlExportAction?.targetConnectorId || parentNode.sqlExportTargetConnectorId,
                                         sqlExportSourceTables: parentNode.sqlExportAction?.sourceTables || parentNode.sqlExportSourceTables
                                     });
                                 }
                             } else {
-                                console.log(`[LINKED NODES DEBUG] Parent node not found at path "${parentQuestionPath}"`);
+                                // console.log(`[LINKED NODES DEBUG] Parent node not found at path "${parentQuestionPath}"`);
                             }
                         }
                     }
                 }
             });
 
-            console.log(`[LINKED NODES DEBUG] Total linked tables found: ${linkedTables.length}`, linkedTables.map(t => t.name));
+            // console.log(`[LINKED NODES DEBUG] Total linked tables found: ${linkedTables.length}`, linkedTables.map(t => t.name));
             return linkedTables;
         };
     }, [flatTree]);
