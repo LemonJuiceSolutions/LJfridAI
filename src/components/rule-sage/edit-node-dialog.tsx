@@ -2091,21 +2091,38 @@ export default function EditNodeDialog({
                         </div>
 
                         <Button
-                          variant="secondary"
+                          className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md transition-all duration-200"
                           onClick={() => {
                             if (!sqlQuery) {
                               toast({ variant: 'destructive', title: "Errore", description: "Inserisci una query SQL prima di eseguire l'anteprima." });
                               return;
                             }
-                            // Execute full pipeline for SQL preview
+
+                            // Execute full pipeline for SQL preview (Ancestors -> Current)
+                            // This ensures all parent nodes (SQL/Python) are executed first
                             executeFullPipeline('preview', async (ancestorResults) => {
-                              // Execute the current SQL query with pre-calculated results
-                              const deps = (availableInputTables || []).filter(t => selectedPipelines.includes(t.name) || sqlQuery.toUpperCase().includes(`FROM ${t.name.toUpperCase()}`)).map(t => {
+                              console.log('[SQL EXEC] Pipeline finished. Results:', Object.keys(ancestorResults || {}));
+
+                              // Execute the current SQL query with pre-calculated results from ancestors
+                              const deps = (availableInputTables || []).filter(t => {
+                                // Filter logic: Include if selected OR referenced in SQL (FROM/JOIN)
+                                const upperQuery = sqlQuery.toUpperCase();
+                                const upperName = t.name.toUpperCase();
+                                return selectedPipelines.includes(t.name) ||
+                                  upperQuery.includes(`FROM ${upperName}`) ||
+                                  upperQuery.includes(`JOIN ${upperName}`) ||
+                                  upperQuery.includes(`[${upperName}]`); // Handle bracketed names
+                              }).map(t => {
                                 const resultObj = ancestorResults?.[t.name];
                                 const preCalcData = resultObj ? resultObj.data : undefined;
 
-                                // SAFEGUARD: Payload size check
-                                const MAX_PAYLOAD_BYTES = 250 * 1024;
+                                // Log usage of pre-calculated data
+                                if (preCalcData) {
+                                  console.log(`[SQL EXEC] Using pre-calculated data for ${t.name} (${Array.isArray(preCalcData) ? preCalcData.length : 'N/A'} rows)`);
+                                }
+
+                                // SAFEGUARD: Payload size check for client-server transfer
+                                const MAX_PAYLOAD_BYTES = 500 * 1024; // Increased limit to 500KB
                                 let shouldPassData = false;
                                 if (preCalcData && Array.isArray(preCalcData)) {
                                   try {
@@ -2124,21 +2141,31 @@ export default function EditNodeDialog({
                                 };
                               });
 
+                              console.log('[SQL EXEC] Executing final query with deps:', deps.length);
                               const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, deps);
+
                               if (res.data) {
                                 setSqlPreviewData(res.data);
+                                setSqlPreviewTimestamp(Date.now());
+
+                                // Persist preview to DB/Tree
                                 if (onSavePreview && nodePath) {
                                   onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
                                 }
+
+                                toast({
+                                  title: "Anteprima Aggiornata",
+                                  description: `Query eseguita con successo (${res.data.length} righe). Pipeline completata.`
+                                });
                               } else {
-                                throw new Error(res.error || "Errore sconosciuto");
+                                throw new Error(res.error || "Errore sconosciuto durante l'esecuzione SQL");
                               }
                             });
                           }}
                           disabled={!!pipelineAgentStatus}
                         >
-                          {pipelineAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-                          Esegui Anteprima
+                          {pipelineAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                          Esegui Pipeline SQL
                         </Button>
 
                       </div>
