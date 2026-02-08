@@ -2091,7 +2091,7 @@ export default function EditNodeDialog({
                         </div>
 
                         <Button
-                          className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md transition-all duration-200"
+                          className="bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
                           onClick={() => {
                             if (!sqlQuery) {
                               toast({ variant: 'destructive', title: "Errore", description: "Inserisci una query SQL prima di eseguire l'anteprima." });
@@ -2393,33 +2393,42 @@ export default function EditNodeDialog({
 
                         <div className="flex gap-2 relative z-20">
                           <Button
-                            variant="secondary"
-                            onClick={async () => {
-                              // Use reusable pipeline execution
-                              executeFullPipeline('preview', async () => {
-                                // Build dependencies
-                                const dependencies: { tableName: string; connectorId?: string; query?: string; isPython?: boolean; pythonCode?: string; pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[] }[] = [];
-                                if (availableInputTables) {
-                                  pythonSelectedPipelines.forEach(pName => {
-                                    const table = availableInputTables.find(t => t.name === pName);
-                                    if (table) {
-                                      let finalQuery = table.sqlQuery;
-                                      if (!finalQuery && !table.isPython) {
-                                        finalQuery = `SELECT TOP 1000 * FROM [${table.name}]`;
-                                      }
-                                      dependencies.push({
-                                        tableName: pName,
-                                        connectorId: table.connectorId,
-                                        query: finalQuery,
-                                        isPython: table.isPython,
-                                        pythonCode: table.pythonCode,
-                                        pipelineDependencies: table.pipelineDependencies
-                                      });
-                                    }
-                                  });
-                                }
+                            className="bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
+                            onClick={() => {
+                              if (!pythonCode) {
+                                toast({ variant: 'destructive', title: "Errore", description: "Inserisci uno script Python prima di eseguire l'anteprima." });
+                                return;
+                              }
+                              // Execute full pipeline logic (Ancestors -> This Node)
+                              executeFullPipeline('preview', async (ancestorResults) => {
+                                console.log('[PYTHON EXEC] Pipeline finished. Results:', Object.keys(ancestorResults || {}));
 
-                                const res = await executePythonPreviewAction(pythonCode, pythonOutputType, {}, dependencies, pythonConnectorId);
+                                const deps = pythonSelectedPipelines.map(tableName => {
+                                  const resultObj = ancestorResults?.[tableName];
+                                  const preCalcData = resultObj ? resultObj.data : undefined;
+
+                                  // Log usage 
+                                  if (preCalcData) console.log(`[PYTHON EXEC] Using pre-calculated data for ${tableName}`);
+
+                                  // SAFEGUARD: Payload size check
+                                  const MAX_PAYLOAD_BYTES = 500 * 1024;
+                                  let shouldPassData = false;
+                                  if (preCalcData && Array.isArray(preCalcData)) {
+                                    try {
+                                      if (JSON.stringify(preCalcData).length <= MAX_PAYLOAD_BYTES) shouldPassData = true;
+                                    } catch (e) { }
+                                  }
+
+                                  return {
+                                    tableName: tableName,
+                                    query: '', // Not needed for python deps usually
+                                    isPython: true, // Assuming deps are from other nodes effectively
+                                    data: shouldPassData ? preCalcData : undefined
+                                  };
+                                });
+
+                                console.log('[PYTHON EXEC] Executing final script with deps:', deps.length);
+                                const res = await executePythonPreviewAction(pythonCode, pythonOutputType, {}, deps, pythonConnectorId);
 
                                 if (res.success) {
                                   setPythonPreviewResult({
@@ -2457,11 +2466,12 @@ export default function EditNodeDialog({
                             }}
                             disabled={!!pipelineAgentStatus}
                           >
-                            {pipelineAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                            {pipelineAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2 text-purple-600" /> : <Play className="h-4 w-4 mr-2" />}
                             Esegui Anteprima
                           </Button>
 
                         </div>
+
                       </div>
                     </div>
 
@@ -2519,26 +2529,7 @@ export default function EditNodeDialog({
                         ))}
                       </div>
 
-                      {/* DEBUGGING: Ancestor Export Configs (Only visible when expanded or key pressed? For now visible) */}
-                      <div className="p-2 bg-slate-100 dark:bg-slate-900 border-t text-[10px] font-mono text-muted-foreground">
-                        <div className="font-bold mb-1 flex items-center gap-1"><AlertCircle className="h-3 w-3" /> DEBUG: Stato Export Nodi</div>
-                        {availableInputTables?.map(t => {
-                          const hasConfig = t.sqlExportTargetTableName && t.sqlExportTargetConnectorId;
-                          const isMe = t.sqlExportSourceTables?.includes(t.name);
-                          return (
-                            <div key={t.name} className={`mb-1 p-1 rounded ${hasConfig ? (isMe ? 'bg-green-100 dark:bg-green-900/20 text-green-700' : 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700') : 'text-slate-400'}`}>
-                              <strong>{t.name}</strong>:
-                              {hasConfig ? (
-                                <>
-                                  To: {t.sqlExportTargetTableName} (Conn: {t.sqlExportTargetConnectorId?.substring(0, 6)}...)
-                                  Sources: [{t.sqlExportSourceTables?.join(', ')}]
-                                  {isMe ? ' ✅ READY' : ' ⚠️ NAME MISMATCH'}
-                                </>
-                              ) : ' No Export Configured'}
-                            </div>
-                          );
-                        })}
-                      </div>
+
                     </div>
                   )}
 
@@ -2867,8 +2858,7 @@ export default function EditNodeDialog({
                     {/* Execute Button */}
                     <Button
                       type="button"
-                      variant="outline"
-                      className="w-full"
+                      className="w-full bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
                       disabled={sqlExportStatus === 'running' || sqlExportSourceTables.length === 0 || !sqlExportTargetConnectorId || !sqlExportTargetTableName}
                       onClick={async () => {
                         executeFullPipeline('export', async () => {
@@ -3536,8 +3526,7 @@ export default function EditNodeDialog({
                     <div className="flex gap-2">
                       <Button
                         type="button"
-                        variant="outline"
-                        className="gap-2"
+                        className="gap-2 bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
                         disabled={!emailConfig.connectorId || !emailConfig.to || !emailConfig.subject || isSendingTestEmail}
                         onClick={async () => {
                           executeFullPipeline('email', async (ancestorResults, executionReport) => {
