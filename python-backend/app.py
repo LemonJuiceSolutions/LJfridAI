@@ -391,7 +391,6 @@ def execute_python():
         
         elif output_type == 'chart':
             print(f"📊 [EXECUTE] Chart output requested, result type: {type(res_val).__name__}")
-            print(f"📊 [EXECUTE] Result value: {res_val}")
             
             # NEW: Convert charts to Recharts config automatically
             chart_lib = infer_chart_type(res_val)

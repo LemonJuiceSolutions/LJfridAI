@@ -191,12 +191,13 @@ export class SchedulerService {
   public async executeTask(taskId: string): Promise<TaskExecutionResult> {
     // Concurrency guard: skip if this task is already running
     if (this.runningTasks.has(taskId)) {
-      logger.log(`Task ${taskId} is already running, skipping this execution.`);
+      logger.log(`⏭️ Task ${taskId} SKIPPED - still running from previous trigger`);
       return { success: false, error: 'Task already running, skipped.' };
     }
 
     this.runningTasks.add(taskId);
-    logger.log(`Starting execution for task ${taskId}`);
+    const execStart = Date.now();
+    logger.log(`▶️ Starting task ${taskId}`);
 
     let executionId = '';
 
@@ -238,7 +239,7 @@ export class SchedulerService {
           nextRunAt: this.calculateNextRun(task as any),
           runCount: { increment: 1 },
           successCount: result.success ? { increment: 1 } : undefined,
-          failureCount: result.success ? 0 : { increment: 1 },
+          failureCount: result.success ? undefined : { increment: 1 },
           lastError: result.success ? null : (result.error || 'Unknown error')
         }
       });
@@ -261,6 +262,8 @@ export class SchedulerService {
       return { success: false, error: e.message };
     } finally {
       this.runningTasks.delete(taskId);
+      const elapsed = ((Date.now() - execStart) / 1000).toFixed(1);
+      logger.log(`⏱️ Task ${taskId} finished in ${elapsed}s`);
     }
   }
 
@@ -416,56 +419,30 @@ export class SchedulerService {
           // This allows scripts to access any table computed earlier in the pipeline
           const inputData: Record<string, any> = {};
 
-          // DEBUG: Log what's in resultsNormalized before extraction
-          logger.log(`[AncestorChain] Building inputData for ${originalName}. resultsNormalized keys: ${Object.keys(resultsNormalized).join(', ')}`);
-
           // First, add all available results by their original names
           // IMPORTANT: Extract .data from result objects (matching button UI behavior)
           for (const [normKey, val] of Object.entries(resultsNormalized)) {
-            // Find the original name for this normalized key
             const origName = nodeNameMap.get(normKey) || normKey;
 
-            // DEBUG: Log each value type
-            const valType = val === null ? 'null' : (Array.isArray(val) ? 'array' : typeof val);
-            const hasData = val && typeof val === 'object' && 'data' in val;
-            const dataValue = hasData ? (val as any).data : null;
-            const dataType = dataValue === null ? 'null' : (dataValue === undefined ? 'undefined' : (Array.isArray(dataValue) ? 'array' : typeof dataValue));
-            logger.log(`[AncestorChain]   Key '${normKey}' -> '${origName}': type=${valType}, hasData=${hasData}, dataType=${dataType}`);
-
             if (val !== undefined && val !== null) {
-              // Match button UI logic: extract .data if it's an object with .data property
               if (Array.isArray(val)) {
                 inputData[origName] = val;
-                logger.log(`[AncestorChain]     -> Added as array directly (${val.length} items)`);
               } else if (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) {
-                inputData[origName] = val.data; // Extract .data from result object
-                logger.log(`[AncestorChain]     -> Extracted .data array (${val.data.length} items)`);
-              } else if (val && typeof val === 'object' && 'data' in val && val.data !== null && val.data !== undefined) {
-                // .data exists and is not null/undefined (but not array)
                 inputData[origName] = val.data;
-                logger.log(`[AncestorChain]     -> Extracted .data (non-array value)`);
+              } else if (val && typeof val === 'object' && 'data' in val && val.data !== null && val.data !== undefined) {
+                inputData[origName] = val.data;
               } else if (val && typeof val === 'object' && 'rechartsData' in val && Array.isArray((val as any).rechartsData)) {
-                // Chart Python result with rechartsData - pass the chart data points
                 inputData[origName] = (val as any).rechartsData;
-                logger.log(`[AncestorChain]     -> Extracted .rechartsData array (${(val as any).rechartsData.length} items)`);
               } else if (val && typeof val === 'object' && 'variables' in val && (val as any).variables) {
-                // Python returned variables instead of data - pass them too
                 inputData[origName] = (val as any).variables;
-                logger.log(`[AncestorChain]     -> Extracted .variables object`);
               } else if (val && typeof val === 'object' && !('data' in val)) {
-                // Object without .data - pass as-is (might be raw result)
                 inputData[origName] = val;
-                logger.log(`[AncestorChain]     -> Added object as-is (no .data property)`);
               } else if (val && typeof val === 'object' && ('chartBase64' in val || 'chartHtml' in val || 'rechartsConfig' in val)) {
-                // Chart result with no usable data - pass the whole object so downstream can access chart info
                 inputData[origName] = val;
-                logger.log(`[AncestorChain]     -> Added chart result object as-is (chartBase64/chartHtml/rechartsConfig)`);
-              } else {
-                // val.data is null/undefined and no chart/variable info - SKIP
-                logger.log(`[AncestorChain]     -> SKIPPED (data is null/undefined, no chart/variable info)`);
               }
             }
           }
+          logger.log(`[AncestorChain] Built inputData for ${originalName}: ${Object.keys(inputData).join(', ')}`);
 
           // Also add using explicit dependency names (might be aliased differently)
           (tableDef.pipelineDependencies || []).forEach((d: any) => {
@@ -544,19 +521,23 @@ export class SchedulerService {
           // recursively, which fails since temp tables from previous connections don't exist.
           // Instead: pass ALL available pre-calculated results as data-only deps.
           const deps: any[] = [];
-          for (const [normKey, val] of Object.entries(resultsNormalized)) {
-            if (normKey !== normalizedName) {
-              const origName = nodeNameMap.get(normKey) || normKey;
+          const addedDepNames = new Set<string>();
+          // Use `results` (original-cased keys including aliases) so SQL queries
+          // can reference nodes by ANY of their names (e.g. "Aggregato" vs "Budget > Aggregato")
+          for (const [key, val] of Object.entries(results)) {
+            const keyNorm = key.toLowerCase().trim();
+            if (keyNorm !== normalizedName && !addedDepNames.has(key)) {
               // Extract array data from the result
               const dataToInject = Array.isArray(val) ? val :
                 (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) ? val.data : null;
               if (dataToInject && dataToInject.length > 0) {
                 deps.push({
-                  tableName: origName,
+                  tableName: key,
                   data: dataToInject
                   // NOTE: No query, isPython, pythonCode, pipelineDependencies!
                   // This forces executeSqlPreviewAction to use the pre-calculated data path only.
                 });
+                addedDepNames.add(key);
               }
             }
           }
@@ -579,15 +560,20 @@ export class SchedulerService {
             if (tableDef.pythonCode && tableDef.pythonOutputType && resultData) {
               logger.log(`[AncestorChain] Hybrid node ${originalName}: SQL done, now running Python chart code`);
               const pythonInputData: Record<string, any> = {};
-              // Provide the SQL result as input data under the node's own name
-              pythonInputData[originalName] = Array.isArray(resultData) ? resultData : [resultData];
-              // Also provide all previous results
-              for (const [normKey, val] of Object.entries(resultsNormalized)) {
-                const origName = nodeNameMap.get(normKey) || normKey;
+              // Provide the SQL result under ALL alias names so Python code can reference any name
+              const hybridAllNames = tableDef.allNames || [originalName];
+              const sqlDataForPython = Array.isArray(resultData) ? resultData : [resultData];
+              for (const alias of hybridAllNames) {
+                pythonInputData[alias] = sqlDataForPython;
+              }
+              // Also provide all previous results using `results` map (which has alias keys)
+              // This ensures Python code can reference deps by alias (e.g. "Budget" instead of "Fatturato > Budget")
+              for (const [key, val] of Object.entries(results)) {
+                if (pythonInputData[key] !== undefined) continue; // Skip self (already added above)
                 if (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) {
-                  pythonInputData[origName] = val.data;
+                  pythonInputData[key] = val.data;
                 } else if (Array.isArray(val)) {
-                  pythonInputData[origName] = val;
+                  pythonInputData[key] = val;
                 }
               }
 
@@ -1072,13 +1058,20 @@ export class SchedulerService {
         logger.log(`[EmailSend] SQL Table ${table.name} (Alternatives: ${names.join(',')}): inBody=${inBody}, asExcel=${asExcel}`);
 
         if (inBody || asExcel) {
-          selectedTables.push({
-            name: table.name,
-            query: table.sqlQuery || `SELECT * FROM ${table.name}`,
-            inBody,
-            asExcel,
-            pipelineDependencies: table.pipelineDependencies
-          });
+          // Use the matched alias name so it matches {{TABELLA:name}} placeholders in email body
+          const matchedName = (tablesInBody || []).find((n: string) => names.includes(n)) ||
+            placeholderTableNames.find((n: string) => names.includes(n)) ||
+            (tablesAsExcel || []).find((n: string) => names.includes(n)) ||
+            table.name;
+          if (!selectedTables.some(t => t.name === matchedName)) {
+            selectedTables.push({
+              name: matchedName,
+              query: table.sqlQuery || `SELECT * FROM ${table.name}`,
+              inBody,
+              asExcel,
+              pipelineDependencies: table.pipelineDependencies
+            });
+          }
         }
       }
 
@@ -1087,20 +1080,31 @@ export class SchedulerService {
       logger.log(`[EmailSend] Matching Python outputs. Placeholders in body: ${JSON.stringify(allReferencedPythonNames)}`);
       for (const pythonNode of availableInputTables.filter(t => t.isPython || (t.pythonCode && t.pythonOutputType))) {
         const names = pythonNode.allNames || [pythonNode.name];
-        const inBody = (pythonOutputsInBody || []).some((n: string) => names.includes(n)) || allReferencedPythonNames.some((n: string) => names.includes(n));
-        const asAttachment = (pythonOutputsAsAttachment || []).some((n: string) => names.includes(n));
-        logger.log(`[EmailSend] Python Node ${pythonNode.name} (Alternatives: ${names.join(',')}): inBody=${inBody}, asAttachment=${asAttachment}`);
+
+        // Find the specific matched name from email config (prefer it over canonical name for placeholder matching)
+        const matchedBodyName = allReferencedPythonNames.find((n: string) => names.includes(n)) ||
+          (pythonOutputsInBody || []).find((n: string) => names.includes(n));
+        const matchedAttachName = (pythonOutputsAsAttachment || []).find((n: string) => names.includes(n));
+
+        const inBody = !!matchedBodyName;
+        const asAttachment = !!matchedAttachName;
+        logger.log(`[EmailSend] Python Node ${pythonNode.name} (Alternatives: ${names.join(',')}): inBody=${inBody}, asAttachment=${asAttachment}, matchedName=${matchedBodyName || matchedAttachName || 'none'}`);
 
         if (inBody || asAttachment) {
-          selectedPythonOutputs.push({
-            name: pythonNode.name,
-            code: pythonNode.pythonCode,
-            outputType: pythonNode.pythonOutputType || 'table',
-            connectorId: pythonNode.connectorId,
-            inBody,
-            asAttachment,
-            pipelineDependencies: pythonNode.pipelineDependencies
-          });
+          // Use the matched alias name so it matches {{GRAFICO:name}} placeholders in email body
+          const effectiveName = matchedBodyName || matchedAttachName || pythonNode.name;
+          // Avoid duplicates (multiple nodes may share the same allName alias)
+          if (!selectedPythonOutputs.some(p => p.name === effectiveName)) {
+            selectedPythonOutputs.push({
+              name: effectiveName,
+              code: pythonNode.pythonCode,
+              outputType: pythonNode.pythonOutputType || 'table',
+              connectorId: pythonNode.connectorId,
+              inBody,
+              asAttachment,
+              pipelineDependencies: pythonNode.pipelineDependencies
+            });
+          }
         }
       }
     }

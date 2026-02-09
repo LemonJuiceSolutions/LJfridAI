@@ -141,7 +141,7 @@ export async function saveNodeScheduleAction(
             }
         }
 
-        revalidatePath(`/connections`); // Or wherever tasks are visible
+        try { revalidatePath(`/connections`); } catch { /* scheduler context has no request */ }
         return { success: true, message: 'Schedulazione salvata' };
 
     } catch (error: any) {
@@ -327,7 +327,7 @@ export async function saveNodeExecutionResultAction(
             }
         });
 
-        revalidatePath(`/connections`); // Optional: revalidate where tasks are listed
+        try { revalidatePath(`/connections`); } catch { /* scheduler context has no request */ }
         return { success: true, executionId: execution.id };
 
     } catch (error: any) {

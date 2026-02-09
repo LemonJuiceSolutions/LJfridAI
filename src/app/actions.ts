@@ -1120,15 +1120,6 @@ export async function executeSqlPreviewAction(
         if (allDeps.length > 0) {
             console.log(`[PIPELINE] Executing ${allDeps.length} flattened dependencies: ${allDeps.map(d => d.tableName).join(', ')}`);
 
-            // DEBUG: Log detailed info about each dependency
-            allDeps.forEach((dep, idx) => {
-                console.log(`[PIPELINE DEBUG] Dep #${idx}: ${dep.tableName}`);
-                console.log(`  - isPython: ${dep.isPython}`);
-                console.log(`  - pythonCode present: ${!!dep.pythonCode} (length: ${dep.pythonCode?.length || 0})`);
-                console.log(`  - query present: ${!!dep.query} (length: ${dep.query?.length || 0})`);
-                console.log(`  - connectorId: ${dep.connectorId || 'none'}`);
-                console.log(`  - nested pipelineDeps: ${dep.pipelineDependencies?.length || 0}`);
-            });
 
             for (const dep of allDeps) {
                 // Use unique naming to prevent collisions
@@ -1237,7 +1228,7 @@ export async function executeSqlPreviewAction(
                         }).join(', ');
 
                         await request.query(`CREATE TABLE ${tempTableName} (${colDefs});`);
-                        console.log(`[PIPELINE DEBUG] Created temp table: ${tempTableName} with schema: ${colDefs}`);
+                        console.log(`[PIPELINE] Created ${tempTableName} (${columns.length} cols)`);
                         createdTempTables.push(tempTableName);
 
                         // Insert data in batches to avoid query size limits
