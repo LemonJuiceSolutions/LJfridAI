@@ -2,6 +2,7 @@
 
 'use client';
 
+// Force reload for scheduler diag - 2026-02-09
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { PlusCircle, Loader2, ListTree, Download, Bot, Database, Trash2, Search, UploadCloud, Settings } from 'lucide-react';

@@ -8,90 +8,69 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================
-// MULTI-TENANT MODELS
-// ============================================
-
 model Company {
-  id          String       @id @default(cuid())
-  name        String
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  
-  users       User[]
-  departments Department[]
-  trees       Tree[]
-  variables   Variable[]
-  invitations Invitation[]
-  connectors  Connector[]
-  tokenCaches TokenCache[]
-  
-  // Navigation & Permissions
-  navigationItems NavigationItem[]
-  roles           Role[]
-
-  // AIDRAFB Data
-  products        Product[]
-  materials       Material[]
-  suppliers       Supplier[]
-  boms            BOM[]
-  inventoryItems  InventoryItem[]
-  orders          Order[]
-  pageLayouts     PageLayout[]
-  pipelines       Pipeline[]
-  connections     Connection[]
+  id                 String              @id @default(cuid())
+  name               String
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
   agentConversations AgentConversation[]
-  scheduledTasks  ScheduledTask[]
+  boms               BOM[]
+  connections        Connection[]
+  connectors         Connector[]
+  departments        Department[]
+  inventoryItems     InventoryItem[]
+  invitations        Invitation[]
+  materials          Material[]
+  navigationItems    NavigationItem[]
+  orders             Order[]
+  pageLayouts        PageLayout[]
+  pipelines          Pipeline[]
+  products           Product[]
+  roles              Role[]
+  scheduledTasks     ScheduledTask[]
+  suppliers          Supplier[]
+  tokenCaches        TokenCache[]
+  trees              Tree[]
+  users              User[]
+  variables          Variable[]
 }
 
 model Department {
   id        String   @id @default(cuid())
   name      String
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   users     User[]
-  
+
   @@index([companyId])
 }
 
-// ============================================
-// NEXTAUTH.JS MODELS
-// ============================================
-
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  password      String?   // Hashed password for credentials login
-  image         String?
-  role          String    @default("user") // user, admin, superadmin
-  
-  // OpenRouter AI Settings (per-user preferences)
-  openRouterApiKey      String?
-  openRouterModel       String?    @default("google/gemini-2.0-flash-001")
-  openRouterAgentModel  String?    @default("google/gemini-2.0-flash-001")  // For FridAI Agent chatbot
-  
-  companyId     String?
-  company       Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  departmentId  String?
-  department    Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  
-  roleId        String?
-  userRole      Role?        @relation(fields: [roleId], references: [id], onDelete: SetNull)
-  
-  accounts      Account[]
-  sessions      Session[]
-  pageLayouts   PageLayout[]
-  createdTasks  ScheduledTask[]
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
+  id                   String          @id @default(cuid())
+  name                 String?
+  email                String          @unique
+  emailVerified        DateTime?
+  password             String?
+  image                String?
+  role                 String          @default("user")
+  companyId            String?
+  departmentId         String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  openRouterAgentModel String?         @default("google/gemini-2.0-flash-001")
+  openRouterApiKey     String?
+  openRouterModel      String?         @default("google/gemini-2.0-flash-001")
+  roleId               String?
+  accounts             Account[]
+  pageLayouts          PageLayout[]
+  createdTasks         ScheduledTask[]
+  sessions             Session[]
+  company              Company?        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department           Department?     @relation(fields: [departmentId], references: [id])
+  userRole             Role?           @relation(fields: [roleId], references: [id])
+
   @@index([companyId])
   @@index([departmentId])
 }
@@ -102,15 +81,14 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@index([userId])
@@ -122,7 +100,7 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([userId])
 }
 
@@ -143,24 +121,18 @@ model PasswordResetToken {
   @@unique([email, token])
 }
 
-// ============================================
-// APPLICATION MODELS (with multi-tenant support)
-// ============================================
-
 model Tree {
   id                          String   @id @default(cuid())
   name                        String
   description                 String
-  naturalLanguageDecisionTree String   @db.Text
-  jsonDecisionTree            String   @db.Text
-  questionsScript             String   @db.Text
+  naturalLanguageDecisionTree String
+  jsonDecisionTree            String
+  questionsScript             String
   createdAt                   DateTime @default(now())
-  
-  type                        String   @default("RULE") // RULE, PIPELINE
-
   companyId                   String?
+  type                        String   @default("RULE")
   company                     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+
   @@index([companyId])
 }
 
@@ -168,20 +140,19 @@ model Variable {
   id             String   @id @default(cuid())
   name           String
   type           String
-  possibleValues Json     @default("[]") // VariableOption[]
+  possibleValues Json     @default("[]")
   createdAt      DateTime @default(now())
-  
   companyId      String?
   company        Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+
   @@index([companyId])
 }
 
 model TriggerLog {
-  id          String   @id @default(cuid())
-  collection  String
-  data        Json
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  collection String
+  data       Json
+  createdAt  DateTime @default(now())
 }
 
 model Invitation {
@@ -189,62 +160,55 @@ model Invitation {
   email     String
   token     String   @unique
   role      String   @default("user")
-  status    String   @default("PENDING") // PENDING, ACCEPTED
+  status    String   @default("PENDING")
   expires   DateTime
   createdAt DateTime @default(now())
-
   companyId String
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@unique([email, companyId])
   @@index([companyId])
   @@index([email])
-  @@unique([email, companyId])
 }
 
 model Connector {
   id        String   @id @default(cuid())
   name      String
-  type      String   // SQL, HUBSPOT, SHAREPOINT, SMTP
-  config    String   // JSON config
+  type      String
+  config    String
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   @@index([companyId])
 }
 
 model TokenCache {
   id        String   @id @default(cuid())
   companyId String
-  provider  String   // "sharepoint", "microsoft"
-  cacheData String   @db.Text // Serialized MSAL token cache
+  provider  String
+  cacheData String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+
   @@unique([companyId, provider])
   @@index([companyId])
 }
-// ============================================
-// NAVIGATION & PERMISSIONS
-// ============================================
 
 model NavigationItem {
-  id          String   @id @default(cuid())
-  label       String
-  href        String
-  icon        String
-  group       String   // 'main' or 'settings'
-  order       Int      @default(0)
-  
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  requiredPermission String? // e.g., "view:dashboard"
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  label              String
+  href               String
+  icon               String
+  group              String
+  order              Int      @default(0)
+  companyId          String
+  requiredPermission String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  company            Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
 }
@@ -253,182 +217,147 @@ model Role {
   id          String       @id @default(cuid())
   name        String
   companyId   String
-  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  permissions Permission[]
-  users       User[]
-
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  permissions Permission[]
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users       User[]
 
   @@unique([companyId, name])
 }
 
 model Permission {
-  id          String   @id @default(cuid())
-  action      String   // e.g., "view", "create", "edit", "delete"
-  resource    String   // e.g., "dashboard", "orders", "users"
-  
-  roleId      String
-  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  action   String
+  resource String
+  roleId   String
+  role     Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, action, resource])
 }
 
-// ============================================
-// AIDRAFB MANUFACTURING MODELS
-// ============================================
-
 model Product {
-  id          String   @id @default(cuid())
-  sku         String   
-  name        String
-  category    String?
-  price       Float
-  imageUrl    String?
-  
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  inventory   InventoryItem[]
-  orderLines  OrderItem[]
-  boms        BOM[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String          @id @default(cuid())
+  sku        String
+  name       String
+  category   String?
+  price      Float
+  imageUrl   String?
+  companyId  String
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  boms       BOM[]
+  inventory  InventoryItem[]
+  orderLines OrderItem[]
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, sku])
 }
 
 model Material {
-  id          String   @id @default(cuid())
-  code        String
-  name        String
-  unit        String
-  costPerUnit Float?
-  
-  supplierId  String?
-  supplier    Supplier? @relation(fields: [supplierId], references: [id])
-  
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
+  id            String         @id @default(cuid())
+  code          String
+  name          String
+  unit          String
+  costPerUnit   Float?
+  supplierId    String?
+  companyId     String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   bomComponents BOMComponent[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier      Supplier?      @relation(fields: [supplierId], references: [id])
 
   @@unique([companyId, code])
 }
 
 model Supplier {
-  id          String   @id @default(cuid())
-  name        String
-  rating      Float?
-  leadTime    String?
-  minOrder    Int?
-  
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  materials   Material[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String     @id @default(cuid())
+  name      String
+  rating    Float?
+  leadTime  String?
+  minOrder  Int?
+  companyId String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  materials Material[]
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model BOM {
-  id          String   @id @default(cuid())
-  name        String
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  
-  components  BOMComponent[]
-  
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String         @id @default(cuid())
+  name       String
+  productId  String
+  companyId  String
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product    Product        @relation(fields: [productId], references: [id])
+  components BOMComponent[]
 }
 
 model BOMComponent {
-  id          String   @id @default(cuid())
-  bomId       String
-  bom         BOM      @relation(fields: [bomId], references: [id], onDelete: Cascade)
-  
-  materialId  String
-  material    Material @relation(fields: [materialId], references: [id])
-  
-  quantity    Float
+  id         String   @id @default(cuid())
+  bomId      String
+  materialId String
+  quantity   Float
+  bom        BOM      @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  material   Material @relation(fields: [materialId], references: [id])
 }
 
 model InventoryItem {
-  id          String   @id @default(cuid())
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  
-  quantity    Int
-  location    String?
-  size        String?
-  color       String?
-
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  productId String
+  quantity  Int
+  location  String?
+  size      String?
+  color     String?
+  companyId String
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
 }
 
 model Order {
-  id          String   @id @default(cuid())
-  externalId  String?  // e.g. ORD5001
+  id           String      @id @default(cuid())
+  externalId   String?
   customerName String
-  date        DateTime
-  status      String   @default("Pending")
-  total       Float
-  
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  items       OrderItem[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  date         DateTime
+  status       String      @default("Pending")
+  total        Float
+  companyId    String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  company      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items        OrderItem[]
 }
 
 model OrderItem {
-  id          String   @id @default(cuid())
-  orderId     String
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  
-  quantity    Int
-  price       Float
-  status      String? // For production tracking per item (e.g. Cutting, Sewing)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Float
+  status    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
 }
 
 model PageLayout {
-  id          String   @id @default(cuid())
-  pageId      String   // e.g. "dashboard", "/001"
-  
-  layouts     Json
-  items       Json
+  id        String   @id @default(cuid())
+  pageId    String
+  layouts   Json
+  items     Json
+  companyId String
+  userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id])
 
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  userId      String?  // Optional: if specific to a user
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([companyId, pageId, userId]) // Unique layout per page per user (or company if user null)
+  @@unique([companyId, pageId, userId])
 }
 
 model Pipeline {
@@ -437,101 +366,70 @@ model Pipeline {
   description String?
   nodes       Json
   edges       Json
-  
   companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model Connection {
-  id          String   @id @default(cuid())
-  name        String   // e.g. "Production DB"
-  type        String   // e.g. "postgres", "mysql", "api"
-  config      Json     // Encrypted connection details? For now plain text or handled by env.
-  
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  config    Json
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
-
-// ============================================
-// AI AGENT CONVERSATION HISTORY
-// ============================================
 
 model AgentConversation {
   id          String   @id @default(cuid())
-  nodeId      String   // ID of the tree node
-  agentType   String   // 'sql' or 'python'
-  
-  // Context information
-  script      String   @db.Text // The SQL query or Python code
-  tableSchema Json?    // Schema information about input tables (columns, types)
-  inputTables Json?    // Sample data from input tables for context
-  
-  // Conversation messages
-  messages    Json     // Array of ChatMessage objects
-  
+  nodeId      String
+  agentType   String
+  script      String
+  tableSchema Json?
+  inputTables Json?
+  messages    Json
   companyId   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  @@unique([nodeId, agentType])
   @@index([nodeId])
   @@index([companyId])
-  @@unique([nodeId, agentType])
 }
 
-// ============================================
-// SCHEDULER SYSTEM MODELS
-// ============================================
-
 model ScheduledTask {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  
-  // Task type and configuration
-  type        String   // EMAIL_PREVIEW, EMAIL_SEND, SQL_PREVIEW, SQL_EXECUTE, DATA_SYNC, CUSTOM
-  config      Json     // Task-specific configuration (connectorId, query, email params, etc.)
-  
-  // Schedule configuration
-  scheduleType String @default("interval") // 'cron', 'interval', 'specific'
-  cronExpression String? // For cron-based scheduling (e.g., "0 9 * * *")
-  intervalMinutes Int? // For interval-based scheduling (e.g., 60 = every hour)
-  daysOfWeek String? // Comma-separated days (0-6, 0=Sunday)
-  hours String? // Comma-separated hours (0-23)
-  timezone String @default("Europe/Rome")
-  
-  // Task status
-  status      String   @default("active") // 'active', 'paused', 'disabled'
-  lastRunAt   DateTime?
-  nextRunAt   DateTime?
-  runCount    Int      @default(0)
-  successCount Int     @default(0)
-  failureCount Int     @default(0)
-  
-  // Error handling
-  maxRetries  Int      @default(3)
-  retryDelayMinutes Int @default(5)
-  lastError   String?
-  
-  // Multi-tenancy
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  createdBy   String?
-  creator     User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  executions  ScheduledTaskExecution[]
-  
+  id                String                   @id @default(cuid())
+  name              String
+  description       String?
+  type              String
+  config            Json
+  scheduleType      String                   @default("interval")
+  cronExpression    String?
+  intervalMinutes   Int?
+  daysOfWeek        String?
+  hours             String?
+  timezone          String                   @default("Europe/Rome")
+  status            String                   @default("active")
+  lastRunAt         DateTime?
+  nextRunAt         DateTime?
+  runCount          Int                      @default(0)
+  successCount      Int                      @default(0)
+  failureCount      Int                      @default(0)
+  maxRetries        Int                      @default(3)
+  retryDelayMinutes Int                      @default(5)
+  lastError         String?
+  companyId         String
+  createdBy         String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  company           Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  creator           User?                    @relation(fields: [createdBy], references: [id])
+  executions        ScheduledTaskExecution[]
+
   @@index([companyId])
   @@index([status])
   @@index([nextRunAt])
@@ -539,22 +437,18 @@ model ScheduledTask {
 }
 
 model ScheduledTaskExecution {
-  id          String   @id @default(cuid())
-  
+  id          String        @id @default(cuid())
   taskId      String
-  task        ScheduledTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  
-  status      String   // 'pending', 'running', 'success', 'failed', 'cancelled'
-  startedAt   DateTime @default(now())
+  status      String
+  startedAt   DateTime      @default(now())
   completedAt DateTime?
   durationMs  Int?
-  
-  result      Json?    // Task execution result
+  result      Json?
   error       String?
-  retryCount  Int      @default(0)
-  
-  createdAt   DateTime @default(now())
-  
+  retryCount  Int           @default(0)
+  createdAt   DateTime      @default(now())
+  task        ScheduledTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
   @@index([taskId])
   @@index([status])
   @@index([startedAt])

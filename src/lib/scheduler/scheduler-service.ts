@@ -667,6 +667,28 @@ export class SchedulerService {
             }
           }
           pipelineReport.push({ name: originalName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'success', timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
+
+          // --- INCREMENTAL PERSISTENCE (Real-Time Previews) ---
+          if (treeId && shouldStore) {
+            const nodeId = tableDef.nodeId || tableDef.id;
+            if (nodeId) {
+              logger.log(`[AncestorChain] [DEBUG] Starting incremental preview for ${originalName} (${nodeId})`);
+              try {
+                const { saveAncestorPreviewsBatchAction } = await import('@/app/actions/scheduler');
+                await saveAncestorPreviewsBatchAction(treeId, [{
+                  nodeId: nodeId,
+                  isPython: !!tableDef.isPython,
+                  pythonOutputType: tableDef.pythonOutputType,
+                  result: resultData
+                }]);
+                logger.log(`[AncestorChain] [DEBUG] Incremental preview SAVED for ${originalName}`);
+              } catch (err: any) {
+                logger.error(`[AncestorChain] [DEBUG] Failed to save incremental preview for ${originalName}: ${err.message}`);
+              }
+            } else {
+              logger.log(`[AncestorChain] [DEBUG] Skipping incremental preview for ${originalName} - missing nodeId`);
+            }
+          }
         } else {
           if (!pipelineReport.find(r => r.name === originalName)) {
             pipelineReport.push({ name: originalName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'skipped', error: 'No result produced', timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
@@ -712,42 +734,6 @@ export class SchedulerService {
       } catch (e: any) {
         logger.error(`[AncestorChain] Exception executing ${originalName}: ${e.message}`);
         pipelineReport.push({ name: originalName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'error', error: e.message, timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
-      }
-    }
-
-    // --- PERSIST ANCESTOR PREVIEWS ---
-    if (treeId) {
-      try {
-        const ancestorPreviews: Array<{ nodeId: string; isPython: boolean; pythonOutputType?: string; result: any }> = [];
-
-        for (const entry of pipelineReport) {
-          if (entry.status !== 'success') continue;
-
-          const normalizedName = entry.name.toLowerCase().trim();
-          const resultData = resultsNormalized[normalizedName];
-          if (!resultData) continue;
-
-          const tableDef = contextTables.find(t => t.name.toLowerCase().trim() === normalizedName);
-          const nodeId = tableDef?.nodeId || tableDef?.id;
-          if (!tableDef || !nodeId) continue;
-
-          ancestorPreviews.push({
-            nodeId: nodeId,
-            isPython: !!tableDef.isPython,
-            pythonOutputType: tableDef.pythonOutputType,
-            result: resultData
-          });
-        }
-
-        if (ancestorPreviews.length > 0) {
-          logger.log(`[AncestorChain] Saving ${ancestorPreviews.length} ancestor previews to tree ${treeId}`);
-          const { saveAncestorPreviewsBatchAction } = await import('@/app/actions/scheduler');
-          await saveAncestorPreviewsBatchAction(treeId, ancestorPreviews).catch(err => {
-            logger.error(`[AncestorChain] Failed to save ancestor previews: ${err.message}`);
-          });
-        }
-      } catch (err: any) {
-        logger.error(`[AncestorChain] Error persisting ancestor previews: ${err.message}`);
       }
     }
 

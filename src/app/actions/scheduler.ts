@@ -448,45 +448,60 @@ export async function saveAncestorPreviewsBatchAction(
             const node = findNodeById(json, preview.nodeId);
             if (!node) continue;
 
-            if (!preview.isPython) {
-                // SQL node: field names match UI's onSavePreview format
-                const data = Array.isArray(preview.result)
-                    ? preview.result
-                    : (preview.result?.data && Array.isArray(preview.result.data) ? preview.result.data : null);
-                if (data) {
-                    node.sqlPreviewData = data;
-                    node.sqlPreviewTimestamp = nowMs;
-                    savedCount++;
-                }
-            } else {
-                // Python node: timestamp goes INSIDE pythonPreviewResult (same as UI)
+            let nodeUpdated = false;
+            const res = preview.result;
+
+            // 1. SQL Preview Data (Check for array data)
+            // If it's a hybrid node (isPython=false but has resultData.data), or a pure SQL node
+            const sqlData = Array.isArray(res)
+                ? res
+                : (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data) ? res.data : null);
+
+            if (sqlData && !preview.isPython) {
+                node.sqlPreviewData = sqlData;
+                node.sqlPreviewTimestamp = nowMs;
+                nodeUpdated = true;
+            }
+
+            // 2. Python Preview Result (Check for chart, variable, or isPython flag)
+            const hasPythonChart = res && typeof res === 'object' && (res.chartBase64 || res.chartHtml || res.rechartsConfig);
+            const hasPythonVariables = res && typeof res === 'object' && res.variables;
+
+            if (preview.isPython || hasPythonChart || hasPythonVariables) {
                 const outputType = preview.pythonOutputType || 'table';
-                if (outputType === 'chart') {
+
+                if (hasPythonChart || outputType === 'chart') {
                     node.pythonPreviewResult = {
                         type: 'chart',
-                        chartBase64: preview.result.chartBase64,
-                        chartHtml: preview.result.chartHtml,
-                        rechartsConfig: preview.result.rechartsConfig,
-                        rechartsData: preview.result.rechartsData,
+                        chartBase64: res.chartBase64,
+                        chartHtml: res.chartHtml,
+                        rechartsConfig: res.rechartsConfig,
+                        rechartsData: res.rechartsData,
                         timestamp: nowMs,
                     };
-                } else if (outputType === 'variable') {
+                    nodeUpdated = true;
+                } else if (hasPythonVariables || outputType === 'variable') {
                     node.pythonPreviewResult = {
                         type: 'variable',
-                        variables: preview.result.variables || preview.result,
+                        variables: res.variables || res,
                         timestamp: nowMs,
                     };
-                } else {
-                    // table
-                    const data = preview.result?.data || preview.result;
-                    node.pythonPreviewResult = {
-                        type: 'table',
-                        data: Array.isArray(data) ? data : undefined,
-                        timestamp: nowMs,
-                    };
+                    nodeUpdated = true;
+                } else if (preview.isPython) {
+                    // Pure Python table
+                    const data = res?.data || (Array.isArray(res) ? res : null);
+                    if (data) {
+                        node.pythonPreviewResult = {
+                            type: 'table',
+                            data: Array.isArray(data) ? data : undefined,
+                            timestamp: nowMs,
+                        };
+                        nodeUpdated = true;
+                    }
                 }
-                savedCount++;
             }
+
+            if (nodeUpdated) savedCount++;
         }
 
         // 3. Save tree JSON once (only if we actually updated something)
