@@ -314,6 +314,7 @@ export class SchedulerService {
     const results: Record<string, any> = {};
     // Store results with normalized keys for lookup, but allow original keys too
     const resultsNormalized: Record<string, any> = {};
+    const permanentTables = new Map<string, { connectorId: string, tableName: string }>();
 
     const pipelineReport: Array<{ name: string, type: string, status: 'success' | 'error' | 'skipped', error?: string, timestamp: string, nodePath?: string }> = [];
     if (!contextTables || contextTables.length === 0) return { results, pipelineReport };
@@ -520,31 +521,55 @@ export class SchedulerService {
           // because executeSqlPreviewAction's flattenDependencies would try to re-execute them
           // recursively, which fails since temp tables from previous connections don't exist.
           // Instead: pass ALL available pre-calculated results as data-only deps.
+          // OPTIMIZATION: Only inject deps that are actually referenced in the SQL query
+          // This avoids re-materializing large tables (e.g. HR2 12K rows) for nodes that don't use them
+          const sqlQueryLower = tableDef.sqlQuery.toLowerCase();
           const deps: any[] = [];
+          let effectiveQuery = tableDef.sqlQuery;
           const addedDepNames = new Set<string>();
-          // Use `results` (original-cased keys including aliases) so SQL queries
-          // can reference nodes by ANY of their names (e.g. "Aggregato" vs "Budget > Aggregato")
+
+          // Helper for precise replacement (to avoid partial matches like PROD vs PRODFIL)
+          const replaceRef = (sql: string, oldName: string, newName: string) => {
+            const escaped = _.escapeRegExp(oldName);
+            // Match FROM/JOIN followed by optional schema and the table name
+            const pattern = `\\b(FROM|JOIN)\\s+((?:\\[[^\\]]+\\]|\\w+)\\.)?\\[?${escaped}\\]?\\b`;
+            const regex = new RegExp(pattern, 'gi');
+            return sql.replace(regex, (match, keyword, schema) => {
+              return `${keyword} ${schema || ''}${newName}`;
+            });
+          };
+
           for (const [key, val] of Object.entries(results)) {
             const keyNorm = key.toLowerCase().trim();
             if (keyNorm !== normalizedName && !addedDepNames.has(key)) {
-              // Extract array data from the result
+              // Precise Detection: Use regex with word boundaries
+              const tableRegex = new RegExp(`\\b${_.escapeRegExp(keyNorm)}\\b`, 'i');
+              if (!tableRegex.test(sqlQueryLower)) continue;
+
+              // Permanent Table Reuse
+              const perm = permanentTables.get(keyNorm);
+              if (perm && perm.connectorId === tableDef.connectorId) {
+                logger.log(`[AncestorChain] ${originalName}: Reusing permanent table ${perm.tableName} for dependency ${key}`);
+                effectiveQuery = replaceRef(effectiveQuery, key, perm.tableName);
+                addedDepNames.add(key);
+                continue;
+              }
+
               const dataToInject = Array.isArray(val) ? val :
                 (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) ? val.data : null;
               if (dataToInject && dataToInject.length > 0) {
                 deps.push({
                   tableName: key,
                   data: dataToInject
-                  // NOTE: No query, isPython, pythonCode, pipelineDependencies!
-                  // This forces executeSqlPreviewAction to use the pre-calculated data path only.
                 });
                 addedDepNames.add(key);
               }
             }
           }
-          logger.log(`[AncestorChain] SQL node ${originalName}: injected ${deps.length} pre-calculated deps (${deps.map((d: any) => d.tableName).join(', ')})`);
+          logger.log(`[AncestorChain] SQL node ${originalName}: injected ${deps.length} deps (${deps.map((d: any) => d.tableName).join(', ')})`);
 
           const res = await executeSqlPreviewAction(
-            tableDef.sqlQuery,
+            effectiveQuery,
             tableDef.connectorId,
             deps,
             _bypassAuth
@@ -670,6 +695,12 @@ export class SchedulerService {
                 true, // truncate
                 true // isSystem (bypass auth)
               );
+              // Store permanent table info for reuse in downstream nodes
+              const nodeAllNames = tableDef.allNames || [originalName];
+              for (const name of nodeAllNames) {
+                permanentTables.set(name.toLowerCase().trim(), { connectorId: targetConnectorId, tableName: targetTableName });
+              }
+
               pipelineReport.push({ name: `💾 Write ${targetTableName}`, type: 'export', status: 'success', timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
             } catch (exportErr: any) {
               logger.error(`[AncestorChain] Export failed for ${originalName} to ${targetTableName}: ${exportErr.message}`);

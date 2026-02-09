@@ -17,6 +17,7 @@ export const navItems = [
 ];
 
 export const settingsNavItems = [
+    { href: '/scheduler', icon: 'Clock', label: 'Scheduler' },
     { href: '/settings/navigation', icon: 'Compass', label: 'Navigation' },
     { href: '/settings', icon: 'Settings', label: 'Settings' }
 ];
