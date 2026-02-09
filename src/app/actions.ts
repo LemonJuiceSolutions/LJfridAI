@@ -1133,7 +1133,8 @@ export async function executeSqlPreviewAction(
             for (const dep of allDeps) {
                 // Use unique naming to prevent collisions
                 const uniqueId = new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 1000).toString(); // Add random for extra safety
-                const tempTableName = `##${dep.tableName}_${uniqueId}`;
+                const sanitizedName = dep.tableName.replace(/[^a-zA-Z0-9_]/g, '_');
+                const tempTableName = `##${sanitizedName}_${uniqueId}`;
                 nameMap.set(dep.tableName, tempTableName);
 
                 console.log(`[PIPELINE] Materializing: ${tempTableName} (isPython: ${dep.isPython}, hasPythonCode: ${!!dep.pythonCode}, hasQuery: ${!!dep.query})`);

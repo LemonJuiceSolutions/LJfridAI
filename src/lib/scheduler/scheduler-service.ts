@@ -60,6 +60,7 @@ export class SchedulerService {
   private static instance: SchedulerService;
   // Map taskId -> cronJob or Array<cronJob>
   private tasks: Map<string, any> = new Map();
+  private runningTasks: Set<string> = new Set(); // Concurrency guard
   private isInitialized = false;
 
   public static getInstance(): SchedulerService {
@@ -188,6 +189,13 @@ export class SchedulerService {
   }
 
   public async executeTask(taskId: string): Promise<TaskExecutionResult> {
+    // Concurrency guard: skip if this task is already running
+    if (this.runningTasks.has(taskId)) {
+      logger.log(`Task ${taskId} is already running, skipping this execution.`);
+      return { success: false, error: 'Task already running, skipped.' };
+    }
+
+    this.runningTasks.add(taskId);
     logger.log(`Starting execution for task ${taskId}`);
 
     let executionId = '';
@@ -200,7 +208,7 @@ export class SchedulerService {
       // 2. Create Execution Log (Pending)
       const execution = await db.scheduledTaskExecution.create({
         data: {
-          taskId: taskId, // Fixed: use taskId instead of scheduledTaskId
+          taskId: taskId,
           status: 'running',
           startedAt: new Date()
         }
@@ -216,6 +224,7 @@ export class SchedulerService {
         data: {
           status: result.success ? 'success' : 'failure',
           completedAt: new Date(),
+          durationMs: Math.round(Date.now() - execution.startedAt.getTime()),
           result: (result.data || result.message) as Prisma.InputJsonValue,
           error: result.error
         }
@@ -250,6 +259,8 @@ export class SchedulerService {
         }).catch(() => { });
       }
       return { success: false, error: e.message };
+    } finally {
+      this.runningTasks.delete(taskId);
     }
   }
 
@@ -268,6 +279,7 @@ export class SchedulerService {
       switch (type) {
         case 'EMAIL_SEND':
           return await this.executeEmailSend(config);
+        case 'SQL_PREVIEW':
         case 'SQL_EXECUTE':
           return await this.executeSqlNode(config);
         case 'PYTHON_EXECUTE':
@@ -561,6 +573,50 @@ export class SchedulerService {
             pipelineReport.push({ name: originalName, type: 'SQL', status: 'error', error: res.error, timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
           } else {
             resultData = res.data;
+
+            // HYBRID NODE: If this SQL node also has Python chart code, run it too
+            // This generates the chart using the SQL result as input data
+            if (tableDef.pythonCode && tableDef.pythonOutputType && resultData) {
+              logger.log(`[AncestorChain] Hybrid node ${originalName}: SQL done, now running Python chart code`);
+              const pythonInputData: Record<string, any> = {};
+              // Provide the SQL result as input data under the node's own name
+              pythonInputData[originalName] = Array.isArray(resultData) ? resultData : [resultData];
+              // Also provide all previous results
+              for (const [normKey, val] of Object.entries(resultsNormalized)) {
+                const origName = nodeNameMap.get(normKey) || normKey;
+                if (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) {
+                  pythonInputData[origName] = val.data;
+                } else if (Array.isArray(val)) {
+                  pythonInputData[origName] = val;
+                }
+              }
+
+              const pyRes = await executePythonPreviewAction(
+                tableDef.pythonCode,
+                tableDef.pythonOutputType,
+                pythonInputData,
+                [], // No deps needed - data already provided
+                tableDef.connectorId,
+                _bypassAuth
+              );
+
+              if (pyRes.success) {
+                // Merge: wrap SQL data + Python chart into a single result object
+                resultData = {
+                  data: Array.isArray(resultData) ? resultData : [resultData],
+                  chartBase64: pyRes.chartBase64,
+                  chartHtml: pyRes.chartHtml,
+                  rechartsConfig: pyRes.rechartsConfig,
+                  rechartsData: pyRes.rechartsData,
+                  variables: pyRes.variables,
+                  stdout: pyRes.stdout
+                };
+                logger.log(`[AncestorChain] Hybrid node ${originalName}: Python chart generated successfully`);
+              } else {
+                logger.error(`[AncestorChain] Hybrid node ${originalName}: Python chart failed: ${pyRes.error}`);
+                // Keep SQL-only result (resultData unchanged)
+              }
+            }
           }
         }
 
@@ -613,7 +669,11 @@ export class SchedulerService {
 
         if (tableDef.writesToDatabase && targetTableName && targetConnectorId && resultData) {
           logger.log(`[AncestorChain] Writing ${originalName} to ${targetTableName}`);
-          const dataArr = Array.isArray(resultData) ? resultData : [resultData];
+          // Extract .data from Python result wrappers (which have { data, chartBase64, ... })
+          const rawData = (resultData && typeof resultData === 'object' && 'data' in resultData && Array.isArray(resultData.data))
+            ? resultData.data
+            : resultData;
+          const dataArr = Array.isArray(rawData) ? rawData : [rawData];
           if (dataArr.length > 0) {
             try {
               await exportTableToSqlAction(
@@ -1003,12 +1063,11 @@ export class SchedulerService {
           continue; // Skip Python outputs
         }
 
-        // Check if ANY of the node's names match the placeholders (Inclusive of all types for SQL nodes)
+        // Check if ANY of the node's names match the SQL-specific placeholders
+        // NOTE: placeholderChartNames and placeholderVarNames are Python outputs, NOT SQL tables
         const names = table.allNames || [table.name];
         const inBody = (tablesInBody || []).some((n: string) => names.includes(n)) ||
-          placeholderTableNames.some((n: string) => names.includes(n)) ||
-          placeholderChartNames.some((n: string) => names.includes(n)) ||
-          placeholderVarNames.some((n: string) => names.includes(n));
+          placeholderTableNames.some((n: string) => names.includes(n));
         const asExcel = (tablesAsExcel || []).some((n: string) => names.includes(n));
         logger.log(`[EmailSend] SQL Table ${table.name} (Alternatives: ${names.join(',')}): inBody=${inBody}, asExcel=${asExcel}`);
 
@@ -1024,8 +1083,9 @@ export class SchedulerService {
       }
 
       // 7. Build selectedPythonOutputs payload
+      // Include nodes that have pythonCode+pythonOutputType even if they also have sqlQuery (hybrid nodes produce both SQL data and Python charts)
       logger.log(`[EmailSend] Matching Python outputs. Placeholders in body: ${JSON.stringify(allReferencedPythonNames)}`);
-      for (const pythonNode of availableInputTables.filter(t => t.isPython)) {
+      for (const pythonNode of availableInputTables.filter(t => t.isPython || (t.pythonCode && t.pythonOutputType))) {
         const names = pythonNode.allNames || [pythonNode.name];
         const inBody = (pythonOutputsInBody || []).some((n: string) => names.includes(n)) || allReferencedPythonNames.some((n: string) => names.includes(n));
         const asAttachment = (pythonOutputsAsAttachment || []).some((n: string) => names.includes(n));

@@ -54,6 +54,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import SmartWidgetRenderer from '@/components/widgets/builder/SmartWidgetRenderer';
 import { AgentChat } from '@/components/agents/agent-chat';
+import { NodeSchedulePopover } from '@/components/scheduler/node-schedule-popover';
+import { getAllNodeSchedulesAction } from '@/app/actions/scheduler';
 
 // Memoized input component to prevent re-renders when typing
 const MemoizedChatInput = memo(function MemoizedChatInput({
@@ -428,6 +430,22 @@ export default function EditNodeDialog({
 
 
 
+
+  // Node schedules state (loaded on dialog open)
+  const [nodeSchedules, setNodeSchedules] = useState<Record<string, any>>({});
+  const currentNodeId = (initialNode as any)?.id || nodePath;
+
+  const loadNodeSchedules = useCallback(() => {
+    if (treeId && currentNodeId) {
+      getAllNodeSchedulesAction(treeId, currentNodeId).then(r => {
+        if (r.success && r.data) setNodeSchedules(r.data);
+      });
+    }
+  }, [treeId, currentNodeId]);
+
+  useEffect(() => {
+    if (isOpen) loadNodeSchedules();
+  }, [isOpen, loadNodeSchedules]);
 
   const isExecutingRef = useRef(false);
 
@@ -2090,6 +2108,7 @@ export default function EditNodeDialog({
                           />
                         </div>
 
+                        <div className="flex gap-1 items-center">
                         <Button
                           className="bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
                           onClick={() => {
@@ -2167,6 +2186,23 @@ export default function EditNodeDialog({
                           {pipelineAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
                           Esegui Pipeline SQL
                         </Button>
+                        <NodeSchedulePopover
+                          treeId={treeId}
+                          nodeId={currentNodeId}
+                          nodePath={nodePath}
+                          taskType="SQL_PREVIEW"
+                          taskLabel="Pipeline SQL"
+                          existingSchedule={nodeSchedules['SQL_PREVIEW']}
+                          taskConfigProvider={() => ({
+                            query: sqlQuery,
+                            connectorIdSql: sqlConnectorId,
+                            sqlResultName,
+                            contextTables: availableInputTables,
+                            selectedPipelines,
+                          })}
+                          onScheduleChanged={loadNodeSchedules}
+                        />
+                        </div>
 
                       </div>
                     </div>
@@ -2469,6 +2505,23 @@ export default function EditNodeDialog({
                             {pipelineAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2 text-purple-600" /> : <Play className="h-4 w-4 mr-2" />}
                             Esegui Anteprima
                           </Button>
+                          <NodeSchedulePopover
+                            treeId={treeId}
+                            nodeId={currentNodeId}
+                            nodePath={nodePath}
+                            taskType="PYTHON_EXECUTE"
+                            taskLabel="Python Anteprima"
+                            existingSchedule={nodeSchedules['PYTHON_EXECUTE'] || nodeSchedules['CUSTOM']}
+                            taskConfigProvider={() => ({
+                              pythonCode,
+                              pythonOutputType,
+                              pythonResultName,
+                              pythonConnectorId,
+                              pythonSelectedPipelines,
+                              contextTables: availableInputTables,
+                            })}
+                            onScheduleChanged={loadNodeSchedules}
+                          />
 
                         </div>
 
@@ -2856,9 +2909,10 @@ export default function EditNodeDialog({
                     )}
 
                     {/* Execute Button */}
+                    <div className="flex gap-1 items-center">
                     <Button
                       type="button"
-                      className="w-full bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
+                      className="flex-1 bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
                       disabled={sqlExportStatus === 'running' || sqlExportSourceTables.length === 0 || !sqlExportTargetConnectorId || !sqlExportTargetTableName}
                       onClick={async () => {
                         executeFullPipeline('export', async () => {
@@ -3016,6 +3070,28 @@ export default function EditNodeDialog({
                         </>
                       )}
                     </Button>
+                    <NodeSchedulePopover
+                      treeId={treeId}
+                      nodeId={currentNodeId}
+                      nodePath={nodePath}
+                      taskType="SQL_EXECUTE"
+                      taskLabel="Esportazione Database"
+                      existingSchedule={nodeSchedules['SQL_EXECUTE']}
+                      taskConfigProvider={() => ({
+                        query: sqlQuery,
+                        connectorIdSql: sqlConnectorId,
+                        sqlResultName,
+                        contextTables: availableInputTables,
+                        selectedPipelines,
+                        sqlExportConfig: {
+                          targetConnectorId: sqlExportTargetConnectorId,
+                          targetTableName: sqlExportTargetTableName,
+                          sourceTables: sqlExportSourceTables,
+                        },
+                      })}
+                      onScheduleChanged={loadNodeSchedules}
+                    />
+                    </div>
 
                     {/* Status Messages */}
                     {sqlExportStatus === 'success' && (
@@ -3793,6 +3869,25 @@ export default function EditNodeDialog({
                         {isSendingTestEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                         Invia Email di Test
                       </Button>
+                      <NodeSchedulePopover
+                        treeId={treeId}
+                        nodeId={currentNodeId}
+                        nodePath={nodePath}
+                        taskType="EMAIL_SEND"
+                        taskLabel="Invio Email"
+                        existingSchedule={nodeSchedules['EMAIL_SEND']}
+                        taskConfigProvider={() => ({
+                          connectorId: emailConfig.connectorId,
+                          to: emailConfig.to,
+                          cc: emailConfig.cc,
+                          bcc: emailConfig.bcc,
+                          subject: emailConfig.subject,
+                          body: emailConfig.body,
+                          contextTables: availableInputTables,
+                          attachments: safeEmailAttachments,
+                        })}
+                        onScheduleChanged={loadNodeSchedules}
+                      />
 
                     </div>
                   </div>

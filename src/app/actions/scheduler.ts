@@ -58,7 +58,7 @@ export async function saveNodeScheduleAction(
         timezone?: string;
     },
     taskConfig: {
-        type: 'EMAIL_SEND' | 'SQL_EXECUTE' | 'PYTHON_EXECUTE'; // Expanded types
+        type: 'EMAIL_SEND' | 'SQL_EXECUTE' | 'SQL_PREVIEW' | 'PYTHON_EXECUTE'; // Expanded types
         [key: string]: any;
     }
 ) {
@@ -77,11 +77,11 @@ export async function saveNodeScheduleAction(
 
         const name = `Node-${treeId}-${nodeId} (${taskConfig.type})`;
 
-        // Check if task exists
+        // Check if task exists (exact match on full name including type)
         const existingTask = await db.scheduledTask.findFirst({
             where: {
                 companyId: user.companyId,
-                name: { contains: `Node-${treeId}-${nodeId}` }
+                name: name
             }
         });
 
@@ -101,7 +101,7 @@ export async function saveNodeScheduleAction(
         const taskData = {
             name,
             companyId: user.companyId,
-            type: taskConfig.type === 'PYTHON_EXECUTE' ? 'CUSTOM' : taskConfig.type, // Map Python to CUSTOM for now if not supported directly
+            type: taskConfig.type === 'PYTHON_EXECUTE' ? 'CUSTOM' : taskConfig.type, // PYTHON_EXECUTE mapped to CUSTOM (scheduler handles via pythonCode in config)
             config: {
                 ...taskConfig,
                 treeId,
@@ -518,6 +518,77 @@ export async function saveAncestorPreviewsBatchAction(
     } catch (error: any) {
         console.error('[saveAncestorPreviews] Error:', error);
         return { success: false, savedCount: 0 };
+    }
+}
+
+/**
+ * Get all schedules for a node (one per task type).
+ * Returns a map keyed by task type, e.g. { EMAIL_SEND: task, SQL_PREVIEW: task }
+ */
+export async function getAllNodeSchedulesAction(treeId: string, nodeId: string) {
+    try {
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return { success: false, message: 'Non autenticato', data: {} as Record<string, any> };
+        }
+
+        const namePrefix = `Node-${treeId}-${nodeId}`;
+
+        const tasks = await db.scheduledTask.findMany({
+            where: {
+                companyId: user.companyId,
+                name: { startsWith: namePrefix }
+            }
+        });
+
+        const scheduleMap: Record<string, any> = {};
+        for (const task of tasks) {
+            // Extract type from name: "Node-xxx-yyy (SQL_PREVIEW)" -> "SQL_PREVIEW"
+            const match = task.name.match(/\(([^)]+)\)$/);
+            if (match) {
+                scheduleMap[match[1]] = task;
+            }
+        }
+
+        return { success: true, data: scheduleMap };
+    } catch (error: any) {
+        console.error('Error fetching all node schedules:', error);
+        return { success: false, message: error.message, data: {} as Record<string, any> };
+    }
+}
+
+/**
+ * Delete a specific schedule for a node by task type
+ */
+export async function deleteNodeScheduleByTypeAction(treeId: string, nodeId: string, taskType: string) {
+    try {
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return { success: false, message: 'Non autenticato' };
+        }
+
+        const name = `Node-${treeId}-${nodeId} (${taskType})`;
+        const task = await db.scheduledTask.findFirst({
+            where: {
+                companyId: user.companyId,
+                name: name
+            }
+        });
+
+        if (task) {
+            await db.scheduledTask.delete({
+                where: { id: task.id }
+            });
+            // Try to stop in runtime scheduler
+            try {
+                const { schedulerService } = await import('@/lib/scheduler/scheduler-service');
+                await schedulerService.rescheduleTask(task.id).catch(() => { });
+            } catch (e) { }
+        }
+
+        return { success: true, message: 'Schedulazione eliminata' };
+    } catch (error: any) {
+        return { success: false, message: error.message };
     }
 }
 
