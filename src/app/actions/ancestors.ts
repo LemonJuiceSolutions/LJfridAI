@@ -76,12 +76,12 @@ export async function executeAncestorChainAction(
   treeId: string,
   nodeId: string,
   stopOnError: boolean = false
-): Promise<{ 
-  success: boolean, 
-  results: any[] | null, 
+): Promise<{
+  success: boolean,
+  results: any[] | null,
   errors: string[] | null,
   executionTime: number | null,
-  error: string | null 
+  error: string | null
 }> {
   try {
     const session = await getSession();
@@ -107,7 +107,7 @@ export async function executeAncestorChainAction(
     const { nodes, edges } = extractNodesAndEdges(jsonTree);
 
     // 4. Execute the ancestor chain
-    const result = await executeAncestors(nodes, edges, nodeId, stopOnError);
+    const result = await executeAncestors(nodes, edges, nodeId, stopOnError, treeId);
 
     return {
       success: result.success,
@@ -118,12 +118,12 @@ export async function executeAncestorChainAction(
     };
   } catch (error) {
     console.error("Error in executeAncestorChainAction:", error);
-    return { 
-      success: false, 
-      results: null, 
-      errors: null, 
-      executionTime: null, 
-      error: error instanceof Error ? error.message : "Error executing ancestor chain" 
+    return {
+      success: false,
+      results: null,
+      errors: null,
+      executionTime: null,
+      error: error instanceof Error ? error.message : "Error executing ancestor chain"
     };
   }
 }
@@ -140,12 +140,12 @@ export async function executeFullChainAction(
   treeId: string,
   nodeId: string,
   stopOnError: boolean = false
-): Promise<{ 
-  success: boolean, 
-  results: any[] | null, 
+): Promise<{
+  success: boolean,
+  results: any[] | null,
   errors: string[] | null,
   executionTime: number | null,
-  error: string | null 
+  error: string | null
 }> {
   try {
     const session = await getSession();
@@ -171,7 +171,7 @@ export async function executeFullChainAction(
     const { nodes, edges } = extractNodesAndEdges(jsonTree);
 
     // 4. Execute the entire chain
-    const result = await executeChain(nodes, edges, stopOnError);
+    const result = await executeChain(nodes, edges, stopOnError, treeId);
 
     return {
       success: result.success,
@@ -182,12 +182,12 @@ export async function executeFullChainAction(
     };
   } catch (error) {
     console.error("Error in executeFullChainAction:", error);
-    return { 
-      success: false, 
-      results: null, 
-      errors: null, 
-      executionTime: null, 
-      error: error instanceof Error ? error.message : "Error executing full chain" 
+    return {
+      success: false,
+      results: null,
+      errors: null,
+      executionTime: null,
+      error: error instanceof Error ? error.message : "Error executing full chain"
     };
   }
 }
@@ -278,7 +278,7 @@ function extractNodesAndEdges(jsonTree: any): { nodes: Node[], edges: Edge[] } {
 function findAncestorIds(nodes: Node[], edges: Edge[], targetNodeId: string): Set<string> {
   const ancestors = new Set<string>();
   const visited = new Set<string>();
-  
+
   // Build adjacency list for reverse edges (target -> source)
   const reverseAdj = new Map<string, string[]>();
   for (const node of nodes) {
@@ -289,24 +289,24 @@ function findAncestorIds(nodes: Node[], edges: Edge[], targetNodeId: string): Se
     sources.push(edge.source);
     reverseAdj.set(edge.target, sources);
   }
-  
+
   // DFS to find all ancestors
   const dfs = (nodeId: string) => {
     if (visited.has(nodeId)) {
       return;
     }
-    
+
     visited.add(nodeId);
     const sources = reverseAdj.get(nodeId) || [];
-    
+
     for (const sourceId of sources) {
       ancestors.add(sourceId);
       dfs(sourceId);
     }
   };
-  
+
   dfs(targetNodeId);
-  
+
   return ancestors;
 }
 

@@ -30,9 +30,11 @@ model Company {
   scheduledTasks     ScheduledTask[]
   suppliers          Supplier[]
   tokenCaches        TokenCache[]
-  trees              Tree[]
-  users              User[]
-  variables          Variable[]
+  trees                    Tree[]
+  users                    User[]
+  variables                Variable[]
+  knowledgeBaseEntries     KnowledgeBaseEntry[]
+  superAgentConversations  SuperAgentConversation[]
 }
 
 model Department {
@@ -398,6 +400,32 @@ model AgentConversation {
 
   @@unique([nodeId, agentType])
   @@index([nodeId])
+  @@index([companyId])
+}
+
+model KnowledgeBaseEntry {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  context   String?
+  tags      String[]
+  category  String?
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model SuperAgentConversation {
+  id        String   @id @default(cuid())
+  messages  Json
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   @@index([companyId])
 }
 

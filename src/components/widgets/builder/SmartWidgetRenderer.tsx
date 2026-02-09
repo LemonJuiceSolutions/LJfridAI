@@ -4,7 +4,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WidgetConfig } from '@/lib/types';
 
@@ -13,6 +13,7 @@ interface SmartWidgetRendererProps {
     config: WidgetConfig;
     onRefresh?: () => void;
     isRefreshing?: boolean;
+    onUpdateHierarchy?: () => void;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
@@ -50,15 +51,22 @@ const getStrokeDasharray = (style?: 'solid' | 'dashed' | 'dotted') => {
     }
 };
 
-export default function SmartWidgetRenderer({ data, config, onRefresh, isRefreshing }: SmartWidgetRendererProps) {
+export default function SmartWidgetRenderer({ data, config, onRefresh, isRefreshing, onUpdateHierarchy }: SmartWidgetRendererProps) {
     if ((!data || data.length === 0) && !isRefreshing) {
         return (
             <Card className="h-full w-full flex items-center justify-center relative">
                 {onRefresh && (
-                    <div className="absolute top-2 right-2">
-                        <Button variant="ghost" size="icon" onClick={onRefresh} disabled={isRefreshing} className={isRefreshing ? 'animate-spin' : ''}>
-                            <RefreshCw className="h-4 w-4" />
-                        </Button>
+                    <div className="flex gap-2">
+                        {onRefresh && (
+                            <Button variant="ghost" size="icon" onClick={onRefresh} disabled={isRefreshing} className={isRefreshing ? 'animate-spin' : ''}>
+                                <RefreshCw className="h-4 w-4" />
+                            </Button>
+                        )}
+                        {onUpdateHierarchy && (
+                            <Button variant="ghost" size="icon" onClick={onUpdateHierarchy} disabled={isRefreshing}>
+                                <Zap className="h-4 w-4 text-amber-500" />
+                            </Button>
+                        )}
                     </div>
                 )}
                 <p className="text-muted-foreground text-sm">No data available</p>
@@ -246,24 +254,38 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                         {config.title && <CardTitle className="text-base">{config.title}</CardTitle>}
                         {config.description && <CardDescription>{config.description}</CardDescription>}
                     </div>
-                    {onRefresh && (
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onRefresh}
-                            disabled={isRefreshing}
-                            className={`-mt-1 -mr-2 h-8 w-8 ${isRefreshing ? 'animate-spin' : ''}`}
-                            title="Aggiorna Dati"
-                        >
-                            <RefreshCw className="h-4 w-4" />
-                        </Button>
-                    )}
+                    <div className="flex gap-1 -mt-1 -mr-2">
+                        {onRefresh && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={onRefresh}
+                                disabled={isRefreshing}
+                                className={`h-8 w-8 ${isRefreshing ? 'animate-spin' : ''}`}
+                                title="Aggiorna Dati"
+                            >
+                                <RefreshCw className="h-4 w-4" />
+                            </Button>
+                        )}
+                        {onUpdateHierarchy && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={onUpdateHierarchy}
+                                disabled={isRefreshing}
+                                className={`h-8 w-8 text-amber-500 hover:text-amber-600`}
+                                title="Aggiorna Intera Gerarchia"
+                            >
+                                <Zap className="h-4 w-4" />
+                            </Button>
+                        )}
+                    </div>
                 </CardHeader>
             )}
             <CardContent className="flex-1 min-h-0 p-4 pt-2 relative">
                 {isRefreshing && (
-                    <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-10 backdrop-blur-[1px]">
-                        <RefreshCw className="h-6 w-6 animate-spin text-primary" />
+                    <div className="absolute inset-0 bg-background/50 flex flex-col items-center justify-center z-10 backdrop-blur-[1px]">
+                        <RefreshCw className={`h-6 w-6 animate-spin text-primary`} />
                     </div>
                 )}
                 {renderContent()}

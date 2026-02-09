@@ -33,6 +33,7 @@ import {
     GitCommitHorizontal,
     Compass,
     User as UserIcon,
+    BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,7 @@ const fridaiNavItems = [
     { name: 'detAI', href: '/detai', icon: BrainCircuit },
     { name: 'Chatbot Diagnostico', href: '/chatbot', icon: Bot },
     { name: 'Variabili', href: '/variables', icon: Database },
+    { name: 'Knowledge Base', href: '/knowledge-base', icon: BookOpen },
 ] as const;
 
 import * as LucideIcons from 'lucide-react';

@@ -10,6 +10,7 @@ import { getPipelines } from '@/actions/pipelines';
 
 import { useSession } from 'next-auth/react';
 import { getLastNodeExecutionResultAction } from '@/app/actions/scheduler';
+import { PipelineExecutionDialog } from '@/components/widgets/builder/PipelineExecutionDialog';
 
 type PipelineOutputWidgetProps = {
     pipelineId: string;
@@ -63,6 +64,7 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
     const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | undefined>(undefined);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [showExecutionDialog, setShowExecutionDialog] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const { toast } = useToast();
 
@@ -145,6 +147,14 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
         setRefreshTrigger(prev => prev + 1);
     };
 
+    const handleUpdateHierarchyClick = () => {
+        setShowExecutionDialog(true);
+    };
+
+    const handleExecutionSuccess = () => {
+        setRefreshTrigger(prev => prev + 1);
+    };
+
     if (isLoading || status === 'loading') {
         return (
             <div className="flex h-full w-full items-center justify-center">
@@ -154,23 +164,36 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
     }
 
     return (
-        widgetConfig ? (
-            <SmartWidgetRenderer
-                data={reportData}
-                config={widgetConfig}
-                onRefresh={handleRefresh}
-                isRefreshing={isRefreshing}
+        <div className="h-full w-full">
+            {widgetConfig ? (
+                <SmartWidgetRenderer
+                    data={reportData}
+                    config={widgetConfig}
+                    onRefresh={handleRefresh}
+                    isRefreshing={isRefreshing}
+                    onUpdateHierarchy={handleUpdateHierarchyClick}
+                />
+            ) : (
+                <TextWidget
+                    content={reportContent}
+                    onContentChange={() => { }} // Content is read-only in dashboard view
+                    isEditing={false}
+                    reportData={reportData}
+                    reportType={reportType}
+                    isLoadingData={isLoading}
+                    onRefresh={handleRefresh}
+                    onUpdateHierarchy={handleUpdateHierarchyClick}
+                />
+            )}
+
+            <PipelineExecutionDialog
+                isOpen={showExecutionDialog}
+                onClose={() => setShowExecutionDialog(false)}
+                treeId={pipelineId}
+                nodeId={nodeId}
+                onSuccess={handleExecutionSuccess}
             />
-        ) : (
-            <TextWidget
-                content={reportContent}
-                onContentChange={() => { }} // Content is read-only in dashboard view
-                isEditing={false}
-                reportData={reportData}
-                reportType={reportType}
-                isLoadingData={isLoading}
-            />
-        )
+        </div>
     );
 }
 

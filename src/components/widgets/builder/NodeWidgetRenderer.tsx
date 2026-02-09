@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import { getTreeAction } from '@/app/actions';
 import SmartWidgetRenderer from './SmartWidgetRenderer';
 import { WidgetConfig } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
+import { RefreshCw, Loader2 } from 'lucide-react';
+import { PipelineExecutionDialog } from '@/components/widgets/builder/PipelineExecutionDialog';
 
 interface NodeWidgetRendererProps {
     treeId: string;
@@ -13,56 +16,102 @@ interface NodeWidgetRendererProps {
 export function NodeWidgetRenderer({ treeId, nodeId }: NodeWidgetRendererProps) {
     const [config, setConfig] = useState<WidgetConfig | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [showExecutionDialog, setShowExecutionDialog] = useState(false);
+    const { toast } = useToast();
 
-    useEffect(() => {
-        const loadWidget = async () => {
-            try {
-                const result = await getTreeAction(treeId);
-                if (result.data) {
-                    const jsonTree = typeof result.data.jsonDecisionTree === 'string'
-                        ? JSON.parse(result.data.jsonDecisionTree)
-                        : result.data.jsonDecisionTree;
+    const loadWidget = async (showLoading = true) => {
+        if (showLoading) setLoading(true);
+        else setIsRefreshing(true);
+        try {
+            const result = await getTreeAction(treeId);
+            if (result.data) {
+                const jsonTree = typeof result.data.jsonDecisionTree === 'string'
+                    ? JSON.parse(result.data.jsonDecisionTree)
+                    : result.data.jsonDecisionTree;
 
-                    // Find node by ID (recursive search)
-                    const findNode = (node: any): any => {
-                        if (!node) return null;
-                        if (node.id === nodeId) return node;
+                // Find node by ID (recursive search)
+                const findNode = (node: any): any => {
+                    if (!node) return null;
+                    if (node.id === nodeId) return node;
 
-                        if (node.options) {
-                            for (const child of Object.values(node.options)) {
-                                if (typeof child === 'object') {
-                                    const found = Array.isArray(child)
-                                        ? child.map(findNode).find(Boolean)
-                                        : findNode(child);
-                                    if (found) return found;
-                                }
+                    if (node.options) {
+                        for (const child of Object.values(node.options)) {
+                            if (typeof child === 'object') {
+                                const found = Array.isArray(child)
+                                    ? child.map(findNode).find(Boolean)
+                                    : findNode(child);
+                                if (found) return found;
                             }
                         }
-                        return null;
-                    };
-
-                    const node = findNode(jsonTree);
-                    if (node?.widgetConfig) {
-                        setConfig(node.widgetConfig);
                     }
-                }
-            } catch (error) {
-                console.error('Error loading node widget:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
+                    return null;
+                };
 
+                const node = findNode(jsonTree);
+                if (node?.widgetConfig) {
+                    setConfig(node.widgetConfig);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading node widget:', error);
+        } finally {
+            setLoading(false);
+            setIsRefreshing(false);
+        }
+    };
+
+    useEffect(() => {
         loadWidget();
     }, [treeId, nodeId]);
 
+    const handleRefresh = () => {
+        loadWidget(false);
+    };
+
+    const handleUpdateHierarchyClick = () => {
+        setShowExecutionDialog(true);
+    };
+
+    const handleExecutionSuccess = () => {
+        loadWidget(false);
+    };
+
     if (loading) {
-        return <div className="p-4">Caricamento widget...</div>;
+        return (
+            <div className="flex items-center justify-center p-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mr-2" />
+                <span className="text-sm text-muted-foreground">Caricamento widget...</span>
+            </div>
+        );
     }
 
     if (!config) {
         return <div className="p-4 text-destructive">Widget non trovato</div>;
     }
 
-    return <SmartWidgetRenderer config={config} data={config.data || []} />;
+    return (
+        <div className="h-full w-full relative">
+            {isRefreshing && (
+                <div className="absolute inset-0 bg-background/50 flex flex-col items-center justify-center z-10 backdrop-blur-[1px]">
+                    <RefreshCw className="h-6 w-6 animate-spin text-primary" />
+                </div>
+            )}
+            <SmartWidgetRenderer
+                config={config}
+                data={config.data || []}
+                onRefresh={handleRefresh}
+                isRefreshing={isRefreshing}
+                onUpdateHierarchy={handleUpdateHierarchyClick}
+            />
+
+            <PipelineExecutionDialog
+                isOpen={showExecutionDialog}
+                onClose={() => setShowExecutionDialog(false)}
+                treeId={treeId}
+                nodeId={nodeId}
+                onSuccess={handleExecutionSuccess}
+            />
+        </div>
+    );
 }

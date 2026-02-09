@@ -4,7 +4,7 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
-import { Bold, Italic, Underline, List, Palette, Variable, Loader2, BarChart2, Table, Sigma, ArrowUpDown, MoreHorizontal, Check, Search } from 'lucide-react';
+import { Bold, Italic, Underline, List, Palette, Variable, Loader2, BarChart2, Table, Sigma, ArrowUpDown, MoreHorizontal, Check, Search, RefreshCw, Zap } from 'lucide-react';
 import { Button } from '../ui/button';
 import {
     Select,
@@ -29,12 +29,15 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 
 
 interface TextWidgetProps {
-  content: string;
-  onContentChange: (content: string) => void;
-  isEditing: boolean;
-  reportData?: any; 
-  reportType?: 'table' | 'kpi' | 'chart';
-  isLoadingData?: boolean;
+    content: string;
+    onContentChange: (content: string) => void;
+    isEditing: boolean;
+    reportData?: any;
+    reportType?: 'table' | 'kpi' | 'chart';
+    isLoadingData?: boolean;
+    onRefresh?: () => void;
+    isRefreshing?: boolean;
+    onUpdateHierarchy?: () => void;
 }
 
 const ChartRenderer = ({ data }: { data: { name: string; value: number }[] }) => {
@@ -71,7 +74,7 @@ const TableRenderer = ({ data }: { data: any[] }) => {
     const [multiSelectFilters, setMultiSelectFilters] = useState<Record<string, Set<string>>>(Object.fromEntries(data && data.length > 0 ? Object.keys(data[0]).map(key => [key, new Set()]) : []));
 
     if (!data || !Array.isArray(data) || data.length === 0) return <p className="text-xs text-muted-foreground my-4">[Dati della tabella non disponibili]</p>
-    
+
     const headers = Object.keys(data[0]);
 
     const getUniqueColumnValues = useCallback((column: string) => {
@@ -90,7 +93,7 @@ const TableRenderer = ({ data }: { data: any[] }) => {
     const handleFilterChange = (column: string, value: string) => {
         setFilters(prev => ({ ...prev, [column]: value }));
     };
-    
+
     const handleMultiSelectFilterChange = (column: string, value: string) => {
         setMultiSelectFilters(prev => {
             const newSet = new Set(prev[column]);
@@ -170,16 +173,16 @@ const TableRenderer = ({ data }: { data: any[] }) => {
                                                     <>
                                                         <DropdownMenuSeparator />
                                                         <ScrollArea className='max-h-60'>
-                                                        {uniqueValues.map(value => (
-                                                            <DropdownMenuCheckboxItem
-                                                                key={value}
-                                                                checked={multiSelectFilters[header]?.has(value)}
-                                                                onCheckedChange={() => handleMultiSelectFilterChange(header, value)}
-                                                                onSelect={(e) => e.preventDefault()}
-                                                            >
-                                                                {value}
-                                                            </DropdownMenuCheckboxItem>
-                                                        ))}
+                                                            {uniqueValues.map(value => (
+                                                                <DropdownMenuCheckboxItem
+                                                                    key={value}
+                                                                    checked={multiSelectFilters[header]?.has(value)}
+                                                                    onCheckedChange={() => handleMultiSelectFilterChange(header, value)}
+                                                                    onSelect={(e) => e.preventDefault()}
+                                                                >
+                                                                    {value}
+                                                                </DropdownMenuCheckboxItem>
+                                                            ))}
                                                         </ScrollArea>
                                                     </>
                                                 )}
@@ -203,7 +206,7 @@ const TableRenderer = ({ data }: { data: any[] }) => {
     )
 }
 
-const KpiRenderer = ({ data }: { data: { value: string, label: string }}) => {
+const KpiRenderer = ({ data }: { data: { value: string, label: string } }) => {
     if (!data || !data.value) return <p className="text-xs text-muted-foreground my-4">[Dati KPI non disponibili]</p>;
     return (
         <div className='my-4 inline-block'>
@@ -219,7 +222,17 @@ const KpiRenderer = ({ data }: { data: { value: string, label: string }}) => {
     );
 };
 
-export default function TextWidget({ content, onContentChange, isEditing, reportData, reportType, isLoadingData }: TextWidgetProps) {
+export default function TextWidget({
+    content,
+    onContentChange,
+    isEditing,
+    reportData,
+    reportType,
+    isLoadingData,
+    onRefresh,
+    isRefreshing,
+    onUpdateHierarchy
+}: TextWidgetProps) {
     const editorRef = useRef<HTMLDivElement>(null);
     const [liveContent, setLiveContent] = useState(content);
 
@@ -233,7 +246,7 @@ export default function TextWidget({ content, onContentChange, isEditing, report
         }
     };
 
-    const applyStyle = (command: string, value: string | null = null) => {
+    const applyStyle = (command: string, value: string | undefined = undefined) => {
         if (!isEditing) return;
         editorRef.current?.focus();
         document.execCommand(command, false, value);
@@ -263,7 +276,7 @@ export default function TextWidget({ content, onContentChange, isEditing, report
                 />
             );
         }
-        
+
         const parts = liveContent.split(/({{result}})/g);
 
         return (
@@ -271,18 +284,18 @@ export default function TextWidget({ content, onContentChange, isEditing, report
                 {parts.map((part, index) => {
                     if (part === '{{result}}') {
                         if (!reportData) return <p key={index} className="text-xs text-muted-foreground my-4">[Dati non ancora caricati. Eseguire la pipeline.]</p>;
-                        switch(reportType) {
+                        switch (reportType) {
                             case 'table': return <TableRenderer key={index} data={reportData} />;
                             case 'kpi': return <KpiRenderer key={index} data={reportData} />;
                             case 'chart': return <ChartRenderer key={index} data={reportData} />;
-                            default: 
-                               if (typeof reportData === 'object' && reportData !== null && 'value' in reportData && 'label' in reportData) {
-                                  return <KpiRenderer key={index} data={reportData} />;
-                               }
-                               if(Array.isArray(reportData)) {
-                                  return <TableRenderer key={index} data={reportData} />;
-                               }
-                               return <p key={index} className="text-xs text-muted-foreground my-4">[Tipo di report non supportato o non specificato ({reportType})]</p>;
+                            default:
+                                if (typeof reportData === 'object' && reportData !== null && 'value' in reportData && 'label' in reportData) {
+                                    return <KpiRenderer key={index} data={reportData} />;
+                                }
+                                if (Array.isArray(reportData)) {
+                                    return <TableRenderer key={index} data={reportData} />;
+                                }
+                                return <p key={index} className="text-xs text-muted-foreground my-4">[Tipo di report non supportato o non specificato ({reportType})]</p>;
                         }
                     }
                     return <ReactMarkdown key={index} rehypePlugins={[rehypeRaw]}>{part}</ReactMarkdown>;
@@ -291,71 +304,104 @@ export default function TextWidget({ content, onContentChange, isEditing, report
         );
     };
 
-  return (
-    <Card className={cn("h-full w-full flex flex-col")}>
-      {isEditing && (
-          <div className="flex items-center gap-1 p-1 border-b flex-wrap" style={{ marginLeft: '20px' }}>
-              <ToolbarButton onClick={() => applyStyle('bold')}><Bold className="h-4 w-4" /></ToolbarButton>
-              <ToolbarButton onClick={() => applyStyle('italic')}><Italic className="h-4 w-4" /></ToolbarButton>
-              <ToolbarButton onClick={() => applyStyle('underline')}><Underline className="h-4 w-4" /></ToolbarButton>
-              <ToolbarButton onClick={() => applyStyle('insertUnorderedList')}><List className="h-4 w-4" /></ToolbarButton>
-              
-              <Select onValueChange={(value) => applyStyle('fontName', value)}>
-                <SelectTrigger 
-                    className="h-7 w-28 text-xs" 
-                    onMouseDown={(e) => e.preventDefault()}
-                >
-                    <SelectValue placeholder="Font" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="Inter, sans-serif">Inter</SelectItem>
-                    <SelectItem value="'Source Code Pro', monospace">Source Code</SelectItem>
-                    <SelectItem value="serif">Serif</SelectItem>
-                    <SelectItem value="monospace">Monospace</SelectItem>
-                </SelectContent>
-              </Select>
+    return (
+        <Card className={cn("h-full w-full flex flex-col overflow-hidden")}>
+            {!isEditing && (onRefresh || onUpdateHierarchy) && (
+                <CardHeader className="p-4 pb-0 flex flex-row items-center justify-end space-y-0 gap-1">
+                    {onRefresh && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={onRefresh}
+                            disabled={isRefreshing}
+                            className={`h-8 w-8 ${isRefreshing ? 'animate-spin' : ''}`}
+                            title="Aggiorna Dati"
+                        >
+                            <RefreshCw className="h-4 w-4" />
+                        </Button>
+                    )}
+                    {onUpdateHierarchy && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={onUpdateHierarchy}
+                            disabled={isRefreshing}
+                            className={`h-8 w-8 text-amber-500 hover:text-amber-600`}
+                            title="Aggiorna Intera Gerarchia"
+                        >
+                            <Zap className="h-4 w-4" />
+                        </Button>
+                    )}
+                </CardHeader>
+            )}
+            {isEditing && (
+                <div className="flex items-center gap-1 p-1 border-b flex-wrap" style={{ marginLeft: '20px' }}>
+                    <ToolbarButton onClick={() => applyStyle('bold')}><Bold className="h-4 w-4" /></ToolbarButton>
+                    <ToolbarButton onClick={() => applyStyle('italic')}><Italic className="h-4 w-4" /></ToolbarButton>
+                    <ToolbarButton onClick={() => applyStyle('underline')}><Underline className="h-4 w-4" /></ToolbarButton>
+                    <ToolbarButton onClick={() => applyStyle('insertUnorderedList')}><List className="h-4 w-4" /></ToolbarButton>
 
-              <Select onValueChange={(value) => applyStyle('fontSize', value)}>
-                <SelectTrigger 
-                    className="h-7 w-20 text-xs"
-                    onMouseDown={(e) => e.preventDefault()}
-                >
-                    <SelectValue placeholder="Size" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="1">12px</SelectItem>
-                    <SelectItem value="2">14px</SelectItem>
-                    <SelectItem value="3">16px</SelectItem>
-                    <SelectItem value="4">20px</SelectItem>
-                    <SelectItem value="5">24px</SelectItem>
-                    <SelectItem value="6">32px</SelectItem>
-                    <SelectItem value="7">48px</SelectItem>
-                </SelectContent>
-              </Select>
-              
-              <div className="relative h-7 w-7">
-                <Input 
-                    type="color" 
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onInput={(e) => {
-                        applyStyle('foreColor', (e.target as HTMLInputElement).value);
-                    }}
-                />
-                <div className="h-7 w-7 flex items-center justify-center rounded-md border bg-background pointer-events-none">
-                    <Palette className="h-4 w-4" />
+                    <Select onValueChange={(value) => applyStyle('fontName', value)}>
+                        <SelectTrigger
+                            className="h-7 w-28 text-xs"
+                            onMouseDown={(e) => e.preventDefault()}
+                        >
+                            <SelectValue placeholder="Font" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="Inter, sans-serif">Inter</SelectItem>
+                            <SelectItem value="'Source Code Pro', monospace">Source Code</SelectItem>
+                            <SelectItem value="serif">Serif</SelectItem>
+                            <SelectItem value="monospace">Monospace</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <Select onValueChange={(value) => applyStyle('fontSize', value)}>
+                        <SelectTrigger
+                            className="h-7 w-20 text-xs"
+                            onMouseDown={(e) => e.preventDefault()}
+                        >
+                            <SelectValue placeholder="Size" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="1">12px</SelectItem>
+                            <SelectItem value="2">14px</SelectItem>
+                            <SelectItem value="3">16px</SelectItem>
+                            <SelectItem value="4">20px</SelectItem>
+                            <SelectItem value="5">24px</SelectItem>
+                            <SelectItem value="6">32px</SelectItem>
+                            <SelectItem value="7">48px</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <div className="relative h-7 w-7">
+                        <Input
+                            type="color"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onInput={(e) => {
+                                applyStyle('foreColor', (e.target as HTMLInputElement).value);
+                            }}
+                        />
+                        <div className="h-7 w-7 flex items-center justify-center rounded-md border bg-background pointer-events-none">
+                            <Palette className="h-4 w-4" />
+                        </div>
+                    </div>
+                    <Button onClick={() => insertVariable('result')} size="sm" variant="outline" className="h-7 text-xs">
+                        <Variable className="h-4 w-4 mr-2" /> Inserisci Risultato
+                    </Button>
                 </div>
-              </div>
-              <Button onClick={() => insertVariable('result')} size="sm" variant="outline" className="h-7 text-xs">
-                <Variable className="h-4 w-4 mr-2" /> Inserisci Risultato
-              </Button>
-          </div>
-      )}
-      <div className="p-2 flex-1 overflow-auto">
-        {renderContent()}
-      </div>
-    </Card>
-  );
+            )}
+            <div className="p-2 flex-1 overflow-auto relative">
+                {isRefreshing && (
+                    <div className="absolute inset-0 bg-background/50 flex flex-col items-center justify-center z-10 backdrop-blur-[1px]">
+                        <RefreshCw className={`h-6 w-6 animate-spin text-primary`} />
+                    </div>
+                )}
+                {renderContent()}
+            </div>
+        </Card>
+    );
 }
 
 const ToolbarButton = ({ onClick, children, ...props }: { onClick?: (e: React.MouseEvent) => void; children: React.ReactNode, [key: string]: any }) => (
