@@ -13,23 +13,22 @@ async function main() {
 
     const json = JSON.parse(tree.jsonDecisionTree || '{}');
 
-    function findRecursive(obj: any, target: string, path: string = 'root'): any {
+    function findByResultName(obj: any, target: string, path: string = 'root'): any {
         if (!obj || typeof obj !== 'object') return null;
         if (obj.sqlResultName === target || obj.pythonResultName === target) return { node: obj, path };
         for (const [key, value] of Object.entries(obj)) {
-            const found = findRecursive(value, target, `${path}.${key}`);
+            const found = findByResultName(value, target, `${path}.${key}`);
             if (found) return found;
         }
         return null;
     }
 
-    const result = findRecursive(json, 'PRODFIL2');
+    const result = findByResultName(json, 'PRODFILTRATA');
     if (result) {
         console.log(`Found node at path: ${result.path}`);
-        console.log(`Query: ${result.node.sqlQuery}`);
-        console.log(`Dependencies: ${JSON.stringify(result.node.sqlSelectedPipelines)}`);
+        console.log(`Name: ${result.node.question || result.node.decision || result.node.name}`);
     } else {
-        console.log('Node producing "PRODFIL2" not found');
+        console.log('Node producing "PRODFILTRATA" not found');
     }
 }
 

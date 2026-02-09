@@ -23,13 +23,12 @@ async function main() {
         return null;
     }
 
-    const result = findRecursive(json, 'PRODFIL2');
+    const result = findRecursive(json, 'PRODCommessa Mancante');
     if (result) {
         console.log(`Found node at path: ${result.path}`);
         console.log(`Query: ${result.node.sqlQuery}`);
-        console.log(`Dependencies: ${JSON.stringify(result.node.sqlSelectedPipelines)}`);
     } else {
-        console.log('Node producing "PRODFIL2" not found');
+        console.log('Node producing "PRODCommessa Mancante" not found');
     }
 }
 

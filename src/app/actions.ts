@@ -24,11 +24,11 @@ import { getAuthenticatedUser as getAuthUserSession } from "@/lib/session";
 
 // Server-side cache for trees and variables
 const serverCache = {
-  trees: null as StoredTree[] | null,
-  variables: null as Variable[] | null,
-  treesTimestamp: 0,
-  variablesTimestamp: 0,
-  CACHE_DURATION: 30 * 60 * 1000, // 30 minuti in millisecondi
+    trees: null as StoredTree[] | null,
+    variables: null as Variable[] | null,
+    treesTimestamp: 0,
+    variablesTimestamp: 0,
+    CACHE_DURATION: 30 * 60 * 1000, // 30 minuti in millisecondi
 };
 
 export async function getAuthenticatedUser() {
@@ -1031,21 +1031,46 @@ export async function executeSqlPreviewAction(
             connector = await db.connector.findFirst({
                 where: {
                     id: connectorId,
-                    // If system-override and no real companyId found, this might fail unless we remove companyId check for system?
-                    // Safe approach: We found companyId above. If 'system-override', it means we didn't find connector by ID, 
-                    // so we probably won't find it here either. 
-                    // Let's trust the logic above found the companyId.
                     companyId: user.companyId !== 'system-override' ? user.companyId : undefined,
                     type: 'SQL'
                 }
             });
         } else {
-            connector = await db.connector.findFirst({
-                where: {
-                    companyId: user.companyId !== 'system-override' ? user.companyId : undefined,
-                    type: 'SQL'
+            // --- CONNECTOR INHERITANCE ---
+            // If no connector is specified, try to inherit one from a SQL dependency
+            const findInheritedConnectorId = (deps: any[]): string | undefined => {
+                for (const dep of deps) {
+                    if (dep.query && dep.connectorId) return dep.connectorId;
+                    if (dep.pipelineDependencies?.length > 0) {
+                        const nested = findInheritedConnectorId(dep.pipelineDependencies);
+                        if (nested) return nested;
+                    }
                 }
-            });
+                return undefined;
+            };
+
+            const inheritedId = findInheritedConnectorId(pipelineDependencies || []);
+
+            if (inheritedId) {
+                console.log(`[PIPELINE] Inheriting connector ${inheritedId} from dependencies`);
+                connector = await db.connector.findFirst({
+                    where: {
+                        id: inheritedId,
+                        companyId: user.companyId !== 'system-override' ? user.companyId : undefined,
+                        type: 'SQL'
+                    }
+                });
+            }
+
+            if (!connector) {
+                // Fallback to first available SQL connector
+                connector = await db.connector.findFirst({
+                    where: {
+                        companyId: user.companyId !== 'system-override' ? user.companyId : undefined,
+                        type: 'SQL'
+                    }
+                });
+            }
         }
 
         if (!connector) {

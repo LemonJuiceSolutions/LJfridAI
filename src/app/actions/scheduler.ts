@@ -174,10 +174,11 @@ export async function deleteNodeScheduleAction(treeId: string, nodeId: string) {
             });
             // Attempt to remove from runtime scheduler
             try {
-                // Since rescheduleTask expects the task to exist in DB, we can't use it for deletion.
-                // We rely on the periodic sync or restart.
-                // Ideally we add a remove method to SchedulerService.
-            } catch (e) { }
+                const { schedulerService } = await import('@/lib/scheduler/scheduler-service');
+                await schedulerService.deleteTask(task.id);
+            } catch (e) {
+                console.warn('Could not stop task in memory immediately:', e);
+            }
         }
 
         return { success: true, message: 'Schedulazione eliminata' };

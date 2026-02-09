@@ -1021,7 +1021,8 @@ export default function EditNodeDialog({
   // --- REUSABLE PIPELINE EXECUTION LOGIC ---
   const executeFullPipeline = async (
     targetAction: 'preview' | 'export' | 'email',
-    onSuccess?: (pipelineResults?: Record<string, any>, report?: any[]) => Promise<void>
+    onSuccess?: (pipelineResults?: Record<string, any>, report?: any[]) => Promise<void>,
+    forceFinalType?: 'sql' | 'python'
   ) => {
     if (isExecutingRef.current) return;
     setIsPipelineExecuting(true);
@@ -1115,7 +1116,7 @@ export default function EditNodeDialog({
       });
 
       // Add Final Step
-      if (targetAction === 'preview') {
+      if (targetAction === 'preview' && (forceFinalType === 'python' || (!forceFinalType && pythonCode))) {
         steps.push({
           id: 'final_preview',
           type: 'final',
@@ -1136,7 +1137,7 @@ export default function EditNodeDialog({
           label: `✉️ Invia Email`,
           pipelineType: 'export'
         });
-      } else if (targetAction === 'preview' && !pythonCode) {
+      } else if (targetAction === 'preview' && (forceFinalType === 'sql' || (!forceFinalType && !pythonCode))) {
         // Special case for SQL Preview as final step
         steps.push({
           id: 'final_sql_preview',
@@ -2109,99 +2110,99 @@ export default function EditNodeDialog({
                         </div>
 
                         <div className="flex gap-1 items-center">
-                        <Button
-                          className="bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
-                          onClick={() => {
-                            if (!sqlQuery) {
-                              toast({ variant: 'destructive', title: "Errore", description: "Inserisci una query SQL prima di eseguire l'anteprima." });
-                              return;
-                            }
-
-                            // Execute full pipeline for SQL preview (Ancestors -> Current)
-                            // This ensures all parent nodes (SQL/Python) are executed first
-                            executeFullPipeline('preview', async (ancestorResults) => {
-                              console.log('[SQL EXEC] Pipeline finished. Results:', Object.keys(ancestorResults || {}));
-
-                              // Execute the current SQL query with pre-calculated results from ancestors
-                              const deps = (availableInputTables || []).filter(t => {
-                                // Filter logic: Include if selected OR referenced in SQL (FROM/JOIN)
-                                const upperQuery = sqlQuery.toUpperCase();
-                                const upperName = t.name.toUpperCase();
-                                return selectedPipelines.includes(t.name) ||
-                                  upperQuery.includes(`FROM ${upperName}`) ||
-                                  upperQuery.includes(`JOIN ${upperName}`) ||
-                                  upperQuery.includes(`[${upperName}]`); // Handle bracketed names
-                              }).map(t => {
-                                const resultObj = ancestorResults?.[t.name];
-                                const preCalcData = resultObj ? resultObj.data : undefined;
-
-                                // Log usage of pre-calculated data
-                                if (preCalcData) {
-                                  console.log(`[SQL EXEC] Using pre-calculated data for ${t.name} (${Array.isArray(preCalcData) ? preCalcData.length : 'N/A'} rows)`);
-                                }
-
-                                // SAFEGUARD: Payload size check for client-server transfer
-                                const MAX_PAYLOAD_BYTES = 500 * 1024; // Increased limit to 500KB
-                                let shouldPassData = false;
-                                if (preCalcData && Array.isArray(preCalcData)) {
-                                  try {
-                                    if (JSON.stringify(preCalcData).length <= MAX_PAYLOAD_BYTES) shouldPassData = true;
-                                  } catch (e) { }
-                                }
-
-                                return {
-                                  tableName: t.name,
-                                  query: t.sqlQuery,
-                                  isPython: t.isPython,
-                                  pythonCode: t.pythonCode,
-                                  connectorId: t.connectorId,
-                                  pipelineDependencies: t.pipelineDependencies,
-                                  data: shouldPassData ? preCalcData : undefined
-                                };
-                              });
-
-                              console.log('[SQL EXEC] Executing final query with deps:', deps.length);
-                              const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, deps);
-
-                              if (res.data) {
-                                setSqlPreviewData(res.data);
-                                setSqlPreviewTimestamp(Date.now());
-
-                                // Persist preview to DB/Tree
-                                if (onSavePreview && nodePath) {
-                                  onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
-                                }
-
-                                toast({
-                                  title: "Anteprima Aggiornata",
-                                  description: `Query eseguita con successo (${res.data.length} righe). Pipeline completata.`
-                                });
-                              } else {
-                                throw new Error(res.error || "Errore sconosciuto durante l'esecuzione SQL");
+                          <Button
+                            className="bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
+                            onClick={() => {
+                              if (!sqlQuery) {
+                                toast({ variant: 'destructive', title: "Errore", description: "Inserisci una query SQL prima di eseguire l'anteprima." });
+                                return;
                               }
-                            });
-                          }}
-                          disabled={!!pipelineAgentStatus}
-                        >
-                          {pipelineAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
-                          Esegui Pipeline SQL
-                        </Button>
-                        <NodeSchedulePopover
-                          treeId={treeId}
-                          nodeId={currentNodeId}
-                          nodePath={nodePath}
-                          taskType="SQL_PREVIEW"
-                          taskLabel="Pipeline SQL"
-                          existingSchedule={nodeSchedules['SQL_PREVIEW']}
-                          taskConfigProvider={() => ({
-                            query: sqlQuery,
-                            connectorIdSql: sqlConnectorId,
-                            sqlResultName,
-                            contextTables: availableInputTables,
-                            selectedPipelines,
-                          })}
-                          onScheduleChanged={loadNodeSchedules}
-                        />
+
+                              // Execute full pipeline for SQL preview (Ancestors -> Current)
+                              // This ensures all parent nodes (SQL/Python) are executed first
+                              executeFullPipeline('preview', async (ancestorResults) => {
+                                console.log('[SQL EXEC] Pipeline finished. Results:', Object.keys(ancestorResults || {}));
+
+                                // Execute the current SQL query with pre-calculated results from ancestors
+                                const deps = (availableInputTables || []).filter(t => {
+                                  // Filter logic: Include if selected OR referenced in SQL (FROM/JOIN)
+                                  const upperQuery = sqlQuery.toUpperCase();
+                                  const upperName = t.name.toUpperCase();
+                                  return selectedPipelines.includes(t.name) ||
+                                    upperQuery.includes(`FROM ${upperName}`) ||
+                                    upperQuery.includes(`JOIN ${upperName}`) ||
+                                    upperQuery.includes(`[${upperName}]`); // Handle bracketed names
+                                }).map(t => {
+                                  const resultObj = ancestorResults?.[t.name];
+                                  const preCalcData = resultObj ? resultObj.data : undefined;
+
+                                  // Log usage of pre-calculated data
+                                  if (preCalcData) {
+                                    console.log(`[SQL EXEC] Using pre-calculated data for ${t.name} (${Array.isArray(preCalcData) ? preCalcData.length : 'N/A'} rows)`);
+                                  }
+
+                                  // SAFEGUARD: Payload size check for client-server transfer
+                                  const MAX_PAYLOAD_BYTES = 500 * 1024; // Increased limit to 500KB
+                                  let shouldPassData = false;
+                                  if (preCalcData && Array.isArray(preCalcData)) {
+                                    try {
+                                      if (JSON.stringify(preCalcData).length <= MAX_PAYLOAD_BYTES) shouldPassData = true;
+                                    } catch (e) { }
+                                  }
+
+                                  return {
+                                    tableName: t.name,
+                                    query: t.sqlQuery,
+                                    isPython: t.isPython,
+                                    pythonCode: t.pythonCode,
+                                    connectorId: t.connectorId,
+                                    pipelineDependencies: t.pipelineDependencies,
+                                    data: shouldPassData ? preCalcData : undefined
+                                  };
+                                });
+
+                                console.log('[SQL EXEC] Executing final query with deps:', deps.length);
+                                const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, deps);
+
+                                if (res.data) {
+                                  setSqlPreviewData(res.data);
+                                  setSqlPreviewTimestamp(Date.now());
+
+                                  // Persist preview to DB/Tree
+                                  if (onSavePreview && nodePath) {
+                                    onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
+                                  }
+
+                                  toast({
+                                    title: "Anteprima Aggiornata",
+                                    description: `Query eseguita con successo (${res.data.length} righe). Pipeline completata.`
+                                  });
+                                } else {
+                                  throw new Error(res.error || "Errore sconosciuto durante l'esecuzione SQL");
+                                }
+                              }, 'sql');
+                            }}
+                            disabled={!!pipelineAgentStatus}
+                          >
+                            {pipelineAgentStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                            Esegui Pipeline SQL
+                          </Button>
+                          <NodeSchedulePopover
+                            treeId={treeId}
+                            nodeId={currentNodeId}
+                            nodePath={nodePath}
+                            taskType="SQL_PREVIEW"
+                            taskLabel="Pipeline SQL"
+                            existingSchedule={nodeSchedules['SQL_PREVIEW']}
+                            taskConfigProvider={() => ({
+                              query: sqlQuery,
+                              connectorIdSql: sqlConnectorId,
+                              sqlResultName,
+                              contextTables: availableInputTables,
+                              selectedPipelines,
+                            })}
+                            onScheduleChanged={loadNodeSchedules}
+                          />
                         </div>
 
                       </div>
@@ -2439,32 +2440,33 @@ export default function EditNodeDialog({
                               executeFullPipeline('preview', async (ancestorResults) => {
                                 console.log('[PYTHON EXEC] Pipeline finished. Results:', Object.keys(ancestorResults || {}));
 
+                                const inputData: Record<string, any[]> = {};
                                 const deps = pythonSelectedPipelines.map(tableName => {
                                   const resultObj = ancestorResults?.[tableName];
                                   const preCalcData = resultObj ? resultObj.data : undefined;
 
+                                  // Find metadata for this dependency from availableInputTables
+                                  const depMeta = availableInputTables?.find(t => t.name === tableName);
+
                                   // Log usage 
                                   if (preCalcData) console.log(`[PYTHON EXEC] Using pre-calculated data for ${tableName}`);
 
-                                  // SAFEGUARD: Payload size check
-                                  const MAX_PAYLOAD_BYTES = 500 * 1024;
-                                  let shouldPassData = false;
                                   if (preCalcData && Array.isArray(preCalcData)) {
-                                    try {
-                                      if (JSON.stringify(preCalcData).length <= MAX_PAYLOAD_BYTES) shouldPassData = true;
-                                    } catch (e) { }
+                                    inputData[tableName] = preCalcData;
                                   }
 
                                   return {
                                     tableName: tableName,
-                                    query: '', // Not needed for python deps usually
-                                    isPython: true, // Assuming deps are from other nodes effectively
-                                    data: shouldPassData ? preCalcData : undefined
+                                    query: depMeta?.sqlQuery || '',
+                                    isPython: !!depMeta?.isPython,
+                                    pythonCode: depMeta?.pythonCode,
+                                    connectorId: depMeta?.connectorId,
+                                    pipelineDependencies: depMeta?.pipelineDependencies
                                   };
                                 });
 
                                 console.log('[PYTHON EXEC] Executing final script with deps:', deps.length);
-                                const res = await executePythonPreviewAction(pythonCode, pythonOutputType, {}, deps, pythonConnectorId);
+                                const res = await executePythonPreviewAction(pythonCode, pythonOutputType, inputData, deps, pythonConnectorId);
 
                                 if (res.success) {
                                   setPythonPreviewResult({
@@ -2498,7 +2500,7 @@ export default function EditNodeDialog({
                                 } else {
                                   throw new Error(res.error || "Errore sconosciuto durante l'esecuzione dello script");
                                 }
-                              });
+                              }, 'python');
                             }}
                             disabled={!!pipelineAgentStatus}
                           >
@@ -2910,111 +2912,47 @@ export default function EditNodeDialog({
 
                     {/* Execute Button */}
                     <div className="flex gap-1 items-center">
-                    <Button
-                      type="button"
-                      className="flex-1 bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
-                      disabled={sqlExportStatus === 'running' || sqlExportSourceTables.length === 0 || !sqlExportTargetConnectorId || !sqlExportTargetTableName}
-                      onClick={async () => {
-                        executeFullPipeline('export', async () => {
-                          setSqlExportStatus('running');
-                          setSqlExportError(null);
-                          setSqlExportRowCount(null);
+                      <Button
+                        type="button"
+                        className="flex-1 bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
+                        disabled={sqlExportStatus === 'running' || sqlExportSourceTables.length === 0 || !sqlExportTargetConnectorId || !sqlExportTargetTableName}
+                        onClick={async () => {
+                          executeFullPipeline('export', async () => {
+                            setSqlExportStatus('running');
+                            setSqlExportError(null);
+                            setSqlExportRowCount(null);
 
-                          try {
-                            // For now, we'll use sqlPreviewData or pythonPreviewResult as source
-                            // In a full implementation, we'd fetch data for each selected table
-                            let sourceData: any[] = [];
+                            try {
+                              // For now, we'll use sqlPreviewData or pythonPreviewResult as source
+                              // In a full implementation, we'd fetch data for each selected table
+                              let sourceData: any[] = [];
 
-                            for (const tableName of sqlExportSourceTables) {
-                              // 1. Check Current Node Results (Cache)
-                              if (tableName === sqlResultName && sqlPreviewData) {
-                                sourceData = sqlPreviewData;
-                                break;
-                              }
-                              if (tableName === pythonResultName && pythonPreviewResult?.data) {
-                                sourceData = pythonPreviewResult.data;
-                                break;
-                              }
-
-                              // 1b. Current Node - Fetch on demand if no cache
-                              if (tableName === sqlResultName && sqlQuery && !sqlPreviewData) {
-                                toast({ title: "Esecuzione SQL...", description: `Recupero dati da ${tableName}...` });
-                                // Build pipelineDeps for current node
-                                const pipelineDeps = availableInputTables
-                                  ?.filter(t => t.sqlQuery || (t.isPython && t.pythonCode))
-                                  .map(table => ({
-                                    tableName: table.name,
-                                    query: table.sqlQuery || undefined,
-                                    isPython: table.isPython,
-                                    pythonCode: table.pythonCode,
-                                    connectorId: table.connectorId,
-                                    pipelineDependencies: table.pipelineDependencies
-                                  })) || [];
-                                const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps);
-                                if (res.data) {
-                                  sourceData = res.data;
+                              for (const tableName of sqlExportSourceTables) {
+                                // 1. Check Current Node Results (Cache)
+                                if (tableName === sqlResultName && sqlPreviewData) {
+                                  sourceData = sqlPreviewData;
                                   break;
-                                } else {
-                                  throw new Error(`Errore recupero dati SQL da ${tableName}: ${res.error}`);
                                 }
-                              }
-                              if (tableName === pythonResultName && pythonCode && !pythonPreviewResult?.data) {
-                                toast({ title: "Elaborazione Python...", description: `Esecuzione script per ${tableName}...` });
-                                const pipelineDeps = availableInputTables
-                                  ?.filter(t => t.sqlQuery || (t.isPython && t.pythonCode))
-                                  .map(table => ({
-                                    tableName: table.name,
-                                    query: table.sqlQuery || undefined,
-                                    isPython: table.isPython,
-                                    pythonCode: table.pythonCode,
-                                    connectorId: table.connectorId,
-                                    pipelineDependencies: table.pipelineDependencies
-                                  })) || [];
-                                const res = await executePythonPreviewAction(pythonCode, 'table', {}, pipelineDeps, pythonConnectorId);
-                                if (res.success && Array.isArray(res.data)) {
-                                  sourceData = res.data;
+                                if (tableName === pythonResultName && pythonPreviewResult?.data) {
+                                  sourceData = pythonPreviewResult.data;
                                   break;
-                                } else {
-                                  throw new Error(`Errore recupero dati Python da ${tableName}: ${res.error}`);
                                 }
-                              }
 
-                              // 2. Check Ancestor Tables (Fetch on demand)
-                              const ancestorTable = availableInputTables?.find(t => t.name === tableName);
-                              if (ancestorTable) {
-                                // Python Ancestor
-                                if (ancestorTable.isPython && ancestorTable.pythonCode) {
-                                  toast({ title: "Elaborazione Python...", description: `Esecuzione script per ${tableName}...` });
-                                  // Use executePythonPreviewAction to fetch data
-                                  const res = await executePythonPreviewAction(
-                                    ancestorTable.pythonCode,
-                                    'table',
-                                    {},
-                                    (ancestorTable.pipelineDependencies || []).map(d => ({
-                                      tableName: d.tableName,
-                                      query: d.query,
-                                      isPython: d.isPython,
-                                      pythonCode: d.pythonCode,
-                                      connectorId: d.connectorId,
-                                      pipelineDependencies: (d as any).pipelineDependencies
-                                    })),
-                                    ancestorTable.connectorId
-                                  );
-                                  if (res.success && Array.isArray(res.data)) {
-                                    sourceData = res.data;
-                                    break;
-                                  } else {
-                                    throw new Error(`Errore recupero dati Python da ${tableName}: ${res.error}`);
-                                  }
-                                }
-                                // SQL Ancestor
-                                else if (ancestorTable.sqlQuery) {
+                                // 1b. Current Node - Fetch on demand if no cache
+                                if (tableName === sqlResultName && sqlQuery && !sqlPreviewData) {
                                   toast({ title: "Esecuzione SQL...", description: `Recupero dati da ${tableName}...` });
-                                  const res = await executeSqlPreviewAction(
-                                    ancestorTable.sqlQuery,
-                                    ancestorTable.connectorId || '',
-                                    ancestorTable.pipelineDependencies || []
-                                  );
+                                  // Build pipelineDeps for current node
+                                  const pipelineDeps = availableInputTables
+                                    ?.filter(t => t.sqlQuery || (t.isPython && t.pythonCode))
+                                    .map(table => ({
+                                      tableName: table.name,
+                                      query: table.sqlQuery || undefined,
+                                      isPython: table.isPython,
+                                      pythonCode: table.pythonCode,
+                                      connectorId: table.connectorId,
+                                      pipelineDependencies: table.pipelineDependencies
+                                    })) || [];
+                                  const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps);
                                   if (res.data) {
                                     sourceData = res.data;
                                     break;
@@ -3022,75 +2960,139 @@ export default function EditNodeDialog({
                                     throw new Error(`Errore recupero dati SQL da ${tableName}: ${res.error}`);
                                   }
                                 }
+                                if (tableName === pythonResultName && pythonCode && !pythonPreviewResult?.data) {
+                                  toast({ title: "Elaborazione Python...", description: `Esecuzione script per ${tableName}...` });
+                                  const pipelineDeps = availableInputTables
+                                    ?.filter(t => t.sqlQuery || (t.isPython && t.pythonCode))
+                                    .map(table => ({
+                                      tableName: table.name,
+                                      query: table.sqlQuery || undefined,
+                                      isPython: table.isPython,
+                                      pythonCode: table.pythonCode,
+                                      connectorId: table.connectorId,
+                                      pipelineDependencies: table.pipelineDependencies
+                                    })) || [];
+                                  const res = await executePythonPreviewAction(pythonCode, 'table', {}, pipelineDeps, pythonConnectorId);
+                                  if (res.success && Array.isArray(res.data)) {
+                                    sourceData = res.data;
+                                    break;
+                                  } else {
+                                    throw new Error(`Errore recupero dati Python da ${tableName}: ${res.error}`);
+                                  }
+                                }
+
+                                // 2. Check Ancestor Tables (Fetch on demand)
+                                const ancestorTable = availableInputTables?.find(t => t.name === tableName);
+                                if (ancestorTable) {
+                                  // Python Ancestor
+                                  if (ancestorTable.isPython && ancestorTable.pythonCode) {
+                                    toast({ title: "Elaborazione Python...", description: `Esecuzione script per ${tableName}...` });
+                                    // Use executePythonPreviewAction to fetch data
+                                    const res = await executePythonPreviewAction(
+                                      ancestorTable.pythonCode,
+                                      'table',
+                                      {},
+                                      (ancestorTable.pipelineDependencies || []).map(d => ({
+                                        tableName: d.tableName,
+                                        query: d.query,
+                                        isPython: d.isPython,
+                                        pythonCode: d.pythonCode,
+                                        connectorId: d.connectorId,
+                                        pipelineDependencies: (d as any).pipelineDependencies
+                                      })),
+                                      ancestorTable.connectorId
+                                    );
+                                    if (res.success && Array.isArray(res.data)) {
+                                      sourceData = res.data;
+                                      break;
+                                    } else {
+                                      throw new Error(`Errore recupero dati Python da ${tableName}: ${res.error}`);
+                                    }
+                                  }
+                                  // SQL Ancestor
+                                  else if (ancestorTable.sqlQuery) {
+                                    toast({ title: "Esecuzione SQL...", description: `Recupero dati da ${tableName}...` });
+                                    const res = await executeSqlPreviewAction(
+                                      ancestorTable.sqlQuery,
+                                      ancestorTable.connectorId || '',
+                                      ancestorTable.pipelineDependencies || []
+                                    );
+                                    if (res.data) {
+                                      sourceData = res.data;
+                                      break;
+                                    } else {
+                                      throw new Error(`Errore recupero dati SQL da ${tableName}: ${res.error}`);
+                                    }
+                                  }
+                                }
                               }
-                            }
 
-                            if (sourceData.length === 0) {
-                              setSqlExportError('Nessun dato disponibile. Esegui prima l\'anteprima della query o dello script.');
+                              if (sourceData.length === 0) {
+                                setSqlExportError('Nessun dato disponibile. Esegui prima l\'anteprima della query o dello script.');
+                                setSqlExportStatus('error');
+                                return;
+                              }
+
+                              const result = await exportTableToSqlAction(
+                                sqlExportTargetConnectorId,
+                                sqlExportTargetTableName,
+                                sourceData,
+                                true
+                              );
+
+                              if (result.success) {
+                                setSqlExportStatus('success');
+                                setSqlExportRowCount(result.rowsInserted || 0);
+                                toast({
+                                  title: "Esportazione completata",
+                                  description: `${result.rowsInserted} righe inserite in ${sqlExportTargetTableName}`,
+                                });
+                              } else {
+                                setSqlExportStatus('error');
+                                setSqlExportError(result.error || 'Errore sconosciuto');
+                                throw new Error(result.error || 'Errore durante esportazione');
+                              }
+                            } catch (e: any) {
                               setSqlExportStatus('error');
-                              return;
+                              setSqlExportError(e.message || 'Errore durante l\'esportazione');
+                              throw e;
                             }
-
-                            const result = await exportTableToSqlAction(
-                              sqlExportTargetConnectorId,
-                              sqlExportTargetTableName,
-                              sourceData,
-                              true
-                            );
-
-                            if (result.success) {
-                              setSqlExportStatus('success');
-                              setSqlExportRowCount(result.rowsInserted || 0);
-                              toast({
-                                title: "Esportazione completata",
-                                description: `${result.rowsInserted} righe inserite in ${sqlExportTargetTableName}`,
-                              });
-                            } else {
-                              setSqlExportStatus('error');
-                              setSqlExportError(result.error || 'Errore sconosciuto');
-                              throw new Error(result.error || 'Errore durante esportazione');
-                            }
-                          } catch (e: any) {
-                            setSqlExportStatus('error');
-                            setSqlExportError(e.message || 'Errore durante l\'esportazione');
-                            throw e;
-                          }
-                        });
-                      }}
-                    >
-                      {sqlExportStatus === 'running' ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Esportazione in corso...
-                        </>
-                      ) : (
-                        <>
-                          <Download className="mr-2 h-4 w-4" />
-                          Salva in Database
-                        </>
-                      )}
-                    </Button>
-                    <NodeSchedulePopover
-                      treeId={treeId}
-                      nodeId={currentNodeId}
-                      nodePath={nodePath}
-                      taskType="SQL_EXECUTE"
-                      taskLabel="Esportazione Database"
-                      existingSchedule={nodeSchedules['SQL_EXECUTE']}
-                      taskConfigProvider={() => ({
-                        query: sqlQuery,
-                        connectorIdSql: sqlConnectorId,
-                        sqlResultName,
-                        contextTables: availableInputTables,
-                        selectedPipelines,
-                        sqlExportConfig: {
-                          targetConnectorId: sqlExportTargetConnectorId,
-                          targetTableName: sqlExportTargetTableName,
-                          sourceTables: sqlExportSourceTables,
-                        },
-                      })}
-                      onScheduleChanged={loadNodeSchedules}
-                    />
+                          });
+                        }}
+                      >
+                        {sqlExportStatus === 'running' ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Esportazione in corso...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="mr-2 h-4 w-4" />
+                            Salva in Database
+                          </>
+                        )}
+                      </Button>
+                      <NodeSchedulePopover
+                        treeId={treeId}
+                        nodeId={currentNodeId}
+                        nodePath={nodePath}
+                        taskType="SQL_EXECUTE"
+                        taskLabel="Esportazione Database"
+                        existingSchedule={nodeSchedules['SQL_EXECUTE']}
+                        taskConfigProvider={() => ({
+                          query: sqlQuery,
+                          connectorIdSql: sqlConnectorId,
+                          sqlResultName,
+                          contextTables: availableInputTables,
+                          selectedPipelines,
+                          sqlExportConfig: {
+                            targetConnectorId: sqlExportTargetConnectorId,
+                            targetTableName: sqlExportTargetTableName,
+                            sourceTables: sqlExportSourceTables,
+                          },
+                        })}
+                        onScheduleChanged={loadNodeSchedules}
+                      />
                     </div>
 
                     {/* Status Messages */}
@@ -3247,8 +3249,8 @@ export default function EditNodeDialog({
                                                 attachments: {
                                                   ...prev.attachments,
                                                   tablesInBody: e.target.checked
-                                                    ? [...prev.attachments.tablesInBody, table.name]
-                                                    : prev.attachments.tablesInBody.filter(t => t !== table.name)
+                                                    ? [...(prev.attachments?.tablesInBody || []), table.name]
+                                                    : (prev.attachments?.tablesInBody || []).filter(t => t !== table.name)
                                                 }
                                               }));
                                             }}
@@ -3266,8 +3268,8 @@ export default function EditNodeDialog({
                                                 attachments: {
                                                   ...prev.attachments,
                                                   tablesAsExcel: e.target.checked
-                                                    ? [...prev.attachments.tablesAsExcel, table.name]
-                                                    : prev.attachments.tablesAsExcel.filter(t => t !== table.name)
+                                                    ? [...(prev.attachments?.tablesAsExcel || []), table.name]
+                                                    : (prev.attachments?.tablesAsExcel || []).filter(t => t !== table.name)
                                                 }
                                               }));
                                             }}
@@ -3302,8 +3304,8 @@ export default function EditNodeDialog({
                                                 attachments: {
                                                   ...prev.attachments,
                                                   tablesInBody: e.target.checked
-                                                    ? [...prev.attachments.tablesInBody, sqlResultName]
-                                                    : prev.attachments.tablesInBody.filter(t => t !== sqlResultName)
+                                                    ? [...(prev.attachments?.tablesInBody || []), sqlResultName]
+                                                    : (prev.attachments?.tablesInBody || []).filter(t => t !== sqlResultName)
                                                 }
                                               }));
                                             }}
@@ -3321,8 +3323,8 @@ export default function EditNodeDialog({
                                                 attachments: {
                                                   ...prev.attachments,
                                                   tablesAsExcel: e.target.checked
-                                                    ? [...prev.attachments.tablesAsExcel, sqlResultName]
-                                                    : prev.attachments.tablesAsExcel.filter(t => t !== sqlResultName)
+                                                    ? [...(prev.attachments?.tablesAsExcel || []), sqlResultName]
+                                                    : (prev.attachments?.tablesAsExcel || []).filter(t => t !== sqlResultName)
                                                 }
                                               }));
                                             }}
@@ -3410,8 +3412,8 @@ export default function EditNodeDialog({
                                                 attachments: {
                                                   ...prev.attachments,
                                                   pythonOutputsInBody: e.target.checked
-                                                    ? [...prev.attachments.pythonOutputsInBody, output.name]
-                                                    : prev.attachments.pythonOutputsInBody.filter(t => t !== output.name)
+                                                    ? [...(prev.attachments?.pythonOutputsInBody || []), output.name]
+                                                    : (prev.attachments?.pythonOutputsInBody || []).filter(t => t !== output.name)
                                                 }
                                               }));
                                             }}
@@ -3429,8 +3431,8 @@ export default function EditNodeDialog({
                                                 attachments: {
                                                   ...prev.attachments,
                                                   pythonOutputsAsAttachment: e.target.checked
-                                                    ? [...prev.attachments.pythonOutputsAsAttachment, output.name]
-                                                    : prev.attachments.pythonOutputsAsAttachment.filter(t => t !== output.name)
+                                                    ? [...(prev.attachments?.pythonOutputsAsAttachment || []), output.name]
+                                                    : (prev.attachments?.pythonOutputsAsAttachment || []).filter(t => t !== output.name)
                                                 }
                                               }));
                                             }}
@@ -3904,12 +3906,11 @@ export default function EditNodeDialog({
               Salva Modifiche
             </Button>
           </DialogFooter>
-        </DialogContent >
-      </Dialog >
+        </DialogContent>
+      </Dialog>
 
       {/* Media Preview Dialog */}
-      < Dialog open={!!previewingMedia
-      } onOpenChange={(open) => !open && setPreviewingMedia(null)}>
+      <Dialog open={!!previewingMedia} onOpenChange={(open) => !open && setPreviewingMedia(null)}>
         <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Anteprima Media</DialogTitle>
@@ -3926,7 +3927,7 @@ export default function EditNodeDialog({
             <Button variant="outline" onClick={() => setPreviewingMedia(null)}>Chiudi</Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog >
+      </Dialog>
 
       <AlertDialog open={!!pendingTypeChange} onOpenChange={(open) => !open && setPendingTypeChange(null)}>
         <AlertDialogContent>
