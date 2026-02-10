@@ -17,9 +17,10 @@ import { schedulerService } from '@/lib/scheduler/scheduler-service';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -38,7 +39,7 @@ export async function POST(
     // Check if task exists and belongs to user's company
     const task = await db.scheduledTask.findFirst({
       where: {
-        id: params.id,
+        id: id,
         companyId: user.companyId
       }
     });
@@ -50,9 +51,9 @@ export async function POST(
     // Trigger task execution
     const result = await schedulerService.triggerTask(task.id);
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       message: 'Task triggered successfully',
-      result 
+      result
     });
   } catch (error: any) {
     console.error('[API] Error triggering scheduled task:', error);

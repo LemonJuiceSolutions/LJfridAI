@@ -61,14 +61,15 @@ export async function GET(req: NextRequest) {
                             // const optionName = path... handled by key
 
                             // Check if this option exists in DB
-                            const dbOption = dbVar.possibleValues.find(opt => opt.name === optionNameInTree);
+                            const possibleValues = dbVar.possibleValues as any[];
+                            const dbOption = possibleValues.find(opt => opt.name === optionNameInTree);
                             if (!dbOption) {
                                 report.missingOptions.push({
                                     path: `${path}.options['${key}']`,
                                     variableId: node.variableId,
                                     variableName: dbVar.name,
                                     optionNameInTree: optionNameInTree,
-                                    availableDbOptions: dbVar.possibleValues.map(o => o.name),
+                                    availableDbOptions: (possibleValues || []).map((o: any) => o.name),
                                     error: "Option Name in Tree not found in DB Variable"
                                 });
                             }

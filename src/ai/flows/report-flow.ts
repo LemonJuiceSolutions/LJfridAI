@@ -45,20 +45,20 @@ const aggregateSalesByProduct = ai.defineTool(
     inputSchema: z.array(z.any()), // Expects raw data
     outputSchema: AggregatedSalesSchema,
   },
-  async (data) => {
+  async (data: any[]) => {
     // This simulates running a SQL query like:
     // SELECT product, SUM(sales) as total_sales FROM salesData GROUP BY product;
-    const salesByProduct = data.reduce((acc, sale) => {
+    const salesByProduct = data.reduce((acc, sale: any) => {
       if (!acc[sale.product]) {
         acc[sale.product] = 0;
       }
-      acc[sale.product] += sale.sales;
+      acc[sale.product] += Number(sale.sales || 0);
       return acc;
     }, {} as Record<string, number>);
 
     return Object.entries(salesByProduct).map(([product, total_sales]) => ({
       product,
-      total_sales,
+      total_sales: Number(total_sales),
     }));
   }
 );
@@ -71,33 +71,33 @@ const analyzeProductPerformance = ai.defineTool(
     inputSchema: AggregatedSalesSchema,
     outputSchema: AnalysisResultSchema,
   },
-  async (data) => {
+  async (data: any[]) => {
     // This simulates a Python script for analysis
     if (data.length === 0) {
-        return { bestProduct: 'N/A', worstProduct: 'N/A', chartData: [] };
+      return { bestProduct: 'N/A', worstProduct: 'N/A', chartData: [] };
     }
 
     let bestProduct = data[0];
     let worstProduct = data[0];
 
     data.forEach(item => {
-        if (item.total_sales > bestProduct.total_sales) {
-            bestProduct = item;
-        }
-        if (item.total_sales < worstProduct.total_sales) {
-            worstProduct = item;
-        }
+      if (item.total_sales > bestProduct.total_sales) {
+        bestProduct = item;
+      }
+      if (item.total_sales < worstProduct.total_sales) {
+        worstProduct = item;
+      }
     });
 
     const chartData = data.map(item => ({
-        name: item.product,
-        value: item.total_sales,
+      name: item.product,
+      value: item.total_sales,
     }));
 
     return {
-        bestProduct: bestProduct.product,
-        worstProduct: worstProduct.product,
-        chartData: chartData,
+      bestProduct: bestProduct.product,
+      worstProduct: worstProduct.product,
+      chartData: chartData,
     };
   }
 );
@@ -122,13 +122,11 @@ const reportFlow = ai.defineFlow(
     name: 'reportFlow',
     inputSchema: z.void(),
     outputSchema: ReportDataSchema,
-    system: "You are a data analyst. Execute the tools in sequence to generate the final report data.",
-    tools: [getRawSalesData, aggregateSalesByProduct, analyzeProductPerformance],
   },
   async () => {
     // Step 1: Get raw data
     const rawData = await getRawSalesData();
-    
+
     // Step 2: Aggregate sales
     const aggregatedSales = await aggregateSalesByProduct(rawData);
 
@@ -137,8 +135,8 @@ const reportFlow = ai.defineFlow(
 
     // Step 4: Format for output
     const table = {
-        headers: ['Product', 'Total Sales'],
-        rows: aggregatedSales.map(item => [item.product, item.total_sales]),
+      headers: ['Product', 'Total Sales'],
+      rows: aggregatedSales.map(item => [item.product, item.total_sales]),
     };
 
     return {

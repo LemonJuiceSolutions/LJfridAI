@@ -51,9 +51,10 @@ const updateTaskSchema = z.object({
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -77,7 +78,7 @@ export async function GET(
     // Fetch task
     const task = await db.scheduledTask.findFirst({
       where: {
-        id: params.id,
+        id: id,
         companyId: user.companyId
       },
       include: {
@@ -115,9 +116,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -136,7 +138,7 @@ export async function PUT(
     // Check if task exists and belongs to user's company
     const existingTask = await db.scheduledTask.findFirst({
       where: {
-        id: params.id,
+        id: id,
         companyId: user.companyId
       }
     });
@@ -181,14 +183,14 @@ export async function PUT(
 
     // Update task
     const task = await db.scheduledTask.update({
-      where: { id: params.id },
+      where: { id: id },
       data: updateData
     });
 
     // Reschedule task if schedule changed
-    if (validatedData.scheduleType || validatedData.cronExpression || 
-        validatedData.intervalMinutes || validatedData.daysOfWeek || 
-        validatedData.hours || validatedData.timezone) {
+    if (validatedData.scheduleType || validatedData.cronExpression ||
+      validatedData.intervalMinutes || validatedData.daysOfWeek ||
+      validatedData.hours || validatedData.timezone) {
       await schedulerService.rescheduleTask(task.id);
     }
 
@@ -216,9 +218,10 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -237,7 +240,7 @@ export async function DELETE(
     // Check if task exists and belongs to user's company
     const existingTask = await db.scheduledTask.findFirst({
       where: {
-        id: params.id,
+        id: id,
         companyId: user.companyId
       }
     });
@@ -248,7 +251,7 @@ export async function DELETE(
 
     // Delete task (executions will be cascade deleted)
     await db.scheduledTask.delete({
-      where: { id: params.id }
+      where: { id: id }
     });
 
     return NextResponse.json({ message: 'Task deleted successfully' });

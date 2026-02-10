@@ -16,9 +16,10 @@ import { db } from '@/lib/db';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -37,7 +38,7 @@ export async function GET(
     // Check if task exists and belongs to user's company
     const task = await db.scheduledTask.findFirst({
       where: {
-        id: params.id,
+        id: id,
         companyId: user.companyId
       }
     });
@@ -54,7 +55,7 @@ export async function GET(
     const skip = (page - 1) * limit;
 
     // Build where clause
-    const where: any = { taskId: params.id };
+    const where: any = { taskId: id };
     if (status) where.status = status;
 
     // Fetch executions with pagination

@@ -917,15 +917,16 @@ export default function PipelinesWidget() {
                                             >
                                                 <svg width="100%" height="100%">
                                                     <g onClick={(e) => e.stopPropagation()} className="pointer-events-auto">
-                                                        {selectedEdge && selectedEdge.pipelineId === pipeline.id && (edgePaths[pipeline.id] || []).find(p => p.from === selectedEdge.edge.from && p.to === selectedEdge.edge.to && p.fromPort === selectedEdge.edge.fromPort) && (
+                                                        {selectedEdge && selectedEdge.pipelineId === pipeline.id && (edgePaths[pipeline.id] || []).find(p => p.from === selectedEdge.edge?.from && p.to === selectedEdge.edge?.to && p.fromPort === selectedEdge.edge?.fromPort) && (
                                                             <SvgPath
                                                                 key={`${pipeline.id}-selected`}
-                                                                d={(edgePaths[pipeline.id].find(p => p.from === selectedEdge.edge.from && p.to === selectedEdge.edge.to && p.fromPort === selectedEdge.edge.fromPort) as any).path}
+                                                                d={(edgePaths[pipeline.id].find(p => p.from === selectedEdge.edge?.from && p.to === selectedEdge.edge?.to && p.fromPort === selectedEdge.edge?.fromPort) as any).path}
                                                                 isSelected={true}
                                                                 onSelect={() => { }}
                                                                 onDelete={() => handleDeleteEdge(pipeline.id, selectedEdge.edge)}
                                                             />
                                                         )}
+
                                                     </g>
                                                 </svg>
                                             </div>
