@@ -860,7 +860,7 @@ export default function PipelinesWidget() {
                                                 <p className="font-semibold text-[11px]">{pipeline.name}</p>
                                                 <p className="text-[10px] text-muted-foreground">{pipeline.description}</p>
                                             </div>
-                                            <Button variant="outline" size="sm" className='mr-2 text-[10px] h-7' onClick={(e) => { e.stopPropagation(); savePipelinesState(pipelines); toast({ title: "Pipeline Salvata!" }); }}>
+                                            <Button variant="outline" size="sm" className='mr-2 text-[10px] h-7' onClick={(e) => { e.stopPropagation(); Promise.all(pipelines.map(p => savePipeline(p))); toast({ title: "Pipeline Salvate!" }); }}>
                                                 <Save className='h-3 w-3 mr-1' />
                                                 Salva
                                             </Button>
@@ -887,7 +887,7 @@ export default function PipelinesWidget() {
                                             >
                                                 <g onClick={(e) => e.stopPropagation()} className="pointer-events-auto">
                                                     {(edgePaths[pipeline.id] || []).map((edge, index) => {
-                                                        const isSelected = selectedEdge?.pipelineId === pipeline.id && selectedEdge.edge.from === edge.from && selectedEdge.edge.to === edge.to && selectedEdge.edge.fromPort === edge.fromPort;
+                                                        const isSelected = selectedEdge?.pipelineId === pipeline.id && selectedEdge?.edge?.from === edge.from && selectedEdge?.edge?.to === edge.to && selectedEdge?.edge?.fromPort === edge.fromPort;
                                                         if (isSelected) return null;
                                                         return (
                                                             <SvgPath
