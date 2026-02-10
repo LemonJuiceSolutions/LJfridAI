@@ -12,6 +12,7 @@ import {
     Calendar,
     MessageSquare,
     X,
+    RefreshCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +50,7 @@ import {
     updateKnowledgeBaseEntryAction,
     deleteKnowledgeBaseEntryAction,
     getKnowledgeBaseCategoriesAction,
+    syncKnowledgeBaseFromTreesAction,
 } from '@/app/actions/knowledge-base';
 
 type KBEntry = {
@@ -82,6 +84,9 @@ export default function KnowledgeBasePage() {
     // Delete dialog
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+
+    // Sync state
+    const [isSyncing, setIsSyncing] = useState(false);
 
     const loadEntries = async () => {
         setIsLoading(true);
@@ -181,6 +186,27 @@ export default function KnowledgeBasePage() {
         loadEntries();
     };
 
+    const handleSync = async () => {
+        setIsSyncing(true);
+        try {
+            const result = await syncKnowledgeBaseFromTreesAction(false);
+            if (result.success) {
+                toast({
+                    title: 'Sincronizzazione completata',
+                    description: `${result.created} create, ${result.updated} aggiornate.${result.errors.length > 0 ? ` ${result.errors.length} errori.` : ''}`,
+                });
+                loadEntries();
+                loadCategories();
+            } else {
+                toast({ title: 'Errore', description: result.error || 'Errore durante la sincronizzazione.', variant: 'destructive' });
+            }
+        } catch (e: any) {
+            toast({ title: 'Errore', description: e.message, variant: 'destructive' });
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     return (
         <div className="flex flex-col h-full">
             {/* Header */}
@@ -196,10 +222,16 @@ export default function KnowledgeBasePage() {
                         </p>
                     </div>
                 </div>
-                <Button onClick={openCreateDialog} className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    Nuova Entry
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={handleSync} disabled={isSyncing} className="gap-2">
+                        {isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                        Sincronizza da Alberi
+                    </Button>
+                    <Button onClick={openCreateDialog} className="gap-2">
+                        <Plus className="h-4 w-4" />
+                        Nuova Entry
+                    </Button>
+                </div>
             </div>
 
             {/* Filters */}

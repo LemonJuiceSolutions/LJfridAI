@@ -242,12 +242,38 @@ export function ChatBotAgent() {
     const [conversationId, setConversationId] = useState<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
 
+    // Model selector state
+    const [model, setModel] = useState('google/gemini-2.0-flash-001');
+    const [availableModels, setAvailableModels] = useState<any[]>([]);
+    const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+    const [isSavingModel, setIsSavingModel] = useState(false);
+
     // Correction dialog state
     const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
     const [correctionMessageIndex, setCorrectionMessageIndex] = useState<number | null>(null);
     const [correctionText, setCorrectionText] = useState('');
     const [correctionTags, setCorrectionTags] = useState('');
     const [isSavingCorrection, setIsSavingCorrection] = useState(false);
+
+    // Load models and saved agent model on mount
+    useEffect(() => {
+        fetchOpenRouterModelsAction().then(result => {
+            if (result.data) setAvailableModels(result.data);
+        });
+        getOpenRouterAgentModelAction().then(result => {
+            if (result.model) setModel(result.model);
+        });
+    }, []);
+
+    const handleModelChange = async (newModel: string) => {
+        setModel(newModel);
+        setModelSelectorOpen(false);
+        setIsSavingModel(true);
+        try {
+            await saveOpenRouterAgentModelAction(newModel);
+        } catch { /* ignore */ }
+        setIsSavingModel(false);
+    };
 
     // Load conversation from server on mount
     useEffect(() => {
@@ -299,6 +325,7 @@ export function ChatBotAgent() {
                 body: JSON.stringify({
                     userMessage: userMsg.content,
                     conversationId,
+                    model,
                 }),
             });
 
@@ -426,10 +453,38 @@ export function ChatBotAgent() {
                             </div>
                             <div>
                                 <h2 className="text-sm font-bold tracking-tight">FridAI Super Agent</h2>
-                                <div className="flex items-center gap-1">
-                                    <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                                    <span className="text-[10px] text-muted-foreground">Genkit - Gemini 2.5 Flash</span>
-                                </div>
+                                <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
+                                    <PopoverTrigger asChild>
+                                        <button className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                                            <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                                            <span className="truncate max-w-[160px]">
+                                                {isSavingModel ? 'Salvando...' : (availableModels.find(m => m.id === model)?.name || model.split('/').pop())}
+                                            </span>
+                                            <ChevronsUpDown className="h-2.5 w-2.5 shrink-0 opacity-50" />
+                                        </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[300px] p-0" align="start">
+                                        <Command>
+                                            <CommandInput placeholder="Cerca modello..." />
+                                            <CommandList>
+                                                <CommandEmpty>Nessun modello trovato.</CommandEmpty>
+                                                <CommandGroup heading="Modelli disponibili">
+                                                    {availableModels.map(m => (
+                                                        <CommandItem
+                                                            key={m.id}
+                                                            value={m.id}
+                                                            onSelect={() => handleModelChange(m.id)}
+                                                            className="text-xs"
+                                                        >
+                                                            <Check className={cn("mr-2 h-3 w-3", model === m.id ? "opacity-100" : "opacity-0")} />
+                                                            <span className="truncate">{m.name}</span>
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
                             </div>
                         </div>
                         <div className="flex items-center gap-1">

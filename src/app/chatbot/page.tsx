@@ -201,12 +201,15 @@ export default function ChatbotPage() {
             }
 
             const result = await diagnoseProblemAction({
+                id: Date.now().toString(), // Dummy conversation ID
+                userState: {}, // Default empty state
                 userProblem: problem,
                 currentAnswer: isOptionClick ? userMessageText : undefined,
                 history,
                 specificTreeId: activeTreeId, // Pass the active tree ID if any
                 previousNodeId: previousNodeId
             }, openRouterConfig);
+
 
             if (result.error || !result.data) {
                 throw new Error(result.error || 'La diagnosi è fallita senza un errore specifico.');

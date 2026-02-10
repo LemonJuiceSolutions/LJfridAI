@@ -374,29 +374,29 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
                             )}
                             {(hiddenWidgets.size > 0 || Object.keys(availableWidgets).some(key =>
                                 ['kpi-1', 'kpi-2', 'kpi-3', 'kpi-4', 'overview', 'revenue-by-product',
-                                 'capacity', 'cost-center', 'job-margin', 'sql-test-table', 'orders',
-                                 'planning', 'acquisti', 'cutting', 'sewing', 'printing', 'embroidery',
-                                 'lavanderia', 'stiro', 'controllo-qualita', 'packaging', 'magazzino',
-                                 'setup', 'pipelines'].includes(key) && !hiddenWidgets.has(key)
+                                    'capacity', 'cost-center', 'job-margin', 'sql-test-table', 'orders',
+                                    'planning', 'acquisti', 'cutting', 'sewing', 'printing', 'embroidery',
+                                    'lavanderia', 'stiro', 'controllo-qualita', 'packaging', 'magazzino',
+                                    'setup', 'pipelines'].includes(key) && !hiddenWidgets.has(key)
                             )) && (
-                                <>
-                                    <div className="border-t my-2" />
-                                    <DropdownMenuItem
-                                        className="text-sm text-destructive hover:text-destructive"
-                                        onSelect={hideAllStaticWidgets}
-                                    >
-                                        Nascondi tutti i widget statici
-                                    </DropdownMenuItem>
-                                    {hiddenWidgets.size > 0 && (
+                                    <>
+                                        <div className="border-t my-2" />
                                         <DropdownMenuItem
-                                            className="text-sm text-muted-foreground"
-                                            onSelect={handleShowAllWidgets}
+                                            className="text-sm text-destructive hover:text-destructive"
+                                            onSelect={hideAllStaticWidgets}
                                         >
-                                            Mostra tutti i widget nascosti ({hiddenWidgets.size})
+                                            Nascondi tutti i widget statici
                                         </DropdownMenuItem>
-                                    )}
-                                </>
-                            )}
+                                        {hiddenWidgets.size > 0 && (
+                                            <DropdownMenuItem
+                                                className="text-sm text-muted-foreground"
+                                                onSelect={handleShowAllWidgets}
+                                            >
+                                                Mostra tutti i widget nascosti ({hiddenWidgets.size})
+                                            </DropdownMenuItem>
+                                        )}
+                                    </>
+                                )}
                         </DropdownMenuContent>
                     </DropdownMenu>
                     <Button onClick={addTextWidget} size="sm" variant="outline">

@@ -355,6 +355,22 @@ const saveToKnowledgeBase = ai.defineTool(
     }
 );
 
+// Helper: Map OpenRouter model IDs to Genkit Google AI model IDs
+function mapToGenkitModel(openRouterModel?: string): string {
+    if (!openRouterModel) return 'googleai/gemini-2.5-flash';
+
+    // Map OpenRouter Google model IDs to Genkit format
+    if (openRouterModel.startsWith('google/')) {
+        const modelName = openRouterModel.replace('google/', '');
+        // Remove version suffixes like -001, -002 etc.
+        const cleanName = modelName.replace(/-\d{3}$/, '');
+        return `googleai/${cleanName}`;
+    }
+
+    // For non-Google models, we'll use OpenRouter API directly (see below)
+    return openRouterModel;
+}
+
 // Input/Output schemas
 const SuperAgentInputSchema = z.object({
     messages: z.array(z.object({
@@ -367,6 +383,8 @@ const SuperAgentInputSchema = z.object({
         })),
     })).describe('La cronologia della conversazione.'),
     companyId: z.string().describe("L'ID della company dell'utente."),
+    model: z.string().optional().describe('Il modello OpenRouter selezionato.'),
+    apiKey: z.string().optional().describe("L'API key OpenRouter dell'utente."),
 });
 export type SuperAgentInput = z.infer<typeof SuperAgentInputSchema>;
 
@@ -374,72 +392,61 @@ const SuperAgentOutputSchema = z.string().describe("La risposta dell'agente.");
 export type SuperAgentOutput = z.infer<typeof SuperAgentOutputSchema>;
 
 export async function superAgentFlow(input: SuperAgentInput): Promise<SuperAgentOutput> {
-    // Pre-load tree summary to include in system prompt for better context
+    // Pre-load LIGHTWEIGHT tree summary (names only, no content - use tools for details)
     let treeSummary = '';
     try {
         const trees = await fetchTreesForCompany(input.companyId);
         if (trees.length > 0) {
             const summaries = trees.map(t => {
-                let nodeDetails = '';
+                let nodeCount = 0;
+                let sqlCount = 0;
+                let pythonCount = 0;
                 try {
                     const treeData = JSON.parse(t.jsonDecisionTree);
                     const nodes = collectNodes(treeData, t.name, t.id);
-                    const sqlNodes = nodes.filter(n => n.sqlQuery).map(n => `  - ${n.sqlResultName || n.nodeId}: ${n.sqlQuery?.substring(0, 100)}...`);
-                    const pythonNodes = nodes.filter(n => n.pythonCode).map(n => `  - ${n.pythonResultName || n.nodeId}: ${n.pythonCode?.substring(0, 80)}...`);
-                    if (sqlNodes.length > 0) nodeDetails += `\n  Query SQL:\n${sqlNodes.join('\n')}`;
-                    if (pythonNodes.length > 0) nodeDetails += `\n  Codice Python:\n${pythonNodes.join('\n')}`;
+                    nodeCount = nodes.length;
+                    sqlCount = nodes.filter(n => n.sqlQuery).length;
+                    pythonCount = nodes.filter(n => n.pythonCode).length;
                 } catch { /* ignore */ }
-                return `- **${t.name}** (ID: ${t.id}, tipo: ${t.type}): ${t.description}${nodeDetails}`;
+                return `- ${t.name} (ID: ${t.id}, tipo: ${t.type || 'RULE'}, ${nodeCount} nodi, ${sqlCount} SQL, ${pythonCount} Python)`;
             });
-            treeSummary = `\n\nALBERI DISPONIBILI NELLA COMPANY:\n${summaries.join('\n\n')}`;
+            treeSummary = `\n\nALBERI DISPONIBILI:\n${summaries.join('\n')}`;
         }
     } catch { /* ignore */ }
 
     const systemMessage = {
         role: 'system' as const,
         content: [{
-            text: `Sei FridAI, un super agente IA esperto nell'analisi dati e nella gestione di pipeline e alberi decisionali.
-Hai accesso a tutti gli alberi decisionali, query SQL, codice Python e widget della company dell'utente.
+            text: `Sei FridAI, un super agente IA esperto nell'analisi dati.
 
-REGOLE FONDAMENTALI:
+WORKFLOW PER OGNI DOMANDA:
+1. CERCA PRIMA NELLA KNOWLEDGE BASE con searchKnowledgeBase - contiene query SQL, script Python e struttura degli alberi gia' indicizzati
+2. Se la KB non basta, usa searchNodesForQuery per cercare keyword negli alberi
+3. Se trovi una query SQL, ESEGUILA con executeSqlQuery usando il connectorId trovato
+4. Se serve, usa getTreeContent per esplorare un albero specifico
+5. Quando l'utente ti corregge, SALVA nella KB con saveToKnowledgeBase
 
-1. **ESPLORA SEMPRE GLI ALBERI**: Ad ogni domanda sui dati, USA i tool per esplorare gli alberi. Hai gia' un riepilogo qui sotto, ma usa getTreeContent per i dettagli completi e searchNodesForQuery per cercare keyword specifiche.
-
-2. **ESEGUI LE QUERY**: Se trovi una query SQL esistente in un nodo, ESEGUILA con executeSqlQuery usando il connectorId del nodo. Se serve una query nuova, scrivila ed eseguila.
-
-3. **GRAFICI CON RECHARTS**: Per i grafici, restituisci i dati in questo formato ESATTO:
-
-\`\`\`recharts
-{
-  "type": "bar-chart",
-  "data": [{"month": "Gen", "valore": 100}],
-  "xAxisKey": "month",
-  "dataKeys": ["valore"],
-  "colors": ["#8884d8"],
-  "title": "Titolo"
-}
-\`\`\`
-
-Tipi: bar-chart, line-chart, pie-chart, area-chart.
-
-4. **FAI DOMANDE**: Se non trovi dati sufficienti, chiedi all'utente.
-
-5. **KNOWLEDGE BASE**: Consulta la KB per correzioni precedenti. Quando l'utente ti corregge, salva nella KB.
-
-6. **TABELLE MARKDOWN**: Per dati tabellari usa il formato markdown con | ... |
-
-7. **CODICE**: Mostra SQL in \`\`\`sql e Python in \`\`\`python.
-
-8. **ITALIANO**: Rispondi sempre in italiano.
-
-9. **FONTI**: Cita il nome dell'albero come fonte.
+REGOLE:
+- Rispondi in italiano
+- Per grafici usa il formato: \`\`\`recharts {"type":"bar-chart","data":[...],"xAxisKey":"x","dataKeys":["y"],"title":"Titolo"} \`\`\`
+  Tipi: bar-chart, line-chart, pie-chart, area-chart
+- Per tabelle usa formato markdown con | ... |
+- Per codice usa \`\`\`sql o \`\`\`python
+- Se non trovi dati, FAI DOMANDE all'utente
+- Cita il nome dell'albero come fonte
 
 Company ID: ${input.companyId}${treeSummary}`
         }],
     };
 
+    // Truncate conversation history to avoid token overflow (keep last 20 messages)
+    const MAX_HISTORY_MESSAGES = 20;
+    const truncatedMessages = input.messages.length > MAX_HISTORY_MESSAGES
+        ? input.messages.slice(-MAX_HISTORY_MESSAGES)
+        : input.messages;
+
     // Sanitize message history
-    const cleanHistory = input.messages.map(m => {
+    const cleanHistory = truncatedMessages.map(m => {
         const cleanContent = m.content.map(c => {
             const part: any = {};
             if (c.text !== undefined && c.text !== null) part.text = c.text;
@@ -486,19 +493,287 @@ Company ID: ${input.companyId}${treeSummary}`
 
     const fullHistory = [systemMessage, ...cleanHistory];
 
-    const { text } = await ai.generate({
-        model: 'googleai/gemini-2.5-flash',
-        messages: fullHistory,
-        tools: [
-            listTreesAndPipelines,
-            getTreeContent,
-            searchNodesForQuery,
-            executeSqlQuery,
-            executePythonCode,
-            searchKnowledgeBase,
-            saveToKnowledgeBase,
-        ],
+    const genkitModel = mapToGenkitModel(input.model);
+    const isGoogleModel = genkitModel.startsWith('googleai/');
+
+    if (isGoogleModel) {
+        // Use Genkit directly for Google models (with tool support)
+        const { text } = await ai.generate({
+            model: genkitModel,
+            messages: fullHistory,
+            tools: [
+                listTreesAndPipelines,
+                getTreeContent,
+                searchNodesForQuery,
+                executeSqlQuery,
+                executePythonCode,
+                searchKnowledgeBase,
+                saveToKnowledgeBase,
+            ],
+        });
+        return text;
+    }
+
+    // For non-Google models, use OpenRouter API with function calling
+    return await callOpenRouterWithTools(input, fullHistory);
+}
+
+// OpenRouter tool definitions (OpenAI function calling format)
+const openRouterTools = [
+    {
+        type: 'function' as const,
+        function: {
+            name: 'listTreesAndPipelines',
+            description: 'Elenca tutti gli alberi decisionali e le pipeline disponibili nella company.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    companyId: { type: 'string', description: "L'ID della company." },
+                    type: { type: 'string', description: 'Filtra per tipo: "RULE" o "PIPELINE".' },
+                },
+                required: ['companyId'],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'getTreeContent',
+            description: "Legge TUTTI i nodi di un albero con le loro query SQL, codice Python, widget e dipendenze.",
+            parameters: {
+                type: 'object',
+                properties: {
+                    treeId: { type: 'string', description: "L'ID dell'albero da esplorare." },
+                },
+                required: ['treeId'],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'searchNodesForQuery',
+            description: 'Cerca in TUTTI gli alberi della company i nodi che contengono una keyword specifica.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    companyId: { type: 'string', description: "L'ID della company." },
+                    searchTerm: { type: 'string', description: 'Il termine di ricerca.' },
+                },
+                required: ['companyId', 'searchTerm'],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'executeSqlQuery',
+            description: 'Esegue una query SQL su un connettore database.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'La query SQL da eseguire.' },
+                    connectorId: { type: 'string', description: "L'ID del connettore database." },
+                },
+                required: ['query', 'connectorId'],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'executePythonCode',
+            description: 'Esegue codice Python per analisi dati, calcoli o generazione di variabili.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    code: { type: 'string', description: 'Il codice Python da eseguire.' },
+                    outputType: { type: 'string', enum: ['table', 'variable', 'chart'], description: 'Tipo di output.' },
+                    connectorId: { type: 'string', description: 'ID del connettore (opzionale).' },
+                },
+                required: ['code', 'outputType'],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'searchKnowledgeBase',
+            description: 'Cerca nella Knowledge Base aziendale.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Termine di ricerca.' },
+                    companyId: { type: 'string', description: "L'ID della company." },
+                },
+                required: ['query', 'companyId'],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'saveToKnowledgeBase',
+            description: "Salva una nuova entry nella Knowledge Base.",
+            parameters: {
+                type: 'object',
+                properties: {
+                    question: { type: 'string', description: 'La domanda o contesto.' },
+                    answer: { type: 'string', description: 'La risposta corretta.' },
+                    tags: { type: 'array', items: { type: 'string' }, description: 'Tag per categorizzare.' },
+                    category: { type: 'string', description: 'Categoria.' },
+                    companyId: { type: 'string', description: "L'ID della company." },
+                },
+                required: ['question', 'answer', 'tags', 'companyId'],
+            },
+        },
+    },
+];
+
+// Tool execution dispatcher for OpenRouter function calls
+async function executeToolCall(name: string, args: any): Promise<string> {
+    switch (name) {
+        case 'listTreesAndPipelines': {
+            const trees = await fetchTreesForCompany(args.companyId, args.type);
+            if (trees.length === 0) return JSON.stringify({ error: 'Nessun albero trovato' });
+            const summary = trees.map(t => {
+                let nodeCount = 0, nodesWithSQL = 0, nodesWithPython = 0;
+                try {
+                    const treeData = JSON.parse(t.jsonDecisionTree);
+                    const nodes = collectNodes(treeData, t.name, t.id);
+                    nodeCount = nodes.length;
+                    nodesWithSQL = nodes.filter(n => n.sqlQuery).length;
+                    nodesWithPython = nodes.filter(n => n.pythonCode).length;
+                } catch { /* ignore */ }
+                return { id: t.id, name: t.name, description: t.description, type: t.type || 'RULE', nodeCount, nodesWithSQL, nodesWithPython };
+            });
+            return JSON.stringify(summary, null, 2);
+        }
+        case 'getTreeContent': {
+            const tree = await fetchTreeById(args.treeId);
+            if (!tree) return JSON.stringify({ error: 'Albero non trovato' });
+            const treeData = JSON.parse(tree.jsonDecisionTree);
+            const nodes = collectNodes(treeData, tree.name, tree.id);
+            return JSON.stringify({ treeName: tree.name, treeDescription: tree.description, treeType: tree.type, totalNodes: nodes.length, nodes: nodes.slice(0, 50) }, null, 2);
+        }
+        case 'searchNodesForQuery': {
+            const trees = await fetchTreesForCompany(args.companyId);
+            const term = args.searchTerm.toLowerCase();
+            const matches: any[] = [];
+            for (const tree of trees) {
+                try {
+                    const treeData = JSON.parse(tree.jsonDecisionTree);
+                    const nodes = collectNodes(treeData, tree.name, tree.id);
+                    for (const node of nodes) {
+                        const searchableText = [node.sqlQuery, node.pythonCode, node.sqlResultName, node.pythonResultName, node.question, node.decision].filter(Boolean).join(' ').toLowerCase();
+                        if (searchableText.includes(term)) matches.push(node);
+                    }
+                } catch { /* ignore */ }
+            }
+            if (matches.length === 0) return JSON.stringify({ results: [], message: `Nessun nodo trovato per "${args.searchTerm}".` });
+            return JSON.stringify({ resultCount: matches.length, results: matches.slice(0, 20) }, null, 2);
+        }
+        case 'executeSqlQuery': {
+            const result = await executeSqlPreviewAction(args.query, args.connectorId, [], true);
+            if (result.error) return JSON.stringify({ error: result.error });
+            const data = result.data || [];
+            return JSON.stringify({ rowCount: data.length, data: data.slice(0, 100), columns: data.length > 0 ? Object.keys(data[0]) : [] }, null, 2);
+        }
+        case 'executePythonCode': {
+            const result = await executePythonPreviewAction(args.code, args.outputType, {}, [], args.connectorId, true);
+            if (!result.success) return JSON.stringify({ error: result.error || 'Errore esecuzione Python' });
+            return JSON.stringify({ data: result.data?.slice(0, 100), variables: result.variables, columns: result.columns, rowCount: result.rowCount, stdout: result.stdout }, null, 2);
+        }
+        case 'searchKnowledgeBase': {
+            const term = args.query.toLowerCase();
+            const entries = await db.knowledgeBaseEntry.findMany({
+                where: { companyId: args.companyId, OR: [{ question: { contains: term, mode: 'insensitive' } }, { answer: { contains: term, mode: 'insensitive' } }, { tags: { hasSome: [term] } }] },
+                take: 10, orderBy: { updatedAt: 'desc' },
+            });
+            if (entries.length === 0) return JSON.stringify({ results: [], message: 'Nessuna entry nella KB.' });
+            return JSON.stringify({ results: entries.map(e => ({ id: e.id, question: e.question, answer: e.answer, tags: e.tags, category: e.category })) }, null, 2);
+        }
+        case 'saveToKnowledgeBase': {
+            const entry = await db.knowledgeBaseEntry.create({
+                data: { question: args.question, answer: args.answer, tags: args.tags || [], category: args.category || 'Generale', companyId: args.companyId },
+            });
+            return JSON.stringify({ success: true, id: entry.id });
+        }
+        default:
+            return JSON.stringify({ error: `Tool sconosciuto: ${name}` });
+    }
+}
+
+// Call OpenRouter API with function calling (OpenAI-compatible)
+async function callOpenRouterWithTools(input: SuperAgentInput, fullHistory: any[]): Promise<string> {
+    if (!input.apiKey) {
+        throw new Error('API key OpenRouter mancante. Configura la chiave nelle Impostazioni.');
+    }
+
+    // Convert Genkit message format to OpenAI format
+    const openaiMessages = fullHistory.map(m => {
+        const text = m.content?.map((c: any) => c.text).filter(Boolean).join('\n') || '';
+        const role = m.role === 'model' ? 'assistant' : m.role;
+        return { role, content: text };
     });
 
-    return text;
+    const MAX_TOOL_ROUNDS = 10;
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${input.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: input.model,
+                messages: openaiMessages,
+                tools: openRouterTools,
+                tool_choice: 'auto',
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData?.error?.message || `OpenRouter errore HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const choice = data.choices?.[0];
+        if (!choice) throw new Error('Nessuna risposta da OpenRouter');
+
+        const message = choice.message;
+
+        // If the model made tool calls, execute them and continue
+        if (message.tool_calls && message.tool_calls.length > 0) {
+            // Add assistant message with tool calls
+            openaiMessages.push(message);
+
+            // Execute each tool call
+            for (const toolCall of message.tool_calls) {
+                const fnName = toolCall.function.name;
+                let fnArgs: any = {};
+                try { fnArgs = JSON.parse(toolCall.function.arguments); } catch { /* ignore */ }
+
+                let result: string;
+                try {
+                    result = await executeToolCall(fnName, fnArgs);
+                } catch (e: any) {
+                    result = JSON.stringify({ error: e.message });
+                }
+
+                openaiMessages.push({
+                    role: 'tool',
+                    content: result,
+                    tool_call_id: toolCall.id,
+                } as any);
+            }
+            continue; // Next round
+        }
+
+        // No tool calls - return the final text response
+        return message.content || 'Nessuna risposta.';
+    }
+
+    return 'Ho raggiunto il limite massimo di iterazioni per i tool. Riprova con una domanda piu\' specifica.';
 }

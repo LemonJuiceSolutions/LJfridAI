@@ -41,6 +41,8 @@ export async function POST(
 
         const result = await diagnoseProblemAction(
             {
+                id: id, // Pass the tree ID as context ID
+                userState: {}, // Default empty state
                 userProblem: question,
                 history: history || '',
                 currentAnswer: currentAnswer || '',
@@ -48,6 +50,7 @@ export async function POST(
             },
             openRouterConfig
         );
+
 
         if (result.error) {
             return NextResponse.json({ success: false, error: result.error }, { status: 500 });

@@ -154,7 +154,7 @@ export const useAvailableWidgets = () => {
                                     const widgetId = `python-preview-${tree.id}-${nodeId}`;
                                     const previewType = node.pythonPreviewResult.type;
                                     const typeLabel = previewType === 'chart' ? 'Grafico' :
-                                                    previewType === 'table' ? 'Tabella' : 'Variabile';
+                                        previewType === 'table' ? 'Tabella' : 'Variabile';
                                     dynamicWidgets[widgetId] = {
                                         id: widgetId,
                                         name: `Python ${typeLabel}: ${node.pythonResultName} (${tree.name})`,

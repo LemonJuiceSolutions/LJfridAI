@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { userMessage, conversationId } = body;
+        const { userMessage, conversationId, model } = body;
 
         if (!userMessage) {
             return NextResponse.json({ error: 'Missing required field: userMessage' }, { status: 400 });
@@ -36,7 +36,15 @@ export async function POST(request: NextRequest) {
                 where: { id: conversationId },
             });
             if (existingConversation && existingConversation.companyId === user.company.id) {
-                conversationHistory = existingConversation.messages as any[];
+                // Only keep user/model messages (strip tool calls/responses to save tokens)
+                const allMessages = existingConversation.messages as any[];
+                conversationHistory = allMessages.filter(
+                    (m: any) => m.role === 'user' || m.role === 'model'
+                );
+                // Keep only last 20 messages to avoid token overflow
+                if (conversationHistory.length > 20) {
+                    conversationHistory = conversationHistory.slice(-20);
+                }
             }
         }
 
@@ -53,15 +61,15 @@ export async function POST(request: NextRequest) {
         const response = await superAgentFlow({
             messages: genkitMessages,
             companyId: user.company.id,
+            model: model || undefined,
+            apiKey: (user as any).openRouterApiKey || undefined,
         });
 
-        // Update conversation history with the new exchange
+        // Save only user/model messages (no tool calls) to keep conversation compact
         const updatedHistory = [
-            ...genkitMessages,
-            {
-                role: 'model',
-                content: [{ text: response }],
-            },
+            ...conversationHistory,
+            { role: 'user', content: [{ text: userMessage }] },
+            { role: 'model', content: [{ text: response }] },
         ];
 
         // Save conversation

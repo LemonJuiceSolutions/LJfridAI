@@ -11,73 +11,71 @@ async function getSession() {
 
 export async function getPageLayout(pageId: string) {
     const session = await getSession();
-    if (!session?.user || !(session.user as any).companyId) {
-        return null;
-    }
-
-    const companyId = (session.user as any).companyId;
-    const userId = (session.user as any).id;
+    if (!session?.user?.email) return null;
 
     try {
-        const layout = await db.pageLayout.findFirst({
+        const user = await db.user.findUnique({
+            where: { email: session.user.email },
+            include: { company: true }
+        });
+
+        if (!user?.companyId) return null;
+
+        const layout = await db.pageLayout.findUnique({
             where: {
-                companyId,
-                pageId,
-                userId
+                companyId_pageId_userId: {
+                    companyId: user.companyId,
+                    pageId,
+                    userId: user.id
+                }
             }
         });
 
-        if (!layout) return null;
-
-        return {
-            layouts: layout.layouts,
-            items: layout.items
-        };
+        return layout;
     } catch (error) {
-        console.error("Failed to load page layout:", error);
+        console.error(`Error fetching layout for ${pageId}:`, error);
         return null;
     }
 }
 
-export async function savePageLayout(pageId: string, layouts: any, items: any): Promise<{ success: boolean; error?: string }> {
+export async function savePageLayout(pageId: string, layouts: any, items: any) {
     const session = await getSession();
-    if (!session?.user || !(session.user as any).companyId) {
-        return { success: false, error: "Unauthorized" };
-    }
-
-    const companyId = (session.user as any).companyId;
-    const userId = (session.user as any).id;
-
-    // specific restriction: prevent overwriting if not allowed?
-    // for now, allow user to save their own layout.
+    if (!session?.user?.email) return { success: false, error: "Unauthorized" };
 
     try {
+        const user = await db.user.findUnique({
+            where: { email: session.user.email },
+            include: { company: true }
+        });
+
+        if (!user?.companyId) return { success: false, error: "User or company not found" };
+
         await db.pageLayout.upsert({
             where: {
                 companyId_pageId_userId: {
-                    companyId,
+                    companyId: user.companyId,
                     pageId,
-                    userId
+                    userId: user.id
                 }
             },
-            create: {
-                companyId,
-                userId,
-                pageId,
-                layouts: layouts || {},
-                items: items || []
-            },
             update: {
-                layouts: layouts || {},
-                items: items || []
+                layouts,
+                items,
+                updatedAt: new Date()
+            },
+            create: {
+                companyId: user.companyId,
+                pageId,
+                userId: user.id,
+                layouts,
+                items
             }
         });
 
-        revalidatePath(`/${pageId}`);
+        revalidatePath('/dashboard');
         return { success: true };
     } catch (error) {
-        console.error("Failed to save page layout:", error);
-        // Return error instead of throwing to prevent client crash
-        return { success: false, error: "Database unavailable" };
+        console.error(`Error saving layout for ${pageId}:`, error);
+        return { success: false, error: "Failed to save layout" };
     }
 }

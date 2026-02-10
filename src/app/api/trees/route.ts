@@ -48,7 +48,8 @@ export async function POST(request: NextRequest) {
             ? { apiKey: openRouterApiKey, model: openRouterModel || 'google/gemini-2.0-flash-001' }
             : undefined;
 
-        const result = await processDescriptionAction(description, openRouterConfig);
+        const result = await processDescriptionAction(description, 'Nuovo Albero AI', 'RULE', openRouterConfig);
+
 
         if (result.error) {
             return NextResponse.json({ success: false, error: result.error }, { status: 500 });

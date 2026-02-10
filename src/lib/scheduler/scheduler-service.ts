@@ -188,6 +188,10 @@ export class SchedulerService {
     }
   }
 
+  public async triggerTask(taskId: string): Promise<TaskExecutionResult> {
+    return this.executeTask(taskId);
+  }
+
   public async executeTask(taskId: string): Promise<TaskExecutionResult> {
     // Concurrency guard: skip if this task is already running
     if (this.runningTasks.has(taskId)) {

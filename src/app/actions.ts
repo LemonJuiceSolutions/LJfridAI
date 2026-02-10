@@ -895,10 +895,12 @@ export async function getConnectorsAction() {
 
 // --- AI DIAGNOSIS ACTION ---
 export interface DiagnoseProblemActionInput {
-    id: string; // Add id property
+    id: string;
     decisionTree: StoredTree;
     userState: Record<string, any>;
-    history: { speaker: 'user' | 'bot', text: string }[];
+    userProblem?: string;
+    currentAnswer?: string;
+    history: string | { speaker: 'user' | 'bot', text: string }[];
 }
 
 export async function diagnoseProblemAction(input: Omit<DiagnoseProblemActionInput, 'decisionTree'> & { specificTreeId?: string; previousNodeId?: string }, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: DiagnoseProblemOutput | null; error: string | null; }> {
@@ -941,11 +943,19 @@ FORMATO RISPOSTA (JSON):
   "treeName": "Nome dell'albero usato (opzionale)"
 }`;
 
-        const userPrompt = `Stato Utente: ${JSON.stringify(input.userState)}
+        // Handle both string and array history
+        const formattedHistory = Array.isArray(input.history)
+            ? input.history.map(h => `${h.speaker.toUpperCase()}: ${h.text}`).join('\n')
+            : input.history;
+
+        const userPrompt = `Stato Utente: ${JSON.stringify(input.userState || {})}
+Problema Iniziale: ${input.userProblem || ''}
+Risposta Corrente: ${input.currentAnswer || ''}
 Cronologia Chat:
-${input.history.map(h => `${h.speaker.toUpperCase()}: ${h.text}`).join('\n')}
+${formattedHistory}
 
 Diagnostica il prossimo passo.`;
+
 
         let diagnosisOutput: DiagnoseProblemOutput | null = null;
 

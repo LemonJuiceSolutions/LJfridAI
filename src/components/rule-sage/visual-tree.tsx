@@ -375,7 +375,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     const flattenTree = useCallback((node: any, path: string, list: any[], visitedTrees: Set<string> = new Set()) => {
         if (!node) return;
 
-        const id = path; // Using path as unique ID to prevent collisions across sub-trees
+        // FIX: Prefer node.id for addressing to match layout engine (which uses UUIDs), fallback to path for legacy/string nodes
+        const id = (typeof node === 'object' && node !== null && node.id) ? node.id : path;
+
         let text: string;
 
         if (typeof node === 'string') {
