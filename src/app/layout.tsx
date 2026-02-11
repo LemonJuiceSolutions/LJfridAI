@@ -4,6 +4,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { ChatBotAgent } from '@/components/layout/chatbot-agent';
 import { AuthProvider } from '@/components/providers/auth-provider';
+import { LayoutProvider } from '@/components/providers/layout-provider';
+import { MainContentTransition } from '@/components/layout/main-content-transition';
 import { Inter } from 'next/font/google';
 
 const inter = Inter({
@@ -25,18 +27,18 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={inter.variable}>
       <body suppressHydrationWarning className={`${inter.className} antialiased bg-background text-foreground selection:bg-primary/30`}>
-        <AuthProvider>
-          <div className="flex min-h-screen">
-            <SidebarNav />
-            <div className="flex-1 flex flex-col min-w-0 ml-64 mr-96 transition-all duration-300">
-              <main className="flex-1 p-6 lg:p-10 max-w-5xl mx-auto w-full">
+        <LayoutProvider>
+          <AuthProvider>
+            <div className="flex min-h-screen">
+              <SidebarNav />
+              <MainContentTransition>
                 {children}
-              </main>
+              </MainContentTransition>
+              <ChatBotAgent />
             </div>
-            <ChatBotAgent />
-          </div>
-          <Toaster />
-        </AuthProvider>
+            <Toaster />
+          </AuthProvider>
+        </LayoutProvider>
       </body>
     </html>
   );

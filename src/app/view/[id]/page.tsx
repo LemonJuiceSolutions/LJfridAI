@@ -203,7 +203,7 @@ export default function ViewTreePage() {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <header className="sticky top-0 z-10 w-full border-b bg-background/80 backdrop-blur-sm">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
+        <div className="w-full flex h-16 items-center justify-between px-4 md:px-6">
           <div className="flex items-center gap-2">
             <Link href="/" className="flex items-center gap-2">
               <div className="h-7 w-7 relative shrink-0">
@@ -219,7 +219,7 @@ export default function ViewTreePage() {
         </div>
       </header>
       <main className="flex-1 py-8">
-        <div className="container mx-auto px-4 md:px-6">
+        <div className="w-full px-4 md:px-6">
           {isLoading && (
             <Card>
               <CardHeader>
@@ -296,7 +296,7 @@ export default function ViewTreePage() {
         </div>
       </main>
       <footer className="border-t">
-        <div className="container mx-auto flex h-14 items-center justify-center px-4 md:px-6">
+        <div className="w-full flex h-14 items-center justify-center px-4 md:px-6">
           <p className="text-sm text-muted-foreground">FridAI &copy; {new Date().getFullYear()}</p>
         </div>
       </footer>

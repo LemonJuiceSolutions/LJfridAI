@@ -2966,27 +2966,9 @@ function recursiveTreeUpdateById(
 }
 
 
-export async function deleteTreeAction(id: string): Promise<{ success: boolean, error: string | null }> {
-    try {
-        await db.tree.delete({ where: { id } });
-        return { success: true, error: null };
-    } catch (e) {
-        const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante l'eliminazione.";
-        console.error("Error in deleteTreeAction: ", e);
-        return { success: false, error };
-    }
-}
 
-export async function deleteAllTreesAction(): Promise<{ success: boolean, error: string | null }> {
-    try {
-        await db.tree.deleteMany();
-        return { success: true, error: null };
-    } catch (e) {
-        const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante l'eliminazione di massa.";
-        console.error("Error in deleteAllTreesAction: ", e);
-        return { success: false, error };
-    }
-}
+
+
 
 export async function mergeVariablesAction(
     sourceVariableId: string,

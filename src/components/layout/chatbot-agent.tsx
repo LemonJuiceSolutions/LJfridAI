@@ -232,9 +232,11 @@ function InlineChart({ config }: { config: any }) {
     );
 }
 
+import { useLayout } from '@/components/providers/layout-provider';
+
 export function ChatBotAgent() {
     const { toast } = useToast();
-    const [isOpen, setIsOpen] = useState(true);
+    const { isChatbotOpen, toggleChatbot, setChatbotOpen } = useLayout();
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -430,10 +432,10 @@ export function ChatBotAgent() {
         }
     };
 
-    if (!isOpen) {
+    if (!isChatbotOpen) {
         return (
             <Button
-                onClick={() => setIsOpen(true)}
+                onClick={() => setChatbotOpen(true)}
                 className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-2xl animate-in fade-in zoom-in duration-300 z-50 group overflow-hidden bg-gradient-to-br from-primary to-purple-600"
             >
                 <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -492,7 +494,7 @@ export function ChatBotAgent() {
                             <Button variant="ghost" size="icon" onClick={clearChat} className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive">
                                 <Trash2 className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)} className="h-8 w-8 rounded-lg">
+                            <Button variant="ghost" size="icon" onClick={() => setChatbotOpen(false)} className="h-8 w-8 rounded-lg">
                                 <X className="h-4 w-4" />
                             </Button>
                         </div>

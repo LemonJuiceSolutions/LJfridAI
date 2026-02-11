@@ -16,6 +16,7 @@ import LinkNodeDialog from './link-node-dialog';
 import { nanoid } from 'nanoid';
 import { Badge } from '../ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { ToastAction } from '@/components/ui/toast';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { updateVariableAction, updateTreeNodeAction, getTreeAction } from '@/app/actions';
@@ -567,7 +568,40 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 const dbVar = dbVariables.find(v => v.id === varId);
 
                 if (!dbVar) {
-                    toast({ variant: 'destructive', title: "Errore Variabile", description: `Variabile standard (${varId}) non trovata nel database. Prova a ricaricare.` });
+                    toast({
+                        variant: 'destructive',
+                        title: "Errore Variabile",
+                        description: `Variabile standard (${varId}) non trovata. È possibile che sia stata eliminata dal database.`,
+                        action: (
+                            <ToastAction altText="Scollega Variabile" onClick={async () => {
+                                try {
+                                    // Remove variableId from parent node to convert to local
+                                    const updatedParentNode = { ...parentNode };
+                                    delete updatedParentNode.variableId;
+
+                                    // Also remove optionId references from children options if they exist/matter
+                                    // But mainly we just cut the link to the global variable
+
+                                    const result = await updateTreeNodeAction({
+                                        treeId: treeData.id,
+                                        nodePath: parentPath,
+                                        nodeData: JSON.stringify(updatedParentNode)
+                                    });
+
+                                    if (result.success) {
+                                        toast({ title: "Variabile Scollegata", description: "Il nodo è stato convertito in domanda locale." });
+                                        if (onDataRefresh) onDataRefresh();
+                                    } else {
+                                        throw new Error(result.error || "Operazione fallita");
+                                    }
+                                } catch (e) {
+                                    toast({ variant: 'destructive', title: "Errore", description: "Impossibile scollegare la variabile." });
+                                }
+                            }}>
+                                Scollega
+                            </ToastAction>
+                        )
+                    });
                     return;
                 }
 

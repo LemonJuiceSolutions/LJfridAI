@@ -54,14 +54,32 @@ const fridaiNavItems = [
 import * as LucideIcons from 'lucide-react';
 import { useNavigation } from '@/hooks/use-navigation';
 
+import { useLayout } from '@/components/providers/layout-provider';
+
 export function SidebarNav() {
     const pathname = usePathname();
     const { data: session } = useSession();
     const { editMode, setEditMode } = useEditMode();
     const { navItems, settingsNavItems, isLoading } = useNavigation();
+    const { isSidebarOpen, toggleSidebar } = useLayout();
+
+    if (!isSidebarOpen) {
+        return (
+            <aside className="fixed left-0 top-0 z-40 h-screen w-0 border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-all duration-300 overflow-hidden">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-4 left-4 z-50 h-8 w-8 bg-background border shadow-sm hover:bg-accent"
+                    onClick={toggleSidebar}
+                >
+                    <ChevronRight className="h-4 w-4" />
+                </Button>
+            </aside>
+        );
+    }
 
     return (
-        <aside className="fixed left-0 top-0 z-40 h-screen w-56 border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+        <aside className="fixed left-0 top-0 z-40 h-screen w-56 border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-all duration-300">
             <div className="flex h-full flex-col">
                 {/* Logo and Edit Toggle */}
                 <div className="flex h-14 items-center justify-between border-b border-slate-100 dark:border-zinc-800 px-4">

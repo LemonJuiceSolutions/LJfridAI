@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTreeAction, deleteTreeAction } from '@/app/actions';
+import { getTreeAction } from '@/app/actions';
+import { deleteTreeAction } from '@/app/actions/tree';
 
 /**
  * GET /api/trees/:id - Get a specific tree by ID

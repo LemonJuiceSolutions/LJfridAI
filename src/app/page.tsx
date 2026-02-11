@@ -9,7 +9,8 @@ import { PlusCircle, Loader2, ListTree, Download, Bot, Database, Trash2, Search,
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { deleteAllTreesAction, deleteTreeAction, getTreesAction, importTreeFromJsonAction } from './actions';
+import { getTreesAction, importTreeFromJsonAction } from './actions';
+import { deleteAllTreesAction, deleteTreeAction } from './actions/tree';
 import type { StoredTree } from '@/lib/types';
 import { BrainCircuit, MessageSquareText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';

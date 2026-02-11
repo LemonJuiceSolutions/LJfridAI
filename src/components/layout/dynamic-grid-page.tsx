@@ -31,7 +31,8 @@ import { getPageLayout, savePageLayout } from '@/actions/dashboard';
 import { useSession } from 'next-auth/react';
 import { useToast } from '@/hooks/use-toast';
 
-const ResponsiveGridLayout = WidthProvider(Responsive);
+// Remove WidthProvider
+// const ResponsiveGridLayout = WidthProvider(Responsive);
 
 export type Widget = {
     id: string;
@@ -117,6 +118,25 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     const [widgetToDelete, setWidgetToDelete] = useState<string | null>(null);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [width, setWidth] = useState(1200);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+
+    // Robust ResizeObserver to handle container width changes
+    useLayoutEffect(() => {
+        if (!containerRef.current) return;
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.contentRect) {
+                    // Subtracting a small buffer or using contentRect.width directly
+                    setWidth(entry.contentRect.width);
+                }
+            }
+        });
+
+        resizeObserver.observe(containerRef.current);
+        return () => resizeObserver.disconnect();
+    }, []);
 
     useEffect(() => {
         setIsComponentMounted(true);
@@ -425,60 +445,65 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
                     </Button>
                 </div>
             )}
-            <ResponsiveGridLayout
-                className="layout"
-                layouts={layouts}
-                breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-                cols={{ lg: 48, md: 20, sm: 12, xs: 8, xxs: 4 }}
-                rowHeight={20}
-                onLayoutChange={handleLayoutChange}
-                isDraggable={editMode}
-                isResizable={editMode}
-                draggableHandle=".drag-handle"
-                compactType="vertical"
-                preventCollision={false}
-                isBounded={false}
-                allowOverlap={false}
-                measureBeforeMount={false}
-            >
-                {items.map(item => (
-                    <div key={item.id} className={gridItemClasses(editMode)}>
-                        {editMode && (
-                            <>
-                                <GripVertical className="absolute top-2 left-2 h-5 w-5 text-primary/50 cursor-move drag-handle z-10" />
-                                <Button
-                                    variant="destructive"
-                                    size="icon"
-                                    className="absolute top-1 right-1 h-6 w-6 z-10"
-                                    onClick={() => removeWidget(item.id)}
-                                >
-                                    <Trash2 className="h-3 w-3" />
-                                </Button>
-                            </>
-                        )}
-                        {renderWidget(item)}
-                    </div>
-                ))}
+            <div ref={containerRef} className="w-full">
+                <Responsive
+                    width={width} // Explicit width from ResizeObserver
+                    className="layout"
+                    layouts={layouts}
+                    breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+                    cols={{ lg: 48, md: 20, sm: 12, xs: 8, xxs: 4 }}
+                    rowHeight={20}
+                    onLayoutChange={handleLayoutChange}
+                    isDraggable={editMode}
+                    isResizable={editMode}
+                    draggableHandle=".drag-handle"
+                    compactType="vertical"
+                    preventCollision={false}
+                    isBounded={false}
+                    allowOverlap={false}
+                    measureBeforeMount={false}
+                    margin={[20, 20]}
+                    containerPadding={[20, 20]}
+                >
+                    {items.map(item => (
+                        <div key={item.id} className={gridItemClasses(editMode)}>
+                            {editMode && (
+                                <>
+                                    <GripVertical className="absolute top-2 left-2 h-5 w-5 text-primary/50 cursor-move drag-handle z-10" />
+                                    <Button
+                                        variant="destructive"
+                                        size="icon"
+                                        className="absolute top-1 right-1 h-6 w-6 z-10"
+                                        onClick={() => removeWidget(item.id)}
+                                    >
+                                        <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                </>
+                            )}
+                            {renderWidget(item)}
+                        </div>
+                    ))}
 
-            </ResponsiveGridLayout>
+                </Responsive>
 
-            {/* Confirmation dialog for hiding widgets */}
-            <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Nascondi widget</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            Sei sicuro di voler nascondere questo widget dalla lista? Potrai ripristinarlo in seguito cliccando su "Mostra tutti i widget nascosti".
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel onClick={cancelHideWidget}>Annulla</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmHideWidget} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                            Nascondi
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                {/* Confirmation dialog for hiding widgets */}
+                <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Nascondi widget</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                Sei sicuro di voler nascondere questo widget dalla lista? Potrai ripristinarlo in seguito cliccando su "Mostra tutti i widget nascosti".
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel onClick={cancelHideWidget}>Annulla</AlertDialogCancel>
+                            <AlertDialogAction onClick={confirmHideWidget} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                Nascondi
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </div>
         </div>
     );
 }
