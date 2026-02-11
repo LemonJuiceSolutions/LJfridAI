@@ -195,12 +195,30 @@ const getTableSchema = (selectedPipelines: string[], availableInputTables: any[]
 
   selectedPipelines.forEach(pipelineName => {
     const table = availableInputTables.find(t => t.name === pipelineName);
-    if (table && table.pipelineDependencies) {
+    if (!table) return;
+
+    // 1. Add the main table itself (the pipeline result)
+    // If it has data, we can infer schema from the first row key
+    if (table.data && Array.isArray(table.data) && table.data.length > 0) {
+      schema[table.name] = Object.keys(table.data[0]);
+    }
+    // Fallback: try to match columns from sqlQuery if available
+    else if (table.sqlQuery) {
+      const cols = extractColumnsFromQuery(table.sqlQuery);
+      if (cols.length > 0) {
+        schema[table.name] = cols;
+      }
+    }
+
+    // 2. Add dependencies (tables used BY this pipeline)
+    if (table.pipelineDependencies) {
       table.pipelineDependencies.forEach((dep: any) => {
         if (dep.query) {
           // Extract columns from SQL query
           const columns = extractColumnsFromQuery(dep.query);
-          schema[dep.tableName || pipelineName] = columns;
+          if (columns.length > 0) {
+            schema[dep.tableName || pipelineName] = columns;
+          }
         }
       });
     }
@@ -214,12 +232,19 @@ const getInputTables = (selectedPipelines: string[], availableInputTables: any[]
 
   selectedPipelines.forEach(pipelineName => {
     const table = availableInputTables.find(t => t.name === pipelineName);
-    if (table && table.pipelineDependencies) {
+    if (!table) return;
+
+    // 1. Add the main table itself if it has data
+    if (table.data && Array.isArray(table.data)) {
+      tables[table.name] = table.data;
+    }
+
+    // 2. Add dependencies that might have data (though usually only ancestors do)
+    if (table.pipelineDependencies) {
       table.pipelineDependencies.forEach((dep: any) => {
-        if (dep.query) {
-          // Fetch sample data for table
-          tables[dep.tableName || pipelineName] = table.data || [];
-        }
+        // Note: dependencies don't usually carry data in this structure, 
+        // but if we had it, we'd add it here.
+        // For now, we mainly rely on the main table result or explicit ancestor data.
       });
     }
   });

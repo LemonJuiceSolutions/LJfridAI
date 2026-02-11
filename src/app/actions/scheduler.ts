@@ -608,3 +608,66 @@ export async function deleteNodeScheduleByTypeAction(treeId: string, nodeId: str
     }
 }
 
+
+/**
+ * Get ALL schedules for a tree (to display indicators in VisualTree)
+ * Returns a set of nodeIds that have at least one active schedule
+ */
+export async function getTreeSchedulesAction(treeId: string) {
+    try {
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return { success: false, message: 'Non autenticato', data: [] };
+        }
+
+        const namePrefix = `Node-${treeId}-`;
+
+        const tasks = await db.scheduledTask.findMany({
+            where: {
+                companyId: user.companyId,
+                name: { startsWith: namePrefix },
+                status: 'active'
+            },
+            select: {
+                name: true,
+                config: true
+            }
+        });
+
+        const scheduledNodeIds = new Set<string>();
+
+        for (const task of tasks) {
+            // diverse strategie per estrarre il nodeId
+            let nodeId: string | undefined;
+
+            // 1. Dal config (metodo più affidabile se popolato)
+            if (task.config && typeof task.config === 'object' && 'nodeId' in task.config) {
+                nodeId = (task.config as any).nodeId;
+            }
+
+            // 2. Dal nome (backup)
+            if (!nodeId) {
+                // Format: Node-{treeId}-{nodeId} ({TYPE})
+                // Remove prefix
+                const withoutPrefix = task.name.substring(namePrefix.length);
+                // Remove suffix type part
+                const typeIndex = withoutPrefix.lastIndexOf(' (');
+                if (typeIndex > 0) {
+                    nodeId = withoutPrefix.substring(0, typeIndex);
+                } else {
+                    nodeId = withoutPrefix;
+                }
+            }
+
+            if (nodeId) {
+                scheduledNodeIds.add(nodeId);
+            }
+        }
+
+        return { success: true, data: Array.from(scheduledNodeIds) };
+    } catch (error: any) {
+        console.error('Error fetching tree schedules:', error);
+        return { success: false, message: error.message, data: [] };
+    }
+}
+
