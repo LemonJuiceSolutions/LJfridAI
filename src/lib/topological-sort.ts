@@ -19,7 +19,7 @@ export interface Node {
   // Python specific
   pythonCode?: string;
   pythonResultName?: string;
-  pythonOutputType?: 'table' | 'chart' | 'text';
+  pythonOutputType?: 'table' | 'variable' | 'chart' | 'html';
   pythonConnectorId?: string;
   // Email specific
   emailTemplate?: string;
@@ -67,7 +67,7 @@ export function topologicalSort(nodes: Node[], edges: Edge[]): Node[] {
   for (const node of nodes) {
     inDegree.set(node.id, 0);
   }
-  
+
   for (const edge of edges) {
     inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1);
   }
@@ -141,16 +141,16 @@ export function calculateDepths(nodes: Node[], edges: Edge[]): Map<string, numbe
     if (visited.has(nodeId)) {
       return depths.get(nodeId) || 0;
     }
-    
+
     visited.add(nodeId);
     const sources = reverseAdj.get(nodeId) || [];
     let maxDepth = 0;
-    
+
     for (const sourceId of sources) {
       const sourceDepth = dfs(sourceId, visited);
       maxDepth = Math.max(maxDepth, sourceDepth + 1);
     }
-    
+
     depths.set(nodeId, maxDepth);
     return maxDepth;
   };
@@ -187,7 +187,7 @@ export function sortByDepth(nodes: Node[], depths: Map<string, number>): Node[] 
 export function detectCycles(nodes: Node[], edges: Edge[]): string[] {
   const nodeSet = new Set(nodes.map(n => n.id));
   const adj = new Map<string, string[]>();
-  
+
   // Build adjacency list
   for (const node of nodes) {
     adj.set(node.id, []);

@@ -119,7 +119,7 @@ export async function executeSqlPreviewAction(query: string, connectorId: string
         if (!connector || connector.type !== 'SQL') {
             return { error: 'Connettore non trovato o non valido' };
         }
-        
+
         // Validate and parse connector config
         let conf: any = null;
         try {
@@ -127,7 +127,7 @@ export async function executeSqlPreviewAction(query: string, connectorId: string
                 console.error("[CONNECTOR] Invalid connector config:", connector.config);
                 return { error: 'Configurazione connettore non valida' };
             }
-            
+
             conf = JSON.parse(connector.config);
         } catch (parseError: any) {
             console.error("[CONNECTOR] Failed to parse connector config:", parseError);
@@ -434,7 +434,7 @@ export async function sendTestEmailWithDataAction(params: {
         name: string;
         displayName?: string;
         code: string;
-        outputType: 'table' | 'variable' | 'chart';
+        outputType: 'table' | 'variable' | 'chart' | 'html';
         connectorId?: string;
         inBody: boolean;
         asAttachment: boolean;
@@ -804,8 +804,9 @@ export async function sendTestEmailWithDataAction(params: {
             data?: any[];
             chartBase64?: string;
             chartHtml?: string;
+            html?: string;
             variables?: Record<string, any>;
-            type: 'table' | 'variable' | 'chart';
+            type: 'table' | 'variable' | 'chart' | 'html';
         }> = [];
 
         if (params.selectedPythonOutputs && params.selectedPythonOutputs.length > 0) {
@@ -828,6 +829,7 @@ export async function sendTestEmailWithDataAction(params: {
                             data: preRes.data || (Array.isArray(preRes) ? preRes : []),
                             chartBase64: preRes.chartBase64,
                             chartHtml: preRes.chartHtml,
+                            html: preRes.html,
                             variables: preRes.variables,
                             type: pyOutput.outputType
                         });
@@ -865,6 +867,7 @@ export async function sendTestEmailWithDataAction(params: {
                             data: result.data,
                             chartBase64: result.chartBase64,
                             chartHtml: result.chartHtml,
+                            html: result.html,
                             variables: result.variables,
                             type: pyOutput.outputType
                         });
@@ -1037,6 +1040,30 @@ export async function sendTestEmailWithDataAction(params: {
             return `<p><em>Tabella ${tableName} non trovata</em></p>`;
         });
 
+        // Replace HTML placeholders: {{HTML:nome}}
+        processedBody = processedBody.replace(/\{\{HTML:([^}]+)\}\}/g, (match, htmlName) => {
+            const htmlResult = pythonResults.find(p => p.name === htmlName);
+
+            // DEBUG LOGGING
+            console.log(`[EMAIL DEBUG] Processing placeholder {{HTML:${htmlName}}}`);
+            if (htmlResult) {
+                console.log(`[EMAIL DEBUG] Found result for ${htmlName}:`, {
+                    type: htmlResult.type,
+                    hasHtml: !!htmlResult.html,
+                    htmlLength: htmlResult.html?.length || 0,
+                    keys: Object.keys(htmlResult)
+                });
+            } else {
+                console.log(`[EMAIL DEBUG] No result found for ${htmlName}. Available results:`, pythonResults.map(p => p.name));
+            }
+
+            if (htmlResult && htmlResult.type === 'html' && htmlResult.html) {
+                console.log(`[EMAIL DEBUG] Replacing placeholder {{HTML:${htmlName}}} with HTML content`);
+                return `<div class="html-section">${htmlResult.html}</div>`;
+            }
+            return `<p style="color: #ef4444;"><em>⚠️ HTML ${htmlName} non trovato o vuoto</em></p>`;
+        });
+
 
 
         // Replace chart placeholders: {{GRAFICO:nome}}
@@ -1081,7 +1108,17 @@ export async function sendTestEmailWithDataAction(params: {
 
         // Add Python outputs marked inBody but not inserted via placeholder
         for (const pyResult of pythonResults) {
-            if (pyResult.inBody && !params.bodyHtml?.includes(`{{GRAFICO:${pyResult.name}}}`)) {
+            if (pyResult.inBody) {
+                // Check if already inserted via placeholder
+                const isChartInserted = pyResult.type === 'chart' && params.bodyHtml?.includes(`{{GRAFICO:${pyResult.name}}`);
+                const isHtmlInserted = pyResult.type === 'html' && params.bodyHtml?.includes(`{{HTML:${pyResult.name}}`);
+                const isTableInserted = pyResult.type === 'table' && params.bodyHtml?.includes(`{{TABELLA:${pyResult.name}}`);
+
+                if (isChartInserted || isHtmlInserted || isTableInserted) {
+                    console.log(`[EMAIL DEBUG] Skipping auto-append for ${pyResult.name} (already in body via placeholder)`);
+                    continue;
+                }
+
                 if (pyResult.type === 'chart' && pyResult.chartBase64) {
                     const cid = `chart_fallback_${pyResult.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
                     console.log(`[EMAIL DEBUG] Adding fallback chart ${pyResult.name} as CID: ${cid}`);
@@ -1098,6 +1135,8 @@ export async function sendTestEmailWithDataAction(params: {
                     fullHtml += generateTableHtml(pyResult.displayName || pyResult.name, pyResult.data);
                 } else if (pyResult.type === 'variable' && pyResult.variables) {
                     fullHtml += `<div class="table-section"><div class="table-title">${pyResult.displayName || pyResult.name}</div><pre style="background: #f8fafc; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px; border: 1px solid #e5e7eb;">${JSON.stringify(pyResult.variables, null, 2)}</pre></div>`;
+                } else if (pyResult.type === 'html' && pyResult.html) {
+                    fullHtml += `<div class="table-section"><div class="table-title">${pyResult.displayName || pyResult.name}</div><div style="margin: 10px 0;">${pyResult.html}</div></div>`;
                 }
             }
         }
@@ -1260,6 +1299,16 @@ export async function sendTestEmailWithDataAction(params: {
                         filename: `${pyResult.name}.xlsx`,
                         content: buffer,
                         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    });
+                } else if (pyResult.type === 'html' && pyResult.html) {
+                    // Attach HTML content as .html file
+                    const buffer = Buffer.from(pyResult.html, 'utf8');
+                    console.log(`[EMAIL DEBUG] HTML file ${pyResult.name}.html size: ${(buffer.length / 1024).toFixed(2)} KB`);
+
+                    attachments.push({
+                        filename: `${pyResult.name}.html`,
+                        content: buffer,
+                        contentType: 'text/html'
                     });
                 }
             }

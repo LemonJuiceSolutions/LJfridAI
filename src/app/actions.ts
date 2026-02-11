@@ -1831,12 +1831,12 @@ STRICT RULES:
 
 export async function executePythonPreviewAction(
     code: string,
-    outputType: 'table' | 'variable' | 'chart',
+    outputType: 'table' | 'variable' | 'chart' | 'html',
     inputData: Record<string, any[]> = {},
     dependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[] }[],
     connectorId?: string,
     _bypassAuth?: boolean
-): Promise<{ success: boolean; data?: any[]; columns?: string[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; rechartsConfig?: any; rechartsData?: any[]; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
+): Promise<{ success: boolean; data?: any[]; columns?: string[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; html?: string; rechartsConfig?: any; rechartsData?: any[]; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
     const debugLogs: string[] = [];
     const tStart = performance.now();
 
@@ -2130,6 +2130,12 @@ export async function executePythonPreviewAction(
                     chartHtml: result.chartHtml,
                     rechartsConfig: result.rechartsConfig,
                     rechartsData: result.rechartsData,
+                    stdout: result.stdout
+                };
+            } else if (outputType === 'html') {
+                return {
+                    success: true,
+                    html: result.html,
                     stdout: result.stdout
                 };
             }

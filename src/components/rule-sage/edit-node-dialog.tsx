@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Play, Database, FileCode, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info } from 'lucide-react';
+import { Play, Database, FileCode, FileCode2, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig } from '@/lib/types';
 import { Input } from '../ui/input';
@@ -251,7 +251,7 @@ interface EditNodeDialogProps {
   nodePath: string;
   treeId: string;
   isSaving: boolean;
-  availableInputTables?: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean }[];
+  availableInputTables?: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart' | 'html', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean }[];
   availableParentMedia?: MediaItem[];
   availableParentLinks?: LinkItem[];
   availableParentTriggers?: TriggerItem[];
@@ -365,18 +365,19 @@ export default function EditNodeDialog({
 
   const [pythonCode, setPythonCode] = useState('');
 
-  const [pythonOutputType, setPythonOutputType] = useState<'table' | 'variable' | 'chart'>('table');
+  const [pythonOutputType, setPythonOutputType] = useState<'table' | 'variable' | 'chart' | 'html'>('table');
   const [pythonResultName, setPythonResultName] = useState('');
   const [pipelineAgentStatus, setPipelineAgentStatus] = useState<string | null>(null);
   const [pipelineProgressStep, setPipelineProgressStep] = useState<number>(0); // 0=none, 1=dati, 2=python, 3=rendering
   const [hasPythonCodeChanged, setHasPythonCodeChanged] = useState(false);
   const [pythonPreviewResult, setPythonPreviewResult] = useState<{
-    type: 'table' | 'variable' | 'chart';
+    type: 'table' | 'variable' | 'chart' | 'html';
     data?: any[];
     columns?: string[];
     variables?: Record<string, any>;
     chartBase64?: string;
     chartHtml?: string;
+    html?: string;
     rechartsConfig?: any;
     rechartsData?: any[];
     debugLogs?: string[];
@@ -385,7 +386,7 @@ export default function EditNodeDialog({
   const [pythonConnectorId, setPythonConnectorId] = useState<string>('');
   const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
   const [pythonDebugLogs, setPythonDebugLogs] = useState<string[]>([]);
-  const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string, rechartsConfig?: any, rechartsData?: any[] } }[]>([]);
+  const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart' | 'html', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string, html?: string, rechartsConfig?: any, rechartsData?: any[] } }[]>([]);
   const [pythonPreviewExpanded, setPythonPreviewExpanded] = useState(true);
   const [pythonPreviewFullHeight, setPythonPreviewFullHeight] = useState(false);
 
@@ -617,12 +618,13 @@ export default function EditNodeDialog({
           chartHtml: savedPreviewData.chartHtml,
           rechartsConfig: savedPreviewData.rechartsConfig,
           rechartsData: savedPreviewData.rechartsData,
+          html: savedPreviewData.html,
           debugLogs: savedPreviewData.debugLogs,
           timestamp: savedPreviewData.timestamp
         });
-        // Auto-expand preview and set full height for charts if saved data exists
+        // Auto-expand preview and set full height for charts or html if saved data exists
         setPythonPreviewExpanded(true);
-        setPythonPreviewFullHeight(savedPreviewData.type === 'chart');
+        setPythonPreviewFullHeight(savedPreviewData.type === 'chart' || savedPreviewData.type === 'html');
       } else {
         setPythonPreviewResult(null);
         setPythonPreviewFullHeight(false);
@@ -1224,7 +1226,10 @@ export default function EditNodeDialog({
                   chartHtml: res.chartHtml,
                   rechartsConfig: res.rechartsConfig,
                   rechartsData: res.rechartsData,
-                  variables: res.variables
+                  rechartsConfig: res.rechartsConfig,
+                  rechartsData: res.rechartsData,
+                  variables: res.variables,
+                  html: res.html
                 };
               } else {
                 error = res.error || null;
@@ -1532,15 +1537,28 @@ export default function EditNodeDialog({
       }
 
       // Preserve preview data when saving node
-      // This ensures that SQL and Python previews are not lost when user saves the node
-      if ((initialNode as any).sqlPreviewData) {
+      // Use CURRENT state data if available, otherwise fallback to initial (though state should be up to date)
+      if (sqlPreviewData) {
+        newNodeData.sqlPreviewData = sqlPreviewData;
+        newNodeData.sqlPreviewTimestamp = sqlPreviewTimestamp;
+      } else if ((initialNode as any).sqlPreviewData) {
+        // Fallback to initial if state is empty but we had data (unlikely if we loaded it correctly)
         newNodeData.sqlPreviewData = (initialNode as any).sqlPreviewData;
-      }
-      if ((initialNode as any).sqlPreviewTimestamp) {
         newNodeData.sqlPreviewTimestamp = (initialNode as any).sqlPreviewTimestamp;
       }
-      if ((initialNode as any).pythonPreviewResult) {
+
+      if (pythonPreviewResult) {
+        newNodeData.pythonPreviewResult = pythonPreviewResult;
+      } else if ((initialNode as any).pythonPreviewResult) {
         newNodeData.pythonPreviewResult = (initialNode as any).pythonPreviewResult;
+      }
+
+      // Persist Chat Histories
+      if (sqlChatHistory.length > 0) {
+        newNodeData.sqlChatHistory = sqlChatHistory;
+      }
+      if (pythonChatHistory.length > 0) {
+        newNodeData.pythonChatHistory = pythonChatHistory;
       }
 
       onSave(nodePath, newNodeData);
@@ -2216,6 +2234,7 @@ export default function EditNodeDialog({
                         script={sqlQuery}
                         tableSchema={getTableSchema(selectedPipelines, availableInputTables)}
                         inputTables={getInputTables(selectedPipelines, availableInputTables)}
+                        connectorId={sqlConnectorId || undefined}
                         onScriptUpdate={(newScript) => {
                           setSqlQuery(newScript);
                           toast({ title: "Query Aggiornata", description: "L'editor SQL è stato aggiornato." });
@@ -2352,6 +2371,16 @@ export default function EditNodeDialog({
                         <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
                         Grafico
                       </Button>
+                      <Button
+                        type="button"
+                        variant={pythonOutputType === 'html' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setPythonOutputType('html')}
+                        className="flex-1"
+                      >
+                        <FileCode2 className="h-3.5 w-3.5 mr-1.5" />
+                        HTML
+                      </Button>
                     </div>
                   </div>
 
@@ -2477,6 +2506,7 @@ export default function EditNodeDialog({
                                     chartHtml: res.chartHtml,
                                     rechartsConfig: res.rechartsConfig,
                                     rechartsData: res.rechartsData,
+                                    html: res.html,
                                     debugLogs: res.debugLogs,
                                     timestamp: Date.now()
                                   });
@@ -2490,6 +2520,7 @@ export default function EditNodeDialog({
                                       variables: res.variables,
                                       chartBase64: res.chartBase64,
                                       chartHtml: res.chartHtml,
+                                      html: res.html,
                                       rechartsConfig: res.rechartsConfig,
                                       rechartsData: res.rechartsData,
                                       debugLogs: res.debugLogs,
@@ -2538,6 +2569,7 @@ export default function EditNodeDialog({
                         script={pythonCode}
                         tableSchema={getTableSchema(pythonSelectedPipelines, availableInputTables)}
                         inputTables={getInputTables(pythonSelectedPipelines, availableInputTables)}
+                        connectorId={pythonConnectorId || undefined}
                         onScriptUpdate={(newScript) => {
                           setPythonCode(newScript);
                           toast({ title: "Codice Aggiornato", description: "Lo script Python è stato aggiornato." });
@@ -2694,6 +2726,15 @@ export default function EditNodeDialog({
                           )}
                           {pythonPreviewResult.type === 'variable' && pythonPreviewResult.variables && (
                             <pre className="p-3 text-xs">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
+                          )}
+                          {pythonPreviewResult.type === 'html' && pythonPreviewResult.html && (
+                            <div className={`bg-white dark:bg-zinc-950 ${pythonPreviewFullHeight ? 'min-h-[500px]' : 'max-h-[400px] overflow-auto'}`}>
+                              <iframe
+                                srcDoc={`<html><head><style>body { margin: 0; padding: 10px; font-family: sans-serif; }</style></head><body>${pythonPreviewResult.html}</body></html>`}
+                                className="w-full border-none min-h-[400px]"
+                                title="HTML Preview"
+                              />
+                            </div>
                           )}
                           {pythonPreviewResult.type === 'chart' && (
                             <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 ${pythonPreviewFullHeight ? 'min-h-[500px]' : 'overflow-y-auto custom-scrollbar'}`} style={{ height: pythonPreviewFullHeight ? 'auto' : '400px' }}>
@@ -3239,6 +3280,7 @@ export default function EditNodeDialog({
                                         <Download className="h-3 w-3 mr-1" /> Inserisci
                                       </Button>
                                       <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        {/* Hidden "In Corpo" checkbox as per user request to simplify UI 
                                         <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
                                           <input
                                             type="checkbox"
@@ -3258,6 +3300,7 @@ export default function EditNodeDialog({
                                           />
                                           <span className="text-muted-foreground text-[10px]">In Corpo</span>
                                         </label>
+                                        */}
                                         <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
                                           <input
                                             type="checkbox"
@@ -3294,6 +3337,7 @@ export default function EditNodeDialog({
                                         <Download className="h-3 w-3 mr-1" /> Inserisci
                                       </Button>
                                       <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        {/* Hidden "In Corpo" checkbox as per user request to simplify UI 
                                         <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
                                           <input
                                             type="checkbox"
@@ -3313,6 +3357,7 @@ export default function EditNodeDialog({
                                           />
                                           <span className="text-muted-foreground text-[10px]">In Corpo</span>
                                         </label>
+                                        */}
                                         <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
                                           <input
                                             type="checkbox"
@@ -3401,7 +3446,18 @@ export default function EditNodeDialog({
                                           <Code className="h-3 w-3 mr-1" /> Variabile
                                         </Button>
                                       )}
+                                      {output.type === 'html' && (
+                                        <Button
+                                          variant="secondary"
+                                          size="sm"
+                                          className="h-6 text-[10px] px-1.5 flex-shrink-0"
+                                          onClick={() => editorRef.current?.insertPlaceholder('HTML', output.name)}
+                                        >
+                                          <Code className="h-3 w-3 mr-1" /> Inserisci
+                                        </Button>
+                                      )}
                                       <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        {/* Hidden "In Corpo" checkbox as per user request to simplify UI 
                                         <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
                                           <input
                                             type="checkbox"
@@ -3421,6 +3477,7 @@ export default function EditNodeDialog({
                                           />
                                           <span className="text-muted-foreground text-[10px]">In Corpo</span>
                                         </label>
+                                        */}
                                         <label className="flex items-center gap-1 cursor-pointer bg-muted/50 px-1.5 py-0.5 rounded hover:bg-muted whitespace-nowrap">
                                           <input
                                             type="checkbox"
@@ -3618,7 +3675,7 @@ export default function EditNodeDialog({
                                 name: string;
                                 displayName?: string;
                                 code: string;
-                                outputType: 'table' | 'variable' | 'chart';
+                                outputType: 'table' | 'variable' | 'chart' | 'html';
                                 connectorId?: string;
                                 inBody: boolean;
                                 asAttachment: boolean;
@@ -3629,10 +3686,11 @@ export default function EditNodeDialog({
                               const bodyContent = emailConfig.body || '';
                               const placeholderTableNames = (bodyContent.match(/\{\{TABELLA:([^}]+)\}\}/g) || []).map(m => m.replace(/\{\{TABELLA:|}\}/g, ''));
                               const placeholderChartNames = (bodyContent.match(/\{\{GRAFICO:([^}]+)\}\}/g) || []).map(m => m.replace(/\{\{GRAFICO:|}\}/g, ''));
+                              const placeholderHtmlNames = (bodyContent.match(/\{\{HTML:([^}]+)\}\}/g) || []).map(m => m.replace(/\{\{HTML:|}\}/g, ''));
                               const placeholderVarNames = (bodyContent.match(/\{\{VARIABILE:([^}]+)\}\}/g) || []).map(m => m.replace(/\{\{VARIABILE:|}\}/g, ''));
 
                               // All referenced names for Python selection
-                              const allReferencedPythonNames = [...placeholderTableNames, ...placeholderChartNames, ...placeholderVarNames];
+                              const allReferencedPythonNames = [...placeholderTableNames, ...placeholderChartNames, ...placeholderHtmlNames, ...placeholderVarNames];
 
                               // 1. Process SQL Results (Ancestors)
                               if (availableInputTables && availableInputTables.length > 0) {

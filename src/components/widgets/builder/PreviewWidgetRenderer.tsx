@@ -202,6 +202,14 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                             </div>
                         )}
                     </div>
+                ) : previewData.type === 'html' && previewData.html ? (
+                    <div className="w-full h-full bg-white dark:bg-zinc-950 overflow-hidden min-h-[300px]">
+                        <iframe
+                            srcDoc={`<html><head><style>body { margin: 0; padding: 10px; font-family: sans-serif; overflow: auto; }</style></head><body>${previewData.html}</body></html>`}
+                            className="w-full h-full border-none min-h-[300px]"
+                            title="HTML Widget Preview"
+                        />
+                    </div>
                 ) : previewData.type === 'variable' ? (
                     <div className="p-4">
                         <pre className="text-xs bg-muted p-4 rounded-lg overflow-auto">

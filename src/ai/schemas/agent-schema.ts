@@ -22,6 +22,8 @@ export const AgentInputSchema = z.object({
     timestamp: z.number().optional(),
   })).describe('Previous conversation messages'),
   needsClarification: z.boolean().optional().describe('Whether the agent needs clarification'),
+  connectorId: z.string().optional().describe('The SQL connector ID for executing queries'),
+  companyId: z.string().optional().describe('The company ID for KB and tree access'),
 });
 
 export type AgentInput = z.infer<typeof AgentInputSchema>;

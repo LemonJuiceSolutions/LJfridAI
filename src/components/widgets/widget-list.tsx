@@ -143,18 +143,20 @@ export const useAvailableWidgets = () => {
                             if (node.pythonResultName) {
                                 console.log(`[Widget] Found Python node: ${node.pythonResultName} with previewResult:`, node.pythonPreviewResult);
 
-                                // Check for any preview data (chart, table, or variable)
+                                // Check for any preview data (chart, table, variable, or html)
                                 const hasPreview = node.pythonPreviewResult && (
                                     node.pythonPreviewResult.type === 'chart' ||
                                     node.pythonPreviewResult.type === 'table' ||
-                                    node.pythonPreviewResult.type === 'variable'
+                                    node.pythonPreviewResult.type === 'variable' ||
+                                    node.pythonPreviewResult.type === 'html'
                                 );
 
                                 if (hasPreview) {
                                     const widgetId = `python-preview-${tree.id}-${nodeId}`;
                                     const previewType = node.pythonPreviewResult.type;
                                     const typeLabel = previewType === 'chart' ? 'Grafico' :
-                                        previewType === 'table' ? 'Tabella' : 'Variabile';
+                                        previewType === 'table' ? 'Tabella' :
+                                            previewType === 'html' ? 'HTML' : 'Variabile';
                                     dynamicWidgets[widgetId] = {
                                         id: widgetId,
                                         name: `Python ${typeLabel}: ${node.pythonResultName} (${tree.name})`,

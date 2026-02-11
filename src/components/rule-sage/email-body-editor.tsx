@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/popover";
 
 export interface EmailBodyEditorRef {
-    insertPlaceholder: (type: 'TABELLA' | 'GRAFICO' | 'ALLEGATO' | 'LINK' | 'TRIGGER' | 'VARIABILE', name: string) => void;
+    insertPlaceholder: (type: 'TABELLA' | 'GRAFICO' | 'ALLEGATO' | 'LINK' | 'TRIGGER' | 'VARIABILE' | 'HTML', name: string) => void;
 }
 
 interface EmailBodyEditorProps {
@@ -95,7 +95,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorRef, EmailBodyEditorPro
         }
     }, [value, editor]);
 
-    const insertPlaceholder = useCallback((type: 'TABELLA' | 'GRAFICO' | 'ALLEGATO' | 'LINK' | 'TRIGGER' | 'VARIABILE', name: string) => {
+    const insertPlaceholder = useCallback((type: 'TABELLA' | 'GRAFICO' | 'ALLEGATO' | 'LINK' | 'TRIGGER' | 'VARIABILE' | 'HTML', name: string) => {
         if (editor) {
             editor.chain().focus().insertContent(`{{${type}:${name}}}`).run();
         }

@@ -244,6 +244,27 @@ def execute_python():
                         res_val = val
                         print(f"✅ [EXECUTE] Found chart result in generic variable: '{key}'")
                         break
+        elif output_type == 'html':
+            search_order = ['html_result', 'html', 'result', 'output']
+            for key in search_order:
+                if key in ns and ns[key] is not None:
+                    res_val = ns[key]
+                    print(f"✅ [EXECUTE] Found HTML result in variable: '{key}'")
+                    break
+            
+            # Fallback: find any string that looks like HTML
+            if res_val is None:
+                for key, val in reversed(list(ns.items())):
+                    if key not in ['plt', 'px', 'go', 'pd', 'np', 'data', 'df'] and \
+                       isinstance(val, str) and ('<' in val and '>' in val):
+                        res_val = val
+                        print(f"✅ [EXECUTE] Found HTML-like string in variable: '{key}'")
+                        break
+            
+            # Fallback 2: Check stdout for HTML content (Relaxed: accept any stdout if mode is explicitly HTML)
+            if res_val is None and stdout_val.strip():
+                 res_val = stdout_val
+                 print(f"✅ [EXECUTE] Using stdout as HTML result (fallback)")
         else:
             search_order = ['result', 'output', 'df', 'data']
             for key in search_order:
@@ -388,6 +409,15 @@ def execute_python():
                     'variables': {'result': res_val},
                     'stdout': stdout_val
                 })
+        
+        elif output_type == 'html':
+            # Ensure the result is a string
+            html_content = str(res_val) if res_val is not None else ""
+            return jsonify({
+                'success': True,
+                'html': html_content,
+                'stdout': stdout_val
+            })
         
         elif output_type == 'chart':
             print(f"📊 [EXECUTE] Chart output requested, result type: {type(res_val).__name__}")

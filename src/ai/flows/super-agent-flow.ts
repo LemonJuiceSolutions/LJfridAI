@@ -79,6 +79,30 @@ async function fetchTreeById(treeId: string) {
     });
 }
 
+// Tool 0: List all SQL connectors for the company
+const listSqlConnectors = ai.defineTool(
+    {
+        name: 'listSqlConnectors',
+        description: 'Elenca tutti i connettori SQL (database) disponibili nella company. Usa questo tool per scoprire quali database sono disponibili e i loro ID, prima di eseguire query SQL.',
+        inputSchema: z.object({
+            companyId: z.string().describe("L'ID della company. Lo trovi nel system prompt."),
+        }),
+        outputSchema: z.string().describe('Lista JSON dei connettori SQL con id e nome.'),
+    },
+    async (input) => {
+        try {
+            const connectors = await db.connector.findMany({
+                where: { companyId: input.companyId, type: 'SQL' },
+                select: { id: true, name: true },
+            });
+            if (connectors.length === 0) return JSON.stringify({ connectors: [], message: 'Nessun connettore SQL trovato.' });
+            return JSON.stringify({ connectors }, null, 2);
+        } catch (e: any) {
+            return JSON.stringify({ error: `Errore: ${e.message}` });
+        }
+    }
+);
+
 // Tool 1: List all trees and pipelines
 const listTreesAndPipelines = ai.defineTool(
     {
@@ -417,25 +441,53 @@ export async function superAgentFlow(input: SuperAgentInput): Promise<SuperAgent
     const systemMessage = {
         role: 'system' as const,
         content: [{
-            text: `Sei FridAI, un super agente IA esperto nell'analisi dati.
+            text: `Sei FridAI, un super agente IA esperto nell'analisi dati aziendali. NON MOLLARE MAI. Sei tenace, persistente e creativo nel trovare i dati.
 
-WORKFLOW PER OGNI DOMANDA:
-1. CERCA PRIMA NELLA KNOWLEDGE BASE con searchKnowledgeBase - contiene query SQL, script Python e struttura degli alberi gia' indicizzati
-2. Se la KB non basta, usa searchNodesForQuery per cercare keyword negli alberi
-3. Se trovi una query SQL, ESEGUILA con executeSqlQuery usando il connectorId trovato
-4. Se serve, usa getTreeContent per esplorare un albero specifico
-5. Quando l'utente ti corregge, SALVA nella KB con saveToKnowledgeBase
+DATA DI OGGI: ${new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+Company ID: ${input.companyId}
 
-REGOLE:
-- Rispondi in italiano
-- Per grafici usa il formato: \`\`\`recharts {"type":"bar-chart","data":[...],"xAxisKey":"x","dataKeys":["y"],"title":"Titolo"} \`\`\`
+## WORKFLOW (segui SEMPRE questi passi in ordine):
+1. CERCA nella Knowledge Base (searchKnowledgeBase) - contiene query, script e info gia' validate
+2. Se la KB non basta, cerca negli alberi (searchNodesForQuery) con DIVERSE keyword (sinonimi, varianti)
+3. Se non trovi, usa listTreesAndPipelines per vedere TUTTI gli alberi, poi esplora quelli rilevanti con getTreeContent
+4. Se non conosci il connettore DB, usa listSqlConnectors per vedere tutti i database disponibili
+5. Quando trovi una query SQL, ESEGUILA con executeSqlQuery
+6. Se la query fallisce, PROVA a correggerla o a scriverne una nuova basandoti sullo schema
+
+## REGOLE DI PERSISTENZA (CRITICHE):
+- NON ARRENDERTI MAI. Se un tool fallisce, prova un approccio diverso.
+- Se una ricerca non trova nulla, prova con SINONIMI (es: "fatturato" → "vendite" → "ricavi" → "importo" → "imponibile" → "totale")
+- Se un connettore non funziona, usa listSqlConnectors per trovare quello giusto
+- Se una query SQL fallisce, analizza l'errore, correggi la query e riprova
+- Se non trovi la tabella, prova a esplorare lo schema: SELECT table_name FROM information_schema.tables WHERE table_schema='public'
+- Se non trovi le colonne, prova: SELECT column_name, data_type FROM information_schema.columns WHERE table_name='NOME_TABELLA'
+- HAI fino a 30 tentativi con i tool. USALI TUTTI se necessario. Non dire mai "ho raggiunto il limite".
+- Guarda query SIMILI in altri alberi per capire nomi tabelle e colonne corretti
+- Se trovi una query che usa una tabella, usa quella come riferimento per costruire nuove query sulla stessa tabella
+
+## QUANDO SEI BLOCCATO - CHIEDI AIUTO ALL'UTENTE:
+- Se non trovi la tabella giusta, chiedi: "Come si chiama la tabella? Hai qualche esempio di nome?"
+- Se non sai quale connettore usare, elenca quelli disponibili e chiedi: "Quale di questi database contiene i dati che cerchi?"
+- Se la query da' errore, mostra l'errore e chiedi: "Conosci il nome esatto delle colonne?"
+- Se non trovi nulla negli alberi, chiedi: "In quale albero o contesto si trovano questi dati?"
+- NON RESTARE IN SILENZIO. Piuttosto che fallire, fai una domanda specifica e utile.
+- Quando chiedi, sii CONCRETO: mostra cosa hai provato e cosa ti serve per andare avanti
+
+## AUTO-APPRENDIMENTO KNOWLEDGE BASE (FONDAMENTALE):
+- Dopo OGNI risposta con dati, chiedi all'utente: "I dati sono corretti? Confermi o correggi?"
+- Se l'utente CONFERMA che e' giusto → salva nella KB con saveToKnowledgeBase (domanda originale + risposta + query usata + connettore)
+- Se l'utente CORREGGE → salva la CORREZIONE nella KB per non ripetere lo stesso errore
+- Se scopri una nuova tabella, connettore o query funzionante → SALVALA nella KB automaticamente
+- La KB e' la tua MEMORIA PERMANENTE. Alimentala continuamente.
+
+## FORMATO RISPOSTE:
+- Rispondi SEMPRE in italiano
+- Per grafici: \`\`\`recharts {"type":"bar-chart","data":[...],"xAxisKey":"x","dataKeys":["y"],"title":"Titolo"} \`\`\`
   Tipi: bar-chart, line-chart, pie-chart, area-chart
-- Per tabelle usa formato markdown con | ... |
-- Per codice usa \`\`\`sql o \`\`\`python
-- Se non trovi dati, FAI DOMANDE all'utente
-- Cita il nome dell'albero come fonte
-
-Company ID: ${input.companyId}${treeSummary}`
+- Per tabelle: formato markdown | ... |
+- Per codice: \`\`\`sql o \`\`\`python
+- Cita SEMPRE la fonte (nome albero, tabella, database)
+- Se hai dubbi, FAI DOMANDE specifiche all'utente invece di inventare${treeSummary}`
         }],
     };
 
@@ -502,6 +554,7 @@ Company ID: ${input.companyId}${treeSummary}`
             model: genkitModel,
             messages: fullHistory,
             tools: [
+                listSqlConnectors,
                 listTreesAndPipelines,
                 getTreeContent,
                 searchNodesForQuery,
@@ -520,6 +573,20 @@ Company ID: ${input.companyId}${treeSummary}`
 
 // OpenRouter tool definitions (OpenAI function calling format)
 const openRouterTools = [
+    {
+        type: 'function' as const,
+        function: {
+            name: 'listSqlConnectors',
+            description: 'Elenca tutti i connettori SQL (database) disponibili nella company. Usa per scoprire i database e i loro ID.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    companyId: { type: 'string', description: "L'ID della company." },
+                },
+                required: ['companyId'],
+            },
+        },
+    },
     {
         type: 'function' as const,
         function: {
@@ -633,6 +700,14 @@ const openRouterTools = [
 // Tool execution dispatcher for OpenRouter function calls
 async function executeToolCall(name: string, args: any): Promise<string> {
     switch (name) {
+        case 'listSqlConnectors': {
+            const connectors = await db.connector.findMany({
+                where: { companyId: args.companyId, type: 'SQL' },
+                select: { id: true, name: true },
+            });
+            if (connectors.length === 0) return JSON.stringify({ connectors: [], message: 'Nessun connettore SQL trovato.' });
+            return JSON.stringify({ connectors }, null, 2);
+        }
         case 'listTreesAndPipelines': {
             const trees = await fetchTreesForCompany(args.companyId, args.type);
             if (trees.length === 0) return JSON.stringify({ error: 'Nessun albero trovato' });
@@ -717,63 +792,85 @@ async function callOpenRouterWithTools(input: SuperAgentInput, fullHistory: any[
         return { role, content: text };
     });
 
-    const MAX_TOOL_ROUNDS = 10;
+    const MAX_TOOL_ROUNDS = 30;
+    let lastError = '';
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${input.apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: input.model,
-                messages: openaiMessages,
-                tools: openRouterTools,
-                tool_choice: 'auto',
-            }),
-        });
+        try {
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${input.apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: input.model,
+                    messages: openaiMessages,
+                    tools: openRouterTools,
+                    tool_choice: 'auto',
+                }),
+            });
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData?.error?.message || `OpenRouter errore HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        const choice = data.choices?.[0];
-        if (!choice) throw new Error('Nessuna risposta da OpenRouter');
-
-        const message = choice.message;
-
-        // If the model made tool calls, execute them and continue
-        if (message.tool_calls && message.tool_calls.length > 0) {
-            // Add assistant message with tool calls
-            openaiMessages.push(message);
-
-            // Execute each tool call
-            for (const toolCall of message.tool_calls) {
-                const fnName = toolCall.function.name;
-                let fnArgs: any = {};
-                try { fnArgs = JSON.parse(toolCall.function.arguments); } catch { /* ignore */ }
-
-                let result: string;
-                try {
-                    result = await executeToolCall(fnName, fnArgs);
-                } catch (e: any) {
-                    result = JSON.stringify({ error: e.message });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                lastError = errorData?.error?.message || `HTTP ${response.status}`;
+                // If rate limited, wait and retry
+                if (response.status === 429) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    continue;
                 }
-
-                openaiMessages.push({
-                    role: 'tool',
-                    content: result,
-                    tool_call_id: toolCall.id,
-                } as any);
+                throw new Error(lastError);
             }
-            continue; // Next round
-        }
 
-        // No tool calls - return the final text response
-        return message.content || 'Nessuna risposta.';
+            const data = await response.json();
+            const choice = data.choices?.[0];
+            if (!choice) {
+                lastError = 'Nessuna risposta dal modello';
+                continue;
+            }
+
+            const message = choice.message;
+
+            // If the model made tool calls, execute them and continue
+            if (message.tool_calls && message.tool_calls.length > 0) {
+                // Add assistant message with tool calls
+                openaiMessages.push(message);
+
+                // Execute each tool call
+                for (const toolCall of message.tool_calls) {
+                    const fnName = toolCall.function.name;
+                    let fnArgs: any = {};
+                    try { fnArgs = JSON.parse(toolCall.function.arguments); } catch { /* ignore */ }
+
+                    let result: string;
+                    try {
+                        result = await executeToolCall(fnName, fnArgs);
+                    } catch (e: any) {
+                        result = JSON.stringify({ error: e.message, suggestion: 'Prova un approccio diverso o usa listSqlConnectors per verificare i connettori disponibili.' });
+                    }
+
+                    openaiMessages.push({
+                        role: 'tool',
+                        content: result,
+                        tool_call_id: toolCall.id,
+                    } as any);
+                }
+                continue; // Next round
+            }
+
+            // No tool calls - return the final text response
+            return message.content || 'Nessuna risposta.';
+        } catch (e: any) {
+            lastError = e.message;
+            // Don't crash on individual round errors - let the model try again
+            if (round < MAX_TOOL_ROUNDS - 1) {
+                openaiMessages.push({
+                    role: 'assistant',
+                    content: `[Errore interno round ${round + 1}: ${e.message}. Riprovo con approccio diverso...]`,
+                } as any);
+                continue;
+            }
+        }
     }
 
-    return 'Ho raggiunto il limite massimo di iterazioni per i tool. Riprova con una domanda piu\' specifica.';
+    return `Non sono riuscito a completare la ricerca dopo ${MAX_TOOL_ROUNDS} tentativi. Ultimo errore: ${lastError}. Puoi darmi piu' dettagli? Ad esempio il nome esatto della tabella, del database o del connettore da usare.`;
 }

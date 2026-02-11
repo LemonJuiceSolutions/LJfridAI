@@ -97,7 +97,7 @@ export interface DecisionLeaf {
   sqlConnectorId?: string;
   sqlResultName?: string;
   pythonCode?: string;
-  pythonOutputType?: 'table' | 'variable' | 'chart';
+  pythonOutputType?: 'table' | 'variable' | 'chart' | 'html';
   pythonResultName?: string;
   pythonConnectorId?: string;
   pythonSelectedPipelines?: string[];
@@ -153,7 +153,7 @@ export interface DecisionNode {
   ref?: string;
   subTreeRef?: string;
   pythonCode?: string;
-  pythonOutputType?: 'table' | 'variable' | 'chart';
+  pythonOutputType?: 'table' | 'variable' | 'chart' | 'html';
   pythonResultName?: string;
   pythonConnectorId?: string;
   pythonSelectedPipelines?: string[];

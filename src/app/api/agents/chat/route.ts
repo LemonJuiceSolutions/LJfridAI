@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
       script,
       tableSchema,
       inputTables,
+      connectorId,
     } = body;
 
     if (!nodeId || !agentType || !userMessage) {
@@ -65,6 +66,8 @@ export async function POST(request: NextRequest) {
         tableSchema,
         inputTables,
         conversationHistory,
+        connectorId: connectorId || undefined,
+        companyId: user.company.id,
       });
     } else if (agentType === 'python') {
       agentResponse = await pythonAgentChat({
@@ -75,6 +78,8 @@ export async function POST(request: NextRequest) {
         tableSchema,
         inputTables,
         conversationHistory,
+        connectorId: connectorId || undefined,
+        companyId: user.company.id,
       });
     } else {
       return NextResponse.json({ error: 'Invalid agent type' }, { status: 400 });

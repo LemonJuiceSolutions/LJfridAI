@@ -6,7 +6,7 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { useEditMode } from '@/hooks/use-edit-mode';
 import { cn } from '@/lib/utils';
-import { GripVertical, Plus, Trash2, LayoutGrid, Loader2, X } from 'lucide-react';
+import { GripVertical, Plus, Trash2, LayoutGrid, Loader2, X, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TextWidget from '@/components/dashboard/text-widget';
 import {
@@ -15,6 +15,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -115,6 +116,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     const [hiddenWidgets, setHiddenWidgets] = useState<Set<string>>(new Set());
     const [widgetToDelete, setWidgetToDelete] = useState<string | null>(null);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
 
     useEffect(() => {
         setIsComponentMounted(true);
@@ -300,10 +302,16 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
 
     const currentWidgetIds = useMemo(() => new Set(items.map(i => i.id)), [items]);
 
-    // Filter available widgets to exclude hidden ones
+    // Filter available widgets to exclude hidden ones and apply search filter
     const visibleWidgets = useMemo(() => {
-        return Object.entries(availableWidgets).filter(([key]) => !hiddenWidgets.has(key));
-    }, [availableWidgets, hiddenWidgets]);
+        return Object.entries(availableWidgets).filter(([key, widget]) => {
+            const isNotHidden = !hiddenWidgets.has(key);
+            if (!isNotHidden) return false;
+
+            if (!searchTerm) return true;
+            return widget.name.toLowerCase().includes(searchTerm.toLowerCase());
+        });
+    }, [availableWidgets, hiddenWidgets, searchTerm]);
 
     if (isLoading || status === 'loading' || !isComponentMounted) {
         return (
@@ -344,6 +352,18 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent className="max-h-96 overflow-y-auto w-80">
+                            <div className="p-2 border-b sticky top-0 bg-popover z-10">
+                                <div className="relative">
+                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Cerca widget..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="pl-8 h-9"
+                                        onKeyDown={(e) => e.stopPropagation()} // Prevent closing dropdown on space
+                                    />
+                                </div>
+                            </div>
                             {visibleWidgets.length === 0 ? (
                                 <div className="p-4 text-sm text-muted-foreground text-center">
                                     Nessun widget disponibile

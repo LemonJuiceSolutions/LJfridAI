@@ -98,8 +98,15 @@ export async function POST(request: NextRequest) {
         });
     } catch (error: any) {
         console.error('Error in super agent API:', error);
+        // Return detailed error so the UI can show it
+        const errorMessage = error.message || 'Errore interno del server';
+        const isTokenError = errorMessage.includes('token') || errorMessage.includes('context length');
         return NextResponse.json(
-            { error: error.message || 'Internal server error' },
+            {
+                error: isTokenError
+                    ? 'La conversazione e\' troppo lunga. Prova a pulire la chat e riprovare.'
+                    : errorMessage,
+            },
             { status: 500 }
         );
     }

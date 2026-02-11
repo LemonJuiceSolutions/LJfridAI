@@ -117,12 +117,12 @@ function RichContent({ content, charts }: { content: string; charts: any[] }) {
 
                         if (headers.length > 0 && dataLines.length > 0) {
                             return (
-                                <div key={i} className="my-2 overflow-x-auto rounded-lg border">
-                                    <table className="w-full text-[11px]">
+                                <div key={i} className="my-2 rounded-lg border w-full overflow-hidden">
+                                    <table className="w-full text-[11px] table-auto">
                                         <thead>
                                             <tr className="bg-muted/50">
                                                 {headers.map((h, j) => (
-                                                    <th key={j} className="px-2 py-1.5 text-left font-semibold border-b whitespace-nowrap">
+                                                    <th key={j} className="px-2 py-1.5 text-left font-semibold border-b">
                                                         {h.trim()}
                                                     </th>
                                                 ))}
@@ -134,7 +134,7 @@ function RichContent({ content, charts }: { content: string; charts: any[] }) {
                                                 return (
                                                     <tr key={j} className="border-b last:border-0 hover:bg-muted/30">
                                                         {cells.map((cell, k) => (
-                                                            <td key={k} className="px-2 py-1 whitespace-nowrap">{cell.trim()}</td>
+                                                            <td key={k} className="px-2 py-1 break-words">{cell.trim()}</td>
                                                         ))}
                                                     </tr>
                                                 );
@@ -150,7 +150,7 @@ function RichContent({ content, charts }: { content: string; charts: any[] }) {
                 // Regular text with bold markdown
                 if (!part.trim()) return null;
                 return (
-                    <span key={i} className="whitespace-pre-wrap" dangerouslySetInnerHTML={{
+                    <div key={i} className="whitespace-pre-wrap break-words min-w-0" dangerouslySetInnerHTML={{
                         __html: part
                             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                             .replace(/`([^`]+)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-[11px]">$1</code>')
@@ -342,14 +342,15 @@ export function ChatBotAgent() {
                 throw new Error(data.error || 'Errore sconosciuto');
             }
         } catch (error: any) {
+            const errorDetail = error.message || "Impossibile comunicare con l'agente.";
             toast({
                 title: "Errore",
-                description: error.message || "Impossibile comunicare con l'agente.",
+                description: errorDetail,
                 variant: "destructive",
             });
             setMessages(prev => [...prev, {
                 role: 'assistant',
-                content: "Scusa, si e' verificato un errore. Riprova.",
+                content: `Ho riscontrato un problema: **${errorDetail}**\n\nPuoi riprovare la domanda o darmi piu' dettagli (es. nome tabella, database, connettore) per aiutarmi a cercare meglio.`,
                 timestamp: Date.now(),
             }]);
         } finally {
@@ -522,14 +523,8 @@ export function ChatBotAgent() {
                                     : { text: m.content, charts: [] };
 
                                 return (
-                                    <div key={m.timestamp + i} className={cn(
-                                        "flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-2",
-                                        m.role === 'user' ? "items-end" : "items-start"
-                                    )}>
-                                        <div className={cn(
-                                            "flex items-center gap-2 mb-0.5",
-                                            m.role === 'user' ? "flex-row-reverse" : "flex-row"
-                                        )}>
+                                    <div key={m.timestamp + i} className="flex flex-col gap-1 items-start animate-in fade-in slide-in-from-bottom-2">
+                                        <div className="flex items-center gap-2 mb-0.5 flex-row">
                                             <div className={cn(
                                                 "h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold",
                                                 m.role === 'user' ? "bg-primary text-primary-foreground" : "bg-gradient-to-br from-primary/80 to-purple-500/80 text-white"
@@ -541,16 +536,18 @@ export function ChatBotAgent() {
                                             </span>
                                         </div>
                                         <div className={cn(
-                                            "max-w-[95%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm",
+                                            "max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm break-words overflow-hidden",
                                             m.role === 'user'
-                                                ? "bg-primary text-primary-foreground rounded-tr-none"
+                                                ? "bg-primary text-primary-foreground rounded-tl-none"
                                                 : "bg-muted/50 border rounded-tl-none"
                                         )}>
-                                            {m.role === 'assistant' ? (
-                                                <RichContent content={text} charts={charts} />
-                                            ) : (
-                                                m.content
-                                            )}
+                                            <div className="min-w-0">
+                                                {m.role === 'assistant' ? (
+                                                    <RichContent content={text} charts={charts} />
+                                                ) : (
+                                                    m.content
+                                                )}
+                                            </div>
                                         </div>
                                         {m.role === 'assistant' && i > 0 && (
                                             <Button
