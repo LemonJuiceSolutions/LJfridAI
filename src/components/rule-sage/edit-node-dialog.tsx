@@ -3962,12 +3962,12 @@ export default function EditNodeDialog({
                         taskLabel="Invio Email"
                         existingSchedule={nodeSchedules['EMAIL_SEND']}
                         taskConfigProvider={() => ({
-                          connectorId: emailConfig.connectorId,
-                          to: emailConfig.to,
-                          cc: emailConfig.cc,
-                          bcc: emailConfig.bcc,
-                          subject: emailConfig.subject,
-                          body: emailConfig.body,
+                          connectorId: emailConfig?.connectorId,
+                          to: emailConfig?.to,
+                          cc: emailConfig?.cc,
+                          bcc: emailConfig?.bcc,
+                          subject: emailConfig?.subject,
+                          body: emailConfig?.body,
                           contextTables: availableInputTables,
                           attachments: safeEmailAttachments,
                         })}

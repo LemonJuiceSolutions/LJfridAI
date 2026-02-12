@@ -208,6 +208,12 @@ def execute_python():
                     error_msg += "Seleziona le dipendenze necessarie nel dropdown 'USA DATI DA (PIPELINE)'."
             
             print(f"❌ [EXECUTE] Script error: {error_msg}")
+            print(f"--- FAILING CODE START (Line 131 context: {safe_code.splitlines()[130] if len(safe_code.splitlines()) > 130 else 'N/A'}) ---")
+            # Print code with line numbers for easier debugging
+            for i, line in enumerate(safe_code.splitlines(), 1):
+                print(f"{i:4d}: {line}")
+            print("--- FAILING CODE END ---")
+
             return jsonify({
                 'success': False,
                 'error': error_msg,

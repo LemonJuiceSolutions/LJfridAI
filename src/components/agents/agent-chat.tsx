@@ -15,6 +15,7 @@ import {
   BookOpen,
   PenLine,
   Search,
+  CornerDownLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -179,8 +180,8 @@ function InlineChart({ config }: { config: any }) {
 }
 
 // Rich content renderer: markdown tables, code blocks, charts, bold, inline code
-function RichContent({ content, charts }: { content: string; charts: any[] }) {
-  const parts = content.split(/(\[CHART_\d+\]|```(?:sql|python|json)[\s\S]*?```|\|.*\|(?:\n\|.*\|)*)/g);
+function RichContent({ content, charts, onApplyCode }: { content: string; charts: any[]; onApplyCode?: (code: string) => void }) {
+  const parts = content.split(/(\[CHART_\d+\]|```[\s\S]*?```|\|.*\|(?:\n\|.*\|)*)/gi);
 
   return (
     <div className="space-y-2">
@@ -195,16 +196,18 @@ function RichContent({ content, charts }: { content: string; charts: any[] }) {
         }
 
         // Code block
-        const codeMatch = part.match(/```(sql|python|json)\n([\s\S]*?)```/);
+        const codeMatch = part.match(/```\s*([^\n\s]*)\s*([\s\S]*?)```/i);
         if (codeMatch) {
           return (
             <div key={i} className="relative my-2">
-              <div className="flex items-center gap-1 px-3 py-1 bg-muted rounded-t-lg border border-b-0">
-                <Code2 className="h-3 w-3 text-muted-foreground" />
-                <span className="text-[10px] uppercase font-medium text-muted-foreground">{codeMatch[1]}</span>
+              <div className="flex items-center justify-between px-3 py-1 bg-muted rounded-t-lg border border-b-0">
+                <div className="flex items-center gap-1">
+                  <Code2 className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-[10px] uppercase font-medium text-muted-foreground">{codeMatch[1]}</span>
+                </div>
               </div>
-              <pre className="bg-zinc-950 text-zinc-100 px-3 py-2 rounded-b-lg text-[11px] overflow-x-auto border">
-                <code>{codeMatch[2].trim()}</code>
+              <pre className="bg-zinc-950 text-zinc-100 px-3 py-2 rounded-b-lg text-[11px] overflow-x-auto max-w-full whitespace-pre-wrap break-all border">
+                <code className="block min-w-0">{codeMatch[2].trim()}</code>
               </pre>
             </div>
           );
@@ -311,9 +314,14 @@ export function AgentChat({
   // Scroll to bottom when messages change
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      // Use a small timeout to ensure DOM is fully rendered (especially code blocks/charts)
+      setTimeout(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      }, 100);
     }
-  }, [messages, isLoading]);
+  }, [messages, isLoading, loadingStatus]);
 
   const loadConversation = async () => {
     try {
@@ -571,9 +579,15 @@ export function AgentChat({
                 : { text: m.content, charts: [] };
 
               return (
-                <div key={(m.timestamp || 0) + i} className="flex flex-col gap-1 items-start animate-in fade-in slide-in-from-bottom-2 group">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    {/* Go back button */}
+                <div key={(m.timestamp || 0) + i} className={cn(
+                  "flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-2 group",
+                  m.role === 'user' ? "items-end" : "items-start"
+                )}>
+                  <div className={cn(
+                    "flex items-center gap-2 mb-0.5",
+                    m.role === 'user' ? "flex-row-reverse" : "flex-row"
+                  )}>
+                    {/* Go back button (reordered for user) */}
                     <button
                       onClick={() => handleGoBack(i)}
                       className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-all"
@@ -592,29 +606,67 @@ export function AgentChat({
                     </span>
                   </div>
                   <div className={cn(
-                    "max-w-[90%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm break-words overflow-hidden",
+                    "max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm break-words overflow-hidden whitespace-pre-wrap",
                     m.role === 'user'
-                      ? "bg-primary text-primary-foreground rounded-tl-none"
+                      ? "bg-primary text-primary-foreground rounded-tr-none"
                       : "bg-muted/50 border rounded-tl-none"
                   )}>
                     <div className="min-w-0">
                       {m.role === 'assistant' ? (
-                        <RichContent content={text} charts={charts} />
+                        <RichContent content={text} charts={charts} onApplyCode={onScriptUpdate} />
                       ) : (
                         m.content
                       )}
                     </div>
                   </div>
-                  {m.role === 'assistant' && i > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
-                      onClick={() => openCorrectionDialog(i)}
-                    >
-                      <PenLine className="h-3 w-3" />
-                      Correggi
-                    </Button>
+                  {m.role === 'assistant' && (
+                    <div className="flex items-center gap-2 mt-1">
+                      {i > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
+                          onClick={() => openCorrectionDialog(i)}
+                        >
+                          <PenLine className="h-3 w-3" />
+                          Correggi
+                        </Button>
+                      )}
+                      {(() => {
+                        const codeBlockRegex = /```(\w*)\s*([\s\S]*?)```/g;
+                        let match;
+                        let codeToUse = null;
+
+                        // Iterate to find the first non-json code block
+                        while ((match = codeBlockRegex.exec(m.content)) !== null) {
+                          const lang = match[1].toLowerCase().trim();
+                          const content = match[2].trim();
+
+                          // Check if it looks like a JSON object (starts with { and ends with })
+                          const looksLikeJson = content.startsWith('{') && content.endsWith('}');
+
+                          if (lang !== 'json' && !looksLikeJson && content.length > 5) {
+                            codeToUse = content;
+                            break;
+                          }
+                        }
+
+                        if (codeToUse && onScriptUpdate) {
+                          return (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
+                              onClick={() => onScriptUpdate(codeToUse!)}
+                            >
+                              <CornerDownLeft className="h-3 w-3" />
+                              Usa codice
+                            </Button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   )}
                 </div>
               );
