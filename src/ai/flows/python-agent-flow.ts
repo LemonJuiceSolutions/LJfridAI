@@ -373,14 +373,14 @@ NON USARE MAI LA LIBRERIA 'tabulate' (non e' installata). Usa SOLO plotly per le
 - Rispondi SOLO in JSON come richiesto sotto.
 
 ## PREVENZIONE ERRORI (CRITICO):
-- Controlla che le parentesi [], {} e () siano accoppiate correttamente.
 - NON Chiudere una lista [ con una graffa } o viceversa.
 - Assicurati che le stringhe multilinea siano chiuse.
 - Se definisci dizionari lunghi, assicurati di chiuderli correttamente con }.
+- NON inserire "}}" o markdown code delimiters extra all'interno del blocco di codice Python. Il codice deve essere pulito e pronto all'uso.
 
-## FORMATO RISPOSTA (OBBLIGATORIO):
-1. PRIMA Scrivi il codice Python completo in un blocco markdown:
-\`\`\`python
+## FORMATO RISPOSTA(OBBLIGATORIO):
+        1. PRIMA Scrivi il codice Python completo in un blocco markdown:
+        \`\`\`python
 # ... tuo codice ...
 \`\`\`
 
@@ -426,6 +426,13 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
             // Actually, we just take the first non-json block as the script.
             if (lang !== 'json' && content.length > 10) {
                 extractedScript = content;
+
+                // Sanitize: Remove trailing }} artifacts often left by the LLM
+                // e.g. if it thinks it's inside a JSON string
+                if (extractedScript.trim().endsWith('}}')) {
+                    extractedScript = extractedScript.replace(/}\s*}\s*$/, '').trim();
+                }
+
                 break; // Use the first valid code block
             }
         }

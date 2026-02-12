@@ -242,7 +242,6 @@ export function ChatBotAgent() {
     const [isLoading, setIsLoading] = useState(false);
     const [loadingStatus, setLoadingStatus] = useState('');
     const [conversationId, setConversationId] = useState<string | null>(null);
-    const scrollRef = useRef<HTMLDivElement>(null);
 
     // Model selector state
     const [model, setModel] = useState('google/gemini-2.0-flash-001');
@@ -304,10 +303,14 @@ export function ChatBotAgent() {
         loadConversation();
     }, []);
 
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
     useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
+        scrollToBottom();
     }, [messages, isLoading]);
 
     const handleSend = async () => {
@@ -517,7 +520,7 @@ export function ChatBotAgent() {
                     </div>
 
                     {/* Messages */}
-                    <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+                    <ScrollArea className="flex-1 p-4">
                         <div className="space-y-4">
                             {messages.map((m, i) => {
                                 const { text, charts } = m.role === 'assistant'
@@ -580,6 +583,7 @@ export function ChatBotAgent() {
                                     </div>
                                 </div>
                             )}
+                            <div ref={messagesEndRef} />
                         </div>
                     </ScrollArea>
 

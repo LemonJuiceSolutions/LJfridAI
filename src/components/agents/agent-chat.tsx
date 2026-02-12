@@ -297,7 +297,6 @@ export function AgentChat({
   const [loadingStatus, setLoadingStatus] = useState('');
   const [needsClarification, setNeedsClarification] = useState(false);
   const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Correction dialog state
   const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
@@ -306,23 +305,17 @@ export function AgentChat({
   const [correctionTags, setCorrectionTags] = useState('');
   const [isSavingCorrection, setIsSavingCorrection] = useState(false);
 
-  // Load conversation history on mount
-  useEffect(() => {
-    loadConversation();
-  }, [nodeId, agentType]);
+  /* Load conversation history on mount */
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    if (scrollRef.current) {
-      // Use a small timeout to ensure DOM is fully rendered (especially code blocks/charts)
-      setTimeout(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-      }, 100);
-    }
-  }, [messages, isLoading, loadingStatus]);
+  const scrollToBottom = () => {
+    // Use a small timeout to ensure DOM is fully rendered (especially code blocks/charts)
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  };
 
+  /* Load conversation history logic */
   const loadConversation = async () => {
     try {
       const params = new URLSearchParams({ nodeId, agentType });
@@ -342,6 +335,11 @@ export function AgentChat({
       console.error('Error loading conversation:', error);
     }
   };
+
+  // Load conversation history on mount
+  useEffect(() => {
+    loadConversation();
+  }, [nodeId, agentType]);
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -554,7 +552,7 @@ export function AgentChat({
         </div>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+        <ScrollArea className="flex-1 p-4">
           <div className="space-y-4">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -713,6 +711,8 @@ export function AgentChat({
                 </div>
               </div>
             )}
+
+            <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
 

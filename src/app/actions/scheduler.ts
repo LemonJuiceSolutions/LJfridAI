@@ -630,7 +630,9 @@ export async function getTreeSchedulesAction(treeId: string) {
             },
             select: {
                 name: true,
-                config: true
+                config: true,
+                type: true,
+                scheduleType: true
             }
         });
 
@@ -659,7 +661,9 @@ export async function getTreeSchedulesAction(treeId: string) {
                 }
             }
 
-            if (nodeId) {
+            // Fix: Exclude implicit execution tracking tasks and manual tasks
+            // We only want to show the icon if there is an actual recurring schedule
+            if (nodeId && task.type !== 'NODE_EXECUTION' && task.scheduleType !== 'manual') {
                 scheduledNodeIds.add(nodeId);
             }
         }
