@@ -12,7 +12,7 @@ async function inspectNodeDetails() {
 
     const json = JSON.parse(tree.jsonDecisionTree);
 
-    const findNode = (node: any, name: string) => {
+    const findNode = (node: any, name: string): unknown => {
         if (!node) return null;
         if (node.name === name || node.id === name || node.question === name || node.nodeName === name) return node;
         if (node.options) {

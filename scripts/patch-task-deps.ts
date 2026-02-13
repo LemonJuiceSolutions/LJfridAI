@@ -15,6 +15,10 @@ async function main() {
     const tree = await db.tree.findUnique({
         where: { id: 'RzX9nFJGQUs832cLVvecO' }
     });
+    if (!tree) {
+        console.log('Tree not found');
+        return;
+    }
     const treeJson = JSON.parse(tree.jsonDecisionTree);
 
     // Find Budget node (ID 9LiHu3E2)

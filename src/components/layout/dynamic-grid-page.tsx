@@ -27,9 +27,10 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAvailableWidgets } from '../widgets/widget-list';
-import { getPageLayout, savePageLayout } from '@/actions/dashboard';
+import { savePageLayout } from '@/actions/dashboard';
 import { useSession } from 'next-auth/react';
 import { useToast } from '@/hooks/use-toast';
+import { useDashboardLayout } from '@/hooks/use-dashboard-data';
 
 // Remove WidthProvider
 // const ResponsiveGridLayout = WidthProvider(Responsive);
@@ -110,16 +111,26 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     const availableWidgets = useAvailableWidgets();
     const { toast } = useToast();
 
+    // Use optimized hook with caching for dashboard layout
+    const { data: layoutData, isLoading: isLayoutLoading, refetch: refetchLayout } = useDashboardLayout(pageId, defaultLayouts, defaultItems);
+
     const [layouts, setLayouts] = useState<any>(generateLayouts(defaultItems, defaultLayouts));
     const [items, setItems] = useState<Item[]>(defaultItems);
     const [isComponentMounted, setIsComponentMounted] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
     const [hiddenWidgets, setHiddenWidgets] = useState<Set<string>>(new Set());
     const [widgetToDelete, setWidgetToDelete] = useState<string | null>(null);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [width, setWidth] = useState(1200);
     const containerRef = React.useRef<HTMLDivElement>(null);
+
+    // Update state when layout data changes from hook
+    useEffect(() => {
+        if (layoutData) {
+            setItems(layoutData.items);
+            setLayouts(layoutData.layouts);
+        }
+    }, [layoutData]);
 
     // Robust ResizeObserver to handle container width changes
     useLayoutEffect(() => {
@@ -159,37 +170,8 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         }
     }, [pageId]);
 
-    useLayoutEffect(() => {
-        if (status === 'loading' || !isComponentMounted) return;
-
-        const loadDashboardState = async () => {
-            setIsLoading(true);
-            try {
-                const data = await getPageLayout(pageId);
-                if (data) {
-                    // Cast JSON back to types if necessary, mostly implicit
-                    const loadedItems = data.items as Item[] || defaultItems;
-                    const loadedLayouts = data.layouts as any || generateLayouts(loadedItems, defaultLayouts);
-                    setItems(loadedItems);
-                    setLayouts(loadedLayouts);
-                } else {
-                    setItems(defaultItems);
-                    setLayouts(generateLayouts(defaultItems, defaultLayouts));
-                }
-            } catch (error) {
-                console.error(`Error loading ${pageId} state:`, error);
-                setItems(defaultItems);
-                setLayouts(generateLayouts(defaultItems, defaultLayouts));
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        loadDashboardState();
-    }, [status, isComponentMounted, pageId, defaultItems, defaultLayouts]);
-
     const saveDashboardState = useCallback(async (newLayouts: any, newItems: any) => {
-        if (session?.user && isComponentMounted && !isLoading) {
+        if (session?.user && isComponentMounted && !isLayoutLoading) {
             const cleanedLayouts = removeUndefinedFields(newLayouts);
             const result = await savePageLayout(pageId, cleanedLayouts, newItems);
             // Only show error for auth issues, not for database unavailable (to avoid spamming)
@@ -198,10 +180,10 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
             }
             // Silent fail for database issues - layout will be retried on next change
         }
-    }, [session, isComponentMounted, isLoading, pageId, toast]);
+    }, [session, isComponentMounted, isLayoutLoading, pageId, toast]);
 
     const handleLayoutChange = (layout: Layout[], allLayouts: ReactGridLayouts) => {
-        if (isComponentMounted && !isLoading) {
+        if (isComponentMounted && !isLayoutLoading) {
             setLayouts(allLayouts);
             saveDashboardState(allLayouts, items);
         }
@@ -333,20 +315,8 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         });
     }, [availableWidgets, hiddenWidgets, searchTerm]);
 
-    if (isLoading || status === 'loading' || !isComponentMounted) {
-        return (
-            <div className="flex h-full w-full items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
-        );
-    }
-
-    const gridItemClasses = (isEditing: boolean) => cn(
-        "bg-card rounded-lg shadow-sm transition-all duration-200 overflow-visible",
-        isEditing && 'border-2 border-dashed border-primary/50 relative'
-    );
-
-    const renderWidget = (item: Item) => {
+    // Memoize the render widget function to prevent unnecessary re-renders
+    const renderWidget = useCallback((item: Item) => {
         if (item.isText) {
             return (
                 <TextWidget
@@ -358,7 +328,56 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         }
         const widgetConfig = (availableWidgets as Record<string, any>)[item.id];
         return widgetConfig ? widgetConfig.component : <div className='p-4 text-sm text-destructive'>Widget non trovato: {item.id}</div>;
+    }, [availableWidgets, editMode, handleTextChange]);
+
+    // Optimized skeleton loader - shows placeholder widgets while loading
+    if (isLayoutLoading || status === 'loading' || !isComponentMounted) {
+        return (
+            <div className='flex flex-col gap-4'>
+                {editMode && (
+                    <div className='flex justify-end gap-2 flex-wrap'>
+                        <div className="h-9 w-40 bg-muted animate-pulse rounded-md" />
+                        <div className="h-9 w-32 bg-muted animate-pulse rounded-md" />
+                    </div>
+                )}
+                <div ref={containerRef} className="w-full">
+                    <Responsive
+                        width={width}
+                        className="layout"
+                        layouts={layouts}
+                        breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+                        cols={{ lg: 48, md: 20, sm: 12, xs: 8, xxs: 4 }}
+                        rowHeight={20}
+                        isDraggable={false}
+                        isResizable={false}
+                        compactType="vertical"
+                        preventCollision={false}
+                        isBounded={false}
+                        allowOverlap={false}
+                        margin={[20, 20]}
+                        containerPadding={[20, 20]}
+                    >
+                        {items.map(item => (
+                            <div key={item.id} className="bg-card rounded-lg shadow-sm overflow-hidden">
+                                <div className="flex h-full w-full items-center justify-center p-8">
+                                    <div className="animate-pulse space-y-3 w-full">
+                                        <div className="h-4 bg-muted rounded w-3/4 mx-auto" />
+                                        <div className="h-4 bg-muted rounded w-1/2 mx-auto" />
+                                        <div className="h-32 bg-muted rounded mt-4" />
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </Responsive>
+                </div>
+            </div>
+        );
     }
+
+    const gridItemClasses = (isEditing: boolean) => cn(
+        "bg-card rounded-lg shadow-sm transition-all duration-200 overflow-visible",
+        isEditing && 'border-2 border-dashed border-primary/50 relative'
+    );
 
     return (
         <div className='flex flex-col gap-4'>
@@ -461,7 +480,6 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
                     preventCollision={false}
                     isBounded={false}
                     allowOverlap={false}
-                    measureBeforeMount={false}
                     margin={[20, 20]}
                     containerPadding={[20, 20]}
                 >

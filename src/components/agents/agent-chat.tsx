@@ -37,6 +37,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
 } from 'recharts';
+import { getOpenRouterSettingsAction } from '@/actions/openrouter';
 
 // Try to extract message from raw JSON that leaked through
 function extractFromRawJson(content: string): string {
@@ -297,6 +298,22 @@ export function AgentChat({
   const [loadingStatus, setLoadingStatus] = useState('');
   const [needsClarification, setNeedsClarification] = useState(false);
   const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
+  const [modelName, setModelName] = useState<string>('Gemini 2.5 Flash');
+
+  useEffect(() => {
+    getOpenRouterSettingsAction().then((settings) => {
+      if (settings?.model) {
+        // Simple formatter: remove provider prefix and clean up
+        const cleanName = settings.model.split('/').pop() || settings.model;
+        // Capitalize words and replace dashes with spaces
+        const formatted = cleanName
+          .split(/[-_]/)
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+        setModelName(formatted);
+      }
+    });
+  }, []);
 
   // Correction dialog state
   const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
@@ -521,7 +538,7 @@ export function AgentChat({
               <h2 className="text-sm font-bold tracking-tight">Agente {agentName}</h2>
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                <span>Gemini 2.5 Flash</span>
+                <span>{modelName}</span>
               </div>
             </div>
           </div>
@@ -552,8 +569,8 @@ export function AgentChat({
         </div>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 p-4">
-          <div className="space-y-4">
+        <ScrollArea className="flex-1">
+          <div className="space-y-4 p-4">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <div className={cn(
@@ -604,7 +621,7 @@ export function AgentChat({
                     </span>
                   </div>
                   <div className={cn(
-                    "max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm break-words overflow-hidden whitespace-pre-wrap",
+                    "max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm break-all whitespace-pre-wrap",
                     m.role === 'user'
                       ? "bg-primary text-primary-foreground rounded-tr-none"
                       : "bg-muted/50 border rounded-tl-none"

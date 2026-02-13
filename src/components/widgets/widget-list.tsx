@@ -1,31 +1,40 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { kpiData } from '@/lib/data';
-import KpiCard from '@/components/dashboard/kpi-card';
-import OverviewChart from '@/components/dashboard/overview-chart';
-import RevenueByProductChart from '@/components/dashboard/revenue-by-product-chart';
-import CapacityChart from '@/components/dashboard/capacity-chart';
-import JobMarginAnalysis from '@/components/dashboard/job-margin-analysis';
-import CostCenterAnalysisChart from '@/components/dashboard/cost-center-analysis';
-import OrdersWidget from '@/components/widgets/orders/OrdersWidget';
-import PlanningWidget from '@/components/widgets/planning/PlanningWidget';
-import AcquistiWidget from './acquisti/AcquistiWidget';
-import CuttingWidget from './cutting/CuttingWidget';
-import SewingWidget from './sewing/SewingWidget';
-import PrintingWidget from './printing/PrintingWidget';
-import EmbroideryWidget from './embroidery/EmbroideryWidget';
-import LavanderiaWidget from './lavanderia/LavanderiaWidget';
-import StiroWidget from './stiro/StiroWidget';
-import ControlloQualitaWidget from './controllo-qualita/ControlloQualitaWidget';
-import PackagingWidget from './packaging/PackagingWidget';
-import MagazzinoWidget from './magazzino/MagazzinoWidget';
-import SetupWidget from './setup/SetupWidget';
-import PipelinesWidget from './pipelines/PipelinesWidget';
-import SqlTestTable from '../dashboard/sql-test-table';
-import PipelineOutputWidget from './pipelines/PipelineOutputWidget';
 import { getPipelines } from '@/actions/pipelines';
 import { useSession } from 'next-auth/react';
+
+// Lazy load widget components for better performance
+const KpiCard = React.lazy(() => import('@/components/dashboard/kpi-card').then(m => ({ default: m.default })));
+const OverviewChart = React.lazy(() => import('@/components/dashboard/overview-chart').then(m => ({ default: m.default })));
+const RevenueByProductChart = React.lazy(() => import('@/components/dashboard/revenue-by-product-chart').then(m => ({ default: m.default })));
+const CapacityChart = React.lazy(() => import('@/components/dashboard/capacity-chart').then(m => ({ default: m.default })));
+const JobMarginAnalysis = React.lazy(() => import('@/components/dashboard/job-margin-analysis').then(m => ({ default: m.default })));
+const CostCenterAnalysisChart = React.lazy(() => import('@/components/dashboard/cost-center-analysis').then(m => ({ default: m.default })));
+const OrdersWidget = React.lazy(() => import('@/components/widgets/orders/OrdersWidget').then(m => ({ default: m.default })));
+const PlanningWidget = React.lazy(() => import('@/components/widgets/planning/PlanningWidget').then(m => ({ default: m.default })));
+const AcquistiWidget = React.lazy(() => import('./acquisti/AcquistiWidget').then(m => ({ default: m.default })));
+const CuttingWidget = React.lazy(() => import('./cutting/CuttingWidget').then(m => ({ default: m.default })));
+const SewingWidget = React.lazy(() => import('./sewing/SewingWidget').then(m => ({ default: m.default })));
+const PrintingWidget = React.lazy(() => import('./printing/PrintingWidget').then(m => ({ default: m.default })));
+const EmbroideryWidget = React.lazy(() => import('./embroidery/EmbroideryWidget').then(m => ({ default: m.default })));
+const LavanderiaWidget = React.lazy(() => import('./lavanderia/LavanderiaWidget').then(m => ({ default: m.default })));
+const StiroWidget = React.lazy(() => import('./stiro/StiroWidget').then(m => ({ default: m.default })));
+const ControlloQualitaWidget = React.lazy(() => import('./controllo-qualita/ControlloQualitaWidget').then(m => ({ default: m.default })));
+const PackagingWidget = React.lazy(() => import('./packaging/PackagingWidget').then(m => ({ default: m.default })));
+const MagazzinoWidget = React.lazy(() => import('./magazzino/MagazzinoWidget').then(m => ({ default: m.default })));
+const SetupWidget = React.lazy(() => import('./setup/SetupWidget').then(m => ({ default: m.default })));
+const PipelinesWidget = React.lazy(() => import('./pipelines/PipelinesWidget').then(m => ({ default: m.default })));
+const SqlTestTable = React.lazy(() => import('../dashboard/sql-test-table').then(m => ({ default: m.default })));
+const PipelineOutputWidget = React.lazy(() => import('./pipelines/PipelineOutputWidget').then(m => ({ default: m.default })));
+
+// Simple loading fallback for lazy-loaded components
+const WidgetLoader = () => (
+    <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+        <div className="animate-pulse">Caricamento...</div>
+    </div>
+);
 
 export type Widget = {
     id: string;
@@ -33,80 +42,111 @@ export type Widget = {
     component: React.ReactNode;
 };
 
-// Static widgets that are always available
+// Static widgets that are always available - now using lazy loading
 const staticWidgets: Record<string, Widget> = {
-    'kpi-1': { id: 'kpi-1', component: <KpiCard {...kpiData[0]} />, name: 'KPI Fatturato' },
-    'kpi-2': { id: 'kpi-2', component: <KpiCard {...kpiData[1]} />, name: 'KPI Budget' },
-    'kpi-3': { id: 'kpi-3', component: <KpiCard {...kpiData[2]} />, name: 'KPI Forecast' },
-    'kpi-4': { id: 'kpi-4', component: <KpiCard {...kpiData[3]} />, name: 'KPI Anno Prec.' },
-    'overview': { id: 'overview', component: <OverviewChart />, name: 'Panoramica Fatturato' },
-    'revenue-by-product': { id: 'revenue-by-product', component: <RevenueByProductChart />, name: 'Fatturato per Prodotto' },
-    'capacity': { id: 'capacity', component: <CapacityChart />, name: 'Capacità Produttiva' },
-    'cost-center': { id: 'cost-center', component: <CostCenterAnalysisChart />, name: 'Analisi Costi CDC' },
-    'job-margin': { id: 'job-margin', component: <JobMarginAnalysis />, name: 'Analisi Marginalità' },
-    'sql-test-table': { id: 'sql-test-table', component: <SqlTestTable />, name: 'SQL Test Table' },
-    'orders': { id: 'orders', component: <OrdersWidget />, name: 'Gestione Ordini' },
-    'planning': { id: 'planning', component: <PlanningWidget />, name: 'Pianificazione Produzione' },
-    'acquisti': { id: 'acquisti', component: <AcquistiWidget />, name: 'Centrale Acquisti' },
-    'cutting': { id: 'cutting', component: <CuttingWidget />, name: 'Reparto Taglio' },
-    'sewing': { id: 'sewing', component: <SewingWidget />, name: 'Reparto Confezione' },
-    'printing': { id: 'printing', component: <PrintingWidget />, name: 'Reparto Stampa' },
-    'embroidery': { id: 'embroidery', component: <EmbroideryWidget />, name: 'Reparto Ricamo' },
-    'lavanderia': { id: 'lavanderia', component: <LavanderiaWidget />, name: 'Reparto Lavanderia' },
-    'stiro': { id: 'stiro', component: <StiroWidget />, name: 'Reparto Stiro' },
-    'controllo-qualita': { id: 'controllo-qualita', component: <ControlloQualitaWidget />, name: 'Reparto Controllo Qualità' },
-    'packaging': { id: 'packaging', component: <PackagingWidget />, name: 'Reparto Packaging' },
-    'magazzino': { id: 'magazzino', component: <MagazzinoWidget />, name: 'Magazzino' },
-    'setup': { id: 'setup', component: <SetupWidget />, name: 'Setup Connessioni' },
-    'pipelines': { id: 'pipelines', component: <PipelinesWidget />, name: 'Pipeline ETL' },
+    'kpi-1': { id: 'kpi-1', component: <React.Suspense fallback={<WidgetLoader />}><KpiCard {...kpiData[0]} /></React.Suspense>, name: 'KPI Fatturato' },
+    'kpi-2': { id: 'kpi-2', component: <React.Suspense fallback={<WidgetLoader />}><KpiCard {...kpiData[1]} /></React.Suspense>, name: 'KPI Budget' },
+    'kpi-3': { id: 'kpi-3', component: <React.Suspense fallback={<WidgetLoader />}><KpiCard {...kpiData[2]} /></React.Suspense>, name: 'KPI Forecast' },
+    'kpi-4': { id: 'kpi-4', component: <React.Suspense fallback={<WidgetLoader />}><KpiCard {...kpiData[3]} /></React.Suspense>, name: 'KPI Anno Prec.' },
+    'overview': { id: 'overview', component: <React.Suspense fallback={<WidgetLoader />}><OverviewChart /></React.Suspense>, name: 'Panoramica Fatturato' },
+    'revenue-by-product': { id: 'revenue-by-product', component: <React.Suspense fallback={<WidgetLoader />}><RevenueByProductChart /></React.Suspense>, name: 'Fatturato per Prodotto' },
+    'capacity': { id: 'capacity', component: <React.Suspense fallback={<WidgetLoader />}><CapacityChart /></React.Suspense>, name: 'Capacità Produttiva' },
+    'cost-center': { id: 'cost-center', component: <React.Suspense fallback={<WidgetLoader />}><CostCenterAnalysisChart /></React.Suspense>, name: 'Analisi Costi CDC' },
+    'job-margin': { id: 'job-margin', component: <React.Suspense fallback={<WidgetLoader />}><JobMarginAnalysis /></React.Suspense>, name: 'Analisi Marginalità' },
+    'sql-test-table': { id: 'sql-test-table', component: <React.Suspense fallback={<WidgetLoader />}><SqlTestTable /></React.Suspense>, name: 'SQL Test Table' },
+    'orders': { id: 'orders', component: <React.Suspense fallback={<WidgetLoader />}><OrdersWidget /></React.Suspense>, name: 'Gestione Ordini' },
+    'planning': { id: 'planning', component: <React.Suspense fallback={<WidgetLoader />}><PlanningWidget /></React.Suspense>, name: 'Pianificazione Produzione' },
+    'acquisti': { id: 'acquisti', component: <React.Suspense fallback={<WidgetLoader />}><AcquistiWidget /></React.Suspense>, name: 'Centrale Acquisti' },
+    'cutting': { id: 'cutting', component: <React.Suspense fallback={<WidgetLoader />}><CuttingWidget /></React.Suspense>, name: 'Reparto Taglio' },
+    'sewing': { id: 'sewing', component: <React.Suspense fallback={<WidgetLoader />}><SewingWidget /></React.Suspense>, name: 'Reparto Confezione' },
+    'printing': { id: 'printing', component: <React.Suspense fallback={<WidgetLoader />}><PrintingWidget /></React.Suspense>, name: 'Reparto Stampa' },
+    'embroidery': { id: 'embroidery', component: <React.Suspense fallback={<WidgetLoader />}><EmbroideryWidget /></React.Suspense>, name: 'Reparto Ricamo' },
+    'lavanderia': { id: 'lavanderia', component: <React.Suspense fallback={<WidgetLoader />}><LavanderiaWidget /></React.Suspense>, name: 'Reparto Lavanderia' },
+    'stiro': { id: 'stiro', component: <React.Suspense fallback={<WidgetLoader />}><StiroWidget /></React.Suspense>, name: 'Reparto Stiro' },
+    'controllo-qualita': { id: 'controllo-qualita', component: <React.Suspense fallback={<WidgetLoader />}><ControlloQualitaWidget /></React.Suspense>, name: 'Reparto Controllo Qualità' },
+    'packaging': { id: 'packaging', component: <React.Suspense fallback={<WidgetLoader />}><PackagingWidget /></React.Suspense>, name: 'Reparto Packaging' },
+    'magazzino': { id: 'magazzino', component: <React.Suspense fallback={<WidgetLoader />}><MagazzinoWidget /></React.Suspense>, name: 'Magazzino' },
+    'setup': { id: 'setup', component: <React.Suspense fallback={<WidgetLoader />}><SetupWidget /></React.Suspense>, name: 'Setup Connessioni' },
+    'pipelines': { id: 'pipelines', component: <React.Suspense fallback={<WidgetLoader />}><PipelinesWidget /></React.Suspense>, name: 'Pipeline ETL' },
 };
 
 
-export const useAvailableWidgets = () => {
+// Cache for dynamic widgets to avoid redundant fetches
+let widgetsCache: Record<string, Widget> | null = null;
+let cacheTimestamp = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Debounce function to prevent rapid re-fetches
+function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
+    let timeout: NodeJS.Timeout | null = null;
+    return function executedFunction(...args: Parameters<T>) {
+        const later = () => {
+            timeout = null;
+            func(...args);
+        };
+        if (timeout) clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+export const useAvailableWidgets = (visibleWidgetIds?: string[]) => {
     const [availableWidgets, setAvailableWidgets] = useState<Record<string, Widget>>(staticWidgets);
     const { data: session, status } = useSession();
     const [refreshKey, setRefreshKey] = useState(0);
+    const isMountedRef = useRef(true);
+    const fetchCountRef = useRef(0);
 
-    useEffect(() => {
-        if (status === 'loading') return;
+    // Memoized fetch function to prevent unnecessary recreations
+    const fetchDynamicWidgets = useCallback(async (forceRefresh = false) => {
+        if (!session?.user) return;
 
-        const fetchDynamicWidgets = async () => {
-            if (!session?.user) return;
+        // Check cache first
+        const now = Date.now();
+        if (!forceRefresh && widgetsCache && (now - cacheTimestamp) < CACHE_DURATION) {
+            if (isMountedRef.current) {
+                setAvailableWidgets({ ...staticWidgets, ...widgetsCache });
+            }
+            return;
+        }
 
-            try {
-                const dynamicWidgets: Record<string, Widget> = {};
+        try {
+            const dynamicWidgets: Record<string, Widget> = {};
+            const currentFetchId = ++fetchCountRef.current;
 
-                // 1. Pipeline widgets (existing logic)
-                const loadedPipelines = await getPipelines();
-                if (loadedPipelines) {
-                    loadedPipelines.forEach((rawPipeline: any) => {
-                        const pipeline = {
-                            ...rawPipeline,
-                            nodes: typeof rawPipeline.nodes === 'string' ? JSON.parse(rawPipeline.nodes) : rawPipeline.nodes
-                        };
+            // 1. Pipeline widgets (existing logic)
+            const loadedPipelines = await getPipelines();
+            if (loadedPipelines && isMountedRef.current && currentFetchId === fetchCountRef.current) {
+                loadedPipelines.forEach((rawPipeline: any) => {
+                    const pipeline = {
+                        ...rawPipeline,
+                        nodes: typeof rawPipeline.nodes === 'string' ? JSON.parse(rawPipeline.nodes) : rawPipeline.nodes
+                    };
 
-                        if (pipeline.nodes) {
-                            Object.values(pipeline.nodes).forEach((node: any) => {
-                                if (node.type === 'end' && node.isPublished) {
-                                    const widgetId = `pipeline-${pipeline.id}-${node.id}`;
-                                    dynamicWidgets[widgetId] = {
-                                        id: widgetId,
-                                        name: node.name,
-                                        component: <PipelineOutputWidget pipelineId={pipeline.id} nodeId={node.id} />,
-                                    };
-                                }
-                            });
-                        }
-                    });
-                }
+                    if (pipeline.nodes) {
+                        Object.values(pipeline.nodes).forEach((node: any) => {
+                            if (node.type === 'end' && node.isPublished) {
+                                const widgetId = `pipeline-${pipeline.id}-${node.id}`;
+                                dynamicWidgets[widgetId] = {
+                                    id: widgetId,
+                                    name: node.name,
+                                    component: <React.Suspense fallback={<WidgetLoader />}>
+                                        <PipelineOutputWidget pipelineId={pipeline.id} nodeId={node.id} />
+                                    </React.Suspense>,
+                                };
+                            }
+                        });
+                    }
+                });
+            }
 
-                // 2. NEW: Decision tree node widgets
+            // 2. Decision tree node widgets - only fetch if needed
+            if (isMountedRef.current && currentFetchId === fetchCountRef.current) {
                 const { getTreesAction } = await import('@/app/actions');
                 const { NodeWidgetRenderer } = await import('./builder/NodeWidgetRenderer');
                 const { PreviewWidgetRenderer } = await import('./builder/PreviewWidgetRenderer');
 
                 const treesResult = await getTreesAction(undefined, 'RULE');
-                if (treesResult.data) {
+                if (treesResult.data && isMountedRef.current && currentFetchId === fetchCountRef.current) {
                     treesResult.data.forEach((tree: any) => {
                         const jsonTree = typeof tree.jsonDecisionTree === 'string'
                             ? JSON.parse(tree.jsonDecisionTree)
@@ -124,7 +164,9 @@ export const useAvailableWidgets = () => {
                                 dynamicWidgets[widgetId] = {
                                     id: widgetId,
                                     name: node.widgetConfig.title || `Widget da ${tree.name}`,
-                                    component: <NodeWidgetRenderer treeId={tree.id} nodeId={nodeId} />,
+                                    component: <React.Suspense fallback={<WidgetLoader />}>
+                                        <NodeWidgetRenderer treeId={tree.id} nodeId={nodeId} />
+                                    </React.Suspense>,
                                 };
                             }
 
@@ -134,16 +176,14 @@ export const useAvailableWidgets = () => {
                                 dynamicWidgets[widgetId] = {
                                     id: widgetId,
                                     name: `SQL: ${node.sqlResultName} (${tree.name})`,
-                                    component: <PreviewWidgetRenderer treeId={tree.id} nodeId={nodeId} previewType="sql" resultName={node.sqlResultName} />,
+                                    component: <React.Suspense fallback={<WidgetLoader />}>
+                                        <PreviewWidgetRenderer treeId={tree.id} nodeId={nodeId} previewType="sql" resultName={node.sqlResultName} />
+                                    </React.Suspense>,
                                 };
-                                console.log(`[Widget] Added SQL widget: ${node.sqlResultName} from tree ${tree.name}`);
                             }
 
-                            // Check if this node has Python preview data (more flexible detection)
+                            // Check if this node has Python preview data
                             if (node.pythonResultName) {
-                                console.log(`[Widget] Found Python node: ${node.pythonResultName} with previewResult:`, node.pythonPreviewResult);
-
-                                // Check for any preview data (chart, table, variable, or html)
                                 const hasPreview = node.pythonPreviewResult && (
                                     node.pythonPreviewResult.type === 'chart' ||
                                     node.pythonPreviewResult.type === 'table' ||
@@ -160,14 +200,10 @@ export const useAvailableWidgets = () => {
                                     dynamicWidgets[widgetId] = {
                                         id: widgetId,
                                         name: `Python ${typeLabel}: ${node.pythonResultName} (${tree.name})`,
-                                        component: <PreviewWidgetRenderer treeId={tree.id} nodeId={nodeId} previewType="python" resultName={node.pythonResultName} />,
+                                        component: <React.Suspense fallback={<WidgetLoader />}>
+                                            <PreviewWidgetRenderer treeId={tree.id} nodeId={nodeId} previewType="python" resultName={node.pythonResultName} />
+                                        </React.Suspense>,
                                     };
-                                    console.log(`[Widget] Added Python ${typeLabel} widget: ${node.pythonResultName} from tree ${tree.name}`);
-                                } else {
-                                    console.log(`[Widget] Python node found but no valid preview. ResultName: ${node.pythonResultName}, HasPreviewResult: ${!!node.pythonPreviewResult}`);
-                                    if (node.pythonPreviewResult) {
-                                        console.log(`[Widget] PreviewResult type:`, node.pythonPreviewResult.type);
-                                    }
                                 }
                             }
 
@@ -187,23 +223,43 @@ export const useAvailableWidgets = () => {
                             }
                         };
 
-                        console.log(`[Widget] Scanning tree: ${tree.name} (${tree.id})`);
                         scanNode(jsonTree);
                     });
                 }
+            }
 
+            // Update cache
+            if (isMountedRef.current && currentFetchId === fetchCountRef.current) {
+                widgetsCache = dynamicWidgets;
+                cacheTimestamp = now;
                 setAvailableWidgets({ ...staticWidgets, ...dynamicWidgets });
+            }
 
-            } catch (error) {
-                console.error("Error fetching dynamic widgets:", error);
+        } catch (error) {
+            console.error("Error fetching dynamic widgets:", error);
+            if (isMountedRef.current) {
                 setAvailableWidgets(staticWidgets);
             }
+        }
+    }, [session]);
+
+    // Debounced fetch to prevent rapid calls
+    const debouncedFetch = useMemo(() => debounce(fetchDynamicWidgets, 300), [fetchDynamicWidgets]);
+
+    useEffect(() => {
+        if (status === 'loading') return;
+
+        debouncedFetch(false);
+
+        return () => {
+            isMountedRef.current = false;
         };
+    }, [status, session, refreshKey, debouncedFetch]);
 
-        fetchDynamicWidgets();
-    }, [status, session, refreshKey]);
+    // Memoize the result to prevent unnecessary re-renders
+    const memoizedWidgets = useMemo(() => availableWidgets, [availableWidgets]);
 
-    return availableWidgets;
+    return memoizedWidgets;
 };
 
 // You can export this if you have components that need the static list and cannot be hooks

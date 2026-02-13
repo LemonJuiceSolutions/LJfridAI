@@ -17,7 +17,7 @@ async function main() {
         if (!obj || typeof obj !== 'object') return null;
         if (obj.sqlResultName === target || obj.pythonResultName === target) return obj;
         for (const [key, value] of Object.entries(obj)) {
-            const found = findRecursive(obj[key]);
+            const found = findRecursive(value, target);
             if (found) return found;
         }
         return null;

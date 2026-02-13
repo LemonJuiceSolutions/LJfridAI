@@ -18,6 +18,39 @@ import json
 import re
 from chart_to_recharts_converter import matplotlib_to_recharts, plotly_to_recharts, infer_chart_type
 
+# --- Monkey-patch requests to enforce longer timeout ---
+try:
+    import requests.adapters
+    
+    _orig_send = requests.adapters.HTTPAdapter.send
+
+    def _patched_send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
+        # Default to 120s if None or too short (e.g. 30s default in some libs)
+        # We want to allow long-running API calls
+        MIN_TIMEOUT = 120
+        
+        if timeout is None:
+            timeout = MIN_TIMEOUT
+        elif isinstance(timeout, (int, float)) and timeout < MIN_TIMEOUT:
+            print(f"⚠️ [PATCH] Upgrading timeout from {timeout}s to {MIN_TIMEOUT}s for {request.url}")
+            timeout = MIN_TIMEOUT
+        elif isinstance(timeout, tuple):
+            # timeout is (connect, read)
+            connect, read = timeout
+            new_read = max(read, MIN_TIMEOUT) if read is not None else MIN_TIMEOUT
+            if new_read != read:
+                print(f"⚠️ [PATCH] Upgrading read timeout from {read}s to {new_read}s for {request.url}")
+                timeout = (connect, new_read)
+                
+        return _orig_send(self, request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
+
+    requests.adapters.HTTPAdapter.send = _patched_send
+    print(f"✅ [INIT] Requests timeout patched to minimum 120s")
+except ImportError:
+    print(f"⚠️ [INIT] Requests not found, skipping timeout patch")
+except Exception as e:
+    print(f"⚠️ [INIT] Failed to patch requests timeout: {e}")
+
 app = Flask(__name__)
 app.json.sort_keys = False
 CORS(app)  # Allow cross-origin requests from Next.js

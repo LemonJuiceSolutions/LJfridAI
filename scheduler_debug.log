@@ -32198,3 +32198,616 @@ Controlla anche che la dipendenza sia selezionata nel dropdown 'USA DATI DA (PIP
 2026-02-12T13:58:39.920Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
 2026-02-12T13:58:39.922Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
 2026-02-12T13:58:39.923Z [Scheduler] Scheduler Service Initialized. 
+2026-02-12T14:32:35.606Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-13T05:04:28.440Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-13T05:12:53.054Z [Scheduler] Initializing Scheduler Service... 
+2026-02-13T05:12:58.090Z [Scheduler] Found 44 active tasks. 
+2026-02-13T05:12:58.213Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-13T05:12:58.214Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.214Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.215Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.215Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.215Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.216Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.216Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.217Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.217Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.217Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.218Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.218Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.219Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.219Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.220Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.222Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-13T05:12:58.222Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.222Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.223Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.223Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.224Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.224Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.224Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.227Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-13T05:12:58.233Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-13T05:12:58.234Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.240Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-13T05:12:58.241Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.242Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.242Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.243Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.244Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.248Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-13T05:12:58.249Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.249Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.249Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.253Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-13T05:12:58.258Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-13T05:12:58.259Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.264Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-13T05:12:58.266Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-13T05:12:58.266Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-13T05:12:58.268Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-13T05:12:58.268Z [Scheduler] Scheduler Service Initialized. 
+2026-02-13T05:36:19.000Z [Scheduler] Initializing Scheduler Service... 
+2026-02-13T05:36:24.115Z [Scheduler] Found 44 active tasks. 
+2026-02-13T05:36:24.190Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-13T05:36:24.190Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.191Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.191Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.192Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.192Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.192Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.193Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.193Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.193Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.194Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.195Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.196Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.197Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.199Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.200Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.203Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-13T05:36:24.205Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.207Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.207Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.208Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.209Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.210Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.210Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.213Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-13T05:36:24.220Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-13T05:36:24.221Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.229Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-13T05:36:24.230Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.231Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.232Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.233Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.234Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.239Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-13T05:36:24.241Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.242Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.243Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.247Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-13T05:36:24.251Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-13T05:36:24.252Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.256Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-13T05:36:24.261Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-13T05:36:24.262Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-13T05:36:24.265Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-13T05:36:24.265Z [Scheduler] Scheduler Service Initialized. 
+2026-02-13T08:00:00.084Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) 
+2026-02-13T08:00:00.086Z [Scheduler] ▶️ Starting task cmlf4afol001rdit5b7s9xm2c 
+2026-02-13T08:00:00.096Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) 
+2026-02-13T08:00:00.096Z [Scheduler] ▶️ Starting task cmlfskvf9004lwa5gnvnog499 
+2026-02-13T08:00:00.096Z [Scheduler] Executing task: Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) 
+2026-02-13T08:00:00.096Z [Scheduler] ▶️ Starting task cmljk5psd000981311w0wyifu 
+2026-02-13T08:00:00.167Z [Scheduler] Executing logic for type: CUSTOM 
+2026-02-13T08:00:00.169Z [Scheduler] [PythonNode] Starting ancestor chain execution. 
+2026-02-13T08:00:00.171Z [Scheduler] [AncestorChain] Execution Order: EstrazioneSharePoint -> PRODFIL -> PRODFIL2 -> HR2 
+2026-02-13T08:00:00.171Z [Scheduler] [AncestorChain] Executing ancestor: EstrazioneSharePoint (Python) 
+2026-02-13T08:00:00.171Z [Scheduler] [AncestorChain] Built inputData for EstrazioneSharePoint:  
+2026-02-13T08:00:00.171Z [Scheduler] [AncestorChain] Final inputData for EstrazioneSharePoint:  
+2026-02-13T08:00:00.173Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-13T08:00:00.175Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-13T08:00:00.175Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-13T08:00:00.175Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-13T08:00:00.202Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: GPR8yEEU 
+2026-02-13T08:00:00.202Z [Scheduler] [EmailSend] Found email node: SPEDITI 
+2026-02-13T08:00:00.202Z [Scheduler] [EmailSend] Identified 1 required names: Export Trattative 
+2026-02-13T08:00:00.203Z [Scheduler] [EmailSend] Flattened tree into 5 named nodes. Available names: FornitorePreferenziale, KOM, Export Trattative, SPEDIZIONE CAMPIONE, AAAcatml 
+2026-02-13T08:00:00.203Z [Scheduler] [EmailSend] Email task will execute ALL 5 tree nodes to ensure fresh data 
+2026-02-13T08:00:00.203Z [Scheduler] [EmailSend] Total nodes to execute: 5 (FornitorePreferenziale, KOM, Export Trattative, SPEDIZIONE CAMPIONE, AAAcatml) 
+2026-02-13T08:00:00.203Z [Scheduler] [AncestorChain] Execution Order: FornitorePreferenziale -> KOM -> Export Trattative -> SPEDIZIONE CAMPIONE -> AAAcatml 
+2026-02-13T08:00:00.204Z [Scheduler] [AncestorChain] Executing ancestor: FornitorePreferenziale (SQL) 
+2026-02-13T08:00:00.204Z [Scheduler] [AncestorChain] SQL node FornitorePreferenziale: injected 0 deps () 
+2026-02-13T08:00:00.521Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FornitorePreferenziale (yMdvR5-A) 
+2026-02-13T08:00:00.610Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FornitorePreferenziale 
+2026-02-13T08:00:00.610Z [Scheduler] [AncestorChain] Executing ancestor: KOM (SQL) 
+2026-02-13T08:00:00.612Z [Scheduler] [AncestorChain] SQL node KOM: injected 0 deps () 
+2026-02-13T08:00:00.935Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for KOM (kvbQCCL7) 
+2026-02-13T08:00:00.961Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for KOM 
+2026-02-13T08:00:00.961Z [Scheduler] [AncestorChain] Executing ancestor: Export Trattative (Python) 
+2026-02-13T08:00:00.962Z [Scheduler] [AncestorChain] Built inputData for Export Trattative: FornitorePreferenziale, KOM 
+2026-02-13T08:00:00.962Z [Scheduler] [AncestorChain] Final inputData for Export Trattative: FornitorePreferenziale, KOM 
+2026-02-13T08:00:03.057Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: vKJhk8mI 
+2026-02-13T08:00:03.057Z [Scheduler] [EmailSend] Found email node: vKJhk8mI 
+2026-02-13T08:00:03.057Z [Scheduler] [EmailSend] Identified 2 required names: Fatturabile vs Spedito, FatturabileMeseCorrente 
+2026-02-13T08:00:03.058Z [Scheduler] [DEBUG HR2] Node properties: isPython=false, sqlQuery=true, pythonCode=true, pythonResultName=undefined, pythonOutputType=chart, nodePath=root > ConnessioneSharePoint[0] > ElaboraDati[0] > Minuti Capacity > Chart 
+2026-02-13T08:00:03.058Z [Scheduler] [EmailSend] Flattened tree into 19 named nodes. Available names: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity|Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto|Prodotto, Prodotto > Fatturato|Fatturato, Fatturato > Budget|Budget, Budget > Aggregato|Aggregato|BDG vs POC vs FAT, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT|BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito 
+2026-02-13T08:00:03.058Z [Scheduler] [EmailSend] Email task will execute ALL 19 tree nodes to ensure fresh data 
+2026-02-13T08:00:03.058Z [Scheduler] [EmailSend] Total nodes to execute: 19 (EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito) 
+2026-02-13T08:00:03.059Z [Scheduler] [AncestorChain] Execution Order: EstrazioneSharePoint -> PRODFIL -> TABWID -> PRODCommessa Mancante -> PRODFIL2 -> HR2 -> Gant e Capacity > Gantt vs Capacity -> Gantt - Capacity - Sum -> Capacity vs Saturazione -> Consegne -> HR2Local -> PRODUZIONE > Prodotto -> Prodotto > Fatturato -> Fatturato > Budget -> Budget > Aggregato -> BDG vs PROD vs FATTURATO > BDG vs POC vs FAT -> FatturabileMeseCorrente -> SpeditoMeseCorrente -> Fatturabile vs Spedito 
+2026-02-13T08:00:03.059Z [Scheduler] [AncestorChain] Executing ancestor: EstrazioneSharePoint (Python) 
+2026-02-13T08:00:03.059Z [Scheduler] [AncestorChain] Built inputData for EstrazioneSharePoint:  
+2026-02-13T08:00:03.059Z [Scheduler] [AncestorChain] Final inputData for EstrazioneSharePoint:  
+2026-02-13T08:00:03.081Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for EstrazioneSharePoint (feptUzSG) 
+2026-02-13T08:00:04.891Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for EstrazioneSharePoint (feptUzSG) 
+2026-02-13T08:00:12.662Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for EstrazioneSharePoint 
+2026-02-13T08:00:12.663Z [Scheduler] [AncestorChain] Writing EstrazioneSharePoint to PROD 
+2026-02-13T08:00:13.768Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for EstrazioneSharePoint 
+2026-02-13T08:00:13.768Z [Scheduler] [AncestorChain] Writing EstrazioneSharePoint to PROD 
+2026-02-13T08:00:14.293Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL (SQL) 
+2026-02-13T08:00:14.293Z [Scheduler] [AncestorChain] SQL node PRODFIL: injected 0 deps () 
+2026-02-13T08:00:14.594Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL (t4m_jbLn) 
+2026-02-13T08:00:18.995Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL 
+2026-02-13T08:00:18.995Z [Scheduler] [AncestorChain] Writing PRODFIL to PRODFILTRATA 
+2026-02-13T08:00:18.995Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL2 (SQL) 
+2026-02-13T08:00:18.995Z [Scheduler] [AncestorChain] SQL node PRODFIL2: injected 0 deps () 
+2026-02-13T08:00:19.328Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL2 (wC6CRuv7) 
+2026-02-13T08:00:23.418Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL2 
+2026-02-13T08:00:23.418Z [Scheduler] [AncestorChain] Executing ancestor: HR2 (SQL) 
+2026-02-13T08:00:23.419Z [Scheduler] [AncestorChain] SQL node HR2: injected 0 deps () 
+2026-02-13T08:00:28.096Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL (SQL) 
+2026-02-13T08:00:28.096Z [Scheduler] [AncestorChain] SQL node PRODFIL: injected 0 deps () 
+2026-02-13T08:00:28.186Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2 (3NtNCoMB) 
+2026-02-13T08:00:28.444Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL (t4m_jbLn) 
+2026-02-13T08:00:36.054Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2 
+2026-02-13T08:00:36.194Z [Scheduler] ⏱️ Task cmlf4afol001rdit5b7s9xm2c finished in 36.1s 
+2026-02-13T08:00:36.564Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL 
+2026-02-13T08:00:36.565Z [Scheduler] [AncestorChain] Writing PRODFIL to PRODFILTRATA 
+2026-02-13T08:00:38.491Z [Scheduler] [AncestorChain] Executing ancestor: TABWID (SQL) 
+2026-02-13T08:00:38.492Z [Scheduler] [AncestorChain] SQL node TABWID: injected 0 deps () 
+2026-02-13T08:00:38.858Z [Scheduler] [AncestorChain] Hybrid node TABWID: SQL done, now running Python chart code 
+2026-02-13T08:00:40.672Z [Scheduler] [AncestorChain] Hybrid node TABWID: Python chart generated successfully 
+2026-02-13T08:00:40.672Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for TABWID (fVagNTtd) 
+2026-02-13T08:00:46.086Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for TABWID 
+2026-02-13T08:00:46.086Z [Scheduler] [AncestorChain] Executing ancestor: PRODCommessa Mancante (SQL) 
+2026-02-13T08:00:46.086Z [Scheduler] [AncestorChain] SQL node PRODCommessa Mancante: injected 1 deps (PRODFIL) 
+2026-02-13T08:00:46.925Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODCommessa Mancante (_CwXg6oQ) 
+2026-02-13T08:00:51.647Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODCommessa Mancante 
+2026-02-13T08:00:51.647Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL2 (SQL) 
+2026-02-13T08:00:51.647Z [Scheduler] [AncestorChain] SQL node PRODFIL2: injected 0 deps () 
+2026-02-13T08:00:51.997Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL2 (wC6CRuv7) 
+2026-02-13T08:00:57.121Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL2 
+2026-02-13T08:00:57.121Z [Scheduler] [AncestorChain] Executing ancestor: HR2 (SQL) 
+2026-02-13T08:00:57.121Z [Scheduler] [AncestorChain] SQL node HR2: injected 0 deps () 
+2026-02-13T08:00:59.506Z [Scheduler] [AncestorChain] Hybrid node HR2: SQL done, now running Python chart code 
+2026-02-13T08:01:01.082Z [Scheduler] [AncestorChain] Hybrid node HR2: Python chart generated successfully 
+2026-02-13T08:01:01.082Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2 (3NtNCoMB) 
+2026-02-13T08:01:03.159Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Export Trattative (G54tgXtp) 
+2026-02-13T08:01:03.193Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Export Trattative 
+2026-02-13T08:01:03.193Z [Scheduler] [AncestorChain] Executing ancestor: SPEDIZIONE CAMPIONE (SQL) 
+2026-02-13T08:01:03.193Z [Scheduler] [AncestorChain] SQL node SPEDIZIONE CAMPIONE: injected 1 deps (Export Trattative) 
+2026-02-13T08:01:03.536Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for SPEDIZIONE CAMPIONE (GPR8yEEU) 
+2026-02-13T08:01:03.552Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for SPEDIZIONE CAMPIONE 
+2026-02-13T08:01:03.552Z [Scheduler] [AncestorChain] Executing ancestor: AAAcatml (Python) 
+2026-02-13T08:01:03.552Z [Scheduler] [AncestorChain] Built inputData for AAAcatml: FornitorePreferenziale, KOM, Export Trattative, SPEDIZIONE CAMPIONE 
+2026-02-13T08:01:03.552Z [Scheduler] [AncestorChain] Final inputData for AAAcatml: FornitorePreferenziale, KOM, Export Trattative, SPEDIZIONE CAMPIONE 
+2026-02-13T08:01:03.558Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for AAAcatml (4kX3mfm6) 
+2026-02-13T08:01:03.564Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for AAAcatml 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] Ancestor chain completed with 5 results and 5 report entries 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: ["Export Trattative"] 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] SQL Table FornitorePreferenziale (Alternatives: FornitorePreferenziale): inBody=false, asExcel=false 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] SQL Table KOM (Alternatives: KOM): inBody=false, asExcel=false 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Export Trattative 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] SQL Table SPEDIZIONE CAMPIONE (Alternatives: SPEDIZIONE CAMPIONE): inBody=false, asExcel=false 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: AAAcatml 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: [] 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] Python Node Export Trattative (Alternatives: Export Trattative): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] Python Node AAAcatml (Alternatives: AAAcatml): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T08:01:03.565Z [Scheduler] [EmailSend] Sending email with 0 SQL tables and 0 Python outputs 
+2026-02-13T08:01:05.940Z [Scheduler] ⏱️ Task cmljk5psd000981311w0wyifu finished in 65.8s 
+2026-02-13T08:01:07.333Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2 
+2026-02-13T08:01:07.333Z [Scheduler] [AncestorChain] Executing ancestor: Gant e Capacity > Gantt vs Capacity (Python) 
+2026-02-13T08:01:07.333Z [Scheduler] [AncestorChain] Built inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-13T08:01:07.333Z [Scheduler] [AncestorChain] Final inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-13T08:01:09.228Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gant e Capacity > Gantt vs Capacity (mT4fz_HR) 
+2026-02-13T08:01:13.717Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gant e Capacity > Gantt vs Capacity 
+2026-02-13T08:01:13.718Z [Scheduler] [AncestorChain] Executing ancestor: Gantt - Capacity - Sum (Python) 
+2026-02-13T08:01:13.718Z [Scheduler] [AncestorChain] Built inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-13T08:01:13.718Z [Scheduler] [AncestorChain] Final inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-13T08:01:14.937Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gantt - Capacity - Sum (4BbRgfc5) 
+2026-02-13T08:01:20.198Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gantt - Capacity - Sum 
+2026-02-13T08:01:20.198Z [Scheduler] [AncestorChain] Executing ancestor: Capacity vs Saturazione (SQL) 
+2026-02-13T08:01:20.198Z [Scheduler] [AncestorChain] SQL node Capacity vs Saturazione: injected 1 deps (HR2) 
+2026-02-13T08:01:32.350Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: SQL done, now running Python chart code 
+2026-02-13T08:01:34.014Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: Python chart generated successfully 
+2026-02-13T08:01:34.014Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Capacity vs Saturazione (BTNiWkbT) 
+2026-02-13T08:01:41.017Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Capacity vs Saturazione 
+2026-02-13T08:01:41.017Z [Scheduler] [AncestorChain] Executing ancestor: Consegne (SQL) 
+2026-02-13T08:01:41.018Z [Scheduler] [AncestorChain] SQL node Consegne: injected 0 deps () 
+2026-02-13T08:01:49.423Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Consegne (2QH20NyR) 
+2026-02-13T08:01:53.849Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Consegne 
+2026-02-13T08:01:53.850Z [Scheduler] [AncestorChain] Executing ancestor: HR2Local (SQL) 
+2026-02-13T08:01:53.850Z [Scheduler] [AncestorChain] SQL node HR2Local: injected 1 deps (HR2) 
+2026-02-13T08:02:05.945Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2Local (P7OJwQA4) 
+2026-02-13T08:02:12.044Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2Local 
+2026-02-13T08:02:12.045Z [Scheduler] [AncestorChain] Executing ancestor: PRODUZIONE > Prodotto (SQL) 
+2026-02-13T08:02:12.045Z [Scheduler] [AncestorChain] SQL node PRODUZIONE > Prodotto: injected 0 deps () 
+2026-02-13T08:02:12.317Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODUZIONE > Prodotto (NC9jpnnG) 
+2026-02-13T08:02:16.875Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODUZIONE > Prodotto 
+2026-02-13T08:02:16.875Z [Scheduler] [AncestorChain] Writing PRODUZIONE > Prodotto to Prodotto 
+2026-02-13T08:02:17.318Z [Scheduler] [AncestorChain] Executing ancestor: Prodotto > Fatturato (SQL) 
+2026-02-13T08:02:17.319Z [Scheduler] [AncestorChain] SQL node Prodotto > Fatturato: injected 0 deps () 
+2026-02-13T08:02:17.589Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Prodotto > Fatturato (gye2BUuO) 
+2026-02-13T08:02:22.050Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Prodotto > Fatturato 
+2026-02-13T08:02:22.050Z [Scheduler] [AncestorChain] Writing Prodotto > Fatturato to Fatturato 
+2026-02-13T08:02:22.487Z [Scheduler] [AncestorChain] Executing ancestor: Fatturato > Budget (SQL) 
+2026-02-13T08:02:22.488Z [Scheduler] [AncestorChain] SQL node Fatturato > Budget: injected 0 deps () 
+2026-02-13T08:02:22.786Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturato > Budget (9LiHu3E2) 
+2026-02-13T08:02:27.542Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturato > Budget 
+2026-02-13T08:02:27.542Z [Scheduler] [AncestorChain] Writing Fatturato > Budget to Budget 
+2026-02-13T08:02:27.968Z [Scheduler] [AncestorChain] Executing ancestor: Budget > Aggregato (SQL) 
+2026-02-13T08:02:27.969Z [Scheduler] [AncestorChain] SQL node Budget > Aggregato: injected 3 deps (Prodotto, Fatturato, Budget) 
+2026-02-13T08:02:28.661Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: SQL done, now running Python chart code 
+2026-02-13T08:02:29.496Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: Python chart generated successfully 
+2026-02-13T08:02:29.496Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Budget > Aggregato (-A7oR6c8) 
+2026-02-13T08:02:33.529Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Budget > Aggregato 
+2026-02-13T08:02:33.529Z [Scheduler] [AncestorChain] Executing ancestor: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (SQL) 
+2026-02-13T08:02:33.529Z [Scheduler] [AncestorChain] SQL node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: injected 1 deps (Aggregato) 
+2026-02-13T08:02:33.909Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: SQL done, now running Python chart code 
+2026-02-13T08:02:34.706Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: Python chart generated successfully 
+2026-02-13T08:02:34.706Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (KhDnEWg8) 
+2026-02-13T08:02:38.760Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT 
+2026-02-13T08:02:38.761Z [Scheduler] [AncestorChain] Executing ancestor: FatturabileMeseCorrente (SQL) 
+2026-02-13T08:02:38.762Z [Scheduler] [AncestorChain] SQL node FatturabileMeseCorrente: injected 0 deps () 
+2026-02-13T08:02:39.052Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturabileMeseCorrente (ZwOVHdd4) 
+2026-02-13T08:02:43.877Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturabileMeseCorrente 
+2026-02-13T08:02:43.877Z [Scheduler] [AncestorChain] Executing ancestor: SpeditoMeseCorrente (SQL) 
+2026-02-13T08:02:43.878Z [Scheduler] [AncestorChain] SQL node SpeditoMeseCorrente: injected 0 deps () 
+2026-02-13T08:02:45.011Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for SpeditoMeseCorrente (gw4dLyqM) 
+2026-02-13T08:02:49.836Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for SpeditoMeseCorrente 
+2026-02-13T08:02:49.836Z [Scheduler] [AncestorChain] Executing ancestor: Fatturabile vs Spedito (Python) 
+2026-02-13T08:02:49.836Z [Scheduler] [AncestorChain] Built inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-13T08:02:49.836Z [Scheduler] [AncestorChain] Final inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-13T08:02:50.628Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturabile vs Spedito (vKJhk8mI) 
+2026-02-13T08:02:55.152Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturabile vs Spedito 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] Ancestor chain completed with 25 results and 24 report entries 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: ["FatturabileMeseCorrente"] 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: EstrazioneSharePoint 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table PRODFIL (Alternatives: PRODFIL): inBody=false, asExcel=false 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table TABWID (Alternatives: TABWID): inBody=false, asExcel=false 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table PRODCommessa Mancante (Alternatives: PRODCommessa Mancante): inBody=false, asExcel=false 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table PRODFIL2 (Alternatives: PRODFIL2): inBody=false, asExcel=false 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table HR2 (Alternatives: HR2): inBody=false, asExcel=false 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gant e Capacity > Gantt vs Capacity 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gantt - Capacity - Sum 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asExcel=false 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table Consegne (Alternatives: Consegne): inBody=false, asExcel=false 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table HR2Local (Alternatives: HR2Local): inBody=false, asExcel=false 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table PRODUZIONE > Prodotto (Alternatives: PRODUZIONE > Prodotto,Prodotto): inBody=false, asExcel=false 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table Prodotto > Fatturato (Alternatives: Prodotto > Fatturato,Fatturato): inBody=false, asExcel=false 
+2026-02-13T08:02:55.154Z [Scheduler] [EmailSend] SQL Table Fatturato > Budget (Alternatives: Fatturato > Budget,Budget): inBody=false, asExcel=false 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] SQL Table Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] SQL Table BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] SQL Table FatturabileMeseCorrente (Alternatives: FatturabileMeseCorrente): inBody=true, asExcel=true 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] SQL Table SpeditoMeseCorrente (Alternatives: SpeditoMeseCorrente): inBody=false, asExcel=false 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Fatturabile vs Spedito 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: ["Fatturabile vs Spedito","Fatturabile vs Spedito"] 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Python Node EstrazioneSharePoint (Alternatives: EstrazioneSharePoint): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Python Node TABWID (Alternatives: TABWID): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Python Node HR2 (Alternatives: HR2): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Python Node Gant e Capacity > Gantt vs Capacity (Alternatives: Gant e Capacity > Gantt vs Capacity,Gantt vs Capacity): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Python Node Gantt - Capacity - Sum (Alternatives: Gantt - Capacity - Sum): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Python Node Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Python Node Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Python Node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Python Node Fatturabile vs Spedito (Alternatives: Fatturabile vs Spedito): inBody=true, asAttachment=true, matchedName=Fatturabile vs Spedito 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Inferred sqlConnectorId from tree: cmkge2yif0008f0a2sz7qrtx8 
+2026-02-13T08:02:55.155Z [Scheduler] [EmailSend] Sending email with 1 SQL tables and 1 Python outputs 
+2026-02-13T08:03:26.935Z [Scheduler] ⏱️ Task cmlfskvf9004lwa5gnvnog499 finished in 206.8s 
+2026-02-13T09:00:00.128Z [Scheduler] Executing task: Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) 
+2026-02-13T09:00:00.130Z [Scheduler] ▶️ Starting task cmli16dze001pbq7ao98nfsyy 
+2026-02-13T09:00:00.153Z [Scheduler] Executing task: Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) 
+2026-02-13T09:00:00.156Z [Scheduler] ▶️ Starting task cmlib7xaf000nx42l9nzmfd4b 
+2026-02-13T09:00:00.221Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-13T09:00:00.221Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-13T09:00:00.222Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-13T09:00:00.222Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-13T09:00:00.232Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: 1VCNHa6X 
+2026-02-13T09:00:00.233Z [Scheduler] [EmailSend] Found email node: 1VCNHa6X 
+2026-02-13T09:00:00.234Z [Scheduler] [EmailSend] Identified 2 required names: GiacenzeModa, FatturatoB2C 
+2026-02-13T09:00:00.235Z [Scheduler] [EmailSend] Flattened tree into 7 named nodes. Available names: FatturatoB2B, FatturatoB2BMensile|ChartB2B, OrdinatoVsSpeditoVsFatturatoEsploso, OrdinatoVsSpeditoVsFatturatoAggregato, FatturatoB2C, GiacenzeModa, FatturatoSP 
+2026-02-13T09:00:00.235Z [Scheduler] [EmailSend] Email task will execute ALL 7 tree nodes to ensure fresh data 
+2026-02-13T09:00:00.238Z [Scheduler] [EmailSend] Total nodes to execute: 7 (FatturatoB2B, FatturatoB2BMensile, OrdinatoVsSpeditoVsFatturatoEsploso, OrdinatoVsSpeditoVsFatturatoAggregato, FatturatoB2C, GiacenzeModa, FatturatoSP) 
+2026-02-13T09:00:00.238Z [Scheduler] [AncestorChain] Execution Order: FatturatoB2B -> FatturatoB2BMensile -> OrdinatoVsSpeditoVsFatturatoEsploso -> OrdinatoVsSpeditoVsFatturatoAggregato -> FatturatoB2C -> GiacenzeModa -> FatturatoSP 
+2026-02-13T09:00:00.239Z [Scheduler] [AncestorChain] Executing ancestor: FatturatoB2B (SQL) 
+2026-02-13T09:00:00.239Z [Scheduler] [AncestorChain] SQL node FatturatoB2B: injected 0 deps () 
+2026-02-13T09:00:00.294Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: MVSmqlEO 
+2026-02-13T09:00:00.294Z [Scheduler] [EmailSend] Found email node: MVSmqlEO 
+2026-02-13T09:00:00.294Z [Scheduler] [EmailSend] Identified 4 required names: OrdiniDaChiudere, ANOMALIA COMMESSE, LeadTimeCommesse, Tolleranza 
+2026-02-13T09:00:00.294Z [Scheduler] [EmailSend] Flattened tree into 5 named nodes. Available names: OrdiniDaChiudere, ANOMALIA COMMESSE, LeadTimeCommesse, ExportArticoliMago, Tolleranza 
+2026-02-13T09:00:00.294Z [Scheduler] [EmailSend] Email task will execute ALL 5 tree nodes to ensure fresh data 
+2026-02-13T09:00:00.294Z [Scheduler] [EmailSend] Total nodes to execute: 5 (OrdiniDaChiudere, ANOMALIA COMMESSE, LeadTimeCommesse, ExportArticoliMago, Tolleranza) 
+2026-02-13T09:00:00.294Z [Scheduler] [AncestorChain] Execution Order: OrdiniDaChiudere -> ANOMALIA COMMESSE -> LeadTimeCommesse -> ExportArticoliMago -> Tolleranza 
+2026-02-13T09:00:00.294Z [Scheduler] [AncestorChain] Executing ancestor: OrdiniDaChiudere (SQL) 
+2026-02-13T09:00:00.295Z [Scheduler] [AncestorChain] SQL node OrdiniDaChiudere: injected 0 deps () 
+2026-02-13T09:00:00.727Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturatoB2B (ipkMB7Cy) 
+2026-02-13T09:00:00.779Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturatoB2B 
+2026-02-13T09:00:00.780Z [Scheduler] [AncestorChain] Executing ancestor: FatturatoB2BMensile (SQL) 
+2026-02-13T09:00:00.780Z [Scheduler] [AncestorChain] SQL node FatturatoB2BMensile: injected 0 deps () 
+2026-02-13T09:00:01.138Z [Scheduler] [AncestorChain] Hybrid node FatturatoB2BMensile: SQL done, now running Python chart code 
+2026-02-13T09:00:01.181Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for OrdiniDaChiudere (qJDbemso) 
+2026-02-13T09:00:01.433Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for OrdiniDaChiudere 
+2026-02-13T09:00:01.433Z [Scheduler] [AncestorChain] Executing ancestor: ANOMALIA COMMESSE (SQL) 
+2026-02-13T09:00:01.434Z [Scheduler] [AncestorChain] SQL node ANOMALIA COMMESSE: injected 0 deps () 
+2026-02-13T09:00:02.109Z [Scheduler] [AncestorChain] Hybrid node FatturatoB2BMensile: Python chart generated successfully 
+2026-02-13T09:00:02.109Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturatoB2BMensile (lI_oU46X) 
+2026-02-13T09:00:02.134Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturatoB2BMensile 
+2026-02-13T09:00:02.134Z [Scheduler] [AncestorChain] Executing ancestor: OrdinatoVsSpeditoVsFatturatoEsploso (SQL) 
+2026-02-13T09:00:02.135Z [Scheduler] [AncestorChain] SQL node OrdinatoVsSpeditoVsFatturatoEsploso: injected 0 deps () 
+2026-02-13T09:00:03.928Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for ANOMALIA COMMESSE (-dM9EfAR) 
+2026-02-13T09:00:04.151Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for ANOMALIA COMMESSE 
+2026-02-13T09:00:04.151Z [Scheduler] [AncestorChain] Executing ancestor: LeadTimeCommesse (SQL) 
+2026-02-13T09:00:04.151Z [Scheduler] [AncestorChain] SQL node LeadTimeCommesse: injected 0 deps () 
+2026-02-13T09:00:04.446Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for LeadTimeCommesse (G0BkWBfM) 
+2026-02-13T09:00:04.636Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for LeadTimeCommesse 
+2026-02-13T09:00:04.636Z [Scheduler] [AncestorChain] Executing ancestor: ExportArticoliMago (SQL) 
+2026-02-13T09:00:04.636Z [Scheduler] [AncestorChain] SQL node ExportArticoliMago: injected 0 deps () 
+2026-02-13T09:00:05.906Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for ExportArticoliMago (z-khqugw) 
+2026-02-13T09:00:06.276Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for OrdinatoVsSpeditoVsFatturatoEsploso (Zx7-4gto) 
+2026-02-13T09:00:06.343Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for OrdinatoVsSpeditoVsFatturatoEsploso 
+2026-02-13T09:00:06.343Z [Scheduler] [AncestorChain] Executing ancestor: OrdinatoVsSpeditoVsFatturatoAggregato (SQL) 
+2026-02-13T09:00:06.343Z [Scheduler] [AncestorChain] SQL node OrdinatoVsSpeditoVsFatturatoAggregato: injected 0 deps () 
+2026-02-13T09:00:06.500Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for ExportArticoliMago 
+2026-02-13T09:00:06.500Z [Scheduler] [AncestorChain] Executing ancestor: Tolleranza (SQL) 
+2026-02-13T09:00:06.501Z [Scheduler] [AncestorChain] SQL node Tolleranza: injected 0 deps () 
+2026-02-13T09:00:06.794Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Tolleranza (xo44U2XZ) 
+2026-02-13T09:00:07.013Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Tolleranza 
+2026-02-13T09:00:07.013Z [Scheduler] [EmailSend] Ancestor chain completed with 5 results and 5 report entries 
+2026-02-13T09:00:07.013Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-13T09:00:07.013Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: ["OrdiniDaChiudere","ANOMALIA COMMESSE","LeadTimeCommesse","Tolleranza"] 
+2026-02-13T09:00:07.013Z [Scheduler] [EmailSend] SQL Table OrdiniDaChiudere (Alternatives: OrdiniDaChiudere): inBody=true, asExcel=true 
+2026-02-13T09:00:07.014Z [Scheduler] [EmailSend] SQL Table ANOMALIA COMMESSE (Alternatives: ANOMALIA COMMESSE): inBody=true, asExcel=true 
+2026-02-13T09:00:07.014Z [Scheduler] [EmailSend] SQL Table LeadTimeCommesse (Alternatives: LeadTimeCommesse): inBody=true, asExcel=true 
+2026-02-13T09:00:07.014Z [Scheduler] [EmailSend] SQL Table ExportArticoliMago (Alternatives: ExportArticoliMago): inBody=false, asExcel=false 
+2026-02-13T09:00:07.014Z [Scheduler] [EmailSend] SQL Table Tolleranza (Alternatives: Tolleranza): inBody=true, asExcel=true 
+2026-02-13T09:00:07.014Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: [] 
+2026-02-13T09:00:07.014Z [Scheduler] [EmailSend] Inferred sqlConnectorId from tree: cmkgdzm2t0004f0a2yi0phyhz 
+2026-02-13T09:00:07.014Z [Scheduler] [EmailSend] Sending email with 4 SQL tables and 0 Python outputs 
+2026-02-13T09:00:13.049Z [Scheduler] ⏱️ Task cmlib7xaf000nx42l9nzmfd4b finished in 12.9s 
+2026-02-13T09:00:14.996Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for OrdinatoVsSpeditoVsFatturatoAggregato (AfJiuv51) 
+2026-02-13T09:00:15.102Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for OrdinatoVsSpeditoVsFatturatoAggregato 
+2026-02-13T09:00:15.102Z [Scheduler] [AncestorChain] Executing ancestor: FatturatoB2C (SQL) 
+2026-02-13T09:00:15.103Z [Scheduler] [AncestorChain] SQL node FatturatoB2C: injected 0 deps () 
+2026-02-13T09:12:58.348Z [Scheduler] ERROR: [AncestorChain] Error executing SQL node FatturatoB2C: Failed to cancel request in 5000ms 
+2026-02-13T09:12:58.348Z [Scheduler] [AncestorChain] Executing ancestor: GiacenzeModa (SQL) 
+2026-02-13T09:12:58.348Z [Scheduler] [AncestorChain] SQL node GiacenzeModa: injected 0 deps () 
+2026-02-13T09:12:59.929Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for GiacenzeModa (1VCNHa6X) 
+2026-02-13T09:13:31.314Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for GiacenzeModa 
+2026-02-13T09:13:31.315Z [Scheduler] [AncestorChain] Executing ancestor: FatturatoSP (SQL) 
+2026-02-13T09:13:31.315Z [Scheduler] [AncestorChain] SQL node FatturatoSP: injected 0 deps () 
+2026-02-13T09:13:31.654Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturatoSP (o3PdeQ7w) 
+2026-02-13T09:13:31.864Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturatoSP 
+2026-02-13T09:13:31.864Z [Scheduler] [EmailSend] Ancestor chain completed with 7 results and 7 report entries 
+2026-02-13T09:13:31.864Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: [] 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] SQL Table FatturatoB2B (Alternatives: FatturatoB2B): inBody=false, asExcel=false 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] SQL Table FatturatoB2BMensile (Alternatives: FatturatoB2BMensile,ChartB2B): inBody=false, asExcel=false 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] SQL Table OrdinatoVsSpeditoVsFatturatoEsploso (Alternatives: OrdinatoVsSpeditoVsFatturatoEsploso): inBody=false, asExcel=false 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] SQL Table OrdinatoVsSpeditoVsFatturatoAggregato (Alternatives: OrdinatoVsSpeditoVsFatturatoAggregato): inBody=false, asExcel=false 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] SQL Table FatturatoB2C (Alternatives: FatturatoB2C): inBody=false, asExcel=true 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] SQL Table GiacenzeModa (Alternatives: GiacenzeModa): inBody=false, asExcel=true 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] SQL Table FatturatoSP (Alternatives: FatturatoSP): inBody=false, asExcel=false 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: [] 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] Python Node FatturatoB2BMensile (Alternatives: FatturatoB2BMensile,ChartB2B): inBody=false, asAttachment=false, matchedName=none 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] Inferred sqlConnectorId from tree: cmkge3o4x000af0a2kb94f7om 
+2026-02-13T09:13:31.865Z [Scheduler] [EmailSend] Sending email with 2 SQL tables and 0 Python outputs 
+2026-02-13T09:15:39.010Z [Scheduler] ⏱️ Task cmli16dze001pbq7ao98nfsyy finished in 938.9s 
+2026-02-13T10:26:12.537Z [Scheduler] Initializing Scheduler Service... 
+2026-02-13T10:26:16.679Z [Scheduler] Found 48 active tasks. 
+2026-02-13T10:26:16.806Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-13T10:26:16.811Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.812Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.813Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.815Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.816Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.817Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.818Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.819Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.820Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.821Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.821Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.822Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.823Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.826Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.828Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.845Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-13T10:26:16.847Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.847Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.848Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.849Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.849Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.850Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.850Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.851Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.852Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.855Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-13T10:26:16.857Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.858Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.858Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.862Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-13T10:26:16.863Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.864Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.865Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.867Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.875Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-13T10:26:16.878Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-13T10:26:16.881Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-13T10:26:16.882Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.883Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.886Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-13T10:26:16.886Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.886Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.887Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.890Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-13T10:26:16.892Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-13T10:26:16.896Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-13T10:26:16.896Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-13T10:26:16.896Z [Scheduler] Scheduler Service Initialized. 
+2026-02-13T10:31:27.651Z [Scheduler] Initializing Scheduler Service... 
+2026-02-13T10:31:33.411Z [Scheduler] Found 48 active tasks. 
+2026-02-13T10:31:33.701Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-13T10:31:33.702Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.703Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.703Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.704Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.705Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.707Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.708Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.708Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.709Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.709Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.710Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.710Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.711Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.712Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.714Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.718Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-13T10:31:33.719Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.720Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.722Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.722Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.723Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.724Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.725Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.726Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.727Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.732Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-13T10:31:33.733Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.734Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.735Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.742Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-13T10:31:33.743Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.743Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.744Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.746Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.752Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-13T10:31:33.756Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-13T10:31:33.760Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-13T10:31:33.761Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.761Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.766Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-13T10:31:33.767Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.768Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.768Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.782Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-13T10:31:33.788Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-13T10:31:33.792Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-13T10:31:33.793Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-13T10:31:33.794Z [Scheduler] Scheduler Service Initialized. 
+2026-02-13T10:45:52.670Z [Scheduler] Initializing Scheduler Service... 
+2026-02-13T10:45:59.135Z [Scheduler] Found 48 active tasks. 
+2026-02-13T10:45:59.242Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-13T10:45:59.244Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.244Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.245Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.245Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.246Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.246Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.247Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.247Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.248Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.249Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.250Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.252Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.254Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.257Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.259Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.272Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-13T10:45:59.275Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.276Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.277Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.278Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.279Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.279Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.280Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.280Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.282Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.288Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-13T10:45:59.289Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.290Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.291Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.300Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-13T10:45:59.302Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.304Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.306Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.309Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.316Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-13T10:45:59.328Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-13T10:45:59.341Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-13T10:45:59.342Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.344Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.363Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-13T10:45:59.367Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.371Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.375Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.385Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-13T10:45:59.400Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-13T10:45:59.415Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-13T10:45:59.420Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-13T10:45:59.421Z [Scheduler] Scheduler Service Initialized. 
+2026-02-13T11:28:58.568Z [Scheduler] Initializing Scheduler Service... 
+2026-02-13T11:29:00.970Z [Scheduler] Found 49 active tasks. 
+2026-02-13T11:29:01.023Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-13T11:29:01.023Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.023Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.024Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.024Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.024Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.024Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.024Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.024Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.024Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.025Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.025Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.025Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.025Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.025Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.025Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.027Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-13T11:29:01.027Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.027Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.028Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.028Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.028Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.028Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.028Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.028Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.028Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.030Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-13T11:29:01.031Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.031Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.031Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.033Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-13T11:29:01.033Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.033Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.033Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.034Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.035Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-13T11:29:01.038Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-13T11:29:01.041Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-13T11:29:01.041Z [Scheduler] ERROR: Task cmlksn45z000d10l312k32jj1 (Node-4OtZT6m_2q7T7LpEpYoDC-hXm206kX (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.041Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.043Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-13T11:29:01.043Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.043Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.043Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.045Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-13T11:29:01.047Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-13T11:29:01.049Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-13T11:29:01.050Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.050Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-13T11:29:01.051Z [Scheduler] Scheduler Service Initialized. 
+2026-02-13T11:48:25.619Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) with cron: */60 * * * * 

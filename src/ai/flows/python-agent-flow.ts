@@ -8,172 +8,183 @@ import { z } from 'genkit';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
 import { type AgentInput, type AgentOutput } from '@/ai/schemas/agent-schema';
+import { getOpenRouterSettingsAction } from '@/actions/openrouter';
+import { resolveModel, runOpenRouterAgentLoop, type OpenRouterTool } from '@/ai/openrouter-utils';
 
-// Tool: Explore DB schema (list tables)
+// --- Tool Implementations (Shared) ---
+
+async function doPyExploreDbSchema(input: { connectorId: string }) {
+    try {
+        const result = await executeSqlPreviewAction(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
+            input.connectorId, [], true
+        );
+        if (result.error) return JSON.stringify({ error: result.error });
+        return JSON.stringify({ tables: result.data || [] }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+async function doPyExploreTableColumns(input: { connectorId: string, tableName: string }) {
+    try {
+        const result = await executeSqlPreviewAction(
+            `SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = '${input.tableName.replace(/'/g, "''")}' ORDER BY ordinal_position`,
+            input.connectorId, [], true
+        );
+        if (result.error) return JSON.stringify({ error: result.error });
+        return JSON.stringify({ table: input.tableName, columns: result.data || [] }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+async function doPyTestSqlQuery(input: { query: string, connectorId: string }) {
+    try {
+        const result = await executeSqlPreviewAction(input.query, input.connectorId, [], true);
+        if (result.error) return JSON.stringify({ error: result.error });
+        const data = result.data || [];
+        return JSON.stringify({
+            success: true,
+            rowCount: data.length,
+            columns: data.length > 0 ? Object.keys(data[0]) : [],
+            sampleData: data.slice(0, 5),
+        }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+async function doPyTestCode(input: { code: string, outputType: 'table' | 'variable' | 'chart', connectorId?: string }) {
+    try {
+        const result = await executePythonPreviewAction(input.code, input.outputType, {}, [], input.connectorId, true);
+        if (!result.success) return JSON.stringify({ error: result.error || 'Errore esecuzione' });
+        return JSON.stringify({
+            success: true,
+            data: result.data?.slice(0, 5),
+            variables: result.variables,
+            columns: result.columns,
+            rowCount: result.rowCount,
+            stdout: result.stdout,
+        }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+async function doPySearchKB(input: { query: string, companyId: string }) {
+    try {
+        const term = input.query.toLowerCase();
+        const entries = await db.knowledgeBaseEntry.findMany({
+            where: {
+                companyId: input.companyId,
+                OR: [
+                    { question: { contains: term, mode: 'insensitive' } },
+                    { answer: { contains: term, mode: 'insensitive' } },
+                    { tags: { hasSome: [term] } },
+                ],
+            },
+            take: 5,
+            orderBy: { updatedAt: 'desc' },
+        });
+        if (entries.length === 0) return JSON.stringify({ results: [], message: 'Nessuna entry trovata.' });
+        return JSON.stringify({ results: entries.map(e => ({ question: e.question, answer: e.answer, category: e.category })) }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+async function doPyListConnectors(input: { companyId: string }) {
+    try {
+        const connectors = await db.connector.findMany({
+            where: { companyId: input.companyId, type: 'SQL' },
+            select: { id: true, name: true },
+        });
+        return JSON.stringify({ connectors }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+async function doPySaveToKB(input: { question: string, answer: string, tags: string[], category: string, companyId: string }) {
+    try {
+        await db.knowledgeBaseEntry.create({
+            data: {
+                question: input.question,
+                answer: input.answer,
+                tags: input.tags,
+                category: input.category,
+                companyId: input.companyId,
+            },
+        });
+        return JSON.stringify({ success: true, message: 'Salvato nella Knowledge Base!' });
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+// --- Genkit Tools Definitions (Legacy / Google) ---
+
 const exploreDbSchema = ai.defineTool(
     {
         name: 'pyExploreDbSchema',
         description: 'Esplora lo schema del database: elenca tutte le tabelle disponibili.',
-        inputSchema: z.object({
-            connectorId: z.string().describe("L'ID del connettore database."),
-        }),
+        inputSchema: z.object({ connectorId: z.string().describe("L'ID del connettore database.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const result = await executeSqlPreviewAction(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
-                input.connectorId, [], true
-            );
-            if (result.error) return JSON.stringify({ error: result.error });
-            return JSON.stringify({ tables: result.data || [] }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
-        }
-    }
+    doPyExploreDbSchema
 );
 
-// Tool: Explore table columns
 const exploreTableColumns = ai.defineTool(
     {
         name: 'pyExploreTableColumns',
         description: 'Esplora le colonne di una tabella specifica con tipo di dato.',
-        inputSchema: z.object({
-            connectorId: z.string().describe("L'ID del connettore database."),
-            tableName: z.string().describe("Il nome della tabella."),
-        }),
+        inputSchema: z.object({ connectorId: z.string().describe("L'ID del connettore database."), tableName: z.string().describe("Il nome della tabella.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const result = await executeSqlPreviewAction(
-                `SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = '${input.tableName.replace(/'/g, "''")}' ORDER BY ordinal_position`,
-                input.connectorId, [], true
-            );
-            if (result.error) return JSON.stringify({ error: result.error });
-            return JSON.stringify({ table: input.tableName, columns: result.data || [] }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
-        }
-    }
+    doPyExploreTableColumns
 );
 
-// Tool: Execute a test SQL query to understand input data
 const testSqlQuery = ai.defineTool(
     {
         name: 'pyTestSqlQuery',
         description: 'Esegue una query SQL di test per capire la struttura dei dati che il codice Python ricevera\' in input.',
-        inputSchema: z.object({
-            query: z.string().describe("La query SQL da testare."),
-            connectorId: z.string().describe("L'ID del connettore database."),
-        }),
+        inputSchema: z.object({ query: z.string().describe("La query SQL da testare."), connectorId: z.string().describe("L'ID del connettore database.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const result = await executeSqlPreviewAction(input.query, input.connectorId, [], true);
-            if (result.error) return JSON.stringify({ error: result.error });
-            const data = result.data || [];
-            return JSON.stringify({
-                success: true,
-                rowCount: data.length,
-                columns: data.length > 0 ? Object.keys(data[0]) : [],
-                sampleData: data.slice(0, 5),
-            }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
-        }
-    }
+    doPyTestSqlQuery
 );
 
-// Tool: Test Python code
 const testPythonCode = ai.defineTool(
     {
         name: 'pyTestCode',
         description: 'Esegue codice Python di test per verificare che funzioni correttamente.',
-        inputSchema: z.object({
-            code: z.string().describe("Il codice Python da testare."),
-            outputType: z.enum(['table', 'variable', 'chart']).describe("Tipo output."),
-            connectorId: z.string().optional().describe("Connettore opzionale."),
-        }),
+        inputSchema: z.object({ code: z.string().describe("Il codice Python da testare."), outputType: z.enum(['table', 'variable', 'chart']).describe("Tipo output."), connectorId: z.string().optional().describe("Connettore opzionale.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const result = await executePythonPreviewAction(input.code, input.outputType, {}, [], input.connectorId, true);
-            if (!result.success) return JSON.stringify({ error: result.error || 'Errore esecuzione' });
-            return JSON.stringify({
-                success: true,
-                data: result.data?.slice(0, 5),
-                variables: result.variables,
-                columns: result.columns,
-                rowCount: result.rowCount,
-                stdout: result.stdout,
-            }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
-        }
-    }
+    doPyTestCode
 );
 
-// Tool: Search Knowledge Base
 const searchKB = ai.defineTool(
     {
         name: 'pySearchKnowledgeBase',
         description: 'Cerca nella Knowledge Base aziendale script Python simili e correzioni precedenti.',
-        inputSchema: z.object({
-            query: z.string().describe('Termine di ricerca.'),
-            companyId: z.string().describe("L'ID della company."),
-        }),
+        inputSchema: z.object({ query: z.string().describe('Termine di ricerca.'), companyId: z.string().describe("L'ID della company.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const term = input.query.toLowerCase();
-            const entries = await db.knowledgeBaseEntry.findMany({
-                where: {
-                    companyId: input.companyId,
-                    OR: [
-                        { question: { contains: term, mode: 'insensitive' } },
-                        { answer: { contains: term, mode: 'insensitive' } },
-                        { tags: { hasSome: [term] } },
-                    ],
-                },
-                take: 5,
-                orderBy: { updatedAt: 'desc' },
-            });
-            if (entries.length === 0) return JSON.stringify({ results: [], message: 'Nessuna entry trovata.' });
-            return JSON.stringify({ results: entries.map(e => ({ question: e.question, answer: e.answer, category: e.category })) }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
-        }
-    }
+    doPySearchKB
 );
 
-// Tool: List SQL connectors
 const listConnectors = ai.defineTool(
     {
         name: 'pyListSqlConnectors',
         description: 'Elenca tutti i connettori SQL (database) disponibili.',
-        inputSchema: z.object({
-            companyId: z.string().describe("L'ID della company."),
-        }),
+        inputSchema: z.object({ companyId: z.string().describe("L'ID della company.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const connectors = await db.connector.findMany({
-                where: { companyId: input.companyId, type: 'SQL' },
-                select: { id: true, name: true },
-            });
-            return JSON.stringify({ connectors }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
-        }
-    }
+    doPyListConnectors
 );
 
-// Tool: Save to Knowledge Base
 const saveToKB = ai.defineTool(
     {
         name: 'pySaveToKnowledgeBase',
@@ -187,42 +198,121 @@ const saveToKB = ai.defineTool(
         }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            await db.knowledgeBaseEntry.create({
-                data: {
-                    question: input.question,
-                    answer: input.answer,
-                    tags: input.tags,
-                    category: input.category,
-                    companyId: input.companyId,
+    doPySaveToKB
+);
+
+// --- OpenRouter Tools Definitions ---
+
+const openRouterTools: OpenRouterTool[] = [
+    {
+        type: 'function',
+        function: {
+            name: 'pyExploreDbSchema',
+            description: 'Esplora lo schema del database: elenca tutte le tabelle disponibili.',
+            parameters: {
+                type: 'object',
+                properties: { connectorId: { type: 'string', description: "L'ID del connettore database." } },
+                required: ['connectorId']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'pyExploreTableColumns',
+            description: 'Esplora le colonne di una tabella specifica.',
+            parameters: {
+                type: 'object',
+                properties: { connectorId: { type: 'string', description: "L'ID del connettore database." }, tableName: { type: 'string', description: "Il nome della tabella." } },
+                required: ['connectorId', 'tableName']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'pyTestSqlQuery',
+            description: 'Esegue una query SQL di test per capire la struttura dei dati.',
+            parameters: {
+                type: 'object',
+                properties: { query: { type: 'string', description: "La query SQL da testare." }, connectorId: { type: 'string', description: "L'ID del connettore database." } },
+                required: ['query', 'connectorId']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'pyTestCode',
+            description: 'Esegue codice Python di test per verificare che funzioni.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    code: { type: 'string', description: "Il codice Python da testare." },
+                    outputType: { type: 'string', enum: ['table', 'variable', 'chart'], description: "Tipo output." },
+                    connectorId: { type: 'string', description: "Connettore opzionale." }
                 },
-            });
-            return JSON.stringify({ success: true, message: 'Salvato nella Knowledge Base!' });
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
+                required: ['code', 'outputType']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'pySearchKnowledgeBase',
+            description: 'Cerca nella Knowledge Base aziendale.',
+            parameters: {
+                type: 'object',
+                properties: { query: { type: 'string', description: 'Termine di ricerca.' }, companyId: { type: 'string', description: "L'ID della company." } },
+                required: ['query', 'companyId']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'pyListSqlConnectors',
+            description: 'Elenca tutti i connettori SQL disponibili.',
+            parameters: {
+                type: 'object',
+                properties: { companyId: { type: 'string', description: "L'ID della company." } },
+                required: ['companyId']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'pySaveToKnowledgeBase',
+            description: 'Salva una informazione nella Knowledge Base aziendale.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    question: { type: 'string', description: 'La domanda o descrizione.' },
+                    answer: { type: 'string', description: 'La risposta o codice.' },
+                    tags: { type: 'array', items: { type: 'string' }, description: 'Tag per la ricerca.' },
+                    category: { type: 'string', description: 'Categoria.' },
+                    companyId: { type: 'string', description: "L'ID della company." }
+                },
+                required: ['question', 'answer', 'tags', 'category', 'companyId']
+            }
         }
     }
-);
+];
+
+// --- Main Agent Flow ---
 
 // Robust JSON parser that handles updatedScript with curly braces and unescaped newlines
 function parseAgentJson(text: string): any | null {
     // 1. Try to strip markdown code blocks if present
     const markdownMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (markdownMatch) {
-        // Attempt to parse clean JSON first
         try {
             const parsed = JSON.parse(markdownMatch[1]);
             if (parsed && typeof parsed.message === 'string') return parsed;
         } catch {
-            // If failed, try to sanitize newlines inside the JSON string
-            // This is a common issue with LLMs putting real newlines in JSON strings
             try {
-                // Heuristic: Escape newlines that look like they are inside a string value
-                // We look for "updatedScript": "..." content and try to escape it
-                // This is risky but often necessary for "dirty" LLM JSON
                 const sanitized = markdownMatch[1].replace(/("updatedScript"\s*:\s*")([\s\S]*?)("\s*})/g, (match, p1, p2, p3) => {
-                    // Escape newlines and tabs in the script body (p2)
                     const escaped = p2.replace(/\n/g, '\\n').replace(/\t/g, '\\t').replace(/\r/g, '');
                     return p1 + escaped + p3;
                 });
@@ -239,8 +329,6 @@ function parseAgentJson(text: string): any | null {
         let inString = false;
         let escape = false;
 
-        // Simple bracket counting doesn't work well if strings contain unescaped braces
-        // But let's try to extract the candidate string first
         for (let j = i; j < text.length; j++) {
             const ch = text[j];
             if (escape) { escape = false; continue; }
@@ -253,11 +341,9 @@ function parseAgentJson(text: string): any | null {
                 if (depth === 0) {
                     try {
                         const candidate = text.substring(i, j + 1);
-                        // Try standard parse
                         const parsed = JSON.parse(candidate);
                         if (parsed && typeof parsed.message === 'string') return parsed;
                     } catch {
-                        // Try sanitizing newlines in the candidate
                         try {
                             const candidate = text.substring(i, j + 1);
                             const sanitized = candidate.replace(/("updatedScript"\s*:\s*")([\s\S]*?)("\s*})/g, (match, p1, p2, p3) => {
@@ -278,7 +364,24 @@ function parseAgentJson(text: string): any | null {
 
 export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
     try {
-        // Build context
+        // 1. Get User/Model Settings
+        let apiKey = input.openRouterConfig?.apiKey;
+        let model = input.openRouterConfig?.model;
+
+        // If not provided in input, fetch from DB
+        if (!apiKey || !model) {
+            const settings = await getOpenRouterSettingsAction();
+            if (settings.apiKey) apiKey = settings.apiKey;
+            if (settings.model) model = settings.model;
+            console.log('[PythonFlow] Fetched settings from DB:', { model: settings.model, hasApiKey: !!settings.apiKey });
+        }
+
+        console.log('[PythonFlow] Final config:', { model, hasApiKey: !!apiKey });
+
+        // 2. Resolve Model Provider
+        const { provider, modelName } = resolveModel(model);
+
+        // 3. Build Context & Prompts
         let context = '';
 
         if (input.tableSchema && Object.keys(input.tableSchema).length > 0) {
@@ -308,7 +411,7 @@ export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
 
         const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-        const systemPrompt = `Sei un agente AI esperto in Python per analisi dati. NON MOLLARE MAI. Sei tenace e persistente.
+        const systemPrompt = `Sei un agente AI esperto in Python per analisi dati. Stai utilizzando il modello: ${modelName}. NON MOLLARE MAI. Sei tenace e persistente.
 DATA DI OGGI: ${today}
 
 ${connectorInfo}${companyInfo}
@@ -402,15 +505,66 @@ ${context}${historyContext}
 
 Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
 
-        const { text } = await ai.generate({
-            model: 'googleai/gemini-2.5-flash',
-            prompt: `${systemPrompt} \n\n${userPrompt} `,
-            tools: [
-                ...(input.connectorId ? [exploreDbSchema, exploreTableColumns, testSqlQuery, testPythonCode] : [testPythonCode]),
-                ...(input.companyId ? [searchKB, listConnectors, saveToKB] : []),
-            ],
-            config: { temperature: 0.7 },
-        });
+        let resultText = '';
+
+        if (provider === 'google') {
+            // --- Legacy Genkit ---
+            const result = await ai.generate({
+                model: modelName,
+                prompt: `${systemPrompt} \n\n${userPrompt} `,
+                tools: [
+                    ...(input.connectorId ? [exploreDbSchema, exploreTableColumns, testSqlQuery, testPythonCode] : [testPythonCode]),
+                    ...(input.companyId ? [searchKB, listConnectors, saveToKB] : []),
+                ],
+                config: { temperature: 0.7 },
+            });
+            resultText = result.text;
+        } else {
+            // --- OpenRouter ---
+            if (!apiKey) {
+                return { message: "Errore: Chiave API OpenRouter mancante.", needsClarification: false };
+            }
+
+            const messages = [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+            ];
+
+            const activeTools = [
+                openRouterTools.find(t => t.function.name === 'pyTestCode'), // Always available
+                ...(input.connectorId ? [
+                    openRouterTools.find(t => t.function.name === 'pyExploreDbSchema'),
+                    openRouterTools.find(t => t.function.name === 'pyExploreTableColumns'),
+                    openRouterTools.find(t => t.function.name === 'pyTestSqlQuery')
+                ] : []),
+                ...(input.companyId ? [
+                    openRouterTools.find(t => t.function.name === 'pySearchKnowledgeBase'),
+                    openRouterTools.find(t => t.function.name === 'pyListSqlConnectors'),
+                    openRouterTools.find(t => t.function.name === 'pySaveToKnowledgeBase')
+                ] : [])
+            ].filter(Boolean) as OpenRouterTool[];
+
+            const dispatcher = async (name: string, args: any) => {
+                switch (name) {
+                    case 'pyExploreDbSchema': return doPyExploreDbSchema(args);
+                    case 'pyExploreTableColumns': return doPyExploreTableColumns(args);
+                    case 'pyTestSqlQuery': return doPyTestSqlQuery(args);
+                    case 'pyTestCode': return doPyTestCode(args);
+                    case 'pySearchKnowledgeBase': return doPySearchKB(args);
+                    case 'pyListSqlConnectors': return doPyListConnectors(args);
+                    case 'pySaveToKnowledgeBase': return doPySaveToKB(args);
+                    default: return JSON.stringify({ error: `Tool sconosciuto: ${name}` });
+                }
+            };
+
+            resultText = await runOpenRouterAgentLoop(
+                apiKey,
+                modelName,
+                messages,
+                activeTools,
+                dispatcher
+            );
+        }
 
         // Parse the response - New Robust Logic
         // 1. Extract Python Code Block
@@ -419,7 +573,7 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
         let match;
         let extractedScript = null;
 
-        while ((match = codeBlockRegex.exec(text)) !== null) {
+        while ((match = codeBlockRegex.exec(resultText)) !== null) {
             const lang = match[1].toLowerCase().trim();
             const content = match[2].trim();
             // If it's explicitly python, or empty/unknown (but not json), and looks like code (has def or import or similar)
@@ -442,14 +596,14 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
         let parsedMetadata: any = null;
 
         // Try escaping from markdown json block first
-        const jsonBlockMatch = text.match(/```json\s*([\s\S]*?)```/);
+        const jsonBlockMatch = resultText.match(/```json\s*([\s\S]*?)```/);
         if (jsonBlockMatch) {
             try { parsedMetadata = JSON.parse(jsonBlockMatch[1]); } catch { }
         }
 
         // Use the generic parser if block extract failed
         if (!parsedMetadata) {
-            parsedMetadata = parseAgentJson(text);
+            parsedMetadata = parseAgentJson(resultText);
         }
 
         if (parsedMetadata) {
@@ -476,7 +630,7 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
             };
         }
 
-        return { message: text, needsClarification: false };
+        return { message: resultText, needsClarification: false };
     } catch (e: any) {
         console.error('Error in Python agent flow:', e);
         return { message: `Errore: ${e.message}. Riprova o dammi piu' dettagli.`, needsClarification: false };

@@ -44,7 +44,7 @@ async function inspectTaskContext() {
                 console.log(`[Live Tree] Found Tree: ${tree.name}`);
 
                 // flattened traversal to find nodes
-                const findNode = (node: any, name: string) => {
+                const findNode = (node: any, name: string): unknown => {
                     if (!node) return null;
                     // Check various fields just in case
                     if (node.name === name || node.id === name || node.question === name || node.nodeName === name) return node;
@@ -57,7 +57,7 @@ async function inspectTaskContext() {
                     return null;
                 };
 
-                const prodottoNode = findNode(json, 'Prodotto');
+                const prodottoNode = findNode(json, 'Prodotto') as any;
                 if (prodottoNode) {
                     console.log(`[Live Tree] FOUND 'Prodotto' node! ID: ${prodottoNode.id}`);
                     console.log(`[Live Tree] Prodotto Connector: ${prodottoNode.connectorId}`);

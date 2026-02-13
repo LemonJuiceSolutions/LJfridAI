@@ -92,11 +92,13 @@ export async function POST(request: NextRequest) {
         role: 'user',
         content: userMessage,
         timestamp: Date.now(),
+        scriptSnapshot: script,
       },
       {
         role: 'assistant',
         content: agentResponse.message,
         timestamp: Date.now(),
+        scriptSnapshot: agentResponse.updatedScript || script,
       },
     ];
 

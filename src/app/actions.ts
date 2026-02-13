@@ -1145,11 +1145,34 @@ export async function executeSqlPreviewAction(
         // Execute Pipeline Dependencies in order
         const nameMap = new Map<string, string>();
         const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const replaceTableRef = (sqlText: string, originalName: string, tempName: string, keyword: 'FROM' | 'JOIN') => {
+
+        // Robust table replacement that handles:
+        // 1. Bracketed names: [Name] (ignores schema like dbo.[Name])
+        // 2. Unbracketed names: Name (with word boundaries)
+        // 3. Any context (FROM, JOIN, comma lists, etc.)
+        const replaceTableRef = (sqlText: string, originalName: string, tempName: string) => {
             const escaped = escapeRegExp(originalName);
-            const pattern = `\\b${keyword}\\s+((?:\\[[^\\]]+\\]|\\w+)\\.)?\\[?${escaped}\\]?\\b`;
-            const regex = new RegExp(pattern, 'gi');
-            return sqlText.replace(regex, `${keyword} ${tempName}`);
+
+            // Regex for [Name] (consuming optional schema prefix)
+            // Matches: [dbo].[Name], dbo.[Name], [Name]
+            const bracketPattern = `((?:\\[[^\\]]+\\]|\\w+)\\.)?\\[${escaped}\\]`;
+            const bracketRegex = new RegExp(bracketPattern, 'gi');
+
+            // Regex for Name (consuming optional schema prefix)
+            // Matches: dbo.Name, Name
+            // Note: \\b is crucial for unbracketed names
+            const unbracketedPattern = `((?:\\[[^\\]]+\\]|\\w+)\\.)?\\b${escaped}\\b`;
+            const unbracketedRegex = new RegExp(unbracketedPattern, 'gi');
+
+            let newText = sqlText;
+
+            // Replace bracketed first (most specific)
+            newText = newText.replace(bracketRegex, tempName);
+
+            // Replace unbracketed
+            newText = newText.replace(unbracketedRegex, tempName);
+
+            return newText;
         };
 
         if (allDeps.length > 0) {
@@ -1162,6 +1185,20 @@ export async function executeSqlPreviewAction(
                 const sanitizedName = dep.tableName.replace(/[^a-zA-Z0-9_]/g, '_');
                 const tempTableName = `##${sanitizedName}_${uniqueId}`;
                 nameMap.set(dep.tableName, tempTableName);
+
+                // FIX: Register all possible name variants as aliases
+                // Nodes can be referenced by: tableName (pythonResultName/sqlResultName), 
+                // nodeName (question/decision), or displayName (node.name)
+                // e.g. node "Pipeline Prodotto" has pythonResultName "PIPELINEUP", question "UP"
+                // SQL queries may reference any of these names
+                if (dep.nodeName && dep.nodeName !== dep.tableName && !nameMap.has(dep.nodeName)) {
+                    nameMap.set(dep.nodeName, tempTableName);
+                    console.log(`[PIPELINE] Registered alias (nodeName): "${dep.nodeName}" -> ${tempTableName}`);
+                }
+                if (dep.displayName && dep.displayName !== dep.tableName && dep.displayName !== dep.nodeName && !nameMap.has(dep.displayName)) {
+                    nameMap.set(dep.displayName, tempTableName);
+                    console.log(`[PIPELINE] Registered alias (displayName): "${dep.displayName}" -> ${tempTableName}`);
+                }
 
                 console.log(`[PIPELINE] Materializing: ${tempTableName} (isPython: ${dep.isPython}, hasPythonCode: ${!!dep.pythonCode}, hasQuery: ${!!dep.query})`);
 
@@ -1221,8 +1258,7 @@ export async function executeSqlPreviewAction(
                             // Avoid replacing itself if recursive (shouldn't happen in DAG)
                             if (orig === dep.tableName) continue;
 
-                            sourceQuery = replaceTableRef(sourceQuery, orig, temp, 'FROM');
-                            sourceQuery = replaceTableRef(sourceQuery, orig, temp, 'JOIN');
+                            sourceQuery = replaceTableRef(sourceQuery, orig, temp);
                         }
 
                         // 🔥 FIX: Use transaction request instead of pool.request() 
@@ -1318,8 +1354,7 @@ export async function executeSqlPreviewAction(
         // Replace pipeline table references with global temp table names
         if (nameMap.size > 0) {
             for (const [originalName, tempName] of nameMap.entries()) {
-                finalQuery = replaceTableRef(finalQuery, originalName, tempName, 'FROM');
-                finalQuery = replaceTableRef(finalQuery, originalName, tempName, 'JOIN');
+                finalQuery = replaceTableRef(finalQuery, originalName, tempName);
             }
         }
 
@@ -1703,7 +1738,7 @@ Rules:
 export async function generatePythonAction(
     userDescription: string,
     openRouterConfig?: { apiKey: string, model: string },
-    outputType: 'table' | 'variable' | 'chart' = 'table',
+    outputType: 'table' | 'variable' | 'chart' | 'html' = 'table',
     availableDataframes: string[] = [],
     history: { role: string, content: string }[] = [],
     context?: {
@@ -1738,7 +1773,10 @@ fig
 Example with Matplotlib (STATIC):
 fig, ax = plt.subplots()
 ax.bar(data['Category'], data['Value'], color='#059669')
-fig`
+fig`,
+            html: `Return a raw HTML string. The last line MUST be the string variable (e.g., just 'html' on its own line).
+Example: html = "<div><h1>Title</h1><p>Content</p></div>"
+html`
         };
 
         // Build context string for the prompt

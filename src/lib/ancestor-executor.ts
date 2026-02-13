@@ -10,7 +10,7 @@ import { Node, Edge, topologicalSort, calculateDepths } from './topological-sort
 /**
  * Python output type definition
  */
-type PythonOutputType = 'table' | 'variable' | 'chart';
+type PythonOutputType = 'table' | 'variable' | 'chart' | 'html';
 
 /**
  * Execution result for a single node
@@ -178,7 +178,7 @@ async function executePythonNode(node: Node, context: ExecutionContext): Promise
   const dependencies = buildDependencies(node, context);
 
   // Convert pythonOutputType to valid type
-  const outputType: PythonOutputType = (node.pythonOutputType === 'text') ? 'table' : (node.pythonOutputType || 'table');
+  const outputType: PythonOutputType = node.pythonOutputType || 'table';
 
   // Execute Python script
   const result = await executePythonPreviewAction(

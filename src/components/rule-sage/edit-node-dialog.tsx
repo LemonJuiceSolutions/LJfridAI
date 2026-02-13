@@ -1234,6 +1234,8 @@ export default function EditNodeDialog({
                 inputData, // Pass accumulated ancestor data
                 (Array.isArray(ancestor.pipelineDependencies) ? ancestor.pipelineDependencies : []).map((d: any) => ({
                   tableName: d.tableName,
+                  nodeName: d.nodeName, // FIX: Pass display name for alias resolution
+                  displayName: d.displayName, // FIX: node.name display name
                   query: d.query,
                   isPython: d.isPython,
                   pythonCode: d.pythonCode,
@@ -1249,8 +1251,6 @@ export default function EditNodeDialog({
                   data: res.data,
                   chartBase64: res.chartBase64,
                   chartHtml: res.chartHtml,
-                  rechartsConfig: res.rechartsConfig,
-                  rechartsData: res.rechartsData,
                   rechartsConfig: res.rechartsConfig,
                   rechartsData: res.rechartsData,
                   variables: res.variables,
@@ -1279,6 +1279,8 @@ export default function EditNodeDialog({
 
                 return {
                   tableName: t.tableName,
+                  nodeName: t.nodeName, // FIX: Pass display name for alias resolution
+                  displayName: t.displayName, // FIX: node.name display name
                   query: t.query,
                   isPython: t.isPython,
                   pythonCode: t.pythonCode,
@@ -2195,6 +2197,8 @@ export default function EditNodeDialog({
 
                                   return {
                                     tableName: t.name,
+                                    nodeName: t.nodeName, // FIX: Pass display name for alias resolution
+                                    displayName: (t as any).displayName, // FIX: node.name display name
                                     query: t.sqlQuery,
                                     isPython: t.isPython,
                                     pythonCode: t.pythonCode,
@@ -2293,7 +2297,7 @@ export default function EditNodeDialog({
                   )}
 
                   {/* Pipeline Execution Visualization (for SQL) */}
-                  {executionPipeline.length > 0 && !pythonCode && (
+                  {executionPipeline.length > 0 && (
                     <div className="mt-4 border rounded-md overflow-hidden bg-muted/20 animate-in fade-in slide-in-from-top-2 duration-300">
                       {/* Header */}
                       <div className="p-2 px-3 bg-muted/40 border-b flex items-center justify-between">
@@ -2333,7 +2337,7 @@ export default function EditNodeDialog({
                   )}
 
                   {/* Visual Stepper - shown during SQL execution */}
-                  {pipelineAgentStatus && !pythonCode && (
+                  {pipelineAgentStatus && (
                     <div className="flex items-center justify-center gap-8 py-4 mt-4 animate-in fade-in zoom-in-95 duration-300">
                       <div className="flex flex-col items-center gap-2">
                         <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${pipelineProgressStep >= 1 ? 'border-primary bg-primary text-white' : 'border-muted text-muted-foreground'}`}>
@@ -3180,7 +3184,7 @@ export default function EditNodeDialog({
               {emailConfig.enabled && (
                 <CollapsibleSection
                   title="Invio Email"
-                  count={1}
+                  count={emailConfig.connectorId ? 1 : 0}
                   storageKey={`collapse-email-${treeId}-${nodePath}`}
                   icon={Mail}
                 >

@@ -7,143 +7,157 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction } from '@/app/actions';
-import { AgentInputSchema, AgentOutputSchema, type AgentInput, type AgentOutput } from '@/ai/schemas/agent-schema';
+import { type AgentInput, type AgentOutput } from '@/ai/schemas/agent-schema';
+import { getOpenRouterSettingsAction } from '@/actions/openrouter';
+import { resolveModel, runOpenRouterAgentLoop, type OpenRouterTool } from '@/ai/openrouter-utils';
 
-// Tool: Explore DB schema (list tables)
+// --- Tool Implementations (Shared) ---
+
+async function doExploreDbSchema(input: { connectorId: string }) {
+    try {
+        const result = await executeSqlPreviewAction(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
+            input.connectorId, [], true
+        );
+        if (result.error) return JSON.stringify({ error: result.error });
+        return JSON.stringify({ tables: result.data || [] }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+async function doExploreTableColumns(input: { connectorId: string, tableName: string }) {
+    try {
+        const result = await executeSqlPreviewAction(
+            `SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = '${input.tableName.replace(/'/g, "''")}' ORDER BY ordinal_position`,
+            input.connectorId, [], true
+        );
+        if (result.error) return JSON.stringify({ error: result.error });
+        return JSON.stringify({ table: input.tableName, columns: result.data || [] }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+async function doTestSqlQuery(input: { query: string, connectorId: string }) {
+    try {
+        const result = await executeSqlPreviewAction(input.query, input.connectorId, [], true);
+        if (result.error) return JSON.stringify({ error: result.error, suggestion: 'Controlla nomi tabella e colonne. Usa exploreDbSchema e exploreTableColumns per verificare.' });
+        const data = result.data || [];
+        return JSON.stringify({
+            success: true,
+            rowCount: data.length,
+            columns: data.length > 0 ? Object.keys(data[0]) : [],
+            sampleData: data.slice(0, 5),
+        }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message, suggestion: 'Verifica la sintassi SQL e i nomi delle tabelle/colonne.' });
+    }
+}
+
+async function doSearchKB(input: { query: string, companyId: string }) {
+    try {
+        const term = input.query.toLowerCase();
+        const entries = await db.knowledgeBaseEntry.findMany({
+            where: {
+                companyId: input.companyId,
+                OR: [
+                    { question: { contains: term, mode: 'insensitive' } },
+                    { answer: { contains: term, mode: 'insensitive' } },
+                    { tags: { hasSome: [term] } },
+                ],
+            },
+            take: 5,
+            orderBy: { updatedAt: 'desc' },
+        });
+        if (entries.length === 0) return JSON.stringify({ results: [], message: 'Nessuna entry trovata.' });
+        return JSON.stringify({ results: entries.map(e => ({ question: e.question, answer: e.answer, category: e.category })) }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+async function doListConnectors(input: { companyId: string }) {
+    try {
+        const connectors = await db.connector.findMany({
+            where: { companyId: input.companyId, type: 'SQL' },
+            select: { id: true, name: true },
+        });
+        return JSON.stringify({ connectors }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+async function doSaveToKB(input: { question: string, answer: string, tags: string[], category: string, companyId: string }) {
+    try {
+        await db.knowledgeBaseEntry.create({
+            data: {
+                question: input.question,
+                answer: input.answer,
+                tags: input.tags,
+                category: input.category,
+                companyId: input.companyId,
+            },
+        });
+        return JSON.stringify({ success: true, message: 'Salvato nella Knowledge Base!' });
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+// --- Genkit Tools Definitions (Legacy / Google) ---
+
 const exploreDbSchema = ai.defineTool(
     {
         name: 'exploreDbSchema',
         description: 'Esplora lo schema del database: elenca tutte le tabelle disponibili. Usa questo per scoprire quali tabelle esistono.',
-        inputSchema: z.object({
-            connectorId: z.string().describe("L'ID del connettore database."),
-        }),
+        inputSchema: z.object({ connectorId: z.string().describe("L'ID del connettore database.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const result = await executeSqlPreviewAction(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
-                input.connectorId, [], true
-            );
-            if (result.error) return JSON.stringify({ error: result.error });
-            return JSON.stringify({ tables: result.data || [] }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
-        }
-    }
+    doExploreDbSchema
 );
 
-// Tool: Explore table columns
 const exploreTableColumns = ai.defineTool(
     {
         name: 'exploreTableColumns',
         description: 'Esplora le colonne di una tabella specifica con tipo di dato. Usa per capire la struttura prima di scrivere query.',
-        inputSchema: z.object({
-            connectorId: z.string().describe("L'ID del connettore database."),
-            tableName: z.string().describe("Il nome della tabella da esplorare."),
-        }),
+        inputSchema: z.object({ connectorId: z.string().describe("L'ID del connettore database."), tableName: z.string().describe("Il nome della tabella da esplorare.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const result = await executeSqlPreviewAction(
-                `SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = '${input.tableName.replace(/'/g, "''")}' ORDER BY ordinal_position`,
-                input.connectorId, [], true
-            );
-            if (result.error) return JSON.stringify({ error: result.error });
-            return JSON.stringify({ table: input.tableName, columns: result.data || [] }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
-        }
-    }
+    doExploreTableColumns
 );
 
-// Tool: Execute a test SQL query
 const testSqlQuery = ai.defineTool(
     {
         name: 'testSqlQuery',
         description: 'Esegue una query SQL di test per verificare che funzioni e vedere i risultati. Usa per validare query prima di proporle.',
-        inputSchema: z.object({
-            query: z.string().describe("La query SQL da testare."),
-            connectorId: z.string().describe("L'ID del connettore database."),
-        }),
+        inputSchema: z.object({ query: z.string().describe("La query SQL da testare."), connectorId: z.string().describe("L'ID del connettore database.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const result = await executeSqlPreviewAction(input.query, input.connectorId, [], true);
-            if (result.error) return JSON.stringify({ error: result.error, suggestion: 'Controlla nomi tabella e colonne. Usa exploreDbSchema e exploreTableColumns per verificare.' });
-            const data = result.data || [];
-            return JSON.stringify({
-                success: true,
-                rowCount: data.length,
-                columns: data.length > 0 ? Object.keys(data[0]) : [],
-                sampleData: data.slice(0, 5),
-            }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message, suggestion: 'Verifica la sintassi SQL e i nomi delle tabelle/colonne.' });
-        }
-    }
+    doTestSqlQuery
 );
 
-// Tool: Search Knowledge Base
 const searchKB = ai.defineTool(
     {
         name: 'searchKnowledgeBase',
         description: 'Cerca nella Knowledge Base aziendale query SQL simili, strutture di tabelle e correzioni precedenti.',
-        inputSchema: z.object({
-            query: z.string().describe('Termine di ricerca.'),
-            companyId: z.string().describe("L'ID della company."),
-        }),
+        inputSchema: z.object({ query: z.string().describe('Termine di ricerca.'), companyId: z.string().describe("L'ID della company.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const term = input.query.toLowerCase();
-            const entries = await db.knowledgeBaseEntry.findMany({
-                where: {
-                    companyId: input.companyId,
-                    OR: [
-                        { question: { contains: term, mode: 'insensitive' } },
-                        { answer: { contains: term, mode: 'insensitive' } },
-                        { tags: { hasSome: [term] } },
-                    ],
-                },
-                take: 5,
-                orderBy: { updatedAt: 'desc' },
-            });
-            if (entries.length === 0) return JSON.stringify({ results: [], message: 'Nessuna entry trovata.' });
-            return JSON.stringify({ results: entries.map(e => ({ question: e.question, answer: e.answer, category: e.category })) }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
-        }
-    }
+    doSearchKB
 );
 
-// Tool: List SQL connectors
 const listConnectors = ai.defineTool(
     {
         name: 'listSqlConnectors',
         description: 'Elenca tutti i connettori SQL (database) disponibili.',
-        inputSchema: z.object({
-            companyId: z.string().describe("L'ID della company."),
-        }),
+        inputSchema: z.object({ companyId: z.string().describe("L'ID della company.") }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            const connectors = await db.connector.findMany({
-                where: { companyId: input.companyId, type: 'SQL' },
-                select: { id: true, name: true },
-            });
-            return JSON.stringify({ connectors }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
-        }
-    }
+    doListConnectors
 );
 
-// Tool: Save to Knowledge Base
 const saveToKB = ai.defineTool(
     {
         name: 'sqlSaveToKnowledgeBase',
@@ -157,23 +171,106 @@ const saveToKB = ai.defineTool(
         }),
         outputSchema: z.string(),
     },
-    async (input) => {
-        try {
-            await db.knowledgeBaseEntry.create({
-                data: {
-                    question: input.question,
-                    answer: input.answer,
-                    tags: input.tags,
-                    category: input.category,
-                    companyId: input.companyId,
+    doSaveToKB
+);
+
+// --- OpenRouter Tools Definitions ---
+
+const openRouterTools: OpenRouterTool[] = [
+    {
+        type: 'function',
+        function: {
+            name: 'exploreDbSchema',
+            description: 'Esplora lo schema del database: elenca tutte le tabelle disponibili.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    connectorId: { type: 'string', description: "L'ID del connettore database." }
                 },
-            });
-            return JSON.stringify({ success: true, message: 'Salvato nella Knowledge Base!' });
-        } catch (e: any) {
-            return JSON.stringify({ error: e.message });
+                required: ['connectorId']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'exploreTableColumns',
+            description: 'Esplora le colonne di una tabella specifica.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    connectorId: { type: 'string', description: "L'ID del connettore database." },
+                    tableName: { type: 'string', description: "Il nome della tabella da esplorare." }
+                },
+                required: ['connectorId', 'tableName']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'testSqlQuery',
+            description: 'Esegue una query SQL di test per verificare che funzioni.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: "La query SQL da testare." },
+                    connectorId: { type: 'string', description: "L'ID del connettore database." }
+                },
+                required: ['query', 'connectorId']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'searchKnowledgeBase',
+            description: 'Cerca nella Knowledge Base aziendale.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Termine di ricerca.' },
+                    companyId: { type: 'string', description: "L'ID della company." }
+                },
+                required: ['query', 'companyId']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'listSqlConnectors',
+            description: 'Elenca tutti i connettori SQL disponibili.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    companyId: { type: 'string', description: "L'ID della company." }
+                },
+                required: ['companyId']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'sqlSaveToKnowledgeBase',
+            description: 'Salva una informazione nella Knowledge Base aziendale.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    question: { type: 'string', description: 'La domanda o descrizione.' },
+                    answer: { type: 'string', description: 'La risposta o query.' },
+                    tags: { type: 'array', items: { type: 'string' }, description: 'Tag per la ricerca.' },
+                    category: { type: 'string', description: 'Categoria.' },
+                    companyId: { type: 'string', description: "L'ID della company." }
+                },
+                required: ['question', 'answer', 'tags', 'category', 'companyId']
+            }
         }
     }
-);
+];
+
+// --- Main Agent Flow ---
 
 // Robust JSON parser that handles updatedScript with curly braces
 function parseAgentJson(text: string): any | null {
@@ -208,7 +305,21 @@ function parseAgentJson(text: string): any | null {
 
 export async function sqlAgentChat(input: AgentInput): Promise<AgentOutput> {
     try {
-        // Build context from table schema and input tables
+        // 1. Get User/Model Settings
+        let apiKey = input.openRouterConfig?.apiKey;
+        let model = input.openRouterConfig?.model;
+
+        // If not provided in input, fetch from DB
+        if (!apiKey || !model) {
+            const settings = await getOpenRouterSettingsAction();
+            if (settings.apiKey) apiKey = settings.apiKey;
+            if (settings.model) model = settings.model;
+        }
+
+        // 2. Resolve Model Provider
+        const { provider, modelName } = resolveModel(model);
+
+        // 3. Build Context & Prompts
         let context = '';
 
         if (input.tableSchema && Object.keys(input.tableSchema).length > 0) {
@@ -238,7 +349,7 @@ export async function sqlAgentChat(input: AgentInput): Promise<AgentOutput> {
 
         const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-        const systemPrompt = `Sei un agente AI esperto in SQL. NON MOLLARE MAI. Sei tenace e persistente.
+        const systemPrompt = `Sei un agente AI esperto in SQL. Stai utilizzando il modello: ${modelName}. NON MOLLARE MAI. Sei tenace e persistente.
 DATA DI OGGI: ${today}
 
 ${connectorInfo}${companyInfo}
@@ -297,28 +408,85 @@ ${context}${historyContext}
 
 Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
 
-        const { text } = await ai.generate({
-            model: 'googleai/gemini-2.5-flash',
-            prompt: `${systemPrompt}\n\n${userPrompt}`,
-            tools: [
-                ...(input.connectorId ? [exploreDbSchema, exploreTableColumns, testSqlQuery] : []),
-                ...(input.companyId ? [searchKB, listConnectors, saveToKB] : []),
-            ],
-            config: { temperature: 0.7 },
-        });
+        let resultText = '';
 
-        // Parse the response - robust bracket-counting parser
-        const parsed = parseAgentJson(text);
+        if (provider === 'google') {
+            // --- Legacy Generation (Genkit) ---
+            const result = await ai.generate({
+                model: modelName,
+                prompt: `${systemPrompt}\n\n${userPrompt}`,
+                tools: [
+                    ...(input.connectorId ? [exploreDbSchema, exploreTableColumns, testSqlQuery] : []),
+                    ...(input.companyId ? [searchKB, listConnectors, saveToKB] : []),
+                ],
+                config: { temperature: 0.7 },
+            });
+            resultText = result.text;
+        } else {
+            // --- OpenRouter Generation ---
+            if (!apiKey) {
+                return { message: "Errore: Chiave API OpenRouter mancante. Configura la chiave nelle impostazioni.", needsClarification: false };
+            }
+
+            // Prepare messages in OpenAI format (since we are doing single-turn agent logic here normally, 
+            // but we might want to respect conversationHistory passed in input?
+            // Actually input.conversationHistory is just strings for context. 
+            // The AI Agent treats each turn as a fresh prompt with context.
+            // So we just send [system, user] messages.
+
+            const messages = [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+            ];
+
+            // Filter tools based on context similar to Genkit logic
+            const activeTools = [
+                ...(input.connectorId ? [
+                    openRouterTools.find(t => t.function.name === 'exploreDbSchema'),
+                    openRouterTools.find(t => t.function.name === 'exploreTableColumns'),
+                    openRouterTools.find(t => t.function.name === 'testSqlQuery')
+                ] : []),
+                ...(input.companyId ? [
+                    openRouterTools.find(t => t.function.name === 'searchKnowledgeBase'),
+                    openRouterTools.find(t => t.function.name === 'listSqlConnectors'),
+                    openRouterTools.find(t => t.function.name === 'sqlSaveToKnowledgeBase')
+                ] : [])
+            ].filter(Boolean) as OpenRouterTool[];
+
+            // Dispatcher for OpenRouter tool calls
+            const dispatcher = async (name: string, args: any) => {
+                switch (name) {
+                    case 'exploreDbSchema': return doExploreDbSchema(args);
+                    case 'exploreTableColumns': return doExploreTableColumns(args);
+                    case 'testSqlQuery': return doTestSqlQuery(args);
+                    case 'searchKnowledgeBase': return doSearchKB(args);
+                    case 'listSqlConnectors': return doListConnectors(args);
+                    case 'sqlSaveToKnowledgeBase': return doSaveToKB(args);
+                    default: return JSON.stringify({ error: `Tool sconosciuto: ${name}` });
+                }
+            };
+
+            resultText = await runOpenRouterAgentLoop(
+                apiKey,
+                modelName,
+                messages,
+                activeTools,
+                dispatcher
+            );
+        }
+
+        // Parse the response
+        const parsed = parseAgentJson(resultText);
         if (parsed) {
             return {
-                message: parsed.message || text,
+                message: parsed.message || resultText,
                 updatedScript: parsed.updatedScript,
                 needsClarification: parsed.needsClarification || false,
                 clarificationQuestions: parsed.clarificationQuestions || [],
             };
         }
 
-        return { message: text, needsClarification: false };
+        return { message: resultText, needsClarification: false };
     } catch (e: any) {
         console.error('Error in SQL agent flow:', e);
         return { message: `Errore: ${e.message}. Riprova o dammi piu' dettagli.`, needsClarification: false };

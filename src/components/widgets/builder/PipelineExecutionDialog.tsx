@@ -146,14 +146,19 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
 
             const resolveDependencies = (node: any, visited: Set<string> = new Set()): any[] => {
                 const deps: any[] = [];
-                const pipelines = [...(node.pythonSelectedPipelines || []), ...(node.sqlSelectedPipelines || [])];
+                const pipelines = [
+                    ...(node.pythonSelectedPipelines || []),
+                    ...(node.selectedPipelines || []),
+                    ...(node.sqlSelectedPipelines || [])
+                ];
+                const uniquePipelines = Array.from(new Set(pipelines));
 
-                pipelines.forEach(pName => {
+                uniquePipelines.forEach(pName => {
                     if (visited.has(pName)) return;
                     const sourceItem = flatTree.find(item => {
                         const n = item.node;
                         return n && typeof n === 'object' &&
-                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName));
+                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName) || (n.name === pName));
                     });
 
                     if (sourceItem) {

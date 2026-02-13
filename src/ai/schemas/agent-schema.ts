@@ -24,6 +24,10 @@ export const AgentInputSchema = z.object({
   needsClarification: z.boolean().optional().describe('Whether the agent needs clarification'),
   connectorId: z.string().optional().describe('The SQL connector ID for executing queries'),
   companyId: z.string().optional().describe('The company ID for KB and tree access'),
+  openRouterConfig: z.object({
+    apiKey: z.string().optional(),
+    model: z.string().optional(),
+  }).optional().describe('OpenRouter configuration'),
 });
 
 export type AgentInput = z.infer<typeof AgentInputSchema>;

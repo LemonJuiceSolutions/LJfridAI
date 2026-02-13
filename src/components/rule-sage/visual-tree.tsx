@@ -1311,15 +1311,20 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             // Helper to recursively resolve dependencies
             const resolveDependencies = (node: any, visited: Set<string> = new Set()): any[] => {
                 const deps: any[] = [];
-                const pipelines = [...(node.pythonSelectedPipelines || []), ...(node.sqlSelectedPipelines || [])];
+                const pipelines = [
+                    ...(node.pythonSelectedPipelines || []),
+                    ...(node.selectedPipelines || []),
+                    ...(node.sqlSelectedPipelines || [])
+                ];
+                const uniquePipelines = Array.from(new Set(pipelines));
 
-                pipelines.forEach(pName => {
+                uniquePipelines.forEach(pName => {
                     if (visited.has(pName)) return;
 
                     const sourceItem = flatTree.find((item: any) => {
                         const n = item.node;
                         return n && typeof n === 'object' &&
-                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName));
+                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName) || (n.name === pName));
                     });
 
                     if (sourceItem) {
@@ -1331,6 +1336,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                             tableName: pName,
                             nodeId: sn.id, // Pass NodeID for deduplication
                             nodeName: sn.question || sn.decision || sn.name,
+                            displayName: sn.name, // FIX: node.name is the display name (e.g. "Pipeline Prodotto")
                             writesToDatabase: sn.writesToDatabase || !!sn.sqlExportAction, // Check both flags
                             sqlExportTargetTableName: sn.sqlExportAction?.targetTableName || sn.sqlExportTargetTableName,
                             sqlExportTargetConnectorId: sn.sqlExportAction?.targetConnectorId || sn.sqlExportTargetConnectorId,
@@ -1445,6 +1451,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     .filter(t => t.sqlQuery || (t.isPython && t.pythonCode)) // Filter only valid execution nodes
                     .map(t => ({
                         tableName: t.name,
+                        nodeName: t.nodeName, // FIX: Pass display name for alias resolution (e.g. "Pipeline Prodotto" vs "PIPELINEUP")
+                        displayName: (t as any).displayName, // FIX: node.name display name
                         path: t.path,
                         nodeId: t.nodeId, // FIX: Pass NodeID for deduplication
                         query: t.sqlQuery,
@@ -1542,9 +1550,14 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             // Helper to recursively resolve dependencies
             const resolveDependencies = (node: any, visited: Set<string> = new Set()): any[] => {
                 const deps: any[] = [];
-                const pipelines = [...(node.pythonSelectedPipelines || []), ...(node.sqlSelectedPipelines || [])];
+                const pipelines = [
+                    ...(node.pythonSelectedPipelines || []),
+                    ...(node.selectedPipelines || []),
+                    ...(node.sqlSelectedPipelines || [])
+                ];
+                const uniquePipelines = Array.from(new Set(pipelines));
 
-                pipelines.forEach(pName => {
+                uniquePipelines.forEach(pName => {
                     if (visited.has(pName)) return;
 
                     // Find the node in the flat tree that produces this result
@@ -2012,7 +2025,6 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         </Card>
     );
 }
-
 
 
 
