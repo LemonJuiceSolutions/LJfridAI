@@ -3,28 +3,30 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { revalidatePath } from "next/cache";
 
-async function getSession() {
-    return await getServerSession(authOptions);
+// Cache user lookup to avoid repeated DB queries within the same request
+async function getAuthenticatedUser() {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) return null;
+
+    const user = await db.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true, companyId: true }
+    });
+
+    if (!user?.companyId) return null;
+    return user;
 }
 
 export async function getPageLayout(pageId: string) {
-    const session = await getSession();
-    if (!session?.user?.email) return null;
-
     try {
-        const user = await db.user.findUnique({
-            where: { email: session.user.email },
-            include: { company: true }
-        });
-
-        if (!user?.companyId) return null;
+        const user = await getAuthenticatedUser();
+        if (!user) return null;
 
         const layout = await db.pageLayout.findUnique({
             where: {
                 companyId_pageId_userId: {
-                    companyId: user.companyId,
+                    companyId: user.companyId!,
                     pageId,
                     userId: user.id
                 }
@@ -39,21 +41,14 @@ export async function getPageLayout(pageId: string) {
 }
 
 export async function savePageLayout(pageId: string, layouts: any, items: any) {
-    const session = await getSession();
-    if (!session?.user?.email) return { success: false, error: "Unauthorized" };
-
     try {
-        const user = await db.user.findUnique({
-            where: { email: session.user.email },
-            include: { company: true }
-        });
-
-        if (!user?.companyId) return { success: false, error: "User or company not found" };
+        const user = await getAuthenticatedUser();
+        if (!user) return { success: false, error: "Unauthorized" };
 
         await db.pageLayout.upsert({
             where: {
                 companyId_pageId_userId: {
-                    companyId: user.companyId,
+                    companyId: user.companyId!,
                     pageId,
                     userId: user.id
                 }
@@ -64,7 +59,7 @@ export async function savePageLayout(pageId: string, layouts: any, items: any) {
                 updatedAt: new Date()
             },
             create: {
-                companyId: user.companyId,
+                companyId: user.companyId!,
                 pageId,
                 userId: user.id,
                 layouts,
@@ -72,7 +67,9 @@ export async function savePageLayout(pageId: string, layouts: any, items: any) {
             }
         });
 
-        revalidatePath('/dashboard');
+        // Removed revalidatePath('/dashboard') - it was causing unnecessary
+        // full page re-renders on every layout save. The client already has
+        // the latest state since it just sent the update.
         return { success: true };
     } catch (error) {
         console.error(`Error saving layout for ${pageId}:`, error);

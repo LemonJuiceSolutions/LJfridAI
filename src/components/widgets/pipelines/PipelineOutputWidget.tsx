@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import TextWidget from "@/components/dashboard/text-widget";
 import SmartWidgetRenderer from "@/components/widgets/builder/SmartWidgetRenderer";
 import { WidgetConfig } from "@/lib/types";
@@ -17,8 +17,11 @@ type PipelineOutputWidgetProps = {
     nodeId: string;
 };
 
+// Client-side cache for pipeline results to avoid re-fetching on every page navigation
+const pipelineResultCache = new Map<string, { data: any; config: any; content: string; type: any; timestamp: number }>();
+const PIPELINE_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 // This is a simplified version of the runNode logic from PipelinesWidget
-// In a real app, this logic would be centralized in a service or context.
 const runUpToNode = async (pipelines: any[], pipelineId: string, nodeId: string): Promise<any> => {
     const pipeline = pipelines.find(p => p.id === pipelineId);
     if (!pipeline) throw new Error("Pipeline not found");
@@ -34,7 +37,6 @@ const runUpToNode = async (pipelines: any[], pipelineId: string, nodeId: string)
         const currentNode = pipeline.nodes[currentNodeId];
         if (!currentNode) throw new Error(`Node ${currentNodeId} not found in pipeline`);
 
-        // The start node has no script and no input, it just triggers the flow.
         if (currentNode.type === 'start') {
             return null;
         }
@@ -67,84 +69,108 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
     const [showExecutionDialog, setShowExecutionDialog] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const { toast } = useToast();
+    const hasFetchedRef = useRef(false);
 
-    useEffect(() => {
-        if (status === 'loading') return;
+    // skipCache: skip client cache and re-read from DB
+    // runFallback: if DB has no results, run the pipeline as fallback
+    const fetchData = useCallback(async (skipCache: boolean, runFallback: boolean) => {
+        if (!session?.user) {
+            setIsLoading(false);
+            setIsRefreshing(false);
+            return;
+        }
 
-        const fetchData = async () => {
-            // Only show global loading on first load
-            if (refreshTrigger === 0) setIsLoading(true);
-            else setIsRefreshing(true);
+        if (skipCache) setIsRefreshing(true);
+        else setIsLoading(true);
 
-            if (!session?.user) {
+        const cacheKey = `${pipelineId}-${nodeId}`;
+
+        // Check client cache only on initial loads (not after refresh/execution)
+        if (!skipCache) {
+            const cached = pipelineResultCache.get(cacheKey);
+            if (cached && (Date.now() - cached.timestamp) < PIPELINE_CACHE_DURATION) {
+                setReportData(cached.data);
+                setReportContent(cached.content);
+                setReportType(cached.type);
+                setWidgetConfig(cached.config);
                 setIsLoading(false);
-                setIsRefreshing(false);
                 return;
             }
+        }
 
-            try {
-                const loadedPipelines = await getPipelines();
+        try {
+            const loadedPipelines = await getPipelines();
 
-                // Parse pipelines JSON
-                const pipelines = (loadedPipelines || []).map((p: any) => ({
-                    ...p,
-                    nodes: typeof p.nodes === 'string' ? JSON.parse(p.nodes) : p.nodes,
-                    edges: typeof p.edges === 'string' ? JSON.parse(p.edges) : p.edges
-                }));
+            const pipelines = (loadedPipelines || []).map((p: any) => ({
+                ...p,
+                nodes: typeof p.nodes === 'string' ? JSON.parse(p.nodes) : p.nodes,
+                edges: typeof p.edges === 'string' ? JSON.parse(p.edges) : p.edges
+            }));
 
-                const pipeline = pipelines.find((p: any) => p.id === pipelineId);
-                const node = pipeline?.nodes[nodeId];
+            const pipeline = pipelines.find((p: any) => p.id === pipelineId);
+            const node = pipeline?.nodes[nodeId];
 
-                if (pipeline && node) {
-                    setReportContent(node.content || '{{result}}');
-                    setReportType(node.previewType);
-                    setWidgetConfig(node.widgetConfig);
+            if (pipeline && node) {
+                setReportContent(node.content || '{{result}}');
+                setReportType(node.previewType);
+                setWidgetConfig(node.widgetConfig);
 
-                    // Try to get persisted result from DB first
-                    let result: any = null;
-                    let fromDb = false;
+                // Always try to get persisted result from DB
+                let result: any = null;
 
-                    try {
-                        const dbResult = await getLastNodeExecutionResultAction(pipelineId, nodeId);
-                        if (dbResult.success && dbResult.data && dbResult.data.result) {
-                            result = dbResult.data.result;
-                            fromDb = true;
-                        }
-                    } catch (e) {
-                        console.warn('Failed to fetch persisted result:', e);
+                try {
+                    const dbResult = await getLastNodeExecutionResultAction(pipelineId, nodeId);
+                    if (dbResult.success && dbResult.data && dbResult.data.result) {
+                        result = dbResult.data.result;
                     }
-
-                    // Fallback to runtime calculation if no DB result
-                    if (!result && !fromDb) {
-                        result = await runUpToNode(pipelines, pipelineId, nodeId);
-                    }
-
-                    setReportData(result);
-
-                    if (refreshTrigger > 0) {
-                        toast({
-                            title: "Dati aggiornati",
-                            description: "I dati del widget sono stati ricalcolati.",
-                            duration: 3000
-                        });
-                    }
-                } else {
-                    setReportContent('<p class="text-muted-foreground italic">Pipeline non trovata o eliminata.</p>');
+                } catch (e) {
+                    console.warn('Failed to fetch persisted result:', e);
                 }
-            } catch (error: any) {
-                console.error("Error running pipeline for widget:", error);
-                setReportContent('<p class="text-destructive">Errore nel caricamento dei dati del widget.</p>');
-            } finally {
-                setIsLoading(false);
-                setIsRefreshing(false);
-            }
-        };
 
-        fetchData();
-    }, [status, session, pipelineId, nodeId, toast, refreshTrigger]);
+                // Only run the full pipeline as fallback if explicitly requested
+                if (!result && runFallback) {
+                    result = await runUpToNode(pipelines, pipelineId, nodeId);
+                }
+
+                setReportData(result);
+
+                // Update client cache with fresh data
+                pipelineResultCache.set(cacheKey, {
+                    data: result,
+                    config: node.widgetConfig,
+                    content: node.content || '{{result}}',
+                    type: node.previewType,
+                    timestamp: Date.now(),
+                });
+
+                if (skipCache && result) {
+                    toast({
+                        title: "Dati aggiornati",
+                        description: "I dati del widget sono stati aggiornati.",
+                        duration: 3000
+                    });
+                }
+            } else {
+                setReportContent('<p class="text-muted-foreground italic">Pipeline non trovata o eliminata.</p>');
+            }
+        } catch (error: any) {
+            console.error("Error running pipeline for widget:", error);
+            setReportContent('<p class="text-destructive">Errore nel caricamento dei dati del widget.</p>');
+        } finally {
+            setIsLoading(false);
+            setIsRefreshing(false);
+        }
+    }, [session, pipelineId, nodeId, toast]);
+
+    useEffect(() => {
+        if (status === 'loading' || hasFetchedRef.current) return;
+        hasFetchedRef.current = true;
+        fetchData(false, false); // Use cache, no fallback
+    }, [status, fetchData]);
 
     const handleRefresh = () => {
-        setRefreshTrigger(prev => prev + 1);
+        // Refresh button: skip cache, re-read from DB, run pipeline only if no DB result
+        fetchData(true, true);
     };
 
     const handleUpdateHierarchyClick = () => {
@@ -152,7 +178,10 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
     };
 
     const handleExecutionSuccess = () => {
-        setRefreshTrigger(prev => prev + 1);
+        // After execution dialog: invalidate cache, re-read fresh results from DB (no pipeline re-run)
+        const cacheKey = `${pipelineId}-${nodeId}`;
+        pipelineResultCache.delete(cacheKey);
+        fetchData(true, false);
     };
 
     if (isLoading || status === 'loading') {
@@ -196,4 +225,3 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
         </div>
     );
 }
-

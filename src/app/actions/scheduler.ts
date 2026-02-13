@@ -3,6 +3,7 @@
 import { db } from '@/lib/db';
 // import { getAuthenticatedUser } from '@/app/actions';
 import { getAuthenticatedUser } from "@/lib/session";
+import { invalidateServerTreeCache } from '@/lib/server-cache';
 // import { schedulerService } from '@/lib/scheduler/scheduler-service';
 import { revalidatePath } from 'next/cache';
 import { Prisma } from '@prisma/client';
@@ -521,6 +522,8 @@ export async function saveAncestorPreviewsBatchAction(
                 where: { id: treeId },
                 data: { jsonDecisionTree: JSON.stringify(json) }
             });
+            // Invalidate server-side cache so widgets get fresh data
+            invalidateServerTreeCache(treeId);
         }
 
         // 4. Save to ScheduledTaskExecution for each ancestor (for PipelineOutputWidget)

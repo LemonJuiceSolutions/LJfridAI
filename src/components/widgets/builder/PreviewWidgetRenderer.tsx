@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { getTreeAction } from '@/app/actions';
+import { useEffect, useState, useCallback } from 'react';
+import { getCachedTree } from '@/lib/tree-cache';
 import { DataTable } from '@/components/ui/data-table';
 import SmartWidgetRenderer from './SmartWidgetRenderer';
 import { Loader2, Database, Code, AlertCircle, RefreshCw, Zap } from 'lucide-react';
@@ -24,11 +24,11 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
 
-    const loadPreview = async (showLoading = true) => {
+    const loadPreview = useCallback(async (showLoading = true) => {
         if (showLoading) setLoading(true);
         else setIsRefreshing(true);
         try {
-            const result = await getTreeAction(treeId);
+            const result = await getCachedTree(treeId, !showLoading);
             if (result.data) {
                 const jsonTree = typeof result.data.jsonDecisionTree === 'string'
                     ? JSON.parse(result.data.jsonDecisionTree)
@@ -79,11 +79,11 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
             setLoading(false);
             setIsRefreshing(false);
         }
-    };
+    }, [treeId, nodeId, previewType]);
 
     useEffect(() => {
         loadPreview();
-    }, [treeId, nodeId, previewType]);
+    }, [loadPreview]);
 
     const handleRefresh = () => {
         loadPreview(false);

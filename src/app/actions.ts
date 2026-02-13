@@ -21,15 +21,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
 import { getAuthenticatedUser as getAuthUserSession } from "@/lib/session";
-
-// Server-side cache for trees and variables
-const serverCache = {
-    trees: null as StoredTree[] | null,
-    variables: null as Variable[] | null,
-    treesTimestamp: 0,
-    variablesTimestamp: 0,
-    CACHE_DURATION: 30 * 60 * 1000, // 30 minuti in millisecondi
-};
+import { serverCache, invalidateServerTreeCache } from "@/lib/server-cache";
 
 export async function getAuthenticatedUser() {
     const user = await getAuthUserSession();
@@ -625,6 +617,13 @@ export async function getTreeAction(id: string): Promise<{ data: StoredTree | nu
             return { data: null, error: 'ID albero non valido fornito.' };
         }
 
+        // Check per-tree cache first (avoids N+1 queries from multiple widget renderers)
+        const now = Date.now();
+        const cached = serverCache.treeById.get(id);
+        if (cached && (now - cached.timestamp) < serverCache.CACHE_DURATION) {
+            return { data: cached.data, error: null };
+        }
+
         const treeData = await db.tree.findFirst({
             where: {
                 id,
@@ -641,6 +640,9 @@ export async function getTreeAction(id: string): Promise<{ data: StoredTree | nu
             type: (treeData as any).type || 'RULE',
             createdAt: treeData.createdAt.toISOString()
         };
+
+        // Cache this tree
+        serverCache.treeById.set(id, { data: tree, timestamp: now });
 
         return { data: tree, error: null };
     } catch (e) {
@@ -726,6 +728,9 @@ export async function updateTreeNodeAction({
                 jsonDecisionTree: JSON.stringify(jsonTree, null, 2),
             }
         });
+
+        // Invalidate server-side tree cache so widgets get fresh data
+        invalidateServerTreeCache(treeId);
 
         revalidatePath(`/view/${treeId}`);
         revalidatePath('/');

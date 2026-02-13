@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { Responsive, WidthProvider, Layout, Layouts as ReactGridLayouts } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -125,12 +125,18 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     const [searchTerm, setSearchTerm] = useState('');
     const [width, setWidth] = useState(1200);
     const containerRef = React.useRef<HTMLDivElement>(null);
+    const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+    // Track whether the initial layout has been loaded from DB to skip the first
+    // handleLayoutChange call (which fires on grid mount, not from user interaction)
+    const hasUserInteractedRef = useRef(false);
 
     // Update state when layout data changes from hook
     useEffect(() => {
         if (layoutData) {
             setItems(layoutData.items);
             setLayouts(layoutData.layouts);
+            // Reset interaction flag when new data arrives from DB
+            hasUserInteractedRef.current = false;
         }
     }, [layoutData]);
 
@@ -172,24 +178,38 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         }
     }, [pageId]);
 
-    const saveDashboardState = useCallback(async (newLayouts: any, newItems: any) => {
-        if (session?.user && isComponentMounted && !isLayoutLoading) {
+    const saveDashboardState = useCallback((newLayouts: any, newItems: any) => {
+        if (!session?.user || !isComponentMounted || isLayoutLoading) return;
+
+        // Debounce saves: wait 800ms of inactivity before persisting
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(async () => {
             const cleanedLayouts = removeUndefinedFields(newLayouts);
             const result = await savePageLayout(pageId, cleanedLayouts, newItems);
-            // Only show error for auth issues, not for database unavailable (to avoid spamming)
             if (!result.success && result.error === "Unauthorized") {
                 toast({ variant: "destructive", title: "Error", description: "Session expired. Please refresh." });
             }
-            // Silent fail for database issues - layout will be retried on next change
-        }
+        }, 800);
     }, [session, isComponentMounted, isLayoutLoading, pageId, toast]);
 
-    const handleLayoutChange = (layout: Layout[], allLayouts: ReactGridLayouts) => {
+    // Cleanup debounce timer on unmount
+    useEffect(() => {
+        return () => {
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        };
+    }, []);
+
+    const handleLayoutChange = useCallback((_layout: Layout[], allLayouts: ReactGridLayouts) => {
         if (isComponentMounted && !isLayoutLoading) {
             setLayouts(allLayouts);
+            // Skip the first call (grid mount) - only save on actual user interaction
+            if (!hasUserInteractedRef.current) {
+                hasUserInteractedRef.current = true;
+                return;
+            }
             saveDashboardState(allLayouts, items);
         }
-    };
+    }, [isComponentMounted, isLayoutLoading, saveDashboardState, items]);
 
     const addTextWidget = () => {
         const newItemId = `text-${Date.now()}`;
@@ -317,7 +337,20 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         });
     }, [availableWidgets, hiddenWidgets, searchTerm]);
 
-    // Memoize the render widget function to prevent unnecessary re-renders
+    // Lazy load for fallback pipeline widget - defined OUTSIDE render to avoid
+    // creating a new lazy component on every render (which defeats React.lazy caching)
+    const LazyPipelineOutputWidget = useMemo(
+        () => React.lazy(() => import('../widgets/pipelines/PipelineOutputWidget').then(m => ({ default: m.default }))),
+        []
+    );
+
+    const FallbackLoader = useMemo(() => (
+        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+            <div className="animate-pulse">Caricamento...</div>
+        </div>
+    ), []);
+
+    // Memoize the render widget function - only depends on availableWidgets reference
     const renderWidget = useCallback((item: Item) => {
         if (item.isText) {
             return (
@@ -335,7 +368,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         const pythonMatch = item.id.match(/^python-preview-(.+?)-(.+)$/);
         if (pythonMatch) {
             return (
-                <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-muted-foreground"><div className="animate-pulse">Caricamento...</div></div>}>
+                <React.Suspense fallback={FallbackLoader}>
                     <PreviewWidgetRenderer treeId={pythonMatch[1]} nodeId={pythonMatch[2]} previewType="python" resultName="" />
                 </React.Suspense>
             );
@@ -343,7 +376,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         const sqlMatch = item.id.match(/^sql-preview-(.+?)-(.+)$/);
         if (sqlMatch) {
             return (
-                <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-muted-foreground"><div className="animate-pulse">Caricamento...</div></div>}>
+                <React.Suspense fallback={FallbackLoader}>
                     <PreviewWidgetRenderer treeId={sqlMatch[1]} nodeId={sqlMatch[2]} previewType="sql" resultName="" />
                 </React.Suspense>
             );
@@ -351,23 +384,22 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         const treeMatch = item.id.match(/^tree-(.+?)-(.+)$/);
         if (treeMatch) {
             return (
-                <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-muted-foreground"><div className="animate-pulse">Caricamento...</div></div>}>
+                <React.Suspense fallback={FallbackLoader}>
                     <NodeWidgetRenderer treeId={treeMatch[1]} nodeId={treeMatch[2]} />
                 </React.Suspense>
             );
         }
         const pipelineMatch = item.id.match(/^pipeline-(.+?)-(.+)$/);
         if (pipelineMatch) {
-            const PipelineOutputWidget = React.lazy(() => import('../widgets/pipelines/PipelineOutputWidget').then(m => ({ default: m.default })));
             return (
-                <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-muted-foreground"><div className="animate-pulse">Caricamento...</div></div>}>
-                    <PipelineOutputWidget pipelineId={pipelineMatch[1]} nodeId={pipelineMatch[2]} />
+                <React.Suspense fallback={FallbackLoader}>
+                    <LazyPipelineOutputWidget pipelineId={pipelineMatch[1]} nodeId={pipelineMatch[2]} />
                 </React.Suspense>
             );
         }
 
         return <div className='p-4 text-sm text-destructive'>Widget non trovato: {item.id}</div>;
-    }, [availableWidgets, editMode, handleTextChange]);
+    }, [availableWidgets, editMode, handleTextChange, FallbackLoader, LazyPipelineOutputWidget]);
 
     // Optimized skeleton loader - shows placeholder widgets while loading
     if (isLayoutLoading || status === 'loading' || !isComponentMounted) {

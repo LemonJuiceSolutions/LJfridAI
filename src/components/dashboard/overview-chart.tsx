@@ -60,9 +60,9 @@ export default function OverviewChart() {
               dot={(props: any) => {
                 const { cx, cy, index } = props;
                 if (index > currentMonthIndex) {
-                  return <g />;
+                  return <g key={`empty-${index}`} />;
                 }
-                return <circle key={index} cx={cx} cy={cy} r={4} fill="hsl(var(--chart-4))" stroke="#fff" strokeWidth={2} />;
+                return <circle key={`dot-${index}`} cx={cx} cy={cy} r={4} fill="hsl(var(--chart-4))" stroke="#fff" strokeWidth={2} />;
               }}
 
             />

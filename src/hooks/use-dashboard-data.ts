@@ -14,7 +14,8 @@ export interface DashboardLayout {
 
 /**
  * Custom hook for fetching dashboard layout with caching
- * Similar to React Query but lighter weight for this specific use case
+ * Uses refs for defaultLayouts/defaultItems to prevent re-fetching
+ * when parent re-renders with new object references.
  */
 export function useDashboardLayout(pageId: string, defaultLayouts: any, defaultItems: any[]) {
     const [data, setData] = useState<DashboardLayout | null>(null);
@@ -22,6 +23,11 @@ export function useDashboardLayout(pageId: string, defaultLayouts: any, defaultI
     const [error, setError] = useState<Error | null>(null);
     const isMountedRef = useRef(true);
     const fetchCountRef = useRef(0);
+    const hasFetchedRef = useRef(false);
+
+    // Use refs for defaults to avoid dependency instability
+    const defaultLayoutsRef = useRef(defaultLayouts);
+    const defaultItemsRef = useRef(defaultItems);
 
     const fetchLayout = useCallback(async (forceRefresh = false) => {
         const currentFetchId = ++fetchCountRef.current;
@@ -48,14 +54,17 @@ export function useDashboardLayout(pageId: string, defaultLayouts: any, defaultI
                 return;
             }
 
+            const defLayouts = defaultLayoutsRef.current;
+            const defItems = defaultItemsRef.current;
+
             const layoutData: DashboardLayout = result
                 ? {
-                    layouts: (result.layouts as any) || generateLayouts((result.items as any[]) || defaultItems, defaultLayouts),
-                    items: (result.items as any[]) || defaultItems,
+                    layouts: (result.layouts as any) || generateLayouts((result.items as any[]) || defItems, defLayouts),
+                    items: (result.items as any[]) || defItems,
                 }
                 : {
-                    layouts: generateLayouts(defaultItems, defaultLayouts),
-                    items: defaultItems,
+                    layouts: generateLayouts(defItems, defLayouts),
+                    items: defItems,
                 };
 
             // Update cache
@@ -70,14 +79,13 @@ export function useDashboardLayout(pageId: string, defaultLayouts: any, defaultI
             if (isMountedRef.current && currentFetchId === fetchCountRef.current) {
                 setError(err instanceof Error ? err : new Error('Failed to fetch layout'));
                 setIsLoading(false);
-                // Return default data on error
                 setData({
-                    layouts: generateLayouts(defaultItems, defaultLayouts),
-                    items: defaultItems,
+                    layouts: generateLayouts(defaultItemsRef.current, defaultLayoutsRef.current),
+                    items: defaultItemsRef.current,
                 });
             }
         }
-    }, [pageId, defaultLayouts, defaultItems]);
+    }, [pageId]); // Only depends on pageId now - stable!
 
     const refetch = useCallback(() => {
         return fetchLayout(true);
@@ -85,7 +93,12 @@ export function useDashboardLayout(pageId: string, defaultLayouts: any, defaultI
 
     useEffect(() => {
         isMountedRef.current = true;
-        fetchLayout(false);
+
+        // Prevent duplicate fetches
+        if (!hasFetchedRef.current) {
+            hasFetchedRef.current = true;
+            fetchLayout(false);
+        }
 
         return () => {
             isMountedRef.current = false;

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { getTreeAction } from '@/app/actions';
+import { useEffect, useState, useCallback } from 'react';
+import { getCachedTree } from '@/lib/tree-cache';
 import SmartWidgetRenderer from './SmartWidgetRenderer';
 import { WidgetConfig } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -20,11 +20,11 @@ export function NodeWidgetRenderer({ treeId, nodeId }: NodeWidgetRendererProps) 
     const [showExecutionDialog, setShowExecutionDialog] = useState(false);
     const { toast } = useToast();
 
-    const loadWidget = async (showLoading = true) => {
+    const loadWidget = useCallback(async (showLoading = true) => {
         if (showLoading) setLoading(true);
         else setIsRefreshing(true);
         try {
-            const result = await getTreeAction(treeId);
+            const result = await getCachedTree(treeId, !showLoading);
             if (result.data) {
                 const jsonTree = typeof result.data.jsonDecisionTree === 'string'
                     ? JSON.parse(result.data.jsonDecisionTree)
@@ -59,11 +59,11 @@ export function NodeWidgetRenderer({ treeId, nodeId }: NodeWidgetRendererProps) 
             setLoading(false);
             setIsRefreshing(false);
         }
-    };
+    }, [treeId, nodeId]);
 
     useEffect(() => {
         loadWidget();
-    }, [treeId, nodeId]);
+    }, [loadWidget]);
 
     const handleRefresh = () => {
         loadWidget(false);
