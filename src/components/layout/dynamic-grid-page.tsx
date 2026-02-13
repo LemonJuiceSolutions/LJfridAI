@@ -28,6 +28,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAvailableWidgets } from '../widgets/widget-list';
 import { savePageLayout } from '@/actions/dashboard';
+import { PreviewWidgetRenderer } from '../widgets/builder/PreviewWidgetRenderer';
+import { NodeWidgetRenderer } from '../widgets/builder/NodeWidgetRenderer';
 import { useSession } from 'next-auth/react';
 import { useToast } from '@/hooks/use-toast';
 import { useDashboardLayout } from '@/hooks/use-dashboard-data';
@@ -327,7 +329,44 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
             );
         }
         const widgetConfig = (availableWidgets as Record<string, any>)[item.id];
-        return widgetConfig ? widgetConfig.component : <div className='p-4 text-sm text-destructive'>Widget non trovato: {item.id}</div>;
+        if (widgetConfig) return widgetConfig.component;
+
+        // Fallback: render dynamic preview widgets directly even if not yet loaded in availableWidgets
+        const pythonMatch = item.id.match(/^python-preview-(.+?)-(.+)$/);
+        if (pythonMatch) {
+            return (
+                <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-muted-foreground"><div className="animate-pulse">Caricamento...</div></div>}>
+                    <PreviewWidgetRenderer treeId={pythonMatch[1]} nodeId={pythonMatch[2]} previewType="python" resultName="" />
+                </React.Suspense>
+            );
+        }
+        const sqlMatch = item.id.match(/^sql-preview-(.+?)-(.+)$/);
+        if (sqlMatch) {
+            return (
+                <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-muted-foreground"><div className="animate-pulse">Caricamento...</div></div>}>
+                    <PreviewWidgetRenderer treeId={sqlMatch[1]} nodeId={sqlMatch[2]} previewType="sql" resultName="" />
+                </React.Suspense>
+            );
+        }
+        const treeMatch = item.id.match(/^tree-(.+?)-(.+)$/);
+        if (treeMatch) {
+            return (
+                <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-muted-foreground"><div className="animate-pulse">Caricamento...</div></div>}>
+                    <NodeWidgetRenderer treeId={treeMatch[1]} nodeId={treeMatch[2]} />
+                </React.Suspense>
+            );
+        }
+        const pipelineMatch = item.id.match(/^pipeline-(.+?)-(.+)$/);
+        if (pipelineMatch) {
+            const PipelineOutputWidget = React.lazy(() => import('../widgets/pipelines/PipelineOutputWidget').then(m => ({ default: m.default })));
+            return (
+                <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-muted-foreground"><div className="animate-pulse">Caricamento...</div></div>}>
+                    <PipelineOutputWidget pipelineId={pipelineMatch[1]} nodeId={pipelineMatch[2]} />
+                </React.Suspense>
+            );
+        }
+
+        return <div className='p-4 text-sm text-destructive'>Widget non trovato: {item.id}</div>;
     }, [availableWidgets, editMode, handleTextChange]);
 
     // Optimized skeleton loader - shows placeholder widgets while loading

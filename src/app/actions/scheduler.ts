@@ -502,6 +502,16 @@ export async function saveAncestorPreviewsBatchAction(
                 }
             }
 
+            // 3. Generic Execution Result (for Email, SharePoint, HubSpot, etc.)
+            if (!nodeUpdated && res != null) {
+                // If not already updated by SQL or Python logic, save as generic execution result
+                node.executionPreviewResult = {
+                    data: res,
+                    timestamp: nowMs,
+                };
+                nodeUpdated = true;
+            }
+
             if (nodeUpdated) savedCount++;
         }
 

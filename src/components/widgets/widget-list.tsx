@@ -145,7 +145,7 @@ export const useAvailableWidgets = (visibleWidgetIds?: string[]) => {
                 const { NodeWidgetRenderer } = await import('./builder/NodeWidgetRenderer');
                 const { PreviewWidgetRenderer } = await import('./builder/PreviewWidgetRenderer');
 
-                const treesResult = await getTreesAction(undefined, 'RULE');
+                const treesResult = await getTreesAction();
                 if (treesResult.data && isMountedRef.current && currentFetchId === fetchCountRef.current) {
                     treesResult.data.forEach((tree: any) => {
                         const jsonTree = typeof tree.jsonDecisionTree === 'string'
@@ -247,6 +247,7 @@ export const useAvailableWidgets = (visibleWidgetIds?: string[]) => {
     const debouncedFetch = useMemo(() => debounce(fetchDynamicWidgets, 300), [fetchDynamicWidgets]);
 
     useEffect(() => {
+        isMountedRef.current = true;
         if (status === 'loading') return;
 
         debouncedFetch(false);

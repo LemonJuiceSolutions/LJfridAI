@@ -410,10 +410,10 @@ export class SchedulerService {
       if (!tableDef) continue;
 
       // Skip if it doesn't have execution logic
-      const hasLogic = (tableDef.isPython && tableDef.pythonCode) || (!tableDef.isPython && tableDef.sqlQuery);
+      const hasLogic = (tableDef.isPython && tableDef.pythonCode) || (!tableDef.isPython && tableDef.sqlQuery) || (tableDef.type === 'email') || (tableDef.type === 'sharepoint') || (tableDef.type === 'hubspot');
       if (!hasLogic) continue;
 
-      logger.log(`[AncestorChain] Executing ancestor: ${originalName} (${tableDef.isPython ? 'Python' : 'SQL'})`);
+      logger.log(`[AncestorChain] Executing ancestor: ${originalName} (${tableDef.type || (tableDef.isPython ? 'Python' : 'SQL')})`);
 
       try {
         let resultData: any = null;

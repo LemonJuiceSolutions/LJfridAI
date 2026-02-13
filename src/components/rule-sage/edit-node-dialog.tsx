@@ -1580,6 +1580,11 @@ export default function EditNodeDialog({
         newNodeData.pythonPreviewResult = (initialNode as any).pythonPreviewResult;
       }
 
+      // Preserve generic execution preview data
+      if ((initialNode as any).executionPreviewResult) {
+        newNodeData.executionPreviewResult = (initialNode as any).executionPreviewResult;
+      }
+
       // Persist Chat Histories
       if (sqlChatHistory.length > 0) {
         newNodeData.sqlChatHistory = sqlChatHistory;
@@ -2524,6 +2529,42 @@ export default function EditNodeDialog({
                                 });
 
                                 console.log('[PYTHON EXEC] Executing final script with deps:', deps.length);
+
+                                // HYBRID NODE: If this node also has SQL, re-execute it first to refresh data
+                                if (sqlQuery && sqlConnectorId) {
+                                  console.log('[PYTHON EXEC] Hybrid node detected - re-executing SQL query first');
+                                  try {
+                                    const sqlDeps = selectedPipelines.map(tableName => {
+                                      const resultObj = ancestorResults?.[tableName];
+                                      const preCalcData = resultObj?.data;
+                                      const depMeta = availableInputTables?.find(t => t.name === tableName);
+                                      return {
+                                        tableName,
+                                        query: depMeta?.sqlQuery || '',
+                                        isPython: !!depMeta?.isPython,
+                                        pythonCode: depMeta?.pythonCode,
+                                        connectorId: depMeta?.connectorId,
+                                        pipelineDependencies: depMeta?.pipelineDependencies,
+                                        data: preCalcData && Array.isArray(preCalcData) ? preCalcData : undefined
+                                      };
+                                    });
+                                    const sqlRes = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, sqlDeps);
+                                    if (sqlRes.data) {
+                                      setSqlPreviewData(sqlRes.data);
+                                      setSqlPreviewTimestamp(Date.now());
+                                      if (onSavePreview && nodePath) {
+                                        onSavePreview(nodePath, { sqlPreviewData: sqlRes.data, sqlPreviewTimestamp: Date.now() });
+                                      }
+                                      // Also feed the fresh SQL data into the Python script
+                                      const sqlResultName_ = sqlResultName || 'sql_result';
+                                      inputData[sqlResultName_] = sqlRes.data;
+                                      console.log('[PYTHON EXEC] SQL refreshed with', sqlRes.data.length, 'rows - fed into Python as', sqlResultName_);
+                                    }
+                                  } catch (sqlErr: any) {
+                                    console.warn('[PYTHON EXEC] Hybrid SQL refresh failed:', sqlErr.message);
+                                  }
+                                }
+
                                 const res = await executePythonPreviewAction(pythonCode, pythonOutputType, inputData, deps, pythonConnectorId);
 
                                 if (res.success) {
@@ -3682,6 +3723,26 @@ export default function EditNodeDialog({
                               {step.executionTime && <span className="text-[10px] text-muted-foreground font-mono">{step.executionTime}ms</span>}
                             </div>
                           ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Generic Execution Preview Display */}
+                    {(initialNode as any).executionPreviewResult && (
+                      <div className="mb-4 p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase flex items-center gap-1.5">
+                            <Check className="h-3.5 w-3.5" />
+                            Ultima Esecuzione (Anteprima)
+                          </h4>
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date((initialNode as any).executionPreviewResult.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="text-xs text-foreground bg-white dark:bg-zinc-900 p-2 rounded border font-mono whitespace-pre-wrap max-h-[150px] overflow-y-auto">
+                          {typeof (initialNode as any).executionPreviewResult.data === 'string'
+                            ? (initialNode as any).executionPreviewResult.data
+                            : JSON.stringify((initialNode as any).executionPreviewResult.data, null, 2)}
                         </div>
                       </div>
                     )}
