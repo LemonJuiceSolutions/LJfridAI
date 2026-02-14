@@ -33336,3 +33336,7 @@ Controlla anche che la dipendenza sia selezionata nel dropdown 'USA DATI DA (PIP
 2026-02-14T06:00:00.090Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
 2026-02-14T06:00:00.143Z [Scheduler] Executing logic for type: SQL_EXECUTE 
 2026-02-14T06:00:00.161Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-14T07:00:00.059Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-14T07:00:00.061Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-14T07:00:00.100Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-14T07:00:00.113Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 

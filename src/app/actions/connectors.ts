@@ -1185,7 +1185,7 @@ export async function sendTestEmailWithDataAction(params: {
 
 
         // Generate Excel attachments (with row limit to prevent size issues)
-        const attachments: any[] = [...inlineAttachments]; // Start with inline chart attachments
+        let attachments: any[] = [...inlineAttachments]; // Start with inline chart attachments
 
         // Process Media Attachments
         if (params.mediaAttachments && params.mediaAttachments.length > 0 && params.availableMedia) {
@@ -1234,7 +1234,7 @@ export async function sendTestEmailWithDataAction(params: {
                 const ws = XLSX.utils.json_to_sheet(excelData);
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, tr.name.substring(0, 31)); // Excel sheet name max 31 chars
-                const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+                const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true });
 
                 console.log(`[EMAIL DEBUG] Excel file ${tr.name}.xlsx size: ${(buffer.length / 1024).toFixed(2)} KB`);
 
@@ -1291,7 +1291,7 @@ export async function sendTestEmailWithDataAction(params: {
                     const ws = XLSX.utils.json_to_sheet(excelData);
                     const wb = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(wb, ws, pyResult.name.substring(0, 31));
-                    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+                    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true });
 
                     console.log(`[EMAIL DEBUG] Python Excel file ${pyResult.name}.xlsx size: ${(buffer.length / 1024).toFixed(2)} KB`);
 
@@ -1312,6 +1312,48 @@ export async function sendTestEmailWithDataAction(params: {
                     });
                 }
             }
+        }
+
+        // ZIP all attachments if total size exceeds 5MB
+        const ZIP_THRESHOLD_BYTES = 5 * 1024 * 1024; // 5MB
+        const totalAttachmentBytes = attachments.reduce((sum, att) => sum + att.content.length, 0);
+
+        if (totalAttachmentBytes > ZIP_THRESHOLD_BYTES && attachments.length > 0) {
+            console.log(`[EMAIL DEBUG] Total attachments ${(totalAttachmentBytes / 1024 / 1024).toFixed(2)} MB exceeds ${ZIP_THRESHOLD_BYTES / 1024 / 1024}MB threshold - creating ZIP...`);
+
+            const archiver = (await import('archiver')).default;
+            const { PassThrough } = await import('stream');
+
+            const zipBuffer = await new Promise<Buffer>((resolve, reject) => {
+                const chunks: Buffer[] = [];
+                const passthrough = new PassThrough();
+                passthrough.on('data', (chunk: Buffer) => chunks.push(chunk));
+                passthrough.on('end', () => resolve(Buffer.concat(chunks)));
+                passthrough.on('error', reject);
+
+                const archive = archiver('zip', { zlib: { level: 9 } });
+                archive.on('error', reject);
+                archive.pipe(passthrough);
+
+                for (const att of attachments) {
+                    archive.append(att.content, { name: att.filename });
+                }
+
+                archive.finalize();
+            });
+
+            console.log(`[EMAIL DEBUG] ZIP created: ${(zipBuffer.length / 1024 / 1024).toFixed(2)} MB (was ${(totalAttachmentBytes / 1024 / 1024).toFixed(2)} MB, saved ${(((totalAttachmentBytes - zipBuffer.length) / totalAttachmentBytes) * 100).toFixed(0)}%)`);
+
+            // Replace all attachments with single ZIP (keep inline attachments separate)
+            const inlineOnly = attachments.filter(att => (att as any).cid);
+            attachments = [
+                ...inlineOnly,
+                {
+                    filename: `report-allegati.zip`,
+                    content: zipBuffer,
+                    contentType: 'application/zip'
+                }
+            ];
         }
 
         // Send email
