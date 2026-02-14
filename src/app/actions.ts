@@ -389,17 +389,17 @@ ${variablesTable}`;
     // Ensure all string fields are actually strings for storage
     let jsonDecisionTreeStr = treeResult.jsonDecisionTree;
     if (typeof jsonDecisionTreeStr !== 'string') {
-        jsonDecisionTreeStr = JSON.stringify(jsonDecisionTreeStr, null, 2);
+        jsonDecisionTreeStr = JSON.stringify(jsonDecisionTreeStr);
     }
 
     let naturalLanguageTreeStr = treeResult.naturalLanguageDecisionTree;
     if (typeof naturalLanguageTreeStr !== 'string') {
-        naturalLanguageTreeStr = JSON.stringify(naturalLanguageTreeStr, null, 2);
+        naturalLanguageTreeStr = JSON.stringify(naturalLanguageTreeStr);
     }
 
     let questionsScriptStr = treeResult.questionsScript;
     if (typeof questionsScriptStr !== 'string') {
-        questionsScriptStr = JSON.stringify(questionsScriptStr, null, 2);
+        questionsScriptStr = JSON.stringify(questionsScriptStr);
     }
 
     return {
@@ -673,11 +673,13 @@ export async function updateTreeNodeAction({
             throw new Error("Dati mancanti per l'aggiornamento del nodo.");
         }
 
+        // Only fetch the fields we need for the update (skip heavy description/questionsScript)
         const treeToUpdate = await db.tree.findFirst({
             where: {
                 id: treeId,
                 companyId: user.companyId
-            }
+            },
+            select: { id: true, jsonDecisionTree: true, name: true }
         });
 
         if (!treeToUpdate) {
@@ -697,9 +699,11 @@ export async function updateTreeNodeAction({
 
         if (nodePath === 'root') {
             if (parsedNodeData && typeof parsedNodeData === 'object' && !Array.isArray(parsedNodeData) && 'name' in parsedNodeData) {
+                // Name-only update: lightweight select to avoid returning heavy fields
                 const updated = await db.tree.update({
                     where: { id: treeId },
-                    data: { name: parsedNodeData.name }
+                    data: { name: parsedNodeData.name },
+                    select: { id: true, name: true, description: true, type: true, createdAt: true, companyId: true, naturalLanguageDecisionTree: true, questionsScript: true, jsonDecisionTree: true }
                 });
                 invalidateServerTreeCache(treeId);
                 const updatedTree: StoredTree = { ...updated, type: (updated as any).type || 'RULE', createdAt: updated.createdAt.toISOString() };
@@ -727,19 +731,26 @@ export async function updateTreeNodeAction({
             }
         }
 
+        const updatedJsonStr = JSON.stringify(jsonTree);
+
+        // Use select to only return lightweight fields from RETURNING clause
+        // This avoids PostgreSQL re-reading heavy TOAST'd columns
         const updated = await db.tree.update({
             where: { id: treeId },
             data: {
-                jsonDecisionTree: JSON.stringify(jsonTree, null, 2),
-            }
+                jsonDecisionTree: updatedJsonStr,
+            },
+            select: { id: true, name: true, description: true, type: true, createdAt: true, companyId: true, naturalLanguageDecisionTree: true, questionsScript: true }
         });
 
         // Invalidate server-side tree cache so widgets get fresh data
         invalidateServerTreeCache(treeId);
 
-        // Return the updated tree directly so clients don't need a separate fetch
+        // Reconstruct StoredTree with the jsonDecisionTree we already have in memory
+        // (avoids re-reading the large JSON from DB via RETURNING)
         const updatedTree: StoredTree = {
             ...updated,
+            jsonDecisionTree: updatedJsonStr,
             type: (updated as any).type || 'RULE',
             createdAt: updated.createdAt.toISOString()
         };
@@ -2525,7 +2536,7 @@ export async function executeConsolidationAction(
         transactionOps.push(db.tree.update({
             where: { id: treeId },
             data: {
-                jsonDecisionTree: JSON.stringify(jsonTree, null, 2)
+                jsonDecisionTree: JSON.stringify(jsonTree)
             }
         }));
 
@@ -2911,7 +2922,7 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
                     transactionOps.push(db.tree.update({
                         where: { id: treeDoc.id },
                         data: {
-                            jsonDecisionTree: JSON.stringify(updatedJsonTree, null, 2),
+                            jsonDecisionTree: JSON.stringify(updatedJsonTree),
                         }
                     }));
                 }
@@ -3076,7 +3087,7 @@ export async function mergeVariablesAction(
                 transactionOps.push(db.tree.update({
                     where: { id: tree.id },
                     data: {
-                        jsonDecisionTree: JSON.stringify(updatedJsonTree, null, 2),
+                        jsonDecisionTree: JSON.stringify(updatedJsonTree),
                     }
                 }));
             }
