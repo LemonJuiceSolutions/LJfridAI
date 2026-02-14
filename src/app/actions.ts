@@ -22,6 +22,7 @@ import { authOptions } from "@/lib/auth";
 
 import { getAuthenticatedUser as getAuthUserSession } from "@/lib/session";
 import { serverCache, invalidateServerTreeCache } from "@/lib/server-cache";
+import { resolveTheme } from "@/lib/chart-theme";
 
 export async function getAuthenticatedUser() {
     const user = await getAuthUserSession();
@@ -2140,6 +2141,24 @@ export async function executePythonPreviewAction(
             console.log(`[executePythonPreviewAction] Calling Python backend at 5005...`);
             debugLogs.push(`[${new Date().toLocaleTimeString()}] Sending data to Python backend...`);
 
+            // Load full company chart theme for Python rendering (Plotly + matplotlib)
+            let chartThemeData: Record<string, any> | undefined;
+            try {
+                const companyId = user?.companyId;
+                console.log(`[ChartTheme] companyId=${companyId}`);
+                if (companyId) {
+                    const company = await db.company.findUnique({
+                        where: { id: companyId },
+                        select: { chartTheme: true },
+                    });
+                    console.log(`[ChartTheme] DB chartTheme:`, company?.chartTheme ? 'present' : 'null');
+                    chartThemeData = resolveTheme(company?.chartTheme as any);
+                    console.log(`[ChartTheme] Resolved colors:`, (chartThemeData as any)?.colors?.slice(0, 3));
+                }
+            } catch (e) {
+                console.error(`[ChartTheme] Error loading theme:`, e);
+            }
+
             const response = await fetch('http://localhost:5005/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2147,7 +2166,8 @@ export async function executePythonPreviewAction(
                     code,
                     outputType,
                     inputData,
-                    env: envVars // Pass env vars
+                    env: envVars,
+                    chartTheme: chartThemeData, // Pass full company theme to Python
                 }),
                 signal: controller.signal
             });

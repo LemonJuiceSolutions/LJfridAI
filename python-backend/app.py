@@ -143,7 +143,10 @@ def execute_python():
         code = data.get('code', '')
         output_type = data.get('outputType', 'table')
         input_data = data.get('inputData', {})
-        
+        chart_theme = data.get('chartTheme', None)  # Full theme object from frontend
+        import sys
+        print(f"🎨 [THEME] chart_theme received: {type(chart_theme).__name__}, value: {str(chart_theme)[:200] if chart_theme else 'None'}", file=sys.stderr, flush=True)
+
         if not code:
             return jsonify({'success': False, 'error': 'No code provided'}), 400
         
@@ -208,6 +211,108 @@ def execute_python():
         env_vars = data.get('env', {}) # Receive env vars
         from unittest.mock import patch
 
+        # Apply per-request chart theme if provided (colors, fonts, grid, margins)
+        original_plotly_layout = None
+        original_mpl_params = None
+        _theme_plotly_overrides = None  # for post-exec forced application
+        if chart_theme and isinstance(chart_theme, dict):
+            try:
+                colors = chart_theme.get('colors', [])
+                font_family = chart_theme.get('fontFamily', 'Inter, -apple-system, sans-serif')
+                axis_font_size = chart_theme.get('axisFontSize', 12)
+                tooltip_font_size = chart_theme.get('tooltipFontSize', 12)
+                legend_font_size = chart_theme.get('legendFontSize', 12)
+                title_font_size = chart_theme.get('titleFontSize', 16)
+                grid_color = chart_theme.get('gridColor', '#e2e8f0')
+                grid_style = chart_theme.get('gridStyle', 'dashed')
+                line_width = chart_theme.get('lineWidth', 2)
+                margins = chart_theme.get('chartMargins', {})
+
+                # Map grid style to matplotlib linestyle
+                mpl_grid_style = '-' if grid_style == 'solid' else '--' if grid_style == 'dashed' else ':' if grid_style == 'dotted' else ''
+                show_grid = grid_style != 'none'
+
+                # Inject CHART_THEME into execution namespace so scripts can use it
+                ns['CHART_THEME'] = chart_theme
+                ns['THEME_COLORS'] = colors
+                print(f"🎨 [THEME] Injected CHART_THEME with {len(colors)} colors: {colors[:3]}...", file=sys.stderr, flush=True)
+
+                # Set emerald as default template so ALL plotly charts use our modified version
+                pio.templates.default = "emerald"
+
+                # Save originals for restoration (use to_plotly_json() instead of dict() for Plotly objects)
+                layout = emerald_template.layout
+                original_plotly_layout = {
+                    'colorway': list(layout.colorway) if layout.colorway else None,
+                    'font': layout.font.to_plotly_json() if layout.font else None,
+                    'title': layout.title.to_plotly_json() if layout.title else None,
+                    'margin': layout.margin.to_plotly_json() if layout.margin else None,
+                    'xaxis': layout.xaxis.to_plotly_json() if layout.xaxis else None,
+                    'yaxis': layout.yaxis.to_plotly_json() if layout.yaxis else None,
+                    'hoverlabel': layout.hoverlabel.to_plotly_json() if layout.hoverlabel else None,
+                }
+                original_mpl_params = {
+                    'axes.prop_cycle': plt.rcParams.get('axes.prop_cycle'),
+                    'font.sans-serif': list(plt.rcParams.get('font.sans-serif', [])),
+                    'axes.grid': plt.rcParams.get('axes.grid'),
+                    'grid.color': plt.rcParams.get('grid.color'),
+                    'grid.linestyle': plt.rcParams.get('grid.linestyle'),
+                    'axes.titlesize': plt.rcParams.get('axes.titlesize'),
+                    'axes.labelsize': plt.rcParams.get('axes.labelsize'),
+                    'xtick.labelsize': plt.rcParams.get('xtick.labelsize'),
+                    'ytick.labelsize': plt.rcParams.get('ytick.labelsize'),
+                    'legend.fontsize': plt.rcParams.get('legend.fontsize'),
+                }
+
+                # Build overrides dict for post-exec forced application on Plotly figures
+                _theme_plotly_overrides = {
+                    'colors': colors,
+                    'font_family': font_family,
+                    'axis_font_size': axis_font_size,
+                    'tooltip_font_size': tooltip_font_size,
+                    'legend_font_size': legend_font_size,
+                    'title_font_size': title_font_size,
+                    'grid_color': grid_color,
+                    'grid_style': grid_style,
+                }
+
+                # Apply to Plotly template (defaults for charts that don't override)
+                if colors:
+                    layout.colorway = colors
+                layout.font = dict(family=font_family, color="#475569", size=axis_font_size)
+                layout.title = dict(font=dict(size=title_font_size, color="#1e293b"), x=0.05, y=0.95)
+                layout.margin = dict(
+                    l=margins.get('left', 50), r=margins.get('right', 40),
+                    t=margins.get('top', 80), b=margins.get('bottom', 50)
+                )
+                layout.xaxis = dict(gridcolor=grid_color, zerolinecolor="#cbd5e1",
+                    tickfont=dict(size=axis_font_size), title=dict(font=dict(size=axis_font_size, color="#64748b")))
+                layout.yaxis = dict(gridcolor=grid_color, zerolinecolor="#cbd5e1",
+                    tickfont=dict(size=axis_font_size), title=dict(font=dict(size=axis_font_size, color="#64748b")))
+                layout.hoverlabel = dict(bgcolor="white", font_size=tooltip_font_size, font_family=font_family)
+                layout.legend = dict(bgcolor="rgba(255,255,255,0.8)", bordercolor="#e2e8f0", borderwidth=1, font=dict(size=legend_font_size))
+
+                # Apply to Matplotlib
+                font_parts = [f.strip() for f in font_family.split(',')]
+                if colors:
+                    plt.rcParams['axes.prop_cycle'] = plt.cycler(color=colors)
+                plt.rcParams['font.sans-serif'] = font_parts + ['Arial', 'sans-serif']
+                plt.rcParams['axes.grid'] = show_grid
+                plt.rcParams['grid.color'] = grid_color
+                plt.rcParams['grid.linestyle'] = mpl_grid_style
+                plt.rcParams['axes.titlesize'] = title_font_size
+                plt.rcParams['axes.labelsize'] = axis_font_size
+                plt.rcParams['xtick.labelsize'] = axis_font_size
+                plt.rcParams['ytick.labelsize'] = axis_font_size
+                plt.rcParams['legend.fontsize'] = legend_font_size
+                plt.rcParams['lines.linewidth'] = line_width
+
+                print(f"✅ [THEME] Applied theme to Plotly template and matplotlib rcParams", file=sys.stderr, flush=True)
+            except Exception as e:
+                import traceback as tb
+                print(f"⚠️ Failed to apply chart theme: {e}", file=sys.stderr, flush=True)
+                tb.print_exc(file=sys.stderr)
+
         try:
             with redirect_stdout(raw_stdout), redirect_stderr(raw_stderr):
                 # Patch os.environ for the duration of execution
@@ -254,6 +359,22 @@ def execute_python():
                 'stdout': raw_stdout.getvalue(),
                 'stderr': raw_stderr.getvalue()
             }), 200
+        finally:
+            # Restore original Plotly layout, matplotlib params, and default template
+            if original_plotly_layout is not None:
+                try:
+                    layout = emerald_template.layout
+                    for key, val in original_plotly_layout.items():
+                        if val is not None:
+                            setattr(layout, key, val)
+                    pio.templates.default = "plotly"  # Restore default template
+                except: pass
+            if original_mpl_params is not None:
+                try:
+                    for key, val in original_mpl_params.items():
+                        if val is not None:
+                            plt.rcParams[key] = val
+                except: pass
 
 
         stdout_val = raw_stdout.getvalue()
@@ -395,11 +516,58 @@ def execute_python():
                 print(f"⚠️ [EXECUTE] Error parsing stdout JSON: {e}")
 
         # Priority 3: Last line expression (heuristic - NOT IMPLEMENTED for safety/complexity)
-        # Process result based on requested output type
-        
-        # If result is Plotly/Matplotlib and we want a table or variable, we might need adjustment
-        # but usually user picks the right outputType.
-        
+
+        # ── Post-exec: force-apply theme to any Plotly figure found ──
+        # Template defaults are overridden by explicit fig.update_layout() in user code,
+        # so we re-apply the full theme directly on the figure object.
+        if _theme_plotly_overrides and res_val is not None and isinstance(res_val, go.Figure):
+            try:
+                ovr = _theme_plotly_overrides
+                ff = ovr['font_family']
+                afs = ovr['axis_font_size']
+                tfs = ovr['title_font_size']
+                ttfs = ovr['tooltip_font_size']
+                lfs = ovr['legend_font_size']
+                gc = ovr['grid_color']
+
+                # 1. Global font
+                res_val.update_layout(
+                    font=dict(family=ff, color="#475569", size=afs),
+                    hoverlabel=dict(bgcolor="white", font_size=ttfs, font_family=ff),
+                    legend=dict(bgcolor="rgba(255,255,255,0.8)", bordercolor="#e2e8f0",
+                                borderwidth=1, font=dict(size=lfs, family=ff)),
+                )
+
+                # 2. All axes (xaxis, yaxis, xaxis2, yaxis2, etc.)
+                for attr_name in list(res_val.layout.to_plotly_json().keys()):
+                    if attr_name.startswith('xaxis') or attr_name.startswith('yaxis'):
+                        axis_obj = getattr(res_val.layout, attr_name, None)
+                        if axis_obj is not None:
+                            axis_obj.tickfont = dict(family=ff, size=afs)
+                            axis_obj.gridcolor = gc
+                            if hasattr(axis_obj, 'title') and axis_obj.title:
+                                if axis_obj.title.font:
+                                    axis_obj.title.font.family = ff
+
+                # 3. Annotations (subplot titles, custom annotations)
+                if res_val.layout.annotations:
+                    for ann in res_val.layout.annotations:
+                        if ann.font:
+                            ann.font.family = ff
+                        else:
+                            ann.font = dict(family=ff)
+
+                # 4. All trace text fonts (bar labels, scatter text, etc.)
+                for trace in res_val.data:
+                    if hasattr(trace, 'textfont') and trace.textfont:
+                        trace.textfont.family = ff
+
+                print(f"🎨 [THEME] Force-applied full theme to Plotly figure (font={ff}, axes={afs}px, grid={gc})", file=sys.stderr, flush=True)
+            except Exception as e:
+                import traceback
+                print(f"⚠️ [THEME] Could not force-apply theme to figure: {e}", file=sys.stderr, flush=True)
+                traceback.print_exc(file=sys.stderr)
+
         # Process result based on requested output type
         if output_type == 'table':
             if isinstance(res_val, pd.DataFrame):

@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { useChartTheme } from '@/hooks/use-chart-theme';
 
 type KpiCardProps = {
   title: string;
@@ -12,6 +13,7 @@ type KpiCardProps = {
 };
 
 export default function KpiCard({ title, value, change, period, className }: KpiCardProps) {
+  const { theme } = useChartTheme();
   const isPositive = change.startsWith('+');
   return (
     <Card className={cn("h-full flex flex-col justify-center", className)}>
@@ -21,7 +23,7 @@ export default function KpiCard({ title, value, change, period, className }: Kpi
       <CardContent>
         <div className="text-2xl font-bold">{value}</div>
         <p className="text-xs text-muted-foreground">
-          {change && <span className={isPositive ? 'text-green-500' : 'text-red-500'}>{change}</span>} {period}
+          {change && <span style={{ color: isPositive ? theme.kpiPositiveColor : theme.kpiNegativeColor }}>{change}</span>} {period}
         </p>
       </CardContent>
     </Card>

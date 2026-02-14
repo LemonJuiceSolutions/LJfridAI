@@ -7,6 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { RefreshCw, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WidgetConfig } from '@/lib/types';
+import { useChartTheme } from '@/hooks/use-chart-theme';
+import { gridStrokeDasharray, lineStrokeDasharray, ChartTheme } from '@/lib/chart-theme';
 
 interface SmartWidgetRendererProps {
     data: Record<string, unknown>[];
@@ -16,23 +18,18 @@ interface SmartWidgetRendererProps {
     onUpdateHierarchy?: () => void;
 }
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
-
-// Helper to determine margins based on axis titles to prevent overlap
-const getChartMargins = (config: Partial<WidgetConfig>) => {
+// Helper to determine margins based on axis titles, using theme defaults
+const getChartMargins = (config: Partial<WidgetConfig>, theme: ChartTheme) => {
     return {
-        top: 20,
-        right: 30,
-        // Increase left margin if Y-axis title is present to prevent overlap
-        left: config.yAxisTitle ? 110 : 30,
-        bottom: config.xAxisTitle ? 30 : 20
+        top: theme.chartMargins.top,
+        right: theme.chartMargins.right,
+        left: config.yAxisTitle ? Math.max(110, theme.chartMargins.left) : theme.chartMargins.left,
+        bottom: config.xAxisTitle ? Math.max(30, theme.chartMargins.bottom) : theme.chartMargins.bottom,
     };
 };
 
 // Helper for legend props
 const getLegendProps = (position?: 'top' | 'bottom' | 'left' | 'right') => {
-    const defaultProps = { verticalAlign: 'bottom' as const, align: 'center' as const, layout: 'horizontal' as const };
-
     switch (position) {
         case 'top': return { verticalAlign: 'top' as const, align: 'center' as const, layout: 'horizontal' as const, wrapperStyle: { top: 0 } };
         case 'left': return { verticalAlign: 'middle' as const, align: 'left' as const, layout: 'vertical' as const, wrapperStyle: { left: 0 } };
@@ -42,16 +39,10 @@ const getLegendProps = (position?: 'top' | 'bottom' | 'left' | 'right') => {
     }
 };
 
-const getStrokeDasharray = (style?: 'solid' | 'dashed' | 'dotted') => {
-    switch (style) {
-        case 'dashed': return '5 5';
-        case 'dotted': return '1 1';
-        case 'solid':
-        default: return undefined;
-    }
-};
-
 export default function SmartWidgetRenderer({ data, config, onRefresh, isRefreshing, onUpdateHierarchy }: SmartWidgetRendererProps) {
+    const { theme } = useChartTheme();
+    const COLORS = theme.colors;
+
     if ((!data || data.length === 0) && !isRefreshing) {
         return (
             <Card className="h-full w-full flex items-center justify-center relative">
@@ -135,16 +126,16 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                 return (
                     <div className="overflow-y-auto h-full w-full custom-scrollbar">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData} margin={getChartMargins(config)}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
-                                <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
+                            <BarChart data={chartData} margin={getChartMargins(config, theme)}>
+                                {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridStrokeDasharray(theme.gridStyle)} stroke={theme.gridColor} />}
+                                <XAxis dataKey={config.xAxisKey} tick={{ fontSize: theme.axisFontSize, fontFamily: theme.fontFamily }} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                                <YAxis tick={{ fontSize: theme.axisFontSize, fontFamily: theme.fontFamily }} label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
                                 <Tooltip
-                                    contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
+                                    contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))', fontSize: theme.tooltipFontSize, fontFamily: theme.fontFamily }}
                                 />
-                                <Legend {...getLegendProps(config.legendPosition)} />
+                                <Legend {...getLegendProps(config.legendPosition)} wrapperStyle={{ fontSize: theme.legendFontSize, fontFamily: theme.fontFamily }} />
                                 {(config.dataKeys || []).map((key, index) => (
-                                    <Bar key={key} dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} radius={[4, 4, 0, 0]} />
+                                    <Bar key={key} dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} radius={[theme.barRadius, theme.barRadius, 0, 0]} />
                                 ))}
                             </BarChart>
                         </ResponsiveContainer>
@@ -154,25 +145,25 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                 return (
                     <div className="overflow-y-auto h-full w-full custom-scrollbar">
                         <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={chartData} margin={getChartMargins(config)}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
-                                <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
+                            <LineChart data={chartData} margin={getChartMargins(config, theme)}>
+                                {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridStrokeDasharray(theme.gridStyle)} stroke={theme.gridColor} />}
+                                <XAxis dataKey={config.xAxisKey} tick={{ fontSize: theme.axisFontSize, fontFamily: theme.fontFamily }} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                                <YAxis tick={{ fontSize: theme.axisFontSize, fontFamily: theme.fontFamily }} label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
                                 <Tooltip
-                                    contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
+                                    contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))', fontSize: theme.tooltipFontSize, fontFamily: theme.fontFamily }}
                                 />
-                                <Legend {...getLegendProps(config.legendPosition)} />
+                                <Legend {...getLegendProps(config.legendPosition)} wrapperStyle={{ fontSize: theme.legendFontSize, fontFamily: theme.fontFamily }} />
                                 {(config.dataKeys || []).map((key, index) => (
                                     <Line
                                         key={key}
                                         type="monotone"
                                         dataKey={key}
                                         stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]}
-                                        strokeWidth={2}
+                                        strokeWidth={theme.lineWidth}
                                         dot={{ r: 4 }}
                                         activeDot={{ r: 6 }}
                                         connectNulls
-                                        strokeDasharray={getStrokeDasharray(config.lineStyle)}
+                                        strokeDasharray={lineStrokeDasharray(config.lineStyle || theme.defaultLineStyle)}
                                     />
                                 ))}
                             </LineChart>
@@ -183,16 +174,16 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                 return (
                     <div className="overflow-y-auto h-full w-full custom-scrollbar">
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={chartData} margin={getChartMargins(config)}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey={config.xAxisKey} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
-                                <YAxis label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
+                            <AreaChart data={chartData} margin={getChartMargins(config, theme)}>
+                                {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridStrokeDasharray(theme.gridStyle)} stroke={theme.gridColor} />}
+                                <XAxis dataKey={config.xAxisKey} tick={{ fontSize: theme.axisFontSize, fontFamily: theme.fontFamily }} label={config.xAxisTitle ? { value: config.xAxisTitle, position: 'insideBottom', offset: config.xAxisDy || -10 } : undefined} />
+                                <YAxis tick={{ fontSize: theme.axisFontSize, fontFamily: theme.fontFamily }} label={config.yAxisTitle ? { value: config.yAxisTitle, angle: -90, position: 'insideLeft', dx: config.yAxisDx || -80, style: { textAnchor: 'middle' } } : undefined} />
                                 <Tooltip
-                                    contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
+                                    contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))', fontSize: theme.tooltipFontSize, fontFamily: theme.fontFamily }}
                                 />
-                                <Legend {...getLegendProps(config.legendPosition)} />
+                                <Legend {...getLegendProps(config.legendPosition)} wrapperStyle={{ fontSize: theme.legendFontSize, fontFamily: theme.fontFamily }} />
                                 {(config.dataKeys || []).map((key, index) => (
-                                    <Area key={key} type="monotone" dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} strokeDasharray={getStrokeDasharray(config.lineStyle)} />
+                                    <Area key={key} type="monotone" dataKey={key} fill={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} stroke={config.colors?.[index % config.colors.length] || COLORS[index % COLORS.length]} fillOpacity={theme.areaOpacity} strokeDasharray={lineStrokeDasharray(config.lineStyle || theme.defaultLineStyle)} />
                                 ))}
                             </AreaChart>
                         </ResponsiveContainer>
@@ -209,7 +200,7 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                                 labelLine={false}
                                 label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                                 outerRadius={80}
-                                fill="#8884d8"
+                                fill={COLORS[0]}
                                 dataKey={config.dataKeys?.[0] || Object.keys(data[0])[1]}
                                 nameKey={config.xAxisKey || Object.keys(data[0])[0]}
                             >
@@ -218,9 +209,9 @@ export default function SmartWidgetRenderer({ data, config, onRefresh, isRefresh
                                 ))}
                             </Pie>
                             <Tooltip
-                                contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
+                                contentStyle={{ borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))', fontSize: theme.tooltipFontSize, fontFamily: theme.fontFamily }}
                             />
-                            <Legend />
+                            <Legend wrapperStyle={{ fontSize: theme.legendFontSize, fontFamily: theme.fontFamily }} />
                         </PieChart>
                     </ResponsiveContainer>
                 );

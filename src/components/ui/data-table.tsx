@@ -17,6 +17,7 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { useChartTheme } from '@/hooks/use-chart-theme'
 
 interface DataTableProps<TData> {
     data: TData[]
@@ -29,6 +30,7 @@ export function DataTable<TData extends Record<string, any>>({
     className,
     columns: explicitColumns,
 }: DataTableProps<TData>) {
+    const { theme } = useChartTheme()
     const [sortColumn, setSortColumn] = React.useState<keyof TData | null>(null)
     const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('asc')
     const [filters, setFilters] = React.useState<Record<string, string>>({})
@@ -174,13 +176,14 @@ export function DataTable<TData extends Record<string, any>>({
 
             {/* Table Container */}
             <div className="flex-1 overflow-auto relative">
-                <table className="w-max min-w-full text-sm border-separate border-spacing-0">
-                    <thead className="sticky top-0 z-20 bg-muted/80 backdrop-blur-sm">
+                <table className="w-max min-w-full border-separate border-spacing-0" style={{ fontSize: theme.tableFontSize }}>
+                    <thead className="sticky top-0 z-20 backdrop-blur-sm" style={{ background: theme.tableHeaderBg }}>
                         <tr>
                             {columns.map((column) => (
                                 <th
                                     key={`head-${column}`}
                                     className="px-4 py-2 border-b border-r last:border-r-0 text-left align-middle transition-colors group cursor-pointer hover:bg-muted/50"
+                                    style={{ borderStyle: theme.tableBorderStyle === 'none' ? 'none' : theme.tableBorderStyle }}
                                     onClick={() => handleSort(column)}
                                 >
                                     <div className="flex items-center justify-between gap-2">
@@ -219,9 +222,17 @@ export function DataTable<TData extends Record<string, any>>({
                     <tbody className="divide-y divide-border">
                         {paginatedData.length > 0 ? (
                             paginatedData.map((row, i) => (
-                                <tr key={i} className="hover:bg-muted/20 transition-colors even:bg-zinc-50/50 dark:even:bg-zinc-800/10">
+                                <tr
+                                    key={i}
+                                    className="transition-colors"
+                                    style={{
+                                        background: theme.tableAlternateRows && i % 2 === 1 ? 'hsl(var(--muted) / 0.15)' : undefined,
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.background = theme.tableRowHoverColor; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.background = theme.tableAlternateRows && i % 2 === 1 ? 'hsl(var(--muted) / 0.15)' : ''; }}
+                                >
                                     {columns.map((column) => (
-                                        <td key={column} className="py-2 px-4 text-xs font-mono border-r last:border-r-0 text-foreground/80">
+                                        <td key={column} className="py-2 px-4 font-mono border-r last:border-r-0 text-foreground/80" style={{ fontSize: theme.tableFontSize }}>
                                             {row[column] !== null && row[column] !== undefined ? String(row[column]) : <span className="text-muted-foreground/40 italic">null</span>}
                                         </td>
                                     ))}

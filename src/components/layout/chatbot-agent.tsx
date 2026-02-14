@@ -53,6 +53,7 @@ import {
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
 } from 'recharts';
 import { createKnowledgeBaseEntryAction } from '@/app/actions/knowledge-base';
+import { useChartTheme } from '@/hooks/use-chart-theme';
 
 type Message = {
     role: 'user' | 'assistant';
@@ -161,11 +162,10 @@ function RichContent({ content, charts }: { content: string; charts: any[] }) {
     );
 }
 
-const DEFAULT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088fe', '#00c49f', '#ffbb28', '#ff8042'];
-
 function InlineChart({ config }: { config: any }) {
+    const { theme } = useChartTheme();
     const { type, data, xAxisKey, dataKeys, colors, title } = config;
-    const chartColors = colors || DEFAULT_COLORS;
+    const chartColors = colors || theme.colors;
 
     if (!data || !Array.isArray(data) || data.length === 0) return null;
 

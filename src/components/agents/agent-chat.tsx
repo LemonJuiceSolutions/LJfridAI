@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   Send,
   MessageSquare,
@@ -16,6 +16,9 @@ import {
   PenLine,
   Search,
   CornerDownLeft,
+  History,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +33,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { AgentChatMessage, AgentResponse } from '@/lib/types';
 import { createKnowledgeBaseEntryAction } from '@/app/actions/knowledge-base';
@@ -38,6 +42,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
 } from 'recharts';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
+import { useChartTheme } from '@/hooks/use-chart-theme';
 
 // Try to extract message from raw JSON that leaked through
 function extractFromRawJson(content: string): string {
@@ -110,11 +115,10 @@ function parseRechartsBlocks(content: string): { text: string; charts: any[] } {
   return { text, charts };
 }
 
-const DEFAULT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088fe', '#00c49f', '#ffbb28', '#ff8042'];
-
 function InlineChart({ config }: { config: any }) {
+  const { theme } = useChartTheme();
   const { type, data, xAxisKey, dataKeys, colors, title } = config;
-  const chartColors = colors || DEFAULT_COLORS;
+  const chartColors = colors || theme.colors;
   if (!data || !Array.isArray(data) || data.length === 0) return null;
 
   return (
@@ -299,6 +303,56 @@ export function AgentChat({
   const [needsClarification, setNeedsClarification] = useState(false);
   const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
   const [modelName, setModelName] = useState<string>('Gemini 2.5 Flash');
+  const [activeVersionIndex, setActiveVersionIndex] = useState<number>(-1); // -1 = auto-follow latest
+
+  // Capture the initial script before any agent modifications
+  const initialScriptRef = useRef<string>(script);
+  useEffect(() => {
+    if (messages.length === 0) {
+      initialScriptRef.current = script;
+    }
+  }, [messages.length, script]);
+
+  // Compute script versions from message snapshots
+  const scriptVersions = useMemo(() => {
+    const versions: { label: string; script: string; messageIndex: number; timestamp?: number }[] = [];
+    const originalScript = initialScriptRef.current;
+    versions.push({ label: 'Originale', script: originalScript, messageIndex: -1 });
+
+    let lastScript = originalScript;
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.scriptSnapshot && msg.scriptSnapshot !== lastScript) {
+        versions.push({
+          label: `v${versions.length}`,
+          script: msg.scriptSnapshot,
+          messageIndex: i,
+          timestamp: msg.timestamp,
+        });
+        lastScript = msg.scriptSnapshot;
+      }
+    }
+    return versions;
+  }, [messages]);
+
+  const resolvedActiveIndex = activeVersionIndex === -1
+    ? scriptVersions.length - 1
+    : Math.min(activeVersionIndex, scriptVersions.length - 1);
+
+  const handleVersionSelect = useCallback((versionIndex: number) => {
+    const version = scriptVersions[versionIndex];
+    if (!version || !onScriptUpdate) return;
+    onScriptUpdate(version.script);
+    setActiveVersionIndex(versionIndex === scriptVersions.length - 1 ? -1 : versionIndex);
+  }, [scriptVersions, onScriptUpdate]);
+
+  const handleVersionPrev = useCallback(() => {
+    if (resolvedActiveIndex > 0) handleVersionSelect(resolvedActiveIndex - 1);
+  }, [resolvedActiveIndex, handleVersionSelect]);
+
+  const handleVersionNext = useCallback(() => {
+    if (resolvedActiveIndex < scriptVersions.length - 1) handleVersionSelect(resolvedActiveIndex + 1);
+  }, [resolvedActiveIndex, scriptVersions.length, handleVersionSelect]);
 
   useEffect(() => {
     getOpenRouterSettingsAction().then((settings) => {
@@ -365,6 +419,7 @@ export function AgentChat({
     setInput('');
     setIsLoading(true);
     setLoadingStatus('Sto analizzando la tua richiesta...');
+    setActiveVersionIndex(-1); // Re-enter auto-follow on new message
 
     // Add user message to UI immediately
     setMessages((prev) => [
@@ -444,11 +499,23 @@ export function AgentChat({
     const targetMessage = messages[messageIndex];
     if (targetMessage && targetMessage.scriptSnapshot && onScriptUpdate) {
       onScriptUpdate(targetMessage.scriptSnapshot);
+      // Find which version this message corresponds to
+      const versionIndex = scriptVersions.findIndex(v => v.messageIndex === messageIndex);
+      if (versionIndex !== -1) {
+        setActiveVersionIndex(versionIndex);
+      } else {
+        // Message didn't introduce a version change - find nearest version at or before this index
+        let bestIdx = 0;
+        for (let i = scriptVersions.length - 1; i >= 0; i--) {
+          if (scriptVersions[i].messageIndex <= messageIndex) {
+            bestIdx = i;
+            break;
+          }
+        }
+        setActiveVersionIndex(bestIdx);
+      }
     }
-    setMessages((prev) => prev.slice(0, messageIndex + 1));
-    if (onGoBack) {
-      onGoBack(messageIndex);
-    }
+    // Non-destructive: conversation history is preserved
   };
 
   const clearConversation = async () => {
@@ -459,6 +526,7 @@ export function AgentChat({
     setMessages([]);
     setNeedsClarification(false);
     setClarificationQuestions([]);
+    setActiveVersionIndex(-1);
   };
 
   const openCorrectionDialog = (messageIndex: number) => {
@@ -568,6 +636,58 @@ export function AgentChat({
           </Badge>
         </div>
 
+        {/* Script Version Timeline */}
+        {scriptVersions.length >= 2 && (
+          <div className="flex items-center gap-1 px-3 py-1 border-b bg-muted/5">
+            <History className="h-3 w-3 text-muted-foreground shrink-0" />
+            <button
+              onClick={handleVersionPrev}
+              disabled={resolvedActiveIndex === 0}
+              className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-3 w-3 text-muted-foreground" />
+            </button>
+            <div className="flex gap-0.5 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+              <TooltipProvider delayDuration={300}>
+                {scriptVersions.map((version, idx) => (
+                  <UiTooltip key={idx}>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => handleVersionSelect(idx)}
+                        className={cn(
+                          "px-1.5 py-0.5 rounded-full text-[9px] font-medium whitespace-nowrap transition-all",
+                          "hover:bg-primary/10",
+                          resolvedActiveIndex === idx
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : "bg-muted/50 text-muted-foreground"
+                        )}
+                      >
+                        {version.label}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-[10px]">
+                      {version.messageIndex === -1
+                        ? "Script originale prima delle modifiche"
+                        : `Versione del ${version.timestamp ? new Date(version.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}`
+                      }
+                    </TooltipContent>
+                  </UiTooltip>
+                ))}
+              </TooltipProvider>
+            </div>
+            <button
+              onClick={handleVersionNext}
+              disabled={resolvedActiveIndex === scriptVersions.length - 1}
+              className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+            </button>
+            <span className="text-[9px] text-muted-foreground ml-auto shrink-0">
+              {resolvedActiveIndex + 1}/{scriptVersions.length}
+            </span>
+          </div>
+        )}
+
         {/* Messages */}
         <ScrollArea className="flex-1">
           <div className="space-y-4 p-4">
@@ -606,7 +726,7 @@ export function AgentChat({
                     <button
                       onClick={() => handleGoBack(i)}
                       className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-all"
-                      title="Torna qui (cancella successivi)"
+                      title="Ripristina questa versione dello script"
                     >
                       <RotateCcw className="h-3 w-3" />
                     </button>
@@ -619,6 +739,22 @@ export function AgentChat({
                     <span className="text-[10px] font-medium text-muted-foreground">
                       {m.role === 'user' ? 'Tu' : `Agente ${agentName}`}
                     </span>
+                    {(() => {
+                      const vIdx = scriptVersions.findIndex(v => v.messageIndex === i);
+                      if (vIdx > 0) {
+                        return (
+                          <span className={cn(
+                            "text-[8px] font-semibold px-1.5 py-0.5 rounded-full",
+                            resolvedActiveIndex === vIdx
+                              ? "bg-primary/15 text-primary"
+                              : "bg-muted text-muted-foreground"
+                          )}>
+                            {scriptVersions[vIdx].label}
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   <div className={cn(
                     "max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm break-all whitespace-pre-wrap",

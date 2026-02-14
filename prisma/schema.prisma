@@ -11,6 +11,7 @@ datasource db {
 model Company {
   id                 String              @id @default(cuid())
   name               String
+  chartTheme         Json?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   agentConversations AgentConversation[]

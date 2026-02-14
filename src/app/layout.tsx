@@ -6,6 +6,7 @@ import { ChatBotAgent } from '@/components/layout/chatbot-agent';
 import { AuthProvider } from '@/components/providers/auth-provider';
 import { LayoutProvider } from '@/components/providers/layout-provider';
 import { MainContentTransition } from '@/components/layout/main-content-transition';
+import { ChartThemeProvider } from '@/hooks/use-chart-theme';
 import { Inter } from 'next/font/google';
 
 const inter = Inter({
@@ -29,13 +30,15 @@ export default function RootLayout({
       <body suppressHydrationWarning className={`${inter.className} antialiased bg-background text-foreground selection:bg-primary/30`}>
         <LayoutProvider>
           <AuthProvider>
-            <div className="flex min-h-screen">
-              <SidebarNav />
-              <MainContentTransition>
-                {children}
-              </MainContentTransition>
-              <ChatBotAgent />
-            </div>
+            <ChartThemeProvider>
+              <div className="flex min-h-screen">
+                <SidebarNav />
+                <MainContentTransition>
+                  {children}
+                </MainContentTransition>
+                <ChatBotAgent />
+              </div>
+            </ChartThemeProvider>
             <Toaster />
           </AuthProvider>
         </LayoutProvider>

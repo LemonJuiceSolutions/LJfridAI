@@ -19,6 +19,7 @@ import { getOpenRouterSettingsAction, saveOpenRouterSettingsAction } from '@/act
 import { ConnectorsManager } from './connectors-manager';
 import { Users, UserPlus, Copy } from 'lucide-react';
 import { exportSettingsAction, importSettingsAction } from '../actions/backup-restore';
+import { AppearanceSettings } from './appearance-settings';
 
 export default function SettingsPage() {
     const { toast } = useToast();
@@ -341,6 +342,9 @@ export default function SettingsPage() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    {/* Aspetto */}
+                    <AppearanceSettings />
 
                     {/* Backup & Restore */}
                     <Card className="mt-6">
