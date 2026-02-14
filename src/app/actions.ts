@@ -610,7 +610,7 @@ export async function getTreesAction(ids?: string[], type?: string): Promise<{ d
     }
 }
 
-export async function getTreeAction(id: string): Promise<{ data: StoredTree | null; error: string | null; }> {
+export async function getTreeAction(id: string, forceRefresh = false): Promise<{ data: StoredTree | null; error: string | null; }> {
     try {
         const user = await getAuthenticatedUser();
         if (typeof id !== 'string' || !id) {
@@ -619,9 +619,11 @@ export async function getTreeAction(id: string): Promise<{ data: StoredTree | nu
 
         // Check per-tree cache first (avoids N+1 queries from multiple widget renderers)
         const now = Date.now();
-        const cached = serverCache.treeById.get(id);
-        if (cached && (now - cached.timestamp) < serverCache.CACHE_DURATION) {
-            return { data: cached.data, error: null };
+        if (!forceRefresh) {
+            const cached = serverCache.treeById.get(id);
+            if (cached && (now - cached.timestamp) < serverCache.CACHE_DURATION) {
+                return { data: cached.data, error: null };
+            }
         }
 
         const treeData = await db.tree.findFirst({

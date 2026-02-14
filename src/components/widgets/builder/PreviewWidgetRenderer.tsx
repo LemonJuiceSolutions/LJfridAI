@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { getCachedTree } from '@/lib/tree-cache';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { getCachedTree, invalidateAndNotifyWidgets } from '@/lib/tree-cache';
 import { DataTable } from '@/components/ui/data-table';
 import SmartWidgetRenderer from './SmartWidgetRenderer';
 import { Loader2, Database, Code, AlertCircle, RefreshCw, Zap } from 'lucide-react';
@@ -23,10 +23,17 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
     const [showExecutionDialog, setShowExecutionDialog] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
+    const isLoadingRef = useRef(false);
 
     const loadPreview = useCallback(async (showLoading = true) => {
+        // Prevent concurrent loads
+        if (isLoadingRef.current) return;
+        isLoadingRef.current = true;
+
         if (showLoading) setLoading(true);
         else setIsRefreshing(true);
+        // Clear previous error so a successful refresh can show data
+        setError(null);
         try {
             const result = await getCachedTree(treeId, !showLoading);
             if (result.data) {
@@ -54,12 +61,34 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
 
                 const node = findNode(jsonTree);
                 if (node) {
-                    if (previewType === 'sql' && node.sqlPreviewData) {
-                        setPreviewData({
-                            type: 'table',
-                            data: node.sqlPreviewData,
-                            timestamp: node.sqlPreviewTimestamp
-                        });
+                    if (previewType === 'sql') {
+                        // Primary: sqlPreviewData. Fallback: pythonPreviewResult with table data
+                        const sqlData = node.sqlPreviewData
+                            || (node.pythonPreviewResult?.data && Array.isArray(node.pythonPreviewResult.data)
+                                ? node.pythonPreviewResult.data : null)
+                            || (node.pythonPreviewResult?.rechartsData && Array.isArray(node.pythonPreviewResult.rechartsData)
+                                ? node.pythonPreviewResult.rechartsData : null);
+
+                        // If no tabular data but a Python preview exists (e.g. chart),
+                        // show the Python result instead of an error
+                        const pythonTs = node.pythonPreviewResult?.timestamp || 0;
+                        const sqlTs = node.sqlPreviewTimestamp || 0;
+
+                        if (sqlData) {
+                            setPreviewData({
+                                type: 'table',
+                                data: sqlData,
+                                timestamp: Math.max(sqlTs, pythonTs) || sqlTs
+                            });
+                        } else if (node.pythonPreviewResult) {
+                            // Fallback: show Python preview (chart/html/variable)
+                            setPreviewData({
+                                ...node.pythonPreviewResult,
+                                timestamp: pythonTs
+                            });
+                        } else {
+                            setError('Nessuna anteprima trovata per questo nodo');
+                        }
                     } else if (previewType === 'python' && node.pythonPreviewResult) {
                         setPreviewData({
                             ...node.pythonPreviewResult,
@@ -78,12 +107,25 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
         } finally {
             setLoading(false);
             setIsRefreshing(false);
+            isLoadingRef.current = false;
         }
     }, [treeId, nodeId, previewType]);
 
     useEffect(() => {
         loadPreview();
     }, [loadPreview]);
+
+    // Listen for cross-widget refresh events (when another widget triggers execution)
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (detail?.treeId === treeId) {
+                loadPreview(false);
+            }
+        };
+        window.addEventListener('tree-cache-invalidated', handler);
+        return () => window.removeEventListener('tree-cache-invalidated', handler);
+    }, [treeId, loadPreview]);
 
     const handleRefresh = () => {
         loadPreview(false);
@@ -94,6 +136,8 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
     };
 
     const handleExecutionSuccess = () => {
+        // Invalidate cache and notify ALL widgets sharing this treeId to refresh
+        invalidateAndNotifyWidgets(treeId);
         loadPreview(false);
     };
 

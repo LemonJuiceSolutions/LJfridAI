@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { getCachedTree } from '@/lib/tree-cache';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { getCachedTree, invalidateAndNotifyWidgets } from '@/lib/tree-cache';
 import SmartWidgetRenderer from './SmartWidgetRenderer';
 import { WidgetConfig } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -19,8 +19,12 @@ export function NodeWidgetRenderer({ treeId, nodeId }: NodeWidgetRendererProps) 
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [showExecutionDialog, setShowExecutionDialog] = useState(false);
     const { toast } = useToast();
+    const isLoadingRef = useRef(false);
 
     const loadWidget = useCallback(async (showLoading = true) => {
+        if (isLoadingRef.current) return;
+        isLoadingRef.current = true;
+
         if (showLoading) setLoading(true);
         else setIsRefreshing(true);
         try {
@@ -58,12 +62,25 @@ export function NodeWidgetRenderer({ treeId, nodeId }: NodeWidgetRendererProps) 
         } finally {
             setLoading(false);
             setIsRefreshing(false);
+            isLoadingRef.current = false;
         }
     }, [treeId, nodeId]);
 
     useEffect(() => {
         loadWidget();
     }, [loadWidget]);
+
+    // Listen for cross-widget refresh events
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (detail?.treeId === treeId) {
+                loadWidget(false);
+            }
+        };
+        window.addEventListener('tree-cache-invalidated', handler);
+        return () => window.removeEventListener('tree-cache-invalidated', handler);
+    }, [treeId, loadWidget]);
 
     const handleRefresh = () => {
         loadWidget(false);
@@ -74,6 +91,7 @@ export function NodeWidgetRenderer({ treeId, nodeId }: NodeWidgetRendererProps) 
     };
 
     const handleExecutionSuccess = () => {
+        invalidateAndNotifyWidgets(treeId);
         loadWidget(false);
     };
 

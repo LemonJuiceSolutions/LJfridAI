@@ -192,11 +192,21 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
         );
     }
 
+    // Normalize reportData for SmartWidgetRenderer: extract array from wrapper objects
+    // SQL results come as { data: [...rows] }, Python as { data: [...], rechartsData: [...] }
+    const normalizedData = Array.isArray(reportData)
+        ? reportData
+        : (reportData?.data && Array.isArray(reportData.data))
+            ? reportData.data
+            : (reportData?.rechartsData && Array.isArray(reportData.rechartsData))
+                ? reportData.rechartsData
+                : reportData;
+
     return (
         <div className="h-full w-full">
             {widgetConfig ? (
                 <SmartWidgetRenderer
-                    data={reportData}
+                    data={normalizedData}
                     config={widgetConfig}
                     onRefresh={handleRefresh}
                     isRefreshing={isRefreshing}

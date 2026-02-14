@@ -454,12 +454,17 @@ export async function saveAncestorPreviewsBatchAction(
             const res = preview.result;
 
             // 1. SQL Preview Data (Check for array data)
-            // If it's a hybrid node (isPython=false but has resultData.data), or a pure SQL node
+            // Always save tabular data to sqlPreviewData regardless of isPython flag,
+            // because widgets may be registered as SQL preview type even for hybrid nodes.
             const sqlData = Array.isArray(res)
                 ? res
-                : (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data) ? res.data : null);
+                : (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data))
+                    ? res.data
+                    : (res && typeof res === 'object' && 'rechartsData' in res && Array.isArray(res.rechartsData))
+                        ? res.rechartsData
+                        : null;
 
-            if (sqlData && !preview.isPython) {
+            if (sqlData) {
                 node.sqlPreviewData = sqlData;
                 node.sqlPreviewTimestamp = nowMs;
                 nodeUpdated = true;

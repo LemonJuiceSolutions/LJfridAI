@@ -25,7 +25,7 @@ export async function getCachedTree(treeId: string, forceRefresh = false) {
         return inflight;
     }
 
-    const promise = getTreeAction(treeId).then(result => {
+    const promise = getTreeAction(treeId, forceRefresh).then(result => {
         inflightRequests.delete(treeId);
         if (result.data) {
             treeClientCache.set(treeId, { data: result, timestamp: Date.now() });
@@ -45,5 +45,17 @@ export function invalidateTreeCache(treeId?: string) {
         treeClientCache.delete(treeId);
     } else {
         treeClientCache.clear();
+    }
+}
+
+/**
+ * Invalidate client cache AND notify all widgets on the page to refresh.
+ * Uses a custom DOM event so all PreviewWidgetRenderer / NodeWidgetRenderer
+ * instances sharing the same treeId can re-read fresh data.
+ */
+export function invalidateAndNotifyWidgets(treeId: string) {
+    invalidateTreeCache(treeId);
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('tree-cache-invalidated', { detail: { treeId } }));
     }
 }

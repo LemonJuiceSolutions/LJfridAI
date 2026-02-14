@@ -440,7 +440,10 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                 }
             }
             if (previewBatch.length > 0) {
-                await saveAncestorPreviewsBatchAction(treeId, previewBatch);
+                const saveResult = await saveAncestorPreviewsBatchAction(treeId, previewBatch);
+                if (!saveResult.success) {
+                    console.warn('[PIPELINE] Preview save failed, widgets may show stale data');
+                }
             }
 
             setProgressStep(3);
