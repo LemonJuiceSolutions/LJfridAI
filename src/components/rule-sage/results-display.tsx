@@ -10,7 +10,7 @@ import { RefreshCw, Loader2 } from "lucide-react";
 
 interface ResultsDisplayProps {
   result: StoredTree;
-  onDataRefresh?: () => void;
+  onDataRefresh?: (freshData?: StoredTree) => void;
   isSaving?: boolean;
   // Props for Description tab
   descriptionContent?: string;

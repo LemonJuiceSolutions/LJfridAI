@@ -63,8 +63,14 @@ export default function ViewTreePage() {
     }
   };
 
-  const fetchTree = useCallback(async () => {
+  const fetchTree = useCallback(async (freshData?: StoredTree) => {
     if (!id) return;
+    // If fresh data is provided (e.g. from updateTreeNodeAction), use it directly
+    if (freshData) {
+      setTree(freshData);
+      setTreeName(freshData.name);
+      return;
+    }
     setIsLoading(true);
     const result = await getTreeAction(id);
     if (result.error || !result.data) {
@@ -92,7 +98,11 @@ export default function ViewTreePage() {
       try {
         const result = await updateTreeNodeAction({ treeId: tree.id, nodePath: 'root', nodeData: JSON.stringify({ name: treeName.trim() }) });
         if (result.success) {
-          await fetchTree();
+          if (result.data) {
+            await fetchTree(result.data);
+          } else {
+            await fetchTree();
+          }
           toast({ title: 'Nome aggiornato!' });
         } else {
           throw new Error(result.error || 'Salvataggio del nome fallito');

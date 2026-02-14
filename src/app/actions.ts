@@ -555,49 +555,51 @@ export async function rephraseQuestionAction(question: string, context: string, 
     }
 }
 
-export async function getTreesAction(ids?: string[], type?: string): Promise<{ data: StoredTree[] | null; error: string | null; }> {
+export async function getTreesAction(ids?: string[], type?: string, lightweight?: boolean): Promise<{ data: StoredTree[] | null; error: string | null; }> {
     try {
         const user = await getAuthenticatedUser();
         const now = Date.now();
 
-        // Check cache first
-        if (!ids && !type && serverCache.trees && (now - serverCache.treesTimestamp) < serverCache.CACHE_DURATION) {
+        // Check cache first (only for full queries without filters)
+        if (!ids && !type && !lightweight && serverCache.trees && (now - serverCache.treesTimestamp) < serverCache.CACHE_DURATION) {
             return { data: serverCache.trees, error: null };
         }
+
+        const whereClause: any = { companyId: user.companyId };
+        if (type) whereClause.type = type;
+
+        // Lightweight mode: only fetch fields needed for listing (excludes heavy JSON/text fields)
+        const selectClause = lightweight ? {
+            id: true, name: true, description: true, type: true, createdAt: true, companyId: true,
+        } : undefined;
 
         let treesData;
 
         if (ids && ids.length > 0) {
             treesData = await db.tree.findMany({
-                where: {
-                    id: { in: ids },
-                    companyId: user.companyId
-                },
-                orderBy: { createdAt: 'desc' }
+                where: { id: { in: ids }, companyId: user.companyId },
+                orderBy: { createdAt: 'desc' },
+                ...(selectClause && { select: selectClause }),
             });
         } else {
-            // If type is provided, filter by it. If not, return ALL trees (Rules + Pipelines)
-            const whereClause: any = {
-                companyId: user.companyId
-            };
-
-            if (type) {
-                whereClause.type = type;
-            }
-
             treesData = await db.tree.findMany({
                 where: whereClause,
-                orderBy: { createdAt: 'desc' }
+                orderBy: { createdAt: 'desc' },
+                ...(selectClause && { select: selectClause }),
             });
         }
 
         const trees: StoredTree[] = treesData.map(t => ({
             ...t,
+            // Fill in empty strings for fields excluded by lightweight select
+            jsonDecisionTree: (t as any).jsonDecisionTree ?? '',
+            naturalLanguageDecisionTree: (t as any).naturalLanguageDecisionTree ?? '',
+            questionsScript: (t as any).questionsScript ?? '',
             createdAt: t.createdAt.toISOString()
         }));
 
-        // Update cache
-        if (!ids && !type) {
+        // Update cache only for full (non-lightweight) queries without filters
+        if (!ids && !type && !lightweight) {
             serverCache.trees = trees;
             serverCache.treesTimestamp = now;
         }
@@ -663,7 +665,7 @@ export async function updateTreeNodeAction({
     treeId: string;
     nodePath: string;
     nodeData: string;
-}): Promise<{ success: boolean; error: string | null }> {
+}): Promise<{ success: boolean; error: string | null; data?: StoredTree }> {
     try {
         const user = await getAuthenticatedUser();
         console.log("updateTreeNodeAction called:", { treeId, nodePath, nodeData: nodeData?.substring(0, 50) });
@@ -682,7 +684,6 @@ export async function updateTreeNodeAction({
             throw new Error("Albero non trovato.");
         }
 
-        // const treeToUpdate = treeDoc.data() as StoredTree; // No longer needed
         let jsonTree = JSON.parse(treeToUpdate.jsonDecisionTree);
 
         const lodashPath = nodePath.replace(/^root\.?/, '');
@@ -696,11 +697,13 @@ export async function updateTreeNodeAction({
 
         if (nodePath === 'root') {
             if (parsedNodeData && typeof parsedNodeData === 'object' && !Array.isArray(parsedNodeData) && 'name' in parsedNodeData) {
-                await db.tree.update({
+                const updated = await db.tree.update({
                     where: { id: treeId },
                     data: { name: parsedNodeData.name }
                 });
-                return { success: true, error: null };
+                invalidateServerTreeCache(treeId);
+                const updatedTree: StoredTree = { ...updated, type: (updated as any).type || 'RULE', createdAt: updated.createdAt.toISOString() };
+                return { success: true, error: null, data: updatedTree };
             }
             jsonTree = { ...jsonTree, ...parsedNodeData };
         } else {
@@ -724,7 +727,7 @@ export async function updateTreeNodeAction({
             }
         }
 
-        await db.tree.update({
+        const updated = await db.tree.update({
             where: { id: treeId },
             data: {
                 jsonDecisionTree: JSON.stringify(jsonTree, null, 2),
@@ -734,10 +737,14 @@ export async function updateTreeNodeAction({
         // Invalidate server-side tree cache so widgets get fresh data
         invalidateServerTreeCache(treeId);
 
-        revalidatePath(`/view/${treeId}`);
-        revalidatePath('/');
+        // Return the updated tree directly so clients don't need a separate fetch
+        const updatedTree: StoredTree = {
+            ...updated,
+            type: (updated as any).type || 'RULE',
+            createdAt: updated.createdAt.toISOString()
+        };
 
-        return { success: true, error: null };
+        return { success: true, error: null, data: updatedTree };
 
     } catch (e) {
         const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante l'aggiornamento.";
@@ -2239,16 +2246,16 @@ export async function getVariablesAction(): Promise<{ data: Variable[] | null; e
             return { data: serverCache.variables, error: null };
         }
 
-        // Check cache for trees (needed for variable usage tracking)
+        // Fetch only the fields needed for variable usage tracking (id, name, jsonDecisionTree)
+        // Excludes heavy fields like naturalLanguageDecisionTree, questionsScript, description
         let treesData;
         if (serverCache.trees && (now - serverCache.treesTimestamp) < serverCache.CACHE_DURATION) {
             treesData = serverCache.trees;
         } else {
             treesData = await db.tree.findMany({
-                where: { companyId: user.companyId }
+                where: { companyId: user.companyId },
+                select: { id: true, name: true, jsonDecisionTree: true, companyId: true }
             });
-            serverCache.trees = treesData;
-            serverCache.treesTimestamp = now;
         }
 
         const variablesData = await db.variable.findMany({

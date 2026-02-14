@@ -36,7 +36,7 @@ export default function PipelinePage() {
 
     const fetchTrees = async () => {
         setIsLoading(true);
-        const result = await getTreesAction(undefined, 'PIPELINE');
+        const result = await getTreesAction(undefined, 'PIPELINE', true);
         if (result.data) {
             setTrees(result.data);
         } else if (result.error) {

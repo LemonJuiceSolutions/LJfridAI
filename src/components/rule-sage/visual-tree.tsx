@@ -27,7 +27,7 @@ import AddChildNodeDialog from './add-child-node-dialog';
 
 interface VisualTreeProps {
     treeData: StoredTree;
-    onDataRefresh?: () => void;
+    onDataRefresh?: (freshData?: StoredTree) => void;
     isSaving: boolean;
 }
 
@@ -351,15 +351,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     const isSaving = parentIsSaving || internalSaving;
 
     // Use hooks for caching trees and variables
-    const { trees: allTrees, refreshTrees } = useTrees();
+    const { trees: allTrees } = useTrees();
     const { variables: dbVariables, refreshVariables } = useVariables();
-
-    // Fix: Refresh variables and trees when treeData changes (e.g. after consolidation)
-    useEffect(() => {
-        refreshVariables();
-        refreshTrees();
-    }, [treeData, refreshVariables, refreshTrees]);
-
 
     const layout = useMemo(() => {
         if (!tree) return { positionedNodes: [], contentWidth: 0, contentHeight: 0 };
@@ -498,9 +491,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                         }).then((result) => {
                             if (result.success) {
                                 console.log("Tree IDs persisted successfully.");
-                                // We don't necessarily need to trigger onDataRefresh here if we setTree below,
-                                // but it keeps strictly in sync.
-                                if (onDataRefresh) onDataRefresh();
+                                if (onDataRefresh) onDataRefresh(result.data);
                             } else {
                                 console.error("Failed to persist tree IDs:", result.error);
                             }
@@ -511,14 +502,12 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 }
 
                 setTree(treeWithIds as DecisionNode);
-                refreshVariables();
-                refreshTrees();
             }
         } catch (e) {
             console.error("Failed to parse tree JSON:", e);
             setTree(null);
         }
-    }, [treeData, refreshVariables, refreshTrees, onDataRefresh]);
+    }, [treeData, onDataRefresh]);
 
     const [editingNodeInfo, setEditingNodeInfo] = useState<{ path: string; node: DecisionLeaf | { question: string } | { option: string }; type: 'question' | 'decision' } | null>(null);
     const [editingOptionInfo, setEditingOptionInfo] = useState<{ path: string; option: VariableOption; varId: string; } | null>(null);
@@ -540,7 +529,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             });
             if (result.success) {
                 toast({ title: "Albero aggiornato!" });
-                onDataRefresh();
+                onDataRefresh(result.data);
             } else {
                 throw new Error(result.error || 'Salvataggio fallito');
             }
@@ -602,7 +591,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
                                     if (result.success) {
                                         toast({ title: "Variabile Scollegata", description: "Il nodo è stato convertito in domanda locale." });
-                                        if (onDataRefresh) onDataRefresh();
+                                        if (onDataRefresh) onDataRefresh(result.data);
                                     } else {
                                         throw new Error(result.error || "Operazione fallita");
                                     }
@@ -680,7 +669,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
 
             toast({ title: "Albero aggiornato con successo!" });
-            onDataRefresh();
+            onDataRefresh(result.data);
 
         } catch (e) {
             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
@@ -829,7 +818,6 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 toast({ title: "Successo!", description: "Opzione aggiornata. L'albero si ricaricherà per riflettere le modifiche." });
                 onDataRefresh();
                 refreshVariables();
-                refreshTrees();
             } else {
                 throw new Error(result.error || "Aggiornamento della variabile fallito");
             }
@@ -902,7 +890,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
 
             toast({ title: "Nodo aggiunto con successo!" });
-            onDataRefresh();
+            onDataRefresh(result.data);
 
         } catch (e) {
             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
@@ -942,7 +930,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
 
             toast({ title: "Nodo aggiunto con successo!" });
-            onDataRefresh();
+            onDataRefresh(result.data);
 
         } catch (e) {
             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
@@ -980,7 +968,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 throw new Error(result.error || "Creazione del link fallita");
             }
             toast({ title: "Collegamento creato!" });
-            onDataRefresh();
+            onDataRefresh(result.data);
         } catch (e) {
             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
             toast({ variant: 'destructive', title: "Errore durante la creazione del link", description: error });
@@ -1018,7 +1006,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 throw new Error(result.error || "Creazione del link al sotto-albero fallita.");
             }
             toast({ title: "Collegamento a sotto-albero creato!" });
-            onDataRefresh();
+            onDataRefresh(result.data);
         } catch (e) {
             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
             toast({ variant: 'destructive', title: "Errore durante la creazione del link", description: error });
@@ -1046,7 +1034,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 throw new Error(result.error || "Rimozione del link fallita");
             }
             toast({ title: "Collegamento rimosso!" });
-            onDataRefresh();
+            onDataRefresh(result.data);
         } catch (e) {
             const error = e instanceof Error ? e.message : 'Si è verificato un errore imprevisto.';
             toast({ variant: 'destructive', title: "Errore durante la rimozione del link", description: error });
@@ -1110,6 +1098,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         const { path } = deletingNodeInfo;
 
         setInternalSaving(true);
+        let updatedTreeData: StoredTree | undefined;
 
         try {
             // Check for array index pattern: ...[index]
@@ -1122,17 +1111,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 const parentArray = getNodeFromPath(tree, parentArrayPath);
 
                 if (!Array.isArray(parentArray)) {
-                    // Fallback for weird edge cases where path looks like array but node isn't
-                    // e.g. if key name is numbers? Unlikely with ['...'] format for keys
                     throw new Error("Struttura dati imprevista: atteso array.");
                 }
 
                 const newArray = [...parentArray];
                 newArray.splice(index, 1);
-
-                // If the array becomes empty or has only 1 item, we might want to simplify?
-                // For now, let's keep it as an array to maintain structure stability.
-                // If it becomes empty, it's an empty option path.
 
                 const result = await updateTreeNodeAction({
                     treeId: treeData.id,
@@ -1143,6 +1126,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 if (!result.success) {
                     throw new Error(result.error || "Eliminazione del nodo fallita");
                 }
+                updatedTreeData = result.data;
                 toast({ title: "Successo!", description: "Il nodo è stato eliminato." });
 
             } else {
@@ -1169,6 +1153,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     } else {
                         throw new Error(result.error || "Aggiornamento della variabile fallito");
                     }
+                    // Variable deletion propagates via updateVariableAction, need full refresh
+                    refreshVariables();
                 } else {
                     const result = await updateTreeNodeAction({
                         treeId: treeData.id,
@@ -1178,13 +1164,12 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     if (!result.success) {
                         throw new Error(result.error || "Eliminazione del nodo fallita");
                     }
+                    updatedTreeData = result.data;
                     toast({ title: "Successo!", description: "Il nodo è stato eliminato." });
                 }
             }
 
-            onDataRefresh();
-            refreshVariables();
-            refreshTrees();
+            onDataRefresh(updatedTreeData);
         } catch (e) {
             toast({ variant: 'destructive', title: "Errore di Eliminazione", description: e instanceof Error ? e.message : 'Errore Sconosciuto' });
         } finally {

@@ -41,7 +41,7 @@ export default function Home() {
 
   const fetchTrees = async () => {
     setIsLoading(true);
-    const result = await getTreesAction(); // Fetch everything (Rules + Pipelines)
+    const result = await getTreesAction(undefined, undefined, true); // Lightweight: only id, name, description, type, createdAt
     if (result.data) {
       setTrees(result.data);
     } else if (result.error) {
@@ -69,7 +69,10 @@ export default function Home() {
     }
     setIsDownloading(true);
     try {
-      const jsonString = JSON.stringify(trees, null, 2);
+      // Fetch full tree data for export (lightweight list doesn't include JSON fields)
+      const fullResult = await getTreesAction();
+      const fullTrees = fullResult.data || trees;
+      const jsonString = JSON.stringify(fullTrees, null, 2);
       const blob = new Blob([jsonString], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
