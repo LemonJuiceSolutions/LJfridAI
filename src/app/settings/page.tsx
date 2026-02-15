@@ -13,13 +13,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-import { testOpenRouterConnection, chatOpenRouterAction, fetchOpenRouterModelsAction } from '../actions';
+import { testOpenRouterConnection, chatOpenRouterAction, fetchOpenRouterModelsAction, getOpenRouterCreditsAction } from '../actions';
 import { createInvitationAction, getInvitationsAction, revokeInvitationAction } from '../actions/invitations';
 import { getOpenRouterSettingsAction, saveOpenRouterSettingsAction } from '@/actions/openrouter';
 import { ConnectorsManager } from './connectors-manager';
-import { Users, UserPlus, Copy } from 'lucide-react';
+import { Users, UserPlus, Copy, UserSearch } from 'lucide-react';
 import { exportSettingsAction, importSettingsAction } from '../actions/backup-restore';
 import { AppearanceSettings } from './appearance-settings';
+import {
+    getLeadGenApiKeysAction, saveLeadGenApiKeysAction,
+    testApolloApiKeyAction, testHunterApiKeyAction, testSerpApiKeyAction, testApifyApiKeyAction,
+} from '@/actions/lead-generator';
+import { Badge } from '@/components/ui/badge';
 
 export default function SettingsPage() {
     const { toast } = useToast();
@@ -50,11 +55,49 @@ export default function SettingsPage() {
     const [isExporting, setIsExporting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
 
+    // Lead Generator API Keys State
+    const [leadGenApollo, setLeadGenApollo] = useState('');
+    const [leadGenHunter, setLeadGenHunter] = useState('');
+    const [leadGenSerpApi, setLeadGenSerpApi] = useState('');
+    const [leadGenApify, setLeadGenApify] = useState('');
+    const [isLeadGenSaving, setIsLeadGenSaving] = useState(false);
+
+    // Lead Gen API Test State
+    type ApiTestResult = { success: boolean; message: string; quota?: { used: number; available: number; plan: string; resetDate?: string; extra?: string } };
+    const [apolloTest, setApolloTest] = useState<ApiTestResult | null>(null);
+    const [hunterTest, setHunterTest] = useState<ApiTestResult | null>(null);
+    const [serpApiTest, setSerpApiTest] = useState<ApiTestResult | null>(null);
+    const [apifyTest, setApifyTest] = useState<ApiTestResult | null>(null);
+    const [isTestingApollo, setIsTestingApollo] = useState(false);
+    const [isTestingHunter, setIsTestingHunter] = useState(false);
+    const [isTestingSerpApi, setIsTestingSerpApi] = useState(false);
+    const [isTestingApify, setIsTestingApify] = useState(false);
+
+    // OpenRouter Credits State
+    type OpenRouterCredits = { totalCredits: number; totalUsage: number; remaining: number };
+    const [orCredits, setOrCredits] = useState<OpenRouterCredits | null>(null);
+    const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+
+    const loadOpenRouterCredits = async (key: string) => {
+        if (!key) return;
+        setIsLoadingCredits(true);
+        try {
+            const res = await getOpenRouterCreditsAction(key);
+            if (res.success && res.credits) {
+                setOrCredits(res.credits);
+            }
+        } catch { /* ignore */ }
+        setIsLoadingCredits(false);
+    };
+
     useEffect(() => {
         // Load OpenRouter settings from database
         getOpenRouterSettingsAction().then(res => {
             if (!res.error) {
-                if (res.apiKey) setApiKey(res.apiKey);
+                if (res.apiKey) {
+                    setApiKey(res.apiKey);
+                    loadOpenRouterCredits(res.apiKey);
+                }
                 if (res.model) setModel(res.model);
             }
         });
@@ -62,6 +105,16 @@ export default function SettingsPage() {
         // Load invitations
         getInvitationsAction().then(res => {
             if (res.data) setInvitations(res.data);
+        });
+
+        // Load Lead Generator API keys
+        getLeadGenApiKeysAction().then(res => {
+            if (res.keys) {
+                if (res.keys.apollo) setLeadGenApollo(res.keys.apollo);
+                if (res.keys.hunter) setLeadGenHunter(res.keys.hunter);
+                if (res.keys.serpApi) setLeadGenSerpApi(res.keys.serpApi);
+                if (res.keys.apify) setLeadGenApify(res.keys.apify);
+            }
         });
     }, []);
 
@@ -123,6 +176,8 @@ export default function SettingsPage() {
         try {
             const result = await testOpenRouterConnection(apiKey, model);
             setTestResult(result);
+            // Refresh credits after test
+            loadOpenRouterCredits(apiKey);
             if (result.success) {
                 toast({
                     title: "Test riuscito",
@@ -399,6 +454,268 @@ export default function SettingsPage() {
                         <ConnectorsManager />
                     </div>
 
+                    {/* Lead Generator API Keys */}
+                    <Card className="mb-6">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <UserSearch className="h-6 w-6 text-emerald-500" />
+                                Lead Generator - API Keys
+                            </CardTitle>
+                            <CardDescription>
+                                Configura le chiavi API per i servizi di ricerca lead. Tutti i servizi offrono un piano gratuito. Le chiavi sono condivise per tutta l&apos;azienda.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-5">
+                            {/* Apollo.io */}
+                            <div className="space-y-2 p-4 border rounded-lg">
+                                <Label htmlFor="apollo-key">Apollo.io API Key</Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        id="apollo-key"
+                                        type="password"
+                                        placeholder="Inserisci la tua API key Apollo.io..."
+                                        value={leadGenApollo}
+                                        onChange={(e) => { setLeadGenApollo(e.target.value); setApolloTest(null); }}
+                                        className="flex-1"
+                                    />
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={!leadGenApollo || isTestingApollo}
+                                        onClick={async () => {
+                                            setIsTestingApollo(true); setApolloTest(null);
+                                            try { setApolloTest(await testApolloApiKeyAction(leadGenApollo)); }
+                                            catch { setApolloTest({ success: false, message: 'Errore di connessione' }); }
+                                            setIsTestingApollo(false);
+                                        }}
+                                    >
+                                        {isTestingApollo ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+                                        <span className="ml-1.5 text-xs">Test</span>
+                                    </Button>
+                                </div>
+                                {apolloTest && (
+                                    <div className={`p-3 rounded-md flex items-start gap-2 text-xs ${apolloTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {apolloTest.success ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                                        <div>
+                                            <p className="font-medium">{apolloTest.message}</p>
+                                            {apolloTest.quota && (
+                                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                                    <Badge variant="outline" className="text-[10px]">{apolloTest.quota.plan}</Badge>
+                                                    {apolloTest.quota.extra && <Badge variant="secondary" className="text-[10px]">{apolloTest.quota.extra}</Badge>}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="text-[11px] text-muted-foreground space-y-1">
+                                    <p><strong>Cerca contatti e aziende</strong> tra 220M+ profili (Search API + Enrichment API).</p>
+                                    <p>Piano Free: 10.000 crediti/mese (sufficiente per ~200 ricerche).</p>
+                                    <p>
+                                        Come ottenere: Registrati su{' '}
+                                        <a href="https://www.apollo.io/" target="_blank" rel="noopener noreferrer" className="text-primary underline">apollo.io</a>
+                                        {' '}(piano Free) &rarr; Settings &rarr; Integrations &rarr; API Keys &rarr; copia la chiave.{' '}
+                                        <a href="https://app.apollo.io/#/settings/integrations/api" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                                            Vai diretto alla pagina API Key
+                                        </a>
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Hunter.io */}
+                            <div className="space-y-2 p-4 border rounded-lg">
+                                <Label htmlFor="hunter-key">Hunter.io API Key</Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        id="hunter-key"
+                                        type="password"
+                                        placeholder="Inserisci la tua API key Hunter.io..."
+                                        value={leadGenHunter}
+                                        onChange={(e) => { setLeadGenHunter(e.target.value); setHunterTest(null); }}
+                                        className="flex-1"
+                                    />
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={!leadGenHunter || isTestingHunter}
+                                        onClick={async () => {
+                                            setIsTestingHunter(true); setHunterTest(null);
+                                            try { setHunterTest(await testHunterApiKeyAction(leadGenHunter)); }
+                                            catch { setHunterTest({ success: false, message: 'Errore di connessione' }); }
+                                            setIsTestingHunter(false);
+                                        }}
+                                    >
+                                        {isTestingHunter ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+                                        <span className="ml-1.5 text-xs">Test</span>
+                                    </Button>
+                                </div>
+                                {hunterTest && (
+                                    <div className={`p-3 rounded-md flex items-start gap-2 text-xs ${hunterTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {hunterTest.success ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                                        <div>
+                                            <p className="font-medium">{hunterTest.message}</p>
+                                            {hunterTest.quota && (
+                                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                                    <Badge variant="outline" className="text-[10px]">{hunterTest.quota.plan}</Badge>
+                                                    <Badge variant="secondary" className="text-[10px]">Ricerche: {hunterTest.quota.used}/{hunterTest.quota.used + hunterTest.quota.available}</Badge>
+                                                    {hunterTest.quota.extra && <Badge variant="secondary" className="text-[10px]">{hunterTest.quota.extra}</Badge>}
+                                                    {hunterTest.quota.resetDate && <Badge variant="outline" className="text-[10px]">Reset: {new Date(hunterTest.quota.resetDate).toLocaleDateString('it-IT')}</Badge>}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="text-[11px] text-muted-foreground space-y-1">
+                                    <p><strong>Trova e verifica email aziendali</strong> a partire dal dominio dell&apos;azienda.</p>
+                                    <p>Piano Free: 25 ricerche + 50 verifiche email/mese.</p>
+                                    <p>
+                                        Come ottenere: Registrati su{' '}
+                                        <a href="https://hunter.io/" target="_blank" rel="noopener noreferrer" className="text-primary underline">hunter.io</a>
+                                        {' '}(piano Free) &rarr; clicca sul tuo avatar in alto a destra &rarr; API Keys &rarr; copia la chiave.{' '}
+                                        <a href="https://hunter.io/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                                            Vai diretto alla pagina API Key
+                                        </a>
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* SerpApi */}
+                            <div className="space-y-2 p-4 border rounded-lg">
+                                <Label htmlFor="serpapi-key">SerpApi API Key</Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        id="serpapi-key"
+                                        type="password"
+                                        placeholder="Inserisci la tua API key SerpApi..."
+                                        value={leadGenSerpApi}
+                                        onChange={(e) => { setLeadGenSerpApi(e.target.value); setSerpApiTest(null); }}
+                                        className="flex-1"
+                                    />
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={!leadGenSerpApi || isTestingSerpApi}
+                                        onClick={async () => {
+                                            setIsTestingSerpApi(true); setSerpApiTest(null);
+                                            try { setSerpApiTest(await testSerpApiKeyAction(leadGenSerpApi)); }
+                                            catch { setSerpApiTest({ success: false, message: 'Errore di connessione' }); }
+                                            setIsTestingSerpApi(false);
+                                        }}
+                                    >
+                                        {isTestingSerpApi ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+                                        <span className="ml-1.5 text-xs">Test</span>
+                                    </Button>
+                                </div>
+                                {serpApiTest && (
+                                    <div className={`p-3 rounded-md flex items-start gap-2 text-xs ${serpApiTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {serpApiTest.success ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                                        <div>
+                                            <p className="font-medium">{serpApiTest.message}</p>
+                                            {serpApiTest.quota && (
+                                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                                    <Badge variant="outline" className="text-[10px]">{serpApiTest.quota.plan}</Badge>
+                                                    <Badge variant="secondary" className="text-[10px]">{serpApiTest.quota.available} ricerche rimaste</Badge>
+                                                    {serpApiTest.quota.used > 0 && <Badge variant="secondary" className="text-[10px]">{serpApiTest.quota.used} usate questo mese</Badge>}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="text-[11px] text-muted-foreground space-y-1">
+                                    <p><strong>Cerca attivita&apos; su Google Maps e Google Search</strong> per trovare aziende locali.</p>
+                                    <p>Piano Free: 100 ricerche/mese.</p>
+                                    <p>
+                                        Come ottenere: Registrati su{' '}
+                                        <a href="https://serpapi.com/" target="_blank" rel="noopener noreferrer" className="text-primary underline">serpapi.com</a>
+                                        {' '}(piano Free) &rarr; Dashboard &rarr; Your API Key &rarr; copia la chiave.{' '}
+                                        <a href="https://serpapi.com/manage-api-key" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                                            Vai diretto alla pagina API Key
+                                        </a>
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Apify */}
+                            <div className="space-y-2 p-4 border rounded-lg">
+                                <Label htmlFor="apify-key">Apify API Token</Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        id="apify-key"
+                                        type="password"
+                                        placeholder="Inserisci il tuo API token Apify..."
+                                        value={leadGenApify}
+                                        onChange={(e) => { setLeadGenApify(e.target.value); setApifyTest(null); }}
+                                        className="flex-1"
+                                    />
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={!leadGenApify || isTestingApify}
+                                        onClick={async () => {
+                                            setIsTestingApify(true); setApifyTest(null);
+                                            try { setApifyTest(await testApifyApiKeyAction(leadGenApify)); }
+                                            catch { setApifyTest({ success: false, message: 'Errore di connessione' }); }
+                                            setIsTestingApify(false);
+                                        }}
+                                    >
+                                        {isTestingApify ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+                                        <span className="ml-1.5 text-xs">Test</span>
+                                    </Button>
+                                </div>
+                                {apifyTest && (
+                                    <div className={`p-3 rounded-md flex items-start gap-2 text-xs ${apifyTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {apifyTest.success ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                                        <div>
+                                            <p className="font-medium">{apifyTest.message}</p>
+                                            {apifyTest.quota && (
+                                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                                    <Badge variant="outline" className="text-[10px]">{apifyTest.quota.plan}</Badge>
+                                                    <Badge variant="secondary" className="text-[10px]">{apifyTest.quota.extra}</Badge>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="text-[11px] text-muted-foreground space-y-1">
+                                    <p><strong>Web scraping avanzato</strong>: Google Maps Scraper, LinkedIn, directory aziendali e altro.</p>
+                                    <p>Piano Free: $5/mese di crediti (sufficiente per ~500 risultati Google Maps).</p>
+                                    <p>
+                                        Come ottenere: Registrati su{' '}
+                                        <a href="https://www.apify.com/" target="_blank" rel="noopener noreferrer" className="text-primary underline">apify.com</a>
+                                        {' '}(piano Free) &rarr; Settings &rarr; Integrations &rarr; Personal API tokens &rarr; crea un token e copialo.{' '}
+                                        <a href="https://console.apify.com/account/integrations" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                                            Vai diretto alla pagina API Token
+                                        </a>
+                                    </p>
+                                </div>
+                            </div>
+                            <Button
+                                onClick={async () => {
+                                    setIsLeadGenSaving(true);
+                                    try {
+                                        const result = await saveLeadGenApiKeysAction({
+                                            apollo: leadGenApollo || undefined,
+                                            hunter: leadGenHunter || undefined,
+                                            serpApi: leadGenSerpApi || undefined,
+                                            apify: leadGenApify || undefined,
+                                        });
+                                        if (result.success) {
+                                            toast({ title: "Salvato", description: "Chiavi API Lead Generator salvate." });
+                                        } else {
+                                            toast({ title: "Errore", description: result.error, variant: "destructive" });
+                                        }
+                                    } catch {
+                                        toast({ title: "Errore", description: "Impossibile salvare.", variant: "destructive" });
+                                    }
+                                    setIsLeadGenSaving(false);
+                                }}
+                                disabled={isLeadGenSaving}
+                            >
+                                {isLeadGenSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                {isLeadGenSaving ? 'Salvataggio...' : 'Salva Chiavi API'}
+                            </Button>
+                        </CardContent>
+                    </Card>
+
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
@@ -532,6 +849,40 @@ export default function SettingsPage() {
                                             <p className="font-medium">{testResult.success ? 'Successo' : 'Errore'}</p>
                                             <p className="mt-1 opacity-90">{testResult.message}</p>
                                         </div>
+                                    </div>
+                                )}
+
+                                {/* OpenRouter Credits */}
+                                {orCredits && (
+                                    <div className="p-4 rounded-md border bg-muted/30">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-sm font-medium">Credito OpenRouter</span>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 px-2"
+                                                disabled={isLoadingCredits}
+                                                onClick={() => loadOpenRouterCredits(apiKey)}
+                                            >
+                                                {isLoadingCredits ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className="text-[10px]">Aggiorna</span>}
+                                            </Button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <Badge variant="outline" className="text-xs">
+                                                Residuo: ${orCredits.remaining.toFixed(4)}
+                                            </Badge>
+                                            <Badge variant="secondary" className="text-xs">
+                                                Usato: ${orCredits.totalUsage.toFixed(4)}
+                                            </Badge>
+                                            <Badge variant="secondary" className="text-xs">
+                                                Totale: ${orCredits.totalCredits.toFixed(4)}
+                                            </Badge>
+                                        </div>
+                                        {orCredits.remaining < 0.5 && orCredits.totalCredits > 0 && (
+                                            <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">
+                                                Credito in esaurimento. Ricarica su openrouter.ai/credits
+                                            </p>
+                                        )}
                                     </div>
                                 )}
                             </div>

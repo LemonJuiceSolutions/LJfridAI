@@ -36,6 +36,10 @@ model Company {
   variables                Variable[]
   knowledgeBaseEntries     KnowledgeBaseEntry[]
   superAgentConversations  SuperAgentConversation[]
+  leadSearches             LeadSearch[]
+  leads                    Lead[]
+  leadGeneratorConversations LeadGeneratorConversation[]
+  leadGenApiKeys           Json?
 }
 
 model Department {
@@ -481,4 +485,80 @@ model ScheduledTaskExecution {
   @@index([taskId])
   @@index([status])
   @@index([startedAt])
+}
+
+model LeadSearch {
+  id              String                      @id @default(cuid())
+  name            String
+  criteria        Json
+  status          String                      @default("pending")
+  resultCount     Int                         @default(0)
+  companyId       String
+  conversationId  String?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  company         Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversation    LeadGeneratorConversation?   @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  leads           Lead[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([conversationId])
+}
+
+model Lead {
+  id              String      @id @default(cuid())
+  firstName       String?
+  lastName        String?
+  fullName        String?
+  jobTitle        String?
+  email           String?
+  emailStatus     String?
+  phone           String?
+  linkedinUrl     String?
+  companyName     String?
+  companyDomain   String?
+  companyWebsite  String?
+  companySize     String?
+  companyIndustry String?
+  companyCity     String?
+  companyCountry  String?
+  companyLinkedin String?
+  source          String?
+  confidence      Float?
+  rawData         Json?
+  notes           String?
+  rating          Int?
+  tags            String[]  @default([])
+  revenueYear1    String?
+  revenueYear2    String?
+  revenueYear3    String?
+  profitYear1     String?
+  profitYear2     String?
+  profitYear3     String?
+  searchId        String?
+  companyId       String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  search          LeadSearch? @relation(fields: [searchId], references: [id], onDelete: SetNull)
+  company         Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([searchId])
+  @@index([email])
+  @@index([companyName])
+}
+
+model LeadGeneratorConversation {
+  id           String       @id @default(cuid())
+  title        String?
+  messages     Json
+  totalCost    Float        @default(0)
+  companyId    String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  leadSearches LeadSearch[]
+
+  @@index([companyId])
 }

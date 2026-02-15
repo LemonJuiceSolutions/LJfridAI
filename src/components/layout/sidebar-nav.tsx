@@ -34,6 +34,7 @@ import {
     Compass,
     User as UserIcon,
     BookOpen,
+    UserSearch,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -49,6 +50,7 @@ const fridaiNavItems = [
     { name: 'Chatbot Diagnostico', href: '/chatbot', icon: Bot },
     { name: 'Variabili', href: '/variables', icon: Database },
     { name: 'Knowledge Base', href: '/knowledge-base', icon: BookOpen },
+    { name: 'Lead Generator', href: '/lead-generator', icon: UserSearch },
 ] as const;
 
 import * as LucideIcons from 'lucide-react';

@@ -1,0 +1,231 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { leadGeneratorFlow } from '@/ai/flows/lead-generator-flow';
+
+async function getAuthenticatedCompanyUser() {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) return null;
+    const user = await db.user.findUnique({
+        where: { email: session.user.email },
+        include: { company: true },
+    });
+    if (!user?.company) return null;
+    return user;
+}
+
+export async function POST(request: NextRequest) {
+    try {
+        const user = await getAuthenticatedCompanyUser();
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const body = await request.json();
+        const { userMessage, conversationId, model } = body;
+
+        if (!userMessage) {
+            return NextResponse.json({ error: 'Missing required field: userMessage' }, { status: 400 });
+        }
+
+        // Load existing conversation or start fresh
+        let conversationHistory: any[] = [];
+        let existingConversation: any = null;
+        let previousCost = 0;
+
+        if (conversationId) {
+            try {
+                existingConversation = await db.leadGeneratorConversation.findUnique({
+                    where: { id: conversationId },
+                });
+                if (existingConversation && existingConversation.companyId === user.company!.id) {
+                    const allMessages = existingConversation.messages as any[];
+                    conversationHistory = allMessages.filter(
+                        (m: any) => m.role === 'user' || m.role === 'model'
+                    );
+                    if (conversationHistory.length > 20) {
+                        conversationHistory = conversationHistory.slice(-20);
+                    }
+                    previousCost = existingConversation.totalCost || 0;
+                } else {
+                    existingConversation = null;
+                }
+            } catch (e) {
+                console.warn('Failed to load existing conversation:', e);
+            }
+        }
+
+        // Build Genkit message format
+        const genkitMessages = [
+            ...conversationHistory,
+            {
+                role: 'user',
+                content: [{ text: userMessage }],
+            },
+        ];
+
+        // Get lead gen API keys from company
+        const leadGenApiKeys = (user.company as any).leadGenApiKeys as any || {};
+
+        // Ensure conversation exists BEFORE calling the flow so saveLeads can link to it
+        let activeConversationId: string;
+        if (existingConversation) {
+            activeConversationId = existingConversation.id;
+        } else {
+            const autoTitle = userMessage.slice(0, 80) + (userMessage.length > 80 ? '...' : '');
+            const newConversation = await db.leadGeneratorConversation.create({
+                data: {
+                    title: autoTitle,
+                    messages: [{ role: 'user', content: [{ text: userMessage }] }],
+                    totalCost: 0,
+                    companyId: user.company!.id,
+                },
+            });
+            activeConversationId = newConversation.id;
+        }
+
+        // Call the lead generator flow with conversationId
+        const result = await leadGeneratorFlow({
+            messages: genkitMessages,
+            companyId: user.company!.id,
+            model: model || undefined,
+            apiKey: (user as any).openRouterApiKey || undefined,
+            leadGenApiKeys,
+            conversationId: activeConversationId,
+        });
+
+        // Calculate total cost (accumulated from previous + this call)
+        const newTotalCost = previousCost + result.cost;
+
+        // Update conversation with full history and cost
+        const updatedHistory = [
+            ...conversationHistory,
+            { role: 'user', content: [{ text: userMessage }] },
+            { role: 'model', content: [{ text: result.text }] },
+        ];
+
+        const savedConversation = await db.leadGeneratorConversation.update({
+            where: { id: activeConversationId },
+            data: {
+                messages: updatedHistory,
+                totalCost: newTotalCost,
+                updatedAt: new Date(),
+            },
+        });
+
+        return NextResponse.json({
+            success: true,
+            message: result.text,
+            conversationId: savedConversation.id,
+            cost: result.cost,
+            totalCost: savedConversation.totalCost,
+            totalTokens: result.totalTokens,
+        });
+    } catch (error: any) {
+        console.error('Error in lead generator API:', error);
+        const errorMessage = error.message || 'Errore interno del server';
+        const isTokenError = errorMessage.includes('token') || errorMessage.includes('context length');
+        return NextResponse.json(
+            {
+                error: isTokenError
+                    ? 'La conversazione e\' troppo lunga. Prova a pulire la chat e riprovare.'
+                    : errorMessage,
+            },
+            { status: 500 }
+        );
+    }
+}
+
+export async function GET(request: NextRequest) {
+    try {
+        const user = await getAuthenticatedCompanyUser();
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const { searchParams } = new URL(request.url);
+        const action = searchParams.get('action');
+        const id = searchParams.get('id');
+
+        // List all conversations (metadata only)
+        if (action === 'list') {
+            const conversations = await db.leadGeneratorConversation.findMany({
+                where: { companyId: user.company!.id },
+                orderBy: { updatedAt: 'desc' },
+                select: { id: true, title: true, totalCost: true, createdAt: true, updatedAt: true },
+                take: 50,
+            });
+            return NextResponse.json({ success: true, conversations });
+        }
+
+        // Load a specific conversation by ID
+        if (id) {
+            const conversation = await db.leadGeneratorConversation.findUnique({
+                where: { id },
+            });
+            if (!conversation || conversation.companyId !== user.company!.id) {
+                return NextResponse.json({ success: true, conversation: null });
+            }
+            return NextResponse.json({
+                success: true,
+                conversation: {
+                    id: conversation.id,
+                    title: conversation.title,
+                    totalCost: conversation.totalCost,
+                    messages: conversation.messages,
+                },
+            });
+        }
+
+        // Default: load most recent conversation
+        const conversation = await db.leadGeneratorConversation.findFirst({
+            where: { companyId: user.company!.id },
+            orderBy: { updatedAt: 'desc' },
+        });
+
+        if (!conversation) {
+            return NextResponse.json({ success: true, conversation: null });
+        }
+
+        return NextResponse.json({
+            success: true,
+            conversation: {
+                id: conversation.id,
+                title: conversation.title,
+                totalCost: conversation.totalCost,
+                messages: conversation.messages,
+            },
+        });
+    } catch (error: any) {
+        console.error('Error loading lead generator conversation:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
+export async function DELETE(request: NextRequest) {
+    try {
+        const user = await getAuthenticatedCompanyUser();
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const { searchParams } = new URL(request.url);
+        const id = searchParams.get('id');
+
+        if (id) {
+            await db.leadGeneratorConversation.deleteMany({
+                where: { id, companyId: user.company!.id },
+            });
+        } else {
+            await db.leadGeneratorConversation.deleteMany({
+                where: { companyId: user.company!.id },
+            });
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (error: any) {
+        console.error('Error clearing lead generator conversation:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}

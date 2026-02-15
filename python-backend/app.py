@@ -135,6 +135,105 @@ def download_excel():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/scrape', methods=['POST'])
+def scrape_website():
+    """Scrape a public website for contact information."""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+
+        data = request.get_json()
+        url = data.get('url', '')
+        extract_type = data.get('extractType', 'all')
+
+        if not url:
+            return jsonify({"error": "URL is required"}), 400
+
+        # Ensure URL has protocol
+        if not url.startswith('http'):
+            url = 'https://' + url
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        result = {"url": url, "source": "scraped"}
+
+        # Extract emails
+        if extract_type in ('contacts', 'all'):
+            email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+            text = soup.get_text()
+            emails = list(set(re.findall(email_pattern, text)))
+            # Filter out common non-email patterns
+            emails = [e for e in emails if not any(x in e.lower() for x in ['example.com', 'domain.com', 'email.com', '.png', '.jpg', '.gif', '.css', '.js'])]
+            result['emails'] = emails[:20]
+
+            # Extract phone numbers
+            phone_pattern = r'[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}'
+            phones = list(set(re.findall(phone_pattern, text)))
+            phones = [p.strip() for p in phones if len(p.strip()) >= 8]
+            result['phones'] = phones[:10]
+
+            # Extract LinkedIn URLs
+            linkedin_links = []
+            for a in soup.find_all('a', href=True):
+                href = a.get('href', '')
+                if 'linkedin.com' in href:
+                    linkedin_links.append(href)
+            result['linkedinUrls'] = list(set(linkedin_links))[:10]
+
+        # Extract about/description
+        if extract_type in ('about', 'all'):
+            # Try meta description
+            meta_desc = soup.find('meta', attrs={'name': 'description'})
+            result['description'] = meta_desc.get('content', '') if meta_desc else ''
+
+            # Try to find about section
+            about_text = ''
+            for tag in soup.find_all(['section', 'div', 'article']):
+                tag_id = (tag.get('id', '') + ' ' + ' '.join(tag.get('class', []))).lower()
+                if any(keyword in tag_id for keyword in ['about', 'chi-siamo', 'chi_siamo', 'azienda', 'company']):
+                    about_text = tag.get_text(strip=True)[:1000]
+                    break
+            result['aboutText'] = about_text
+
+            # Get page title
+            title = soup.find('title')
+            result['pageTitle'] = title.get_text(strip=True) if title else ''
+
+        # Extract team members
+        if extract_type in ('team', 'all'):
+            team_members = []
+            # Look for team/people sections
+            for tag in soup.find_all(['section', 'div', 'article']):
+                tag_id = (tag.get('id', '') + ' ' + ' '.join(tag.get('class', []))).lower()
+                if any(keyword in tag_id for keyword in ['team', 'people', 'staff', 'leadership', 'management', 'squadra']):
+                    # Find cards/items within the team section
+                    for card in tag.find_all(['div', 'li', 'article'], recursive=True):
+                        name_el = card.find(['h2', 'h3', 'h4', 'h5', 'strong', 'b'])
+                        role_el = card.find(['p', 'span', 'small'])
+                        if name_el and role_el:
+                            name_text = name_el.get_text(strip=True)
+                            role_text = role_el.get_text(strip=True)
+                            if len(name_text) > 2 and len(name_text) < 60 and len(role_text) > 2 and len(role_text) < 100:
+                                team_members.append({
+                                    'name': name_text,
+                                    'role': role_text
+                                })
+                    break
+            result['teamMembers'] = team_members[:20]
+
+        return jsonify(result)
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Errore di connessione: {str(e)}"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Errore scraping: {str(e)}"}), 500
+
 @app.route('/execute', methods=['POST'])
 def execute_python():
     # ... (skipping docstring)

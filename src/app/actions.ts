@@ -2353,6 +2353,42 @@ export async function getVariablesAction(): Promise<{ data: Variable[] | null; e
 
 
 
+/**
+ * Get OpenRouter account credits (balance)
+ * Endpoint: GET https://openrouter.ai/api/v1/credits
+ */
+export async function getOpenRouterCreditsAction(apiKey: string): Promise<{
+    success: boolean;
+    credits?: { totalCredits: number; totalUsage: number; remaining: number };
+    error?: string;
+}> {
+    if (!apiKey?.trim()) return { success: false, error: 'API key mancante' };
+    try {
+        const res = await fetch('https://openrouter.ai/api/v1/credits', {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${apiKey.trim()}` },
+        });
+        if (!res.ok) {
+            return { success: false, error: `Errore ${res.status}: ${res.statusText}` };
+        }
+        const data = await res.json();
+        const totalCredits = data.data?.total_credits ?? 0;
+        const totalUsage = data.data?.total_usage ?? 0;
+        const remaining = Math.max(0, totalCredits - totalUsage);
+        return {
+            success: true,
+            credits: {
+                totalCredits: Math.round(totalCredits * 10000) / 10000,
+                totalUsage: Math.round(totalUsage * 10000) / 10000,
+                remaining: Math.round(remaining * 10000) / 10000,
+            },
+        };
+    } catch (error: any) {
+        console.error('OpenRouter credits error:', error);
+        return { success: false, error: error.message || 'Errore di connessione' };
+    }
+}
+
 export async function testOpenRouterConnection(apiKey: string, model: string): Promise<{ success: boolean; message: string }> {
     try {
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
