@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
       needsClarification: agentResponse.needsClarification,
       clarificationQuestions: agentResponse.clarificationQuestions,
       conversationId: conversation.id,
+      usage: agentResponse.usage,
     });
   } catch (error: any) {
     console.error('Error in agent chat API:', error);
@@ -207,6 +208,81 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error getting agent conversation:', error);
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH: Delete specific versions (messages) from a conversation
+export async function PATCH(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { nodeId, agentType, deleteVersionIndices } = body;
+
+    if (!nodeId || !agentType || !Array.isArray(deleteVersionIndices) || deleteVersionIndices.length === 0) {
+      return NextResponse.json(
+        { error: 'Missing required fields: nodeId, agentType, deleteVersionIndices' },
+        { status: 400 }
+      );
+    }
+
+    const user = await db.user.findUnique({
+      where: { email: session.user.email },
+      include: { company: true },
+    });
+
+    if (!user?.company) {
+      return NextResponse.json({ error: 'User not associated with a company' }, { status: 400 });
+    }
+
+    const conversation = await db.agentConversation.findUnique({
+      where: { nodeId_agentType: { nodeId, agentType } },
+    });
+
+    if (!conversation) {
+      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+    }
+
+    if (conversation.companyId !== user.company.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
+
+    const messages = conversation.messages as any[];
+
+    // deleteVersionIndices contains message indices to remove
+    // We need to remove both the user message (at index) and the assistant response (at index+1)
+    // for each version, but versions are tracked by assistant message indices.
+    // The caller sends the messageIndex from scriptVersions, which points to assistant messages.
+    // We remove the assistant message and the user message right before it.
+    const indicesToRemove = new Set<number>();
+    for (const msgIdx of deleteVersionIndices) {
+      indicesToRemove.add(msgIdx); // assistant message
+      // Find the user message before it
+      if (msgIdx > 0 && messages[msgIdx - 1]?.role === 'user') {
+        indicesToRemove.add(msgIdx - 1);
+      }
+    }
+
+    const filteredMessages = messages.filter((_: any, i: number) => !indicesToRemove.has(i));
+
+    await db.agentConversation.update({
+      where: { id: conversation.id },
+      data: { messages: filteredMessages, updatedAt: new Date() },
+    });
+
+    return NextResponse.json({
+      success: true,
+      messages: filteredMessages,
+    });
+  } catch (error: any) {
+    console.error('Error patching agent conversation:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }

@@ -47,13 +47,41 @@ export function resolveModel(userModel?: string): { provider: 'google' | 'openro
 /**
  * Runs the OpenRouter agent loop: sends message, handles tool calls, sends tool outputs, repeats.
  */
+export interface OpenRouterUsage {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    total_cost?: number; // in USD, from OpenRouter
+}
+
+export interface OpenRouterResult {
+    text: string;
+    usage: OpenRouterUsage;
+}
+
 export async function runOpenRouterAgentLoop(
     apiKey: string,
     model: string,
     messages: any[], // Initial history including system prompt
     tools: OpenRouterTool[],
     toolDispatcher: (name: string, args: any) => Promise<string>
-): Promise<string> {
+): Promise<string>;
+export async function runOpenRouterAgentLoop(
+    apiKey: string,
+    model: string,
+    messages: any[],
+    tools: OpenRouterTool[],
+    toolDispatcher: (name: string, args: any) => Promise<string>,
+    returnUsage: true
+): Promise<OpenRouterResult>;
+export async function runOpenRouterAgentLoop(
+    apiKey: string,
+    model: string,
+    messages: any[], // Initial history including system prompt
+    tools: OpenRouterTool[],
+    toolDispatcher: (name: string, args: any) => Promise<string>,
+    returnUsage?: boolean
+): Promise<string | OpenRouterResult> {
     if (!apiKey) {
         throw new Error('API key OpenRouter mancante. Configura la chiave nelle Impostazioni.');
     }
@@ -61,6 +89,7 @@ export async function runOpenRouterAgentLoop(
     // Clone messages to avoid mutating input
     const currentMessages = [...messages];
     const MAX_ROUNDS = 15; // Safety limit
+    const accumulatedUsage: OpenRouterUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, total_cost: 0 };
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
         // 1. Call API
@@ -90,6 +119,18 @@ export async function runOpenRouterAgentLoop(
 
         if (!data.choices || data.choices.length === 0) {
             throw new Error('OpenRouter API returned no choices.');
+        }
+
+        // Accumulate usage from each round
+        if (data.usage) {
+            accumulatedUsage.prompt_tokens += data.usage.prompt_tokens || 0;
+            accumulatedUsage.completion_tokens += data.usage.completion_tokens || 0;
+            accumulatedUsage.total_tokens += data.usage.total_tokens || 0;
+            if (data.usage.total_cost != null) {
+                accumulatedUsage.total_cost = (accumulatedUsage.total_cost || 0) + data.usage.total_cost;
+            } else if (data.usage.cost != null) {
+                accumulatedUsage.total_cost = (accumulatedUsage.total_cost || 0) + data.usage.cost;
+            }
         }
 
         const choice = data.choices[0];
@@ -139,6 +180,9 @@ export async function runOpenRouterAgentLoop(
             // Loop continues to send tool outputs back to LLM
         } else {
             // No tool calls, we have the final text answer
+            if (returnUsage) {
+                return { text: message.content || '', usage: accumulatedUsage };
+            }
             return message.content || '';
         }
     }

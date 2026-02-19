@@ -38,6 +38,12 @@ export const AgentOutputSchema = z.object({
   needsClarification: z.boolean().describe('Whether the agent needs clarification'),
   clarificationQuestions: z.array(z.string()).optional().describe('Questions to ask the user for clarification'),
   preview: z.any().optional().describe('Optional preview data (table, chart, variable)'),
+  usage: z.object({
+    prompt_tokens: z.number(),
+    completion_tokens: z.number(),
+    total_tokens: z.number(),
+    total_cost: z.number().optional(),
+  }).optional().describe('Token usage and cost for this request'),
 });
 
 export type AgentOutput = z.infer<typeof AgentOutputSchema>;

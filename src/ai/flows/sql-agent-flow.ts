@@ -9,7 +9,7 @@ import { db } from '@/lib/db';
 import { executeSqlPreviewAction } from '@/app/actions';
 import { type AgentInput, type AgentOutput } from '@/ai/schemas/agent-schema';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
-import { resolveModel, runOpenRouterAgentLoop, type OpenRouterTool } from '@/ai/openrouter-utils';
+import { resolveModel, runOpenRouterAgentLoop, type OpenRouterTool, type OpenRouterUsage } from '@/ai/openrouter-utils';
 
 // --- Tool Implementations (Shared) ---
 
@@ -409,6 +409,7 @@ ${context}${historyContext}
 Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
 
         let resultText = '';
+        let usage: OpenRouterUsage | undefined;
 
         if (provider === 'google') {
             // --- Legacy Generation (Genkit) ---
@@ -422,6 +423,7 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
                 config: { temperature: 0.7 },
             });
             resultText = result.text;
+            // Genkit doesn't provide cost info
         } else {
             // --- OpenRouter Generation ---
             if (!apiKey) {
@@ -466,13 +468,16 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
                 }
             };
 
-            resultText = await runOpenRouterAgentLoop(
+            const result = await runOpenRouterAgentLoop(
                 apiKey,
                 modelName,
                 messages,
                 activeTools,
-                dispatcher
+                dispatcher,
+                true
             );
+            resultText = result.text;
+            usage = result.usage;
         }
 
         // Parse the response
@@ -483,10 +488,11 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
                 updatedScript: parsed.updatedScript,
                 needsClarification: parsed.needsClarification || false,
                 clarificationQuestions: parsed.clarificationQuestions || [],
+                usage,
             };
         }
 
-        return { message: resultText, needsClarification: false };
+        return { message: resultText, needsClarification: false, usage };
     } catch (e: any) {
         console.error('Error in SQL agent flow:', e);
         return { message: `Errore: ${e.message}. Riprova o dammi piu' dettagli.`, needsClarification: false };

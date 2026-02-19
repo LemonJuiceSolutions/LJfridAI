@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { getConnectorsAction, createConnectorAction, deleteConnectorAction, testConnectorAction, updateConnectorAction } from '../actions/connectors';
 import { generateDeviceCodeAction, pollForTokenAction, listSharePointDrivesAction, listSharePointFilesAction, listExcelSheetsAction } from '../actions/sharepoint';
-import { Loader2, Trash2, Database, Mail, FileSpreadsheet, Layers, Plus, Wifi, CheckCircle2, XCircle, Pencil, ExternalLink, Copy, FolderOpen, Folder, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Loader2, Trash2, Database, Mail, FileSpreadsheet, Layers, Plus, Wifi, CheckCircle2, XCircle, Pencil, ExternalLink, Copy, FolderOpen, Folder, ChevronRight, ArrowLeft, Download, Upload } from 'lucide-react';
+import { exportSettingsAction, importSettingsAction } from '../actions/backup-restore';
 import {
     Dialog,
     DialogContent,
@@ -72,6 +73,10 @@ export function ConnectorsManager() {
 
     // Auth Trigger State to know what to resume after login
     const [authTrigger, setAuthTrigger] = useState<'test' | 'browse'>('test');
+
+    // Backup/Restore State
+    const [isExporting, setIsExporting] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
 
     useEffect(() => {
         loadConnectors();
@@ -580,23 +585,98 @@ export function ConnectorsManager() {
         }
     }
 
+    const handleExportSettings = async () => {
+        setIsExporting(true);
+        try {
+            const result = await exportSettingsAction();
+            if (result.success && result.data) {
+                const blob = new Blob([result.data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `settings-backup-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                toast({ title: "Backup completato", description: "Impostazioni esportate." });
+            } else {
+                toast({ title: "Errore", description: result.error || "Impossibile esportare.", variant: "destructive" });
+            }
+        } catch (e: any) {
+            toast({ title: "Errore", description: e.message, variant: "destructive" });
+        }
+        setIsExporting(false);
+    };
+
+    const handleImportSettings = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        setIsImporting(true);
+        try {
+            const fileContent = await file.text();
+            const result = await importSettingsAction(fileContent);
+            if (result.success) {
+                toast({ title: "Importazione completata", description: result.message || "Impostazioni importate." });
+                window.location.reload();
+            } else {
+                toast({ title: "Errore", description: result.error || "Impossibile importare.", variant: "destructive" });
+            }
+        } catch (e: any) {
+            toast({ title: "Errore", description: e.message, variant: "destructive" });
+        }
+        setIsImporting(false);
+        event.target.value = '';
+    };
+
     return (
         <Card className="border-slate-200 dark:border-slate-800">
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between">
                 <div>
-                    <CardTitle className="text-xl flex items-center gap-2">
-                        <Database className="h-5 w-5 text-violet-500" />
-                        Connettori & Integrazioni
+                    <CardTitle className="text-sm flex items-center gap-1.5">
+                        <Database className="h-4 w-4 text-violet-500" />
+                        Connettori
                     </CardTitle>
-                    <CardDescription>
-                        Configura le connessioni esterne per SQL, HubSpot, Email e altro.
+                    <CardDescription className="text-[11px]">
+                        SQL, HubSpot, Email, SharePoint.
                     </CardDescription>
                 </div>
+                <div className="flex items-center gap-1.5">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={handleExportSettings}
+                        disabled={isExporting}
+                    >
+                        {isExporting ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Download className="mr-1 h-3 w-3" />}
+                        Esporta
+                    </Button>
+                    <label>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            disabled={isImporting}
+                            onClick={() => document.getElementById('import-settings-file')?.click()}
+                            type="button"
+                        >
+                            {isImporting ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Upload className="mr-1 h-3 w-3" />}
+                            Importa
+                        </Button>
+                        <input
+                            id="import-settings-file"
+                            type="file"
+                            accept=".json"
+                            onChange={handleImportSettings}
+                            className="hidden"
+                        />
+                    </label>
                 <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) setTestStatus(null); }}>
                     <DialogTrigger asChild>
-                        <Button onClick={handleOpenNew}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            Nuovo Connettore
+                        <Button onClick={handleOpenNew} size="sm" className="h-8 text-xs">
+                            <Plus className="mr-1 h-3 w-3" />
+                            Nuovo
                         </Button>
                     </DialogTrigger>
                     <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
@@ -838,33 +918,33 @@ export function ConnectorsManager() {
                         </div>
                     </DialogContent>
                 </Dialog>
+                </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-3 pt-0">
                 {isLoading ? (
-                    <div className="flex justify-center p-8">
-                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    <div className="flex justify-center p-4">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     </div>
                 ) : !connectors || connectors.length === 0 ? (
-                    <div className="text-center p-8 border-2 border-dashed rounded-lg">
-                        <p className="text-muted-foreground">Nessun connettore configurato.</p>
+                    <div className="text-center p-4 border-2 border-dashed rounded-lg">
+                        <p className="text-xs text-muted-foreground">Nessun connettore configurato.</p>
                     </div>
                 ) : (
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-2 grid-cols-1">
                         {connectors?.map(c => {
                             const TypeIcon = CONNECTOR_TYPES.find(t => t.value === c.type)?.icon || Database;
                             const status = testResults[c.id];
                             const isLoadingTest = status === 'loading';
 
                             return (
-                                <div key={c.id} className="group flex flex-col w-full border rounded-xl bg-card dark:bg-zinc-900/50 shadow-sm overflow-hidden hover:shadow-md transition-all">
-                                    {/* Top Section: Icon & Info */}
-                                    <div className="flex items-center gap-4 p-4">
-                                        <div className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400">
-                                            <TypeIcon className="h-6 w-6" />
+                                <div key={c.id} className="group flex flex-col w-full border rounded-lg bg-card dark:bg-zinc-900/50 overflow-hidden hover:shadow-sm transition-all">
+                                    <div className="flex items-center gap-2.5 p-2.5">
+                                        <div className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-md bg-violet-100 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400">
+                                            <TypeIcon className="h-4 w-4" />
                                         </div>
-                                        <div className="space-y-1 min-w-0 flex-1">
-                                            <div className="flex items-center gap-2">
-                                                <p className="font-semibold text-sm truncate">{c.name}</p>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5">
+                                                <p className="font-medium text-xs truncate">{c.name}</p>
                                                 <TooltipProvider>
                                                     <Tooltip>
                                                         <TooltipTrigger asChild>
@@ -880,19 +960,18 @@ export function ConnectorsManager() {
                                                     </Tooltip>
                                                 </TooltipProvider>
                                             </div>
-                                            <p className="text-xs text-muted-foreground font-medium truncate">{c.type}</p>
+                                            <p className="text-[10px] text-muted-foreground truncate">{c.type}</p>
                                         </div>
                                     </div>
 
-                                    {/* Bottom Section: Actions Toolbar */}
-                                    <div className="flex items-center justify-end gap-1 p-2 bg-slate-50/80 dark:bg-black/20 border-t border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center justify-end gap-0.5 px-2 py-1 bg-slate-50/80 dark:bg-black/20 border-t border-slate-100 dark:border-slate-800">
                                         <TooltipProvider>
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        className="h-8 w-8 text-muted-foreground hover:text-violet-600 hover:bg-violet-100 dark:hover:bg-violet-900/20"
+                                                        className="h-6 w-6 text-muted-foreground hover:text-violet-600 hover:bg-violet-100 dark:hover:bg-violet-900/20"
                                                         onClick={() => handleTest(c.type, c.config, c.id)}
                                                         disabled={isLoadingTest}
                                                     >
@@ -906,7 +985,7 @@ export function ConnectorsManager() {
                                         <TooltipProvider>
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10" onClick={() => handleEdit(c)}>
+                                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary hover:bg-primary/10" onClick={() => handleEdit(c)}>
                                                         <Pencil className="h-4 w-4" />
                                                     </Button>
                                                 </TooltipTrigger>
@@ -917,7 +996,7 @@ export function ConnectorsManager() {
                                         <TooltipProvider>
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={(e) => handleDelete(c.id, e)}>
+                                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={(e) => handleDelete(c.id, e)}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                 </TooltipTrigger>

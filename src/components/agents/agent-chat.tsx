@@ -19,6 +19,11 @@ import {
   History,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Coins,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -184,6 +189,42 @@ function InlineChart({ config }: { config: any }) {
   );
 }
 
+// Collapsible code block component
+function CollapsibleCode({ lang, code }: { lang: string; code: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const lineCount = code.trim().split('\n').length;
+
+  return (
+    <div className="relative my-2">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-between w-full px-3 py-1 bg-muted rounded-t-lg border border-b-0 hover:bg-muted/80 transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-1">
+          <Code2 className="h-3 w-3 text-muted-foreground" />
+          <span className="text-[10px] uppercase font-medium text-muted-foreground">{lang}</span>
+          <span className="text-[9px] text-muted-foreground/60 ml-1">({lineCount} righe)</span>
+        </div>
+        {isOpen ? (
+          <ChevronUp className="h-3 w-3 text-muted-foreground" />
+        ) : (
+          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+        )}
+      </button>
+      {isOpen && (
+        <pre className="bg-zinc-950 text-zinc-100 px-3 py-2 rounded-b-lg text-[11px] overflow-x-auto max-w-full whitespace-pre-wrap break-all border animate-in slide-in-from-top-1 duration-150">
+          <code className="block min-w-0">{code}</code>
+        </pre>
+      )}
+      {!isOpen && (
+        <div className="bg-zinc-950 text-zinc-500 px-3 py-1.5 rounded-b-lg text-[10px] border cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => setIsOpen(true)}>
+          Clicca per espandere...
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Rich content renderer: markdown tables, code blocks, charts, bold, inline code
 function RichContent({ content, charts, onApplyCode }: { content: string; charts: any[]; onApplyCode?: (code: string) => void }) {
   const parts = content.split(/(\[CHART_\d+\]|```[\s\S]*?```|\|.*\|(?:\n\|.*\|)*)/gi);
@@ -200,22 +241,10 @@ function RichContent({ content, charts, onApplyCode }: { content: string; charts
           return null;
         }
 
-        // Code block
+        // Code block - collapsed by default
         const codeMatch = part.match(/```\s*([^\n\s]*)\s*([\s\S]*?)```/i);
         if (codeMatch) {
-          return (
-            <div key={i} className="relative my-2">
-              <div className="flex items-center justify-between px-3 py-1 bg-muted rounded-t-lg border border-b-0">
-                <div className="flex items-center gap-1">
-                  <Code2 className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-[10px] uppercase font-medium text-muted-foreground">{codeMatch[1]}</span>
-                </div>
-              </div>
-              <pre className="bg-zinc-950 text-zinc-100 px-3 py-2 rounded-b-lg text-[11px] overflow-x-auto max-w-full whitespace-pre-wrap break-all border">
-                <code className="block min-w-0">{codeMatch[2].trim()}</code>
-              </pre>
-            </div>
-          );
+          return <CollapsibleCode key={i} lang={codeMatch[1]} code={codeMatch[2].trim()} />;
         }
 
         // Markdown table
@@ -304,6 +333,13 @@ export function AgentChat({
   const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
   const [modelName, setModelName] = useState<string>('Gemini 2.5 Flash');
   const [activeVersionIndex, setActiveVersionIndex] = useState<number>(-1); // -1 = auto-follow latest
+  const [totalUsage, setTotalUsage] = useState<{ tokens: number; cost: number }>({ tokens: 0, cost: 0 });
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<number>>(new Set());
+
+  // Ref to auto-scroll version timeline to active version
+  const versionTimelineRef = useRef<HTMLDivElement>(null);
+  const activeVersionBtnRef = useRef<HTMLButtonElement>(null);
 
   // Capture the initial script before any agent modifications
   const initialScriptRef = useRef<string>(script);
@@ -353,6 +389,26 @@ export function AgentChat({
   const handleVersionNext = useCallback(() => {
     if (resolvedActiveIndex < scriptVersions.length - 1) handleVersionSelect(resolvedActiveIndex + 1);
   }, [resolvedActiveIndex, scriptVersions.length, handleVersionSelect]);
+
+  // Auto-scroll the version timeline to keep the active version visible
+  useEffect(() => {
+    if (activeVersionBtnRef.current && versionTimelineRef.current) {
+      const btn = activeVersionBtnRef.current;
+      const container = versionTimelineRef.current;
+      const btnLeft = btn.offsetLeft;
+      const btnWidth = btn.offsetWidth;
+      const containerWidth = container.clientWidth;
+      const scrollLeft = container.scrollLeft;
+
+      // If the button is out of view, scroll to center it
+      if (btnLeft < scrollLeft || btnLeft + btnWidth > scrollLeft + containerWidth) {
+        container.scrollTo({
+          left: btnLeft - containerWidth / 2 + btnWidth / 2,
+          behavior: 'smooth',
+        });
+      }
+    }
+  }, [resolvedActiveIndex, scriptVersions.length]);
 
   useEffect(() => {
     getOpenRouterSettingsAction().then((settings) => {
@@ -471,6 +527,15 @@ export function AgentChat({
         if (data.updatedScript && onScriptUpdate) {
           onScriptUpdate(data.updatedScript);
         }
+
+        // Track usage/cost
+        if (data.usage) {
+          const u = data.usage;
+          setTotalUsage(prev => ({
+            tokens: prev.tokens + (u.total_tokens || 0),
+            cost: prev.cost + (u.total_cost || 0),
+          }));
+        }
       } else {
         throw new Error(data.message || 'Errore sconosciuto');
       }
@@ -527,6 +592,61 @@ export function AgentChat({
     setNeedsClarification(false);
     setClarificationQuestions([]);
     setActiveVersionIndex(-1);
+  };
+
+  const toggleDeleteSelection = (versionIndex: number) => {
+    // Can't delete the "Originale" version (index 0)
+    if (versionIndex === 0) return;
+    setSelectedForDelete(prev => {
+      const next = new Set(prev);
+      if (next.has(versionIndex)) next.delete(versionIndex);
+      else next.add(versionIndex);
+      return next;
+    });
+  };
+
+  const handleDeleteVersions = async () => {
+    if (selectedForDelete.size === 0) return;
+
+    // Get the messageIndex for each selected version
+    const messageIndicesToDelete = Array.from(selectedForDelete)
+      .map(vIdx => scriptVersions[vIdx]?.messageIndex)
+      .filter((idx): idx is number => idx !== undefined && idx >= 0);
+
+    if (messageIndicesToDelete.length === 0) return;
+
+    try {
+      const response = await fetch('/api/agents/chat', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodeId,
+          agentType,
+          deleteVersionIndices: messageIndicesToDelete,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setMessages(data.messages || []);
+        setActiveVersionIndex(-1);
+        toast({
+          title: "Versioni eliminate",
+          description: `${selectedForDelete.size} versione/i eliminate con successo.`,
+        });
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Errore",
+        description: error.message || "Impossibile eliminare le versioni.",
+        variant: "destructive",
+      });
+    }
+
+    setSelectedForDelete(new Set());
+    setDeleteMode(false);
   };
 
   const openCorrectionDialog = (messageIndex: number) => {
@@ -607,6 +727,27 @@ export function AgentChat({
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
                 <span>{modelName}</span>
+                {totalUsage.tokens > 0 && (
+                  <TooltipProvider delayDuration={200}>
+                    <UiTooltip>
+                      <TooltipTrigger asChild>
+                        <span className="flex items-center gap-0.5 ml-1.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px] font-medium cursor-default">
+                          <Coins className="h-2.5 w-2.5" />
+                          {totalUsage.cost > 0
+                            ? `$${totalUsage.cost.toFixed(4)}`
+                            : `${(totalUsage.tokens / 1000).toFixed(1)}k tok`
+                          }
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-[10px]">
+                        <div className="space-y-0.5">
+                          <div>Token totali: {totalUsage.tokens.toLocaleString()}</div>
+                          {totalUsage.cost > 0 && <div>Costo sessione: ${totalUsage.cost.toFixed(6)}</div>}
+                        </div>
+                      </TooltipContent>
+                    </UiTooltip>
+                  </TooltipProvider>
+                )}
               </div>
             </div>
           </div>
@@ -638,53 +779,121 @@ export function AgentChat({
 
         {/* Script Version Timeline */}
         {scriptVersions.length >= 2 && (
-          <div className="flex items-center gap-1 px-3 py-1 border-b bg-muted/5">
-            <History className="h-3 w-3 text-muted-foreground shrink-0" />
-            <button
-              onClick={handleVersionPrev}
-              disabled={resolvedActiveIndex === 0}
-              className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft className="h-3 w-3 text-muted-foreground" />
-            </button>
-            <div className="flex gap-0.5 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-              <TooltipProvider delayDuration={300}>
-                {scriptVersions.map((version, idx) => (
-                  <UiTooltip key={idx}>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => handleVersionSelect(idx)}
-                        className={cn(
-                          "px-1.5 py-0.5 rounded-full text-[9px] font-medium whitespace-nowrap transition-all",
-                          "hover:bg-primary/10",
-                          resolvedActiveIndex === idx
-                            ? "bg-primary text-primary-foreground shadow-sm"
-                            : "bg-muted/50 text-muted-foreground"
-                        )}
-                      >
-                        {version.label}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="text-[10px]">
-                      {version.messageIndex === -1
-                        ? "Script originale prima delle modifiche"
-                        : `Versione del ${version.timestamp ? new Date(version.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}`
-                      }
-                    </TooltipContent>
-                  </UiTooltip>
-                ))}
-              </TooltipProvider>
+          <div className="flex flex-col border-b bg-muted/5">
+            <div className="flex items-center gap-1 px-3 py-1">
+              <History className="h-3 w-3 text-muted-foreground shrink-0" />
+              <button
+                onClick={handleVersionPrev}
+                disabled={resolvedActiveIndex === 0 || deleteMode}
+                className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="h-3 w-3 text-muted-foreground" />
+              </button>
+              <div
+                ref={versionTimelineRef}
+                className="flex gap-0.5 overflow-x-auto scroll-smooth"
+                style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--muted-foreground) / 0.3) transparent' }}
+              >
+                <TooltipProvider delayDuration={300}>
+                  {scriptVersions.map((version, idx) => (
+                    <UiTooltip key={idx}>
+                      <TooltipTrigger asChild>
+                        <button
+                          ref={resolvedActiveIndex === idx ? activeVersionBtnRef : undefined}
+                          onClick={() => {
+                            if (deleteMode) {
+                              toggleDeleteSelection(idx);
+                            } else {
+                              handleVersionSelect(idx);
+                            }
+                          }}
+                          className={cn(
+                            "px-1.5 py-0.5 rounded-full text-[9px] font-medium whitespace-nowrap transition-all flex items-center gap-0.5",
+                            "hover:bg-primary/10",
+                            deleteMode && selectedForDelete.has(idx)
+                              ? "bg-destructive/20 text-destructive ring-1 ring-destructive/40"
+                              : resolvedActiveIndex === idx
+                                ? "bg-primary text-primary-foreground shadow-sm"
+                                : "bg-muted/50 text-muted-foreground"
+                          )}
+                        >
+                          {deleteMode && idx > 0 && (
+                            selectedForDelete.has(idx)
+                              ? <CheckSquare className="h-2.5 w-2.5" />
+                              : <Square className="h-2.5 w-2.5" />
+                          )}
+                          {version.label}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-[10px]">
+                        {version.messageIndex === -1
+                          ? "Script originale prima delle modifiche"
+                          : `Versione del ${version.timestamp ? new Date(version.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}`
+                        }
+                      </TooltipContent>
+                    </UiTooltip>
+                  ))}
+                </TooltipProvider>
+              </div>
+              <button
+                onClick={handleVersionNext}
+                disabled={resolvedActiveIndex === scriptVersions.length - 1 || deleteMode}
+                className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+              </button>
+              <span className="text-[9px] text-muted-foreground ml-1 shrink-0">
+                {resolvedActiveIndex + 1}/{scriptVersions.length}
+              </span>
+              {/* Delete mode toggle */}
+              {scriptVersions.length > 1 && (
+                <button
+                  onClick={() => {
+                    setDeleteMode(!deleteMode);
+                    setSelectedForDelete(new Set());
+                  }}
+                  className={cn(
+                    "p-0.5 rounded ml-0.5 shrink-0 transition-colors",
+                    deleteMode
+                      ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
+                      : "text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  )}
+                  title={deleteMode ? "Annulla eliminazione" : "Elimina versioni"}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              )}
             </div>
-            <button
-              onClick={handleVersionNext}
-              disabled={resolvedActiveIndex === scriptVersions.length - 1}
-              className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <ChevronRight className="h-3 w-3 text-muted-foreground" />
-            </button>
-            <span className="text-[9px] text-muted-foreground ml-auto shrink-0">
-              {resolvedActiveIndex + 1}/{scriptVersions.length}
-            </span>
+            {/* Delete confirmation bar */}
+            {deleteMode && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-destructive/5 border-t animate-in slide-in-from-top-1 duration-150">
+                <span className="text-[10px] text-destructive">
+                  {selectedForDelete.size > 0
+                    ? `${selectedForDelete.size} versione/i selezionate`
+                    : "Seleziona le versioni da eliminare"
+                  }
+                </span>
+                <div className="ml-auto flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 px-2 text-[10px]"
+                    onClick={() => { setDeleteMode(false); setSelectedForDelete(new Set()); }}
+                  >
+                    Annulla
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="h-5 px-2 text-[10px]"
+                    disabled={selectedForDelete.size === 0}
+                    onClick={handleDeleteVersions}
+                  >
+                    Elimina ({selectedForDelete.size})
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

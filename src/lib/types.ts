@@ -246,4 +246,10 @@ export interface AgentResponse {
   needsClarification: boolean;
   clarificationQuestions?: string[];
   conversationId?: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    total_cost?: number;
+  };
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Settings, Save, PlayCircle, Loader2, CheckCircle2, XCircle, Send, Bot, User as UserIcon, Trash2, Search, Download, Upload } from 'lucide-react';
+import { ArrowLeft, Settings, Save, PlayCircle, Loader2, CheckCircle2, XCircle, Send, Bot, User as UserIcon, Trash2, Search } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,8 +18,6 @@ import { createInvitationAction, getInvitationsAction, revokeInvitationAction } 
 import { getOpenRouterSettingsAction, saveOpenRouterSettingsAction } from '@/actions/openrouter';
 import { ConnectorsManager } from './connectors-manager';
 import { Users, UserPlus, Copy, UserSearch } from 'lucide-react';
-import { exportSettingsAction, importSettingsAction } from '../actions/backup-restore';
-import { AppearanceSettings } from './appearance-settings';
 import {
     getLeadGenApiKeysAction, saveLeadGenApiKeysAction,
     testApolloApiKeyAction, testHunterApiKeyAction, testSerpApiKeyAction, testApifyApiKeyAction,
@@ -50,10 +48,6 @@ export default function SettingsPage() {
     const [inviteEmail, setInviteEmail] = useState('');
     const [isInviting, setIsInviting] = useState(false);
     const [inviteLink, setInviteLink] = useState('');
-
-    // Backup/Restore State
-    const [isExporting, setIsExporting] = useState(false);
-    const [isImporting, setIsImporting] = useState(false);
 
     // Lead Generator API Keys State
     const [leadGenApollo, setLeadGenApollo] = useState('');
@@ -234,75 +228,6 @@ export default function SettingsPage() {
         setChatMessages([]);
     };
 
-    const handleExportSettings = async () => {
-        setIsExporting(true);
-        try {
-            const result = await exportSettingsAction();
-            if (result.success && result.data) {
-                const blob = new Blob([result.data], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `settings-backup-${new Date().toISOString().split('T')[0]}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-
-                toast({
-                    title: "Backup completato",
-                    description: "Le impostazioni sono state esportate con successo.",
-                });
-            } else {
-                toast({
-                    title: "Errore",
-                    description: result.error || "Impossibile esportare le impostazioni.",
-                    variant: "destructive"
-                });
-            }
-        } catch (e: any) {
-            toast({
-                title: "Errore",
-                description: e.message,
-                variant: "destructive"
-            });
-        }
-        setIsExporting(false);
-    };
-
-    const handleImportSettings = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        setIsImporting(true);
-        try {
-            const fileContent = await file.text();
-            const result = await importSettingsAction(fileContent);
-
-            if (result.success) {
-                toast({
-                    title: "Importazione completata",
-                    description: result.message || "Impostazioni importate con successo.",
-                });
-                window.location.reload();
-            } else {
-                toast({
-                    title: "Errore",
-                    description: result.error || "Impossibile importare le impostazioni.",
-                    variant: "destructive"
-                });
-            }
-        } catch (e: any) {
-            toast({
-                title: "Errore",
-                description: e.message,
-                variant: "destructive"
-            });
-        }
-        setIsImporting(false);
-        event.target.value = '';
-    };
-
     const handleInvite = async () => {
         if (!inviteEmail) return;
         setIsInviting(true);
@@ -330,65 +255,67 @@ export default function SettingsPage() {
     return (
         <div className="flex flex-col h-screen bg-background text-foreground">
             <main className="flex-1 overflow-y-auto">
-                <div className="container mx-auto p-4 md:p-6 max-w-2xl pb-20">
+                <div className="p-3 md:p-4 pb-16">
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
 
                     {/* Team Management Card */}
-                    <Card className="mb-6 border-primary/20 bg-primary/5">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Users className="h-6 w-6 text-primary" />
+                    <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader className="p-3 pb-2">
+                            <CardTitle className="flex items-center gap-1.5 text-sm">
+                                <Users className="h-4 w-4 text-primary" />
                                 Gestione Team
                             </CardTitle>
-                            <CardDescription>Invita colleghi alla tua azienda per collaborare.</CardDescription>
+                            <CardDescription className="text-[11px]">Invita colleghi alla tua azienda.</CardDescription>
                         </CardHeader>
-                        <CardContent>
-                            <div className="flex gap-2 mb-4">
+                        <CardContent className="p-3 pt-0">
+                            <div className="flex gap-1.5 mb-3">
                                 <Input
                                     placeholder="Email collega..."
                                     value={inviteEmail}
                                     onChange={e => setInviteEmail(e.target.value)}
                                     onKeyDown={e => e.key === 'Enter' && handleInvite()}
+                                    className="h-8 text-xs"
                                 />
-                                <Button onClick={handleInvite} disabled={isInviting}>
-                                    {isInviting ? <Loader2 className="animate-spin h-4 w-4" /> : <UserPlus className="h-4 w-4 mr-2" />}
+                                <Button onClick={handleInvite} disabled={isInviting} size="sm" className="h-8 text-xs">
+                                    {isInviting ? <Loader2 className="animate-spin h-3 w-3" /> : <UserPlus className="h-3 w-3 mr-1" />}
                                     Invita
                                 </Button>
                             </div>
 
                             {inviteLink && (
-                                <div className="flex flex-col gap-2 p-3 bg-background border rounded-md mb-4 animate-in fade-in slide-in-from-top-2">
-                                    <Label className="text-xs text-muted-foreground">Link di invito generato:</Label>
-                                    <div className="flex items-center gap-2">
-                                        <code className="text-xs flex-1 break-all bg-muted p-2 rounded select-all">{inviteLink}</code>
-                                        <Button variant="outline" size="icon" onClick={() => {
+                                <div className="flex flex-col gap-1.5 p-2 bg-background border rounded-md mb-3 animate-in fade-in slide-in-from-top-2">
+                                    <Label className="text-[10px] text-muted-foreground">Link di invito:</Label>
+                                    <div className="flex items-center gap-1.5">
+                                        <code className="text-[10px] flex-1 break-all bg-muted p-1.5 rounded select-all">{inviteLink}</code>
+                                        <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => {
                                             navigator.clipboard.writeText(inviteLink);
                                             toast({ title: "Link copiato!" });
                                         }}>
-                                            <Copy className="h-4 w-4" />
+                                            <Copy className="h-3 w-3" />
                                         </Button>
                                     </div>
-                                    <p className="text-[10px] text-muted-foreground">Invia questo link al tuo collega. Una volta registrato, sarà aggiunto automaticamente al tuo team.</p>
                                 </div>
                             )}
 
-                            <div className="space-y-2 mt-6">
-                                <h3 className="text-sm font-medium">Inviti In Attesa</h3>
+                            <div className="space-y-1.5 mt-3">
+                                <h3 className="text-xs font-medium">Inviti In Attesa</h3>
                                 {invitations.length === 0 ? (
-                                    <p className="text-sm text-muted-foreground italic">Nessun invito attivo.</p>
+                                    <p className="text-[11px] text-muted-foreground italic">Nessun invito attivo.</p>
                                 ) : (
                                     <div className="border rounded-md divide-y bg-background">
                                         {invitations.map(inv => (
-                                            <div key={inv.id} className="p-3 flex items-center justify-between">
+                                            <div key={inv.id} className="p-2 flex items-center justify-between">
                                                 <div>
-                                                    <p className="text-sm font-medium">{inv.email}</p>
-                                                    <p className="text-[10px] text-muted-foreground">Scadenza: {new Date(inv.expires).toLocaleDateString()}</p>
+                                                    <p className="text-xs font-medium">{inv.email}</p>
+                                                    <p className="text-[9px] text-muted-foreground">Scadenza: {new Date(inv.expires).toLocaleDateString()}</p>
                                                 </div>
-                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={async () => {
+                                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => {
                                                     await revokeInvitationAction(inv.id);
                                                     setInvitations(prev => prev.filter(i => i.id !== inv.id));
                                                     toast({ title: "Invito revocato" });
                                                 }}>
-                                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                                    <Trash2 className="h-3 w-3 text-destructive" />
                                                 </Button>
                                             </div>
                                         ))}
@@ -398,89 +325,209 @@ export default function SettingsPage() {
                         </CardContent>
                     </Card>
 
-                    {/* Aspetto */}
-                    <AppearanceSettings />
-
-                    {/* Backup & Restore */}
-                    <Card className="mt-6">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Download className="h-6 w-6 text-primary" />
-                                Backup & Restore
+                    {/* OpenRouter */}
+                    <Card>
+                        <CardHeader className="p-3 pb-2">
+                            <CardTitle className="flex items-center gap-1.5 text-sm">
+                                <Settings className="h-4 w-4 text-primary" />
+                                OpenRouter
                             </CardTitle>
-                            <CardDescription>
-                                Esporta o importa le tue impostazioni e connettori.
+                            <CardDescription className="text-[11px]">
+                                API key e modello preferito.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="flex gap-4">
-                                <Button
-                                    onClick={handleExportSettings}
-                                    disabled={isExporting}
-                                    variant="outline"
-                                    className="flex-1"
-                                >
-                                    {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                                    {isExporting ? 'Esportazione...' : 'Esporta Impostazioni'}
-                                </Button>
-
-                                <label className="flex-1">
-                                    <Button
-                                        disabled={isImporting}
-                                        variant="outline"
-                                        className="w-full"
-                                        onClick={() => document.getElementById('import-file')?.click()}
-                                        type="button"
-                                    >
-                                        {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                                        {isImporting ? 'Importazione...' : 'Importa Impostazioni'}
-                                    </Button>
-                                    <input
-                                        id="import-file"
-                                        type="file"
-                                        accept=".json"
-                                        onChange={handleImportSettings}
-                                        className="hidden"
-                                    />
-                                </label>
+                        <CardContent className="p-3 pt-0 space-y-3">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="api-key" className="text-xs">API Key</Label>
+                                <Input
+                                    id="api-key"
+                                    type="password"
+                                    placeholder="sk-or-..."
+                                    value={apiKey}
+                                    onChange={(e) => setApiKey(e.target.value)}
+                                    className="h-8 text-xs"
+                                />
                             </div>
-                            <p className="text-sm text-muted-foreground">
-                                Il backup include i connettori e le configurazioni, ma non le password o i token di accesso.
-                            </p>
+
+                            <div className="space-y-1.5">
+                                <Label className="text-xs">Modello</Label>
+                                <Dialog open={isModelDialogOpen} onOpenChange={setIsModelDialogOpen}>
+                                    <DialogTrigger asChild>
+                                        <Button variant="outline" className="w-full justify-between font-normal h-8 text-xs">
+                                            {model || "Seleziona un modello"}
+                                            <span className="text-muted-foreground ml-2 text-[10px]">Cambia</span>
+                                        </Button>
+                                    </DialogTrigger>
+                                    <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+                                        <DialogHeader>
+                                            <DialogTitle className="text-sm">Seleziona Modello AI</DialogTitle>
+                                        </DialogHeader>
+                                        <div className="flex items-center border rounded-md px-2 py-1.5 my-1 bg-muted/30">
+                                            <Search className="mr-1.5 h-3 w-3 opacity-50" />
+                                            <Input
+                                                placeholder="Cerca modello..."
+                                                value={modelSearch}
+                                                onChange={e => setModelSearch(e.target.value)}
+                                                className="border-0 focus-visible:ring-0 bg-transparent h-7 text-xs"
+                                                autoFocus
+                                            />
+                                        </div>
+                                        <div className="flex-1 overflow-auto border rounded-md">
+                                            {isModelsLoading ? (
+                                                <div className="flex items-center justify-center h-40">
+                                                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                                    <span className="ml-2 text-xs text-muted-foreground">Caricamento...</span>
+                                                </div>
+                                            ) : (
+                                                <Table>
+                                                    <TableHeader className="bg-muted/50 sticky top-0 backdrop-blur-sm z-10">
+                                                        <TableRow>
+                                                            <TableHead className="text-[10px]">Nome</TableHead>
+                                                            <TableHead className="text-[10px]">ID</TableHead>
+                                                            <TableHead className="text-[10px]">Context</TableHead>
+                                                            <TableHead className="text-[10px]">Input ($/1M)</TableHead>
+                                                            <TableHead className="text-[10px]">Output ($/1M)</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {filteredModels.map((m) => {
+                                                            const isSelected = model === m.id;
+                                                            return (
+                                                                <TableRow
+                                                                    key={m.id}
+                                                                    className={`cursor-pointer hover:bg-muted/50 ${isSelected ? 'bg-primary/5 dark:bg-primary/20' : ''}`}
+                                                                    onClick={() => {
+                                                                        setModel(m.id);
+                                                                        setIsModelDialogOpen(false);
+                                                                    }}
+                                                                >
+                                                                    <TableCell className="font-medium p-1.5 text-[10px] truncate max-w-[200px]" title={m.name}>
+                                                                        {m.name}
+                                                                        {isSelected && <CheckCircle2 className="inline ml-1 h-2.5 w-2.5 text-primary" />}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-[9px] text-muted-foreground font-mono p-1.5 truncate max-w-[150px]" title={m.id}>{m.id}</TableCell>
+                                                                    <TableCell className="text-[9px] p-1.5">{Math.round(m.context_length / 1000)}k</TableCell>
+                                                                    <TableCell className="text-[9px] font-mono p-1.5">
+                                                                        ${(parseFloat(m.pricing.prompt) * 1000000).toFixed(2)}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-[9px] font-mono p-1.5">
+                                                                        ${(parseFloat(m.pricing.completion) * 1000000).toFixed(2)}
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            );
+                                                        })}
+                                                        {filteredModels.length === 0 && (
+                                                            <TableRow>
+                                                                <TableCell colSpan={5} className="text-center py-6 text-xs text-muted-foreground">
+                                                                    Nessun modello trovato per &quot;{modelSearch}&quot;
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        )}
+                                                    </TableBody>
+                                                </Table>
+                                            )}
+                                        </div>
+                                        <div className="text-[10px] text-muted-foreground text-right pt-1">
+                                            {filteredModels.length} modelli
+                                        </div>
+                                    </DialogContent>
+                                </Dialog>
+                            </div>
+
+                            <div className="flex flex-col gap-2 pt-2 border-t">
+                                <div className="flex gap-1.5">
+                                    <Button onClick={handleSave} disabled={isLoading} size="sm" className="flex-1 h-8 text-xs">
+                                        {isLoading ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Save className="mr-1.5 h-3 w-3" />}
+                                        {isLoading ? 'Salvataggio...' : 'Salva'}
+                                    </Button>
+                                    <Button onClick={handleTestConnection} disabled={isTesting || !apiKey} variant="secondary" size="sm" className="flex-1 h-8 text-xs">
+                                        {isTesting ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <PlayCircle className="mr-1.5 h-3 w-3" />}
+                                        {isTesting ? 'Test...' : 'Test'}
+                                    </Button>
+                                </div>
+
+                                {testResult && (
+                                    <div className={`p-2 rounded-md flex items-start gap-2 text-[11px] ${testResult.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {testResult.success ? (
+                                            <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                                        ) : (
+                                            <XCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                                        )}
+                                        <div>
+                                            <p className="font-medium">{testResult.success ? 'Successo' : 'Errore'}</p>
+                                            <p className="mt-0.5 opacity-90">{testResult.message}</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {orCredits && (
+                                    <div className="p-2 rounded-md border bg-muted/30">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-xs font-medium">Credito</span>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-5 px-1.5"
+                                                disabled={isLoadingCredits}
+                                                onClick={() => loadOpenRouterCredits(apiKey)}
+                                            >
+                                                {isLoadingCredits ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <span className="text-[9px]">Aggiorna</span>}
+                                            </Button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1">
+                                            <Badge variant="outline" className="text-[9px] h-5">
+                                                Residuo: ${orCredits.remaining.toFixed(4)}
+                                            </Badge>
+                                            <Badge variant="secondary" className="text-[9px] h-5">
+                                                Usato: ${orCredits.totalUsage.toFixed(4)}
+                                            </Badge>
+                                            <Badge variant="secondary" className="text-[9px] h-5">
+                                                Totale: ${orCredits.totalCredits.toFixed(4)}
+                                            </Badge>
+                                        </div>
+                                        {orCredits.remaining < 0.5 && orCredits.totalCredits > 0 && (
+                                            <p className="text-[9px] text-amber-600 dark:text-amber-400 mt-1">
+                                                Credito in esaurimento.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </CardContent>
                     </Card>
 
-                    <div className="mb-6">
-                        <ConnectorsManager />
-                    </div>
+                    {/* Connectors */}
+                    <ConnectorsManager />
 
                     {/* Lead Generator API Keys */}
-                    <Card className="mb-6">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <UserSearch className="h-6 w-6 text-emerald-500" />
+                    <Card>
+                        <CardHeader className="p-3 pb-2">
+                            <CardTitle className="flex items-center gap-1.5 text-sm">
+                                <UserSearch className="h-4 w-4 text-emerald-500" />
                                 Lead Generator - API Keys
                             </CardTitle>
-                            <CardDescription>
-                                Configura le chiavi API per i servizi di ricerca lead. Tutti i servizi offrono un piano gratuito. Le chiavi sono condivise per tutta l&apos;azienda.
+                            <CardDescription className="text-[11px]">
+                                Chiavi API per ricerca lead. Tutti offrono piano gratuito.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-5">
+                        <CardContent className="p-3 pt-0">
+                            <div className="grid grid-cols-1 gap-2">
                             {/* Apollo.io */}
-                            <div className="space-y-2 p-4 border rounded-lg">
-                                <Label htmlFor="apollo-key">Apollo.io API Key</Label>
-                                <div className="flex gap-2">
+                            <div className="space-y-1.5 p-2.5 border rounded-lg">
+                                <Label htmlFor="apollo-key" className="text-xs">Apollo.io</Label>
+                                <div className="flex gap-1.5">
                                     <Input
                                         id="apollo-key"
                                         type="password"
-                                        placeholder="Inserisci la tua API key Apollo.io..."
+                                        placeholder="API key..."
                                         value={leadGenApollo}
                                         onChange={(e) => { setLeadGenApollo(e.target.value); setApolloTest(null); }}
-                                        className="flex-1"
+                                        className="flex-1 h-7 text-xs"
                                     />
                                     <Button
                                         variant="secondary"
                                         size="sm"
+                                        className="h-7 px-2"
                                         disabled={!leadGenApollo || isTestingApollo}
                                         onClick={async () => {
                                             setIsTestingApollo(true); setApolloTest(null);
@@ -489,53 +536,43 @@ export default function SettingsPage() {
                                             setIsTestingApollo(false);
                                         }}
                                     >
-                                        {isTestingApollo ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-                                        <span className="ml-1.5 text-xs">Test</span>
+                                        {isTestingApollo ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}
+                                        <span className="ml-1 text-[10px]">Test</span>
                                     </Button>
                                 </div>
                                 {apolloTest && (
-                                    <div className={`p-3 rounded-md flex items-start gap-2 text-xs ${apolloTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
-                                        {apolloTest.success ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                                    <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${apolloTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {apolloTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
                                         <div>
                                             <p className="font-medium">{apolloTest.message}</p>
                                             {apolloTest.quota && (
-                                                <div className="mt-1 flex flex-wrap gap-1.5">
-                                                    <Badge variant="outline" className="text-[10px]">{apolloTest.quota.plan}</Badge>
-                                                    {apolloTest.quota.extra && <Badge variant="secondary" className="text-[10px]">{apolloTest.quota.extra}</Badge>}
+                                                <div className="mt-0.5 flex flex-wrap gap-1">
+                                                    <Badge variant="outline" className="text-[8px] h-4">{apolloTest.quota.plan}</Badge>
+                                                    {apolloTest.quota.extra && <Badge variant="secondary" className="text-[8px] h-4">{apolloTest.quota.extra}</Badge>}
                                                 </div>
                                             )}
                                         </div>
                                     </div>
                                 )}
-                                <div className="text-[11px] text-muted-foreground space-y-1">
-                                    <p><strong>Cerca contatti e aziende</strong> tra 220M+ profili (Search API + Enrichment API).</p>
-                                    <p>Piano Free: 10.000 crediti/mese (sufficiente per ~200 ricerche).</p>
-                                    <p>
-                                        Come ottenere: Registrati su{' '}
-                                        <a href="https://www.apollo.io/" target="_blank" rel="noopener noreferrer" className="text-primary underline">apollo.io</a>
-                                        {' '}(piano Free) &rarr; Settings &rarr; Integrations &rarr; API Keys &rarr; copia la chiave.{' '}
-                                        <a href="https://app.apollo.io/#/settings/integrations/api" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                                            Vai diretto alla pagina API Key
-                                        </a>
-                                    </p>
-                                </div>
+                                <p className="text-[9px] text-muted-foreground">220M+ profili. Free: 10k crediti/mese.</p>
                             </div>
 
                             {/* Hunter.io */}
-                            <div className="space-y-2 p-4 border rounded-lg">
-                                <Label htmlFor="hunter-key">Hunter.io API Key</Label>
-                                <div className="flex gap-2">
+                            <div className="space-y-1.5 p-2.5 border rounded-lg">
+                                <Label htmlFor="hunter-key" className="text-xs">Hunter.io</Label>
+                                <div className="flex gap-1.5">
                                     <Input
                                         id="hunter-key"
                                         type="password"
-                                        placeholder="Inserisci la tua API key Hunter.io..."
+                                        placeholder="API key..."
                                         value={leadGenHunter}
                                         onChange={(e) => { setLeadGenHunter(e.target.value); setHunterTest(null); }}
-                                        className="flex-1"
+                                        className="flex-1 h-7 text-xs"
                                     />
                                     <Button
                                         variant="secondary"
                                         size="sm"
+                                        className="h-7 px-2"
                                         disabled={!leadGenHunter || isTestingHunter}
                                         onClick={async () => {
                                             setIsTestingHunter(true); setHunterTest(null);
@@ -544,55 +581,45 @@ export default function SettingsPage() {
                                             setIsTestingHunter(false);
                                         }}
                                     >
-                                        {isTestingHunter ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-                                        <span className="ml-1.5 text-xs">Test</span>
+                                        {isTestingHunter ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}
+                                        <span className="ml-1 text-[10px]">Test</span>
                                     </Button>
                                 </div>
                                 {hunterTest && (
-                                    <div className={`p-3 rounded-md flex items-start gap-2 text-xs ${hunterTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
-                                        {hunterTest.success ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                                    <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${hunterTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {hunterTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
                                         <div>
                                             <p className="font-medium">{hunterTest.message}</p>
                                             {hunterTest.quota && (
-                                                <div className="mt-1 flex flex-wrap gap-1.5">
-                                                    <Badge variant="outline" className="text-[10px]">{hunterTest.quota.plan}</Badge>
-                                                    <Badge variant="secondary" className="text-[10px]">Ricerche: {hunterTest.quota.used}/{hunterTest.quota.used + hunterTest.quota.available}</Badge>
-                                                    {hunterTest.quota.extra && <Badge variant="secondary" className="text-[10px]">{hunterTest.quota.extra}</Badge>}
-                                                    {hunterTest.quota.resetDate && <Badge variant="outline" className="text-[10px]">Reset: {new Date(hunterTest.quota.resetDate).toLocaleDateString('it-IT')}</Badge>}
+                                                <div className="mt-0.5 flex flex-wrap gap-1">
+                                                    <Badge variant="outline" className="text-[8px] h-4">{hunterTest.quota.plan}</Badge>
+                                                    <Badge variant="secondary" className="text-[8px] h-4">Ricerche: {hunterTest.quota.used}/{hunterTest.quota.used + hunterTest.quota.available}</Badge>
+                                                    {hunterTest.quota.extra && <Badge variant="secondary" className="text-[8px] h-4">{hunterTest.quota.extra}</Badge>}
+                                                    {hunterTest.quota.resetDate && <Badge variant="outline" className="text-[8px] h-4">Reset: {new Date(hunterTest.quota.resetDate).toLocaleDateString('it-IT')}</Badge>}
                                                 </div>
                                             )}
                                         </div>
                                     </div>
                                 )}
-                                <div className="text-[11px] text-muted-foreground space-y-1">
-                                    <p><strong>Trova e verifica email aziendali</strong> a partire dal dominio dell&apos;azienda.</p>
-                                    <p>Piano Free: 25 ricerche + 50 verifiche email/mese.</p>
-                                    <p>
-                                        Come ottenere: Registrati su{' '}
-                                        <a href="https://hunter.io/" target="_blank" rel="noopener noreferrer" className="text-primary underline">hunter.io</a>
-                                        {' '}(piano Free) &rarr; clicca sul tuo avatar in alto a destra &rarr; API Keys &rarr; copia la chiave.{' '}
-                                        <a href="https://hunter.io/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                                            Vai diretto alla pagina API Key
-                                        </a>
-                                    </p>
-                                </div>
+                                <p className="text-[9px] text-muted-foreground">Email aziendali. Free: 25 ricerche/mese.</p>
                             </div>
 
                             {/* SerpApi */}
-                            <div className="space-y-2 p-4 border rounded-lg">
-                                <Label htmlFor="serpapi-key">SerpApi API Key</Label>
-                                <div className="flex gap-2">
+                            <div className="space-y-1.5 p-2.5 border rounded-lg">
+                                <Label htmlFor="serpapi-key" className="text-xs">SerpApi</Label>
+                                <div className="flex gap-1.5">
                                     <Input
                                         id="serpapi-key"
                                         type="password"
-                                        placeholder="Inserisci la tua API key SerpApi..."
+                                        placeholder="API key..."
                                         value={leadGenSerpApi}
                                         onChange={(e) => { setLeadGenSerpApi(e.target.value); setSerpApiTest(null); }}
-                                        className="flex-1"
+                                        className="flex-1 h-7 text-xs"
                                     />
                                     <Button
                                         variant="secondary"
                                         size="sm"
+                                        className="h-7 px-2"
                                         disabled={!leadGenSerpApi || isTestingSerpApi}
                                         onClick={async () => {
                                             setIsTestingSerpApi(true); setSerpApiTest(null);
@@ -601,54 +628,44 @@ export default function SettingsPage() {
                                             setIsTestingSerpApi(false);
                                         }}
                                     >
-                                        {isTestingSerpApi ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-                                        <span className="ml-1.5 text-xs">Test</span>
+                                        {isTestingSerpApi ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}
+                                        <span className="ml-1 text-[10px]">Test</span>
                                     </Button>
                                 </div>
                                 {serpApiTest && (
-                                    <div className={`p-3 rounded-md flex items-start gap-2 text-xs ${serpApiTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
-                                        {serpApiTest.success ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                                    <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${serpApiTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {serpApiTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
                                         <div>
                                             <p className="font-medium">{serpApiTest.message}</p>
                                             {serpApiTest.quota && (
-                                                <div className="mt-1 flex flex-wrap gap-1.5">
-                                                    <Badge variant="outline" className="text-[10px]">{serpApiTest.quota.plan}</Badge>
-                                                    <Badge variant="secondary" className="text-[10px]">{serpApiTest.quota.available} ricerche rimaste</Badge>
-                                                    {serpApiTest.quota.used > 0 && <Badge variant="secondary" className="text-[10px]">{serpApiTest.quota.used} usate questo mese</Badge>}
+                                                <div className="mt-0.5 flex flex-wrap gap-1">
+                                                    <Badge variant="outline" className="text-[8px] h-4">{serpApiTest.quota.plan}</Badge>
+                                                    <Badge variant="secondary" className="text-[8px] h-4">{serpApiTest.quota.available} rimaste</Badge>
+                                                    {serpApiTest.quota.used > 0 && <Badge variant="secondary" className="text-[8px] h-4">{serpApiTest.quota.used} usate</Badge>}
                                                 </div>
                                             )}
                                         </div>
                                     </div>
                                 )}
-                                <div className="text-[11px] text-muted-foreground space-y-1">
-                                    <p><strong>Cerca attivita&apos; su Google Maps e Google Search</strong> per trovare aziende locali.</p>
-                                    <p>Piano Free: 100 ricerche/mese.</p>
-                                    <p>
-                                        Come ottenere: Registrati su{' '}
-                                        <a href="https://serpapi.com/" target="_blank" rel="noopener noreferrer" className="text-primary underline">serpapi.com</a>
-                                        {' '}(piano Free) &rarr; Dashboard &rarr; Your API Key &rarr; copia la chiave.{' '}
-                                        <a href="https://serpapi.com/manage-api-key" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                                            Vai diretto alla pagina API Key
-                                        </a>
-                                    </p>
-                                </div>
+                                <p className="text-[9px] text-muted-foreground">Google Maps/Search. Free: 100/mese.</p>
                             </div>
 
                             {/* Apify */}
-                            <div className="space-y-2 p-4 border rounded-lg">
-                                <Label htmlFor="apify-key">Apify API Token</Label>
-                                <div className="flex gap-2">
+                            <div className="space-y-1.5 p-2.5 border rounded-lg">
+                                <Label htmlFor="apify-key" className="text-xs">Apify</Label>
+                                <div className="flex gap-1.5">
                                     <Input
                                         id="apify-key"
                                         type="password"
-                                        placeholder="Inserisci il tuo API token Apify..."
+                                        placeholder="API token..."
                                         value={leadGenApify}
                                         onChange={(e) => { setLeadGenApify(e.target.value); setApifyTest(null); }}
-                                        className="flex-1"
+                                        className="flex-1 h-7 text-xs"
                                     />
                                     <Button
                                         variant="secondary"
                                         size="sm"
+                                        className="h-7 px-2"
                                         disabled={!leadGenApify || isTestingApify}
                                         onClick={async () => {
                                             setIsTestingApify(true); setApifyTest(null);
@@ -657,36 +674,26 @@ export default function SettingsPage() {
                                             setIsTestingApify(false);
                                         }}
                                     >
-                                        {isTestingApify ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-                                        <span className="ml-1.5 text-xs">Test</span>
+                                        {isTestingApify ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}
+                                        <span className="ml-1 text-[10px]">Test</span>
                                     </Button>
                                 </div>
                                 {apifyTest && (
-                                    <div className={`p-3 rounded-md flex items-start gap-2 text-xs ${apifyTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
-                                        {apifyTest.success ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                                    <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${apifyTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {apifyTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
                                         <div>
                                             <p className="font-medium">{apifyTest.message}</p>
                                             {apifyTest.quota && (
-                                                <div className="mt-1 flex flex-wrap gap-1.5">
-                                                    <Badge variant="outline" className="text-[10px]">{apifyTest.quota.plan}</Badge>
-                                                    <Badge variant="secondary" className="text-[10px]">{apifyTest.quota.extra}</Badge>
+                                                <div className="mt-0.5 flex flex-wrap gap-1">
+                                                    <Badge variant="outline" className="text-[8px] h-4">{apifyTest.quota.plan}</Badge>
+                                                    <Badge variant="secondary" className="text-[8px] h-4">{apifyTest.quota.extra}</Badge>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
                                 )}
-                                <div className="text-[11px] text-muted-foreground space-y-1">
-                                    <p><strong>Web scraping avanzato</strong>: Google Maps Scraper, LinkedIn, directory aziendali e altro.</p>
-                                    <p>Piano Free: $5/mese di crediti (sufficiente per ~500 risultati Google Maps).</p>
-                                    <p>
-                                        Come ottenere: Registrati su{' '}
-                                        <a href="https://www.apify.com/" target="_blank" rel="noopener noreferrer" className="text-primary underline">apify.com</a>
-                                        {' '}(piano Free) &rarr; Settings &rarr; Integrations &rarr; Personal API tokens &rarr; crea un token e copialo.{' '}
-                                        <a href="https://console.apify.com/account/integrations" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                                            Vai diretto alla pagina API Token
-                                        </a>
-                                    </p>
-                                </div>
+                                <p className="text-[9px] text-muted-foreground">Web scraping. Free: $5/mese crediti.</p>
+                            </div>
                             </div>
                             <Button
                                 onClick={async () => {
@@ -709,217 +716,47 @@ export default function SettingsPage() {
                                     setIsLeadGenSaving(false);
                                 }}
                                 disabled={isLeadGenSaving}
+                                size="sm"
+                                className="mt-2 h-8 text-xs"
                             >
-                                {isLeadGenSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                {isLeadGenSaving ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Save className="mr-1.5 h-3 w-3" />}
                                 {isLeadGenSaving ? 'Salvataggio...' : 'Salva Chiavi API'}
                             </Button>
                         </CardContent>
                     </Card>
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Settings className="h-6 w-6 text-primary" />
-                                Impostazioni OpenRouter
-                            </CardTitle>
-                            <CardDescription>
-                                Configura la tua chiave API e il modello preferito per OpenRouter.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="space-y-2">
-                                <Label htmlFor="api-key">OpenRouter API Key</Label>
-                                <Input
-                                    id="api-key"
-                                    type="password"
-                                    placeholder="sk-or-..."
-                                    value={apiKey}
-                                    onChange={(e) => setApiKey(e.target.value)}
-                                />
-                                <p className="text-sm text-muted-foreground">
-                                    La tua chiave API viene salvata localmente nel browser.
-                                </p>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label>Modello Predefinito</Label>
-                                <Dialog open={isModelDialogOpen} onOpenChange={setIsModelDialogOpen}>
-                                    <DialogTrigger asChild>
-                                        <Button variant="outline" className="w-full justify-between font-normal">
-                                            {model || "Seleziona un modello"}
-                                            <span className="text-muted-foreground ml-2 text-xs">Cambia</span>
-                                        </Button>
-                                    </DialogTrigger>
-                                    <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
-                                        <DialogHeader>
-                                            <DialogTitle>Seleziona Modello AI</DialogTitle>
-                                        </DialogHeader>
-                                        <div className="flex items-center border rounded-md px-3 py-2 my-2 bg-muted/30">
-                                            <Search className="mr-2 h-4 w-4 opacity-50" />
-                                            <Input
-                                                placeholder="Cerca modello per nome o ID..."
-                                                value={modelSearch}
-                                                onChange={e => setModelSearch(e.target.value)}
-                                                className="border-0 focus-visible:ring-0 bg-transparent"
-                                                autoFocus
-                                            />
-                                        </div>
-                                        <div className="flex-1 overflow-auto border rounded-md">
-                                            {isModelsLoading ? (
-                                                <div className="flex items-center justify-center h-40">
-                                                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                                                    <span className="ml-2 text-muted-foreground">Caricamento modelli...</span>
-                                                </div>
-                                            ) : (
-                                                <Table>
-                                                    <TableHeader className="bg-muted/50 sticky top-0 backdrop-blur-sm z-10">
-                                                        <TableRow>
-                                                            <TableHead>Nome</TableHead>
-                                                            <TableHead>ID</TableHead>
-                                                            <TableHead>Context</TableHead>
-                                                            <TableHead>Input ($/1M)</TableHead>
-                                                            <TableHead>Output ($/1M)</TableHead>
-                                                        </TableRow>
-                                                    </TableHeader>
-                                                    <TableBody>
-                                                        {filteredModels.map((m) => {
-                                                            const isSelected = model === m.id;
-                                                            return (
-                                                                <TableRow
-                                                                    key={m.id}
-                                                                    className={`cursor-pointer hover:bg-muted/50 ${isSelected ? 'bg-primary/5 dark:bg-primary/20' : ''}`}
-                                                                    onClick={() => {
-                                                                        setModel(m.id);
-                                                                        setIsModelDialogOpen(false);
-                                                                    }}
-                                                                >
-                                                                    <TableCell className="font-medium p-2 text-xs truncate max-w-[200px]" title={m.name}>
-                                                                        {m.name}
-                                                                        {isSelected && <CheckCircle2 className="inline ml-1 h-3 w-3 text-primary" />}
-                                                                    </TableCell>
-                                                                    <TableCell className="text-[10px] text-muted-foreground font-mono p-2 truncate max-w-[150px]" title={m.id}>{m.id}</TableCell>
-                                                                    <TableCell className="text-[10px] p-2">{Math.round(m.context_length / 1000)}k</TableCell>
-                                                                    <TableCell className="text-[10px] font-mono p-2">
-                                                                        ${(parseFloat(m.pricing.prompt) * 1000000).toFixed(2)}
-                                                                    </TableCell>
-                                                                    <TableCell className="text-[10px] font-mono p-2">
-                                                                        ${(parseFloat(m.pricing.completion) * 1000000).toFixed(2)}
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            );
-                                                        })}
-                                                        {filteredModels.length === 0 && (
-                                                            <TableRow>
-                                                                <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
-                                                                    Nessun modello trovato per "{modelSearch}"
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        )}
-                                                    </TableBody>
-                                                </Table>
-                                            )}
-                                        </div>
-                                        <div className="text-xs text-muted-foreground text-right pt-2">
-                                            {filteredModels.length} modelli disponibili
-                                        </div>
-                                    </DialogContent>
-                                </Dialog>
-                            </div>
-
-                            <div className="flex flex-col gap-4 pt-4 border-t">
-                                <div className="flex gap-2">
-                                    <Button onClick={handleSave} disabled={isLoading} className="flex-1">
-                                        {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                                        {isLoading ? 'Salvataggio...' : 'Salva Impostazioni'}
-                                    </Button>
-                                    <Button onClick={handleTestConnection} disabled={isTesting || !apiKey} variant="secondary" className="flex-1">
-                                        {isTesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
-                                        {isTesting ? 'Test in corso...' : 'Test Connessione'}
-                                    </Button>
-                                </div>
-
-                                {testResult && (
-                                    <div className={`p-4 rounded-md flex items-start gap-3 ${testResult.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
-                                        {testResult.success ? (
-                                            <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" />
-                                        ) : (
-                                            <XCircle className="h-5 w-5 mt-0.5 shrink-0" />
-                                        )}
-                                        <div className="text-sm">
-                                            <p className="font-medium">{testResult.success ? 'Successo' : 'Errore'}</p>
-                                            <p className="mt-1 opacity-90">{testResult.message}</p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* OpenRouter Credits */}
-                                {orCredits && (
-                                    <div className="p-4 rounded-md border bg-muted/30">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="text-sm font-medium">Credito OpenRouter</span>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="h-6 px-2"
-                                                disabled={isLoadingCredits}
-                                                onClick={() => loadOpenRouterCredits(apiKey)}
-                                            >
-                                                {isLoadingCredits ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className="text-[10px]">Aggiorna</span>}
-                                            </Button>
-                                        </div>
-                                        <div className="flex flex-wrap gap-2">
-                                            <Badge variant="outline" className="text-xs">
-                                                Residuo: ${orCredits.remaining.toFixed(4)}
-                                            </Badge>
-                                            <Badge variant="secondary" className="text-xs">
-                                                Usato: ${orCredits.totalUsage.toFixed(4)}
-                                            </Badge>
-                                            <Badge variant="secondary" className="text-xs">
-                                                Totale: ${orCredits.totalCredits.toFixed(4)}
-                                            </Badge>
-                                        </div>
-                                        {orCredits.remaining < 0.5 && orCredits.totalCredits > 0 && (
-                                            <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">
-                                                Credito in esaurimento. Ricarica su openrouter.ai/credits
-                                            </p>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="mt-6 flex flex-col h-[600px]">
-                        <CardHeader className="flex flex-row items-center justify-between">
+                    {/* Test Chatbot AI */}
+                    <Card className="flex flex-col h-[400px]">
+                        <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between">
                             <div>
-                                <CardTitle className="flex items-center gap-2">
-                                    <Bot className="h-6 w-6 text-primary" />
+                                <CardTitle className="flex items-center gap-1.5 text-sm">
+                                    <Bot className="h-4 w-4 text-primary" />
                                     Test Chatbot AI
                                 </CardTitle>
-                                <CardDescription>
-                                    Verifica le risposte del modello selezionato in tempo reale.
+                                <CardDescription className="text-[11px]">
+                                    Verifica le risposte del modello in tempo reale.
                                 </CardDescription>
                             </div>
-                            <Button variant="ghost" size="icon" onClick={handleClearChat} title="Pulisci chat">
-                                <Trash2 className="h-4 w-4" />
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleClearChat} title="Pulisci chat">
+                                <Trash2 className="h-3 w-3" />
                             </Button>
                         </CardHeader>
-                        <CardContent className="flex-1 flex flex-col p-4 overflow-hidden">
-                            <ScrollArea className="flex-1 pr-4">
-                                <div className="space-y-4">
+                        <CardContent className="flex-1 flex flex-col p-3 pt-0 overflow-hidden">
+                            <ScrollArea className="flex-1 pr-2">
+                                <div className="space-y-2">
                                     {chatMessages.length === 0 ? (
-                                        <div className="text-center text-muted-foreground py-10">
-                                            <Bot className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                                            <p>Inizia una conversazione per testare il modello.</p>
+                                        <div className="text-center text-muted-foreground py-6">
+                                            <Bot className="h-8 w-8 mx-auto mb-1 opacity-20" />
+                                            <p className="text-xs">Inizia una conversazione per testare il modello.</p>
                                         </div>
                                     ) : (
                                         chatMessages.map((msg, index) => (
                                             <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                                <div className={`flex items-start gap-2 max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                                                        {msg.role === 'user' ? <UserIcon className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                                                <div className={`flex items-start gap-1.5 max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                                                        {msg.role === 'user' ? <UserIcon className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
                                                     </div>
-                                                    <div className={`p-3 rounded-lg text-sm ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                                                    <div className={`p-2 rounded-lg text-xs ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
                                                         {msg.content}
                                                     </div>
                                                 </div>
@@ -928,12 +765,12 @@ export default function SettingsPage() {
                                     )}
                                     {isChatting && (
                                         <div className="flex justify-start">
-                                            <div className="flex items-start gap-2 max-w-[80%]">
-                                                <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-muted">
-                                                    <Bot className="h-4 w-4" />
+                                            <div className="flex items-start gap-1.5 max-w-[80%]">
+                                                <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 bg-muted">
+                                                    <Bot className="h-3 w-3" />
                                                 </div>
-                                                <div className="p-3 rounded-lg text-sm bg-muted flex items-center">
-                                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                <div className="p-2 rounded-lg text-xs bg-muted flex items-center">
+                                                    <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
                                                     Sta scrivendo...
                                                 </div>
                                             </div>
@@ -942,20 +779,23 @@ export default function SettingsPage() {
                                 </div>
                             </ScrollArea>
 
-                            <div className="pt-4 mt-4 border-t flex gap-2">
+                            <div className="pt-2 mt-2 border-t flex gap-1.5">
                                 <Input
                                     placeholder="Scrivi un messaggio..."
                                     value={inputMessage}
                                     onChange={(e) => setInputMessage(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
                                     disabled={isChatting || !apiKey}
+                                    className="h-8 text-xs"
                                 />
-                                <Button onClick={handleSendMessage} disabled={isChatting || !apiKey || !inputMessage.trim()}>
-                                    <Send className="h-4 w-4" />
+                                <Button onClick={handleSendMessage} disabled={isChatting || !apiKey || !inputMessage.trim()} size="sm" className="h-8">
+                                    <Send className="h-3 w-3" />
                                 </Button>
                             </div>
                         </CardContent>
                     </Card>
+
+                    </div>
                 </div>
             </main>
         </div>
