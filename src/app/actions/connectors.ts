@@ -8,6 +8,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { MediaItem, LinkItem, TriggerItem } from '@/lib/types';
 import { applyPlotlyOverrides, plotlyJsonToHtml } from '@/lib/plotly-utils';
+import { resolveTheme } from '@/lib/chart-theme';
 import { testSharePointConnectionAction } from './sharepoint';
 
 // ... (existing functions)
@@ -1074,16 +1075,31 @@ export async function sendTestEmailWithDataAction(params: {
 
 
 
-        // Pre-render styled Plotly charts to PNG for inline body usage
-        // When a chart has plotlyJson + plotlyStyleOverrides, re-render PNG with styles applied
+        // Load company chart theme for Plotly re-rendering (colors, fonts, grid, etc.)
+        let emailChartTheme: Record<string, any> | undefined;
+        try {
+            const company = await db.company.findUnique({
+                where: { id: user.companyId },
+                select: { chartTheme: true },
+            });
+            emailChartTheme = resolveTheme(company?.chartTheme as any);
+            console.log(`[EMAIL DEBUG] Loaded chart theme for re-rendering: colors=${(emailChartTheme as any)?.colors?.slice(0, 3)}`);
+        } catch (themeErr) {
+            console.error(`[EMAIL DEBUG] Could not load chart theme (non-critical):`, themeErr);
+        }
+
+        // Pre-render Plotly charts to PNG for inline body usage
+        // When a chart has plotlyJson, re-render PNG with styles applied (or base Plotly quality)
+        // This ensures the email body matches the attachment quality
         for (const pyResult of pythonResults) {
-            if (pyResult.type === 'chart' && pyResult.plotlyJson && pyResult.plotlyStyleOverrides && Object.keys(pyResult.plotlyStyleOverrides).length > 0) {
+            if (pyResult.type === 'chart' && pyResult.plotlyJson) {
                 try {
-                    const styledFigure = applyPlotlyOverrides(pyResult.plotlyJson, pyResult.plotlyStyleOverrides);
+                    const styledFigure = applyPlotlyOverrides(pyResult.plotlyJson, pyResult.plotlyStyleOverrides || {});
                     const styledFigureJson = JSON.stringify(styledFigure);
                     // Encode figure JSON as base64 to safely embed in Python code (no escaping issues)
                     const figureBase64 = Buffer.from(styledFigureJson, 'utf-8').toString('base64');
-                    console.log(`[EMAIL DEBUG] Re-rendering styled PNG for "${pyResult.name}" (${(styledFigureJson.length / 1024).toFixed(1)} KB figure, ${(figureBase64.length / 1024).toFixed(1)} KB base64)...`);
+                    const hasOverrides = pyResult.plotlyStyleOverrides && Object.keys(pyResult.plotlyStyleOverrides).length > 0;
+                    console.log(`[EMAIL DEBUG] Re-rendering PNG for "${pyResult.name}" (${hasOverrides ? 'with style overrides' : 'base Plotly quality'}, ${(styledFigureJson.length / 1024).toFixed(1)} KB figure, ${(figureBase64.length / 1024).toFixed(1)} KB base64)...`);
 
                     const renderScript = `
 import plotly.io as pio
@@ -1116,9 +1132,10 @@ print(f"PNG generated: {len(result)} chars base64")
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             code: renderScript,
-                            output_type: 'variable',
-                            input_data: {},
-                            dependencies: []
+                            outputType: 'variable',   // camelCase to match Python backend's data.get('outputType')
+                            inputData: {},
+                            dependencies: [],
+                            chartTheme: emailChartTheme // Pass company theme so emerald template is configured
                         }),
                         signal: AbortSignal.timeout(60000)
                     });

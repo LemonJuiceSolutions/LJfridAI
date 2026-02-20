@@ -4011,12 +4011,6 @@ export default function EditNodeDialog({
                                 const inBody = safeEmailAttachments.pythonOutputsInBody.includes(output.name) || allReferencedPythonNames.includes(output.name);
                                 let asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name);
 
-                                // Auto-include chart outputs as attachments (styled HTML)
-                                if (!inBody && !asAttachment && output.outputType === 'chart') {
-                                  console.log(`[EMAIL UI DEBUG] Auto-including chart "${output.name}" as attachment`);
-                                  asAttachment = true;
-                                }
-
                                 if (inBody || asAttachment) {
                                   let dependencies = output.dependenciesOverride || [];
 

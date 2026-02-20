@@ -1113,13 +1113,7 @@ export class SchedulerService {
         const asAttachment = !!matchedAttachName;
         logger.log(`[EmailSend] Python Node ${pythonNode.name} (Alternatives: ${names.join(',')}): inBody=${inBody}, asAttachment=${asAttachment}, matchedName=${matchedBodyName || matchedAttachName || 'none'}`);
 
-        // Auto-include chart outputs as attachments even if not explicitly selected
-        const autoAttach = !inBody && !asAttachment && (pythonNode.pythonOutputType === 'chart');
-        if (autoAttach) {
-          logger.log(`[EmailSend] Auto-including chart "${pythonNode.name}" as attachment (type: ${pythonNode.pythonOutputType})`);
-        }
-
-        if (inBody || asAttachment || autoAttach) {
+        if (inBody || asAttachment) {
           // Use the matched alias name so it matches {{GRAFICO:name}} placeholders in email body
           const effectiveName = matchedBodyName || matchedAttachName || pythonNode.name;
           // Avoid duplicates (multiple nodes may share the same allName alias)
@@ -1130,7 +1124,7 @@ export class SchedulerService {
               outputType: pythonNode.pythonOutputType || 'table',
               connectorId: pythonNode.connectorId,
               inBody,
-              asAttachment: asAttachment || autoAttach,
+              asAttachment,
               pipelineDependencies: pythonNode.pipelineDependencies,
               plotlyStyleOverrides: pythonNode.pythonPreviewResult?.plotlyStyleOverrides,
             });
