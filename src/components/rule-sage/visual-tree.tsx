@@ -18,6 +18,7 @@ import { ToastAction } from '@/components/ui/toast';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { updateVariableAction, updateTreeNodeAction, getTreeAction } from '@/app/actions';
+import { invalidateAndNotifyWidgets } from '@/lib/tree-cache';
 import { getTreeSchedulesAction } from '@/app/actions/scheduler';
 import { useTrees } from '@/hooks/use-trees';
 import { useVariables } from '@/hooks/use-variables';
@@ -647,16 +648,15 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         setEditingNodeInfo(null);
 
         try {
-            // Preserve preview data from the current node
+            // Preserve preview data from the current node (only as fallback if not in newNodeData)
             const currentNode = getNodeFromPath(tree, path);
             const nodeDataToSave = {
+                // First: fallback preview data from current node
+                ...(currentNode?.sqlPreviewData && !newNodeData.sqlPreviewData && { sqlPreviewData: currentNode.sqlPreviewData }),
+                ...(currentNode?.sqlPreviewTimestamp && !newNodeData.sqlPreviewTimestamp && { sqlPreviewTimestamp: currentNode.sqlPreviewTimestamp }),
+                ...(currentNode?.pythonPreviewResult && !newNodeData.pythonPreviewResult && { pythonPreviewResult: currentNode.pythonPreviewResult }),
+                // Then: newNodeData takes priority (includes plotlyStyleOverrides etc.)
                 ...newNodeData,
-                // Preserve SQL preview data if it exists in the current node
-                ...(currentNode?.sqlPreviewData && { sqlPreviewData: currentNode.sqlPreviewData }),
-                // Preserve SQL preview timestamp if it exists in the current node
-                ...(currentNode?.sqlPreviewTimestamp && { sqlPreviewTimestamp: currentNode.sqlPreviewTimestamp }),
-                // Preserve Python preview data if it exists in the current node
-                ...(currentNode?.pythonPreviewResult && { pythonPreviewResult: currentNode.pythonPreviewResult }),
             };
 
             const result = await updateTreeNodeAction({
@@ -669,6 +669,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
 
             toast({ title: "Albero aggiornato con successo!" });
+            invalidateAndNotifyWidgets(treeData.id);
             onDataRefresh(result.data);
 
         } catch (e) {
@@ -717,8 +718,13 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 }
             } else {
                 // Python preview - salva l'oggetto completo
-                console.log('[DEBUG] Salvataggio Python preview data:', { type: previewData?.type, hasData: !!previewData?.data });
-                updatedNodeData.pythonPreviewResult = previewData;
+                // Preserve existing plotlyStyleOverrides if not included in new preview data
+                const existingOverrides = currentNode?.pythonPreviewResult?.plotlyStyleOverrides;
+                console.log('[DEBUG] Salvataggio Python preview data:', { type: previewData?.type, hasData: !!previewData?.data, hasNewOverrides: !!previewData?.plotlyStyleOverrides, hasExistingOverrides: !!existingOverrides });
+                updatedNodeData.pythonPreviewResult = {
+                    ...previewData,
+                    ...(existingOverrides && !previewData.plotlyStyleOverrides ? { plotlyStyleOverrides: existingOverrides } : {}),
+                };
             }
 
             console.log('[DEBUG] Salvataggio anteprima nel nodo:', { path, hasPreviewData: previewData !== null });
@@ -734,6 +740,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
 
             console.log('[DEBUG] Anteprima salvata con successo nel nodo:', path);
+            invalidateAndNotifyWidgets(treeData.id);
             // Aggiorna lo stato locale dell'albero per riflettere immediatamente i cambiamenti
             // Usa functional update (prev =>) per evitare race conditions quando più anteprime
             // vengono salvate in rapida successione (es. pipeline con più antenati)
@@ -756,7 +763,11 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                         }
                     } else {
                         console.log('[DEBUG] Updating Python preview in local tree');
-                        nodeToUpdate.pythonPreviewResult = previewData;
+                        const existingLocalOverrides = nodeToUpdate.pythonPreviewResult?.plotlyStyleOverrides;
+                        nodeToUpdate.pythonPreviewResult = {
+                            ...previewData,
+                            ...(existingLocalOverrides && !previewData.plotlyStyleOverrides ? { plotlyStyleOverrides: existingLocalOverrides } : {}),
+                        };
                     }
                     console.log('[DEBUG] Local tree updated with preview data');
                 }
@@ -1291,7 +1302,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     const getAncestorInputTables = useMemo(() => {
         return (currentPath: string): { name: string, nodeName?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[] }[] => {
             // First, collect all ancestors with their paths for ordering
-            const ancestorItems: { path: string, nodeId?: string, nodeName?: string, name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string, pipelineDependencies?: any[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[] }[] = [];
+            const ancestorItems: { path: string, nodeId?: string, nodeName?: string, name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string, pipelineDependencies?: any[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[], plotlyStyleOverrides?: any }[] = [];
 
             // Helper to recursively resolve dependencies
             const resolveDependencies = (node: any, visited: Set<string> = new Set()): any[] => {
@@ -1414,7 +1425,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 sqlExportTargetConnectorId: actualNode.sqlExportAction?.targetConnectorId || actualNode.sqlExportTargetConnectorId,
                                 sqlExportSourceTables: actualNode.sqlExportAction?.sourceTables || actualNode.sqlExportSourceTables,
                                 writesToDatabase: actualNode.writesToDatabase || !!actualNode.sqlExportAction,
-                                data: nodeData
+                                data: nodeData,
+                                plotlyStyleOverrides: actualNode.pythonPreviewResult?.plotlyStyleOverrides
                             });
                         }
                     }
@@ -1425,7 +1437,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             ancestorItems.sort((a, b) => a.path.length - b.path.length);
 
             // Build result with pipelineDependencies for each table
-            const tables: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[] }[] = [];
+            const tables: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[], plotlyStyleOverrides?: any }[] = [];
 
             for (let i = 0; i < ancestorItems.length; i++) {
                 const item = ancestorItems[i];
@@ -1464,7 +1476,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     sqlExportTargetConnectorId: item.sqlExportTargetConnectorId,
                     sqlExportSourceTables: item.sqlExportSourceTables,
                     writesToDatabase: (item as any).writesToDatabase,
-                    data: item.data
+                    data: item.data,
+                    plotlyStyleOverrides: item.plotlyStyleOverrides
                 });
 
                 // console.log(`[ANCESTOR] "${item.name}" (${item.isPython ? 'Python' : 'SQL'}) has ${pipelineDeps.length} pipeline dependencies:`, pipelineDeps.map(d => d.tableName));

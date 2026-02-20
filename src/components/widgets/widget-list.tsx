@@ -76,28 +76,42 @@ let widgetsCache: Record<string, Widget> | null = null;
 let cacheTimestamp = 0;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+// Invalidate widget list cache (call when tree data changes)
+export function invalidateWidgetListCache() {
+    widgetsCache = null;
+    cacheTimestamp = 0;
+}
+
 export const useAvailableWidgets = () => {
     // Start with static widgets immediately - no waiting for dynamic ones
     const [dynamicWidgets, setDynamicWidgets] = useState<Record<string, Widget>>({});
     const { data: session, status } = useSession();
     const isMountedRef = useRef(true);
     const fetchCountRef = useRef(0);
-    const hasFetchedRef = useRef(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    // Listen for tree-cache-invalidated events to refresh widget list
+    useEffect(() => {
+        const handler = () => {
+            invalidateWidgetListCache();
+            setRefreshTrigger(prev => prev + 1);
+        };
+        window.addEventListener('tree-cache-invalidated', handler);
+        return () => window.removeEventListener('tree-cache-invalidated', handler);
+    }, []);
 
     useEffect(() => {
         isMountedRef.current = true;
-        if (status === 'loading' || !session?.user || hasFetchedRef.current) return;
+        if (status === 'loading' || !session?.user) return;
 
         // Check cache first
         const now = Date.now();
         if (widgetsCache && (now - cacheTimestamp) < CACHE_DURATION) {
             setDynamicWidgets(widgetsCache);
-            hasFetchedRef.current = true;
             return;
         }
 
         const currentFetchId = ++fetchCountRef.current;
-        hasFetchedRef.current = true;
 
         // Fetch pipelines and trees IN PARALLEL instead of sequentially
         const fetchDynamic = async () => {
@@ -244,7 +258,7 @@ export const useAvailableWidgets = () => {
         return () => {
             isMountedRef.current = false;
         };
-    }, [status, session]);
+    }, [status, session, refreshTrigger]);
 
     // Merge static + dynamic only when dynamic changes
     const allWidgets = useMemo(

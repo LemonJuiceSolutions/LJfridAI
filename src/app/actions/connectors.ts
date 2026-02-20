@@ -7,6 +7,7 @@ import nodemailer from 'nodemailer';
 import fs from 'fs/promises';
 import path from 'path';
 import type { MediaItem, LinkItem, TriggerItem } from '@/lib/types';
+import { applyPlotlyOverrides, plotlyJsonToHtml } from '@/lib/plotly-utils';
 import { testSharePointConnectionAction } from './sharepoint';
 
 // ... (existing functions)
@@ -439,6 +440,7 @@ export async function sendTestEmailWithDataAction(params: {
         inBody: boolean;
         asAttachment: boolean;
         dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
+        plotlyStyleOverrides?: any;
     }>;
     availableMedia?: MediaItem[];
     availableLinks?: LinkItem[];
@@ -804,23 +806,25 @@ export async function sendTestEmailWithDataAction(params: {
             data?: any[];
             chartBase64?: string;
             chartHtml?: string;
+            plotlyJson?: any;
+            plotlyStyleOverrides?: any;
             html?: string;
             variables?: Record<string, any>;
             type: 'table' | 'variable' | 'chart' | 'html';
         }> = [];
 
         if (params.selectedPythonOutputs && params.selectedPythonOutputs.length > 0) {
-            console.log('[EMAIL DEBUG] Executing Python outputs...');
+            console.log('[EMAIL DEBUG] Executing Python outputs:', params.selectedPythonOutputs.map(p => `${p.name} (type:${p.outputType}, inBody:${p.inBody}, asAttachment:${p.asAttachment}, hasStyleOverrides:${!!p.plotlyStyleOverrides})`));
             const { executePythonPreviewAction } = await import('@/app/actions');
 
             for (const pyOutput of params.selectedPythonOutputs) {
                 try {
-                    console.log(`[EMAIL DEBUG] Executing Python for ${pyOutput.name} (type: ${pyOutput.outputType})...`);
+                    console.log(`[EMAIL DEBUG] Executing Python for ${pyOutput.name} (type: ${pyOutput.outputType}, inBody: ${pyOutput.inBody}, asAttachment: ${pyOutput.asAttachment})...`);
 
                     // Check for pre-calculated result
                     if (params.preCalculatedResults && params.preCalculatedResults[pyOutput.name]) {
-                        console.log(`[EMAIL DEBUG] Using pre-calculated result for Python ${pyOutput.name}`);
                         const preRes = params.preCalculatedResults[pyOutput.name];
+                        console.log(`[EMAIL DEBUG] Using pre-calculated result for Python ${pyOutput.name}: hasPlotlyJson=${!!preRes.plotlyJson}, hasChartBase64=${!!preRes.chartBase64}, hasChartHtml=${!!preRes.chartHtml}, keys=${Object.keys(preRes).join(',')}`);
                         pythonResults.push({
                             name: pyOutput.name,
                             displayName: pyOutput.displayName,
@@ -829,6 +833,8 @@ export async function sendTestEmailWithDataAction(params: {
                             data: preRes.data || (Array.isArray(preRes) ? preRes : []),
                             chartBase64: preRes.chartBase64,
                             chartHtml: preRes.chartHtml,
+                            plotlyJson: preRes.plotlyJson,
+                            plotlyStyleOverrides: pyOutput.plotlyStyleOverrides,
                             html: preRes.html,
                             variables: preRes.variables,
                             type: pyOutput.outputType
@@ -867,6 +873,8 @@ export async function sendTestEmailWithDataAction(params: {
                             data: result.data,
                             chartBase64: result.chartBase64,
                             chartHtml: result.chartHtml,
+                            plotlyJson: result.plotlyJson,
+                            plotlyStyleOverrides: pyOutput.plotlyStyleOverrides,
                             html: result.html,
                             variables: result.variables,
                             type: pyOutput.outputType
@@ -1066,6 +1074,73 @@ export async function sendTestEmailWithDataAction(params: {
 
 
 
+        // Pre-render styled Plotly charts to PNG for inline body usage
+        // When a chart has plotlyJson + plotlyStyleOverrides, re-render PNG with styles applied
+        for (const pyResult of pythonResults) {
+            if (pyResult.type === 'chart' && pyResult.plotlyJson && pyResult.plotlyStyleOverrides && Object.keys(pyResult.plotlyStyleOverrides).length > 0) {
+                try {
+                    const styledFigure = applyPlotlyOverrides(pyResult.plotlyJson, pyResult.plotlyStyleOverrides);
+                    const styledFigureJson = JSON.stringify(styledFigure);
+                    // Encode figure JSON as base64 to safely embed in Python code (no escaping issues)
+                    const figureBase64 = Buffer.from(styledFigureJson, 'utf-8').toString('base64');
+                    console.log(`[EMAIL DEBUG] Re-rendering styled PNG for "${pyResult.name}" (${(styledFigureJson.length / 1024).toFixed(1)} KB figure, ${(figureBase64.length / 1024).toFixed(1)} KB base64)...`);
+
+                    const renderScript = `
+import plotly.io as pio
+import json
+import base64
+
+# Decode figure JSON from base64 (safe transport, no escaping issues)
+_fig_b64 = "${figureBase64}"
+_fig_json_str = base64.b64decode(_fig_b64).decode("utf-8")
+fig = pio.from_json(_fig_json_str)
+
+fig_width = fig.layout.width if fig.layout.width else 1000
+fig_height = fig.layout.height if fig.layout.height else 500
+if fig_width > 1200:
+    ratio = 1200 / fig_width
+    fig_width = 1200
+    fig_height = int(fig_height * ratio)
+if fig_height > 6000:
+    fig_height = 6000
+scale = 2 if (fig_width * fig_height < 800000) else 1
+
+print(f"Rendering PNG: {fig_width}x{fig_height} scale={scale}")
+img_bytes = pio.to_image(fig, format="png", width=fig_width, height=fig_height, scale=scale)
+result = base64.b64encode(img_bytes).decode("utf-8")
+print(f"PNG generated: {len(result)} chars base64")
+`.trim();
+
+                    const renderRes = await fetch('http://localhost:5005/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            code: renderScript,
+                            output_type: 'variable',
+                            input_data: {},
+                            dependencies: []
+                        }),
+                        signal: AbortSignal.timeout(60000)
+                    });
+
+                    if (renderRes.ok) {
+                        const renderData = await renderRes.json();
+                        if (renderData.success && renderData.variables?.result) {
+                            pyResult.chartBase64 = renderData.variables.result;
+                            console.log(`[EMAIL DEBUG] ✅ Styled PNG generated for "${pyResult.name}" (${(pyResult.chartBase64!.length / 1024).toFixed(1)} KB base64)`);
+                        } else {
+                            console.error(`[EMAIL DEBUG] ❌ Styled PNG render failed for "${pyResult.name}":`, renderData.error || 'unknown', 'stdout:', renderData.stdout || '');
+                        }
+                    } else {
+                        const errText = await renderRes.text().catch(() => 'no body');
+                        console.error(`[EMAIL DEBUG] ❌ Styled PNG HTTP ${renderRes.status} for "${pyResult.name}": ${errText}`);
+                    }
+                } catch (renderErr: any) {
+                    console.error(`[EMAIL DEBUG] ❌ Could not re-render styled PNG for "${pyResult.name}": ${renderErr.message}`);
+                }
+            }
+        }
+
         // Replace chart placeholders: {{GRAFICO:nome}}
         processedBody = processedBody.replace(/\{\{GRAFICO:([^}]+)\}\}/g, (match, chartName) => {
             const chartResult = pythonResults.find(p => p.name === chartName);
@@ -1247,11 +1322,39 @@ export async function sendTestEmailWithDataAction(params: {
         }
 
         // Add Python output attachments
+        console.log(`[EMAIL DEBUG] Processing ${pythonResults.length} python results for attachments...`);
         for (const pyResult of pythonResults) {
+            console.log(`[EMAIL DEBUG] Python result "${pyResult.name}": type=${pyResult.type}, inBody=${pyResult.inBody}, asAttachment=${pyResult.asAttachment}, hasPlotlyJson=${!!pyResult.plotlyJson}, hasChartBase64=${!!pyResult.chartBase64}, hasChartHtml=${!!pyResult.chartHtml}, hasStyleOverrides=${!!pyResult.plotlyStyleOverrides}, styleOverrides=${JSON.stringify(pyResult.plotlyStyleOverrides || null)}`);
+
+            // AUTO-ATTACH: If a chart is inBody and has plotlyJson, also attach as interactive HTML with styles
+            if (pyResult.inBody && pyResult.type === 'chart' && pyResult.plotlyJson && !pyResult.asAttachment) {
+                const styledFigure = applyPlotlyOverrides(pyResult.plotlyJson, pyResult.plotlyStyleOverrides || {});
+                const htmlContent = plotlyJsonToHtml(styledFigure);
+                const buffer = Buffer.from(htmlContent, 'utf8');
+                console.log(`[EMAIL DEBUG] Auto-attaching styled Plotly HTML for inBody chart ${pyResult.name}: ${(buffer.length / 1024).toFixed(2)} KB`);
+                attachments.push({
+                    filename: `${pyResult.name}.html`,
+                    content: buffer,
+                    contentType: 'text/html'
+                });
+            }
+
             if (pyResult.asAttachment) {
                 if (pyResult.type === 'chart') {
-                    if (pyResult.chartHtml) {
-                        // Attach chart as interactive HTML file
+                    if (pyResult.plotlyJson) {
+                        // PRIORITY: Use Plotly JSON with style overrides for best quality
+                        const styledFigure = applyPlotlyOverrides(pyResult.plotlyJson, pyResult.plotlyStyleOverrides || {});
+                        const htmlContent = plotlyJsonToHtml(styledFigure);
+                        const buffer = Buffer.from(htmlContent, 'utf8');
+                        console.log(`[EMAIL DEBUG] Plotly styled HTML file ${pyResult.name}.html size: ${(buffer.length / 1024).toFixed(2)} KB`);
+
+                        attachments.push({
+                            filename: `${pyResult.name}.html`,
+                            content: buffer,
+                            contentType: 'text/html'
+                        });
+                    } else if (pyResult.chartHtml) {
+                        // Fallback: Attach chart as interactive HTML file
                         const htmlContent = `
 <!DOCTYPE html>
 <html>

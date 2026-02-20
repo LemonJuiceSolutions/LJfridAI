@@ -747,10 +747,20 @@ def execute_python():
             if recharts_result:
                 print(f"✅ [EXECUTE] Successfully converted to Recharts ({recharts_result['config']['type']})")
                 
+                # Also include the raw Plotly JSON for style editing
+                plotly_json = None
+                if chart_lib == 'plotly' and hasattr(res_val, 'to_json'):
+                    try:
+                        plotly_json = json.loads(res_val.to_json())
+                    except Exception as pj_err:
+                        print(f"⚠️ [EXECUTE] Could not extract Plotly JSON: {pj_err}")
+
                 response = {
                     'success': True,
                     'rechartsConfig': recharts_result['config'],
                     'rechartsData': recharts_result['data'],
+                    'rechartsStyle': recharts_result.get('style', None),
+                    'plotlyJson': plotly_json,
                     'stdout': stdout_val
                 }
                 
@@ -840,14 +850,22 @@ def execute_python():
                     except Exception as img_err:
                         print(f"⚠️ [EXECUTE] Could not generate PNG (kaleido might not be installed): {str(img_err)}")
                     
+                    # Include raw Plotly JSON for frontend style editing
+                    plotly_json = None
+                    try:
+                        plotly_json = json.loads(res_val.to_json())
+                    except Exception as pj_err:
+                        print(f"⚠️ [EXECUTE] Could not extract Plotly JSON: {pj_err}")
+
                     response = {
                         'success': True,
                         'chartHtml': chart_html,
+                        'plotlyJson': plotly_json,
                         'stdout': stdout_val
                     }
                     if chart_base64:
                         response['chartBase64'] = chart_base64
-                    
+
                     return jsonify(response)
                 except Exception as pe:
                     print(f"⚠️ [EXECUTE] Plotly HTML conversion failed, falling back to PNG: {str(pe)}")

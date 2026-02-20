@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { getCachedTree, invalidateAndNotifyWidgets } from '@/lib/tree-cache';
 import { DataTable } from '@/components/ui/data-table';
 import SmartWidgetRenderer from './SmartWidgetRenderer';
+import { applyPlotlyOverrides, plotlyJsonToHtml } from '@/lib/plotly-utils';
 import { Loader2, Database, Code, AlertCircle, RefreshCw, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -219,8 +220,15 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                 {previewData.type === 'table' ? (
                     <DataTable data={previewData.data} />
                 ) : previewData.type === 'chart' ? (
-                    <div className="h-full p-4">
-                        {previewData.chartHtml ? (
+                    <div className="h-full">
+                        {previewData.plotlyJson ? (
+                            <iframe
+                                srcDoc={plotlyJsonToHtml(applyPlotlyOverrides(previewData.plotlyJson, previewData.plotlyStyleOverrides || {}))}
+                                className="w-full border-none"
+                                title="Interactive Chart"
+                                style={{ height: `${Math.max(400, previewData.plotlyJson?.layout?.height || 500)}px` }}
+                            />
+                        ) : previewData.chartHtml ? (
                             <iframe
                                 srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: auto; }</style></head><body>${previewData.chartHtml}</body></html>`}
                                 className="w-full border-none h-full"
@@ -228,7 +236,10 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                             />
                         ) : previewData.rechartsConfig && previewData.rechartsData ? (
                             <SmartWidgetRenderer
-                                config={previewData.rechartsConfig}
+                                config={{
+                                    ...previewData.rechartsConfig,
+                                    ...(previewData.rechartsStyle ? { chartStyle: previewData.rechartsStyle } : {}),
+                                }}
                                 data={previewData.rechartsData}
                                 onRefresh={handleRefresh}
                                 isRefreshing={isRefreshing}

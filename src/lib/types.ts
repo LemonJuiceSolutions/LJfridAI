@@ -85,6 +85,8 @@ export interface WidgetConfig {
   // Data Source Config
   dataSourceType?: 'current-sql' | 'current-python' | 'parent-table';
   dataSourceId?: string; // Table name for parent-table, or 'sql'/'python' for current
+  // Per-chart style overrides (merged with global ChartTheme at render time)
+  chartStyle?: import('./chart-style').ChartStyle;
 }
 
 export interface DecisionLeaf {

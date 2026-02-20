@@ -511,6 +511,7 @@ export class SchedulerService {
               chartHtml: res.chartHtml,
               rechartsConfig: res.rechartsConfig,
               rechartsData: res.rechartsData,
+              plotlyJson: res.plotlyJson,
               variables: res.variables,
               stdout: res.stdout
             };
@@ -623,6 +624,7 @@ export class SchedulerService {
                   chartHtml: pyRes.chartHtml,
                   rechartsConfig: pyRes.rechartsConfig,
                   rechartsData: pyRes.rechartsData,
+                  plotlyJson: pyRes.plotlyJson,
                   variables: pyRes.variables,
                   stdout: pyRes.stdout
                 };
@@ -1111,7 +1113,13 @@ export class SchedulerService {
         const asAttachment = !!matchedAttachName;
         logger.log(`[EmailSend] Python Node ${pythonNode.name} (Alternatives: ${names.join(',')}): inBody=${inBody}, asAttachment=${asAttachment}, matchedName=${matchedBodyName || matchedAttachName || 'none'}`);
 
-        if (inBody || asAttachment) {
+        // Auto-include chart outputs as attachments even if not explicitly selected
+        const autoAttach = !inBody && !asAttachment && (pythonNode.pythonOutputType === 'chart');
+        if (autoAttach) {
+          logger.log(`[EmailSend] Auto-including chart "${pythonNode.name}" as attachment (type: ${pythonNode.pythonOutputType})`);
+        }
+
+        if (inBody || asAttachment || autoAttach) {
           // Use the matched alias name so it matches {{GRAFICO:name}} placeholders in email body
           const effectiveName = matchedBodyName || matchedAttachName || pythonNode.name;
           // Avoid duplicates (multiple nodes may share the same allName alias)
@@ -1122,8 +1130,9 @@ export class SchedulerService {
               outputType: pythonNode.pythonOutputType || 'table',
               connectorId: pythonNode.connectorId,
               inBody,
-              asAttachment,
-              pipelineDependencies: pythonNode.pipelineDependencies
+              asAttachment: asAttachment || autoAttach,
+              pipelineDependencies: pythonNode.pipelineDependencies,
+              plotlyStyleOverrides: pythonNode.pythonPreviewResult?.plotlyStyleOverrides,
             });
           }
         }
@@ -1288,22 +1297,46 @@ export class SchedulerService {
 
     if (!result.success) throw new Error(result.error);
 
-    // 3. Save Preview
+    // 3. Save Preview (preserve existing plotlyStyleOverrides and plotlyJson)
     if (treeId && nodePath) {
+      // Load existing node to preserve user-set style overrides
+      let existingPreview: any = null;
+      try {
+        const existingTree = await db.tree.findUnique({ where: { id: treeId } });
+        if (existingTree?.jsonDecisionTree) {
+          const existingJson = JSON.parse(existingTree.jsonDecisionTree);
+          const existingPath = nodePath.replace(/^root\.?/, '');
+          const existingNode = existingPath ? _.get(existingJson, existingPath) : existingJson;
+          existingPreview = existingNode?.pythonPreviewResult;
+        }
+      } catch { /* non-critical */ }
+
+      const preservedFields = {
+        ...(existingPreview?.plotlyStyleOverrides ? { plotlyStyleOverrides: existingPreview.plotlyStyleOverrides } : {}),
+        ...(existingPreview?.plotlyJson && !result.plotlyJson ? { plotlyJson: existingPreview.plotlyJson } : {}),
+      };
+
       const updatePayload: any = {
         pythonPreviewLastUpdate: new Date().toISOString()
       };
       if (runType === 'table') {
-        updatePayload.pythonPreviewResult = result.data; // rows
+        updatePayload.pythonPreviewResult = { type: 'table', data: result.data, timestamp: Date.now(), ...preservedFields };
       } else if (runType === 'chart') {
         updatePayload.pythonPreviewResult = {
+          type: 'chart',
           chartBase64: result.chartBase64,
           chartHtml: result.chartHtml,
-          widgetConfig: (result as any).widgetConfig
+          rechartsConfig: (result as any).rechartsConfig,
+          rechartsData: (result as any).rechartsData,
+          rechartsStyle: (result as any).rechartsStyle,
+          plotlyJson: result.plotlyJson,
+          widgetConfig: (result as any).widgetConfig,
+          timestamp: Date.now(),
+          ...preservedFields,
         };
       } else {
         // Variable
-        updatePayload.pythonPreviewResult = result.variables;
+        updatePayload.pythonPreviewResult = { type: 'variable', variables: result.variables, timestamp: Date.now(), ...preservedFields };
       }
 
       await this.saveNodePreviewData(treeId, nodePath, updatePayload);

@@ -419,6 +419,28 @@ ${connectorInfo}${companyInfo}
 LIBRERIE DISPONIBILI: pandas (pd), numpy (np), requests, plotly.express (px), plotly.graph_objects (go)
 NON USARE MAI LA LIBRERIA 'tabulate' (non e' installata). Usa SOLO plotly per le tabelle.
 
+## REGOLE GRAFICI (CRITICO):
+- Usa SEMPRE e SOLO plotly per generare grafici (plotly.express o plotly.graph_objects).
+- NON usare MAI matplotlib.
+- I grafici Plotly vengono automaticamente convertiti nel sistema Recharts della piattaforma, che supporta: bar, scatter, pie, area, line.
+- Per i GANTT o timeline: usa SEMPRE go.Bar con orientation='h' (barre orizzontali). NON usare px.timeline() o go.Figure con shapes/annotations manuali, perche' non vengono convertiti.
+- IMPORTANTE NOMI TRACCE: Quando crei tracce raggruppate per categoria (es. stato, monte, tipo), crea UNA traccia per categoria con name= esplicito. NON creare una traccia per ogni task singolo. I nomi delle tracce appaiono nell'editor stile della piattaforma.
+- Esempio Gantt con barre orizzontali raggruppate per categoria:
+  \`\`\`python
+  import plotly.graph_objects as go
+  fig = go.Figure()
+  # Raggruppa i task per categoria e crea una traccia per ogni gruppo
+  for categoria, colore in [('anticipo', '#059669'), ('in tempo', '#3b82f6'), ('ritardo', '#f59e0b')]:
+      mask = df['stato'] == categoria
+      subset = df[mask]
+      if len(subset) > 0:
+          fig.add_trace(go.Bar(y=subset['task'], x=subset['durata'], orientation='h', name=categoria, marker=dict(color=colore)))
+  fig.update_layout(title='Gantt', barmode='stack')
+  fig.show()
+  \`\`\`
+- Per visualizzare dati tabellari: usa go.Table (come da esempio sotto).
+- PREFERISCI SEMPRE tipi di grafico semplici (bar, line, scatter, pie, area) che la piattaforma puo' stilizzare.
+
 ## CONTESTO PIATTAFORMA (IMPORTANTE):
 - I CONNETTORI forniscono automaticamente token e credenziali come variabili d'ambiente (es. HUBSPOT_TOKEN, API_KEY, ecc.)
 - Quando l'utente preme "Esegui anteprima", il token viene ereditato dal connettore configurato nel nodo

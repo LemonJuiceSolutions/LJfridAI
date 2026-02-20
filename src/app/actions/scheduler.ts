@@ -476,6 +476,12 @@ export async function saveAncestorPreviewsBatchAction(
 
             if (preview.isPython || hasPythonChart || hasPythonVariables) {
                 const outputType = preview.pythonOutputType || 'table';
+                // Preserve existing plotlyStyleOverrides and plotlyJson from current node
+                const existingPreview = node.pythonPreviewResult;
+                const preservedFields = {
+                    ...(existingPreview?.plotlyStyleOverrides ? { plotlyStyleOverrides: existingPreview.plotlyStyleOverrides } : {}),
+                    ...(existingPreview?.plotlyJson && !res.plotlyJson ? { plotlyJson: existingPreview.plotlyJson } : {}),
+                };
 
                 if (hasPythonChart || outputType === 'chart') {
                     node.pythonPreviewResult = {
@@ -484,7 +490,11 @@ export async function saveAncestorPreviewsBatchAction(
                         chartHtml: res.chartHtml,
                         rechartsConfig: res.rechartsConfig,
                         rechartsData: res.rechartsData,
+                        rechartsStyle: res.rechartsStyle,
+                        plotlyJson: res.plotlyJson,
+                        data: res.data,
                         timestamp: nowMs,
+                        ...preservedFields,
                     };
                     nodeUpdated = true;
                 } else if (hasPythonVariables || outputType === 'variable') {
@@ -492,6 +502,7 @@ export async function saveAncestorPreviewsBatchAction(
                         type: 'variable',
                         variables: res.variables || res,
                         timestamp: nowMs,
+                        ...preservedFields,
                     };
                     nodeUpdated = true;
                 } else if (preview.isPython) {
@@ -502,6 +513,7 @@ export async function saveAncestorPreviewsBatchAction(
                             type: 'table',
                             data: Array.isArray(data) ? data : undefined,
                             timestamp: nowMs,
+                            ...preservedFields,
                         };
                         nodeUpdated = true;
                     }

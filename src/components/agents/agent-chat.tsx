@@ -24,6 +24,7 @@ import {
   Coins,
   CheckSquare,
   Square,
+  Settings2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,6 +49,10 @@ import {
 } from 'recharts';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
 import { useChartTheme } from '@/hooks/use-chart-theme';
+import { ChartStyle, resolveChartStyle } from '@/lib/chart-style';
+import { gridStrokeDasharray, lineStrokeDasharray } from '@/lib/chart-theme';
+import type { BarChartStyle, LineChartStyle, AreaChartStyle, PieChartStyle } from '@/lib/chart-style';
+import ChartStyleEditor from '@/components/widgets/builder/ChartStyleEditor';
 
 // Try to extract message from raw JSON that leaked through
 function extractFromRawJson(content: string): string {
@@ -121,71 +126,164 @@ function parseRechartsBlocks(content: string): { text: string; charts: any[] } {
 }
 
 function InlineChart({ config }: { config: any }) {
-  const { theme } = useChartTheme();
+  const { theme: globalTheme } = useChartTheme();
+  const [chartStyle, setChartStyle] = useState<ChartStyle | undefined>(
+    config.style ? { ...config.style, type: config.type } : undefined
+  );
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+
+  const theme = useMemo(() => resolveChartStyle(globalTheme, chartStyle ?? null), [globalTheme, chartStyle]);
   const { type, data, xAxisKey, dataKeys, colors, title } = config;
-  const chartColors = colors || theme.colors;
+  const chartColors = chartStyle?.colors || colors || theme.colors;
+
   if (!data || !Array.isArray(data) || data.length === 0) return null;
 
+  // Type-specific style accessors
+  const barS = chartStyle as BarChartStyle | undefined;
+  const lineS = chartStyle as LineChartStyle | undefined;
+  const areaS = chartStyle as AreaChartStyle | undefined;
+  const pieS = chartStyle as PieChartStyle | undefined;
+
+  const renderChart = () => {
+    const gridDash = gridStrokeDasharray(theme.gridStyle);
+    const tickStyle = { fontSize: theme.axisFontSize, fontFamily: theme.fontFamily };
+    const tooltipStyle = { fontSize: theme.tooltipFontSize, fontFamily: theme.fontFamily, borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' };
+    const legendStyle = { fontSize: theme.legendFontSize, fontFamily: theme.fontFamily };
+
+    if (type === 'bar-chart') {
+      const radius = barS?.barRadius ?? theme.barRadius;
+      const stacked = barS?.stackBars;
+      return (
+        <BarChart data={data} barGap={barS?.barGap} barCategoryGap={barS?.barCategoryGap != null ? `${barS.barCategoryGap}%` : undefined}>
+          {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridDash} stroke={theme.gridColor} />}
+          <XAxis dataKey={xAxisKey} tick={tickStyle} />
+          <YAxis tick={tickStyle} />
+          <Tooltip contentStyle={tooltipStyle} />
+          <Legend wrapperStyle={legendStyle} />
+          {(dataKeys || []).map((key: string, i: number) => (
+            <Bar key={key} dataKey={key} fill={chartColors[i % chartColors.length]} radius={[radius, radius, 0, 0]} stackId={stacked ? 'stack' : undefined} />
+          ))}
+        </BarChart>
+      );
+    }
+
+    if (type === 'line-chart') {
+      const lw = lineS?.lineWidth ?? theme.lineWidth;
+      const ls = lineS?.lineStyle ?? theme.defaultLineStyle;
+      const lt = lineS?.lineType ?? 'monotone';
+      const showDots = lineS?.showDots ?? true;
+      const dotR = lineS?.dotRadius ?? 4;
+      return (
+        <LineChart data={data}>
+          {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridDash} stroke={theme.gridColor} />}
+          <XAxis dataKey={xAxisKey} tick={tickStyle} />
+          <YAxis tick={tickStyle} />
+          <Tooltip contentStyle={tooltipStyle} />
+          <Legend wrapperStyle={legendStyle} />
+          {(dataKeys || []).map((key: string, i: number) => (
+            <Line key={key} type={lt as any} dataKey={key} stroke={chartColors[i % chartColors.length]} strokeWidth={lw} dot={showDots ? { r: dotR } : false} connectNulls strokeDasharray={lineStrokeDasharray(ls)} />
+          ))}
+        </LineChart>
+      );
+    }
+
+    if (type === 'area-chart') {
+      const areaOp = areaS?.areaOpacity ?? theme.areaOpacity;
+      const areaLt = areaS?.lineType ?? 'monotone';
+      const stacked = areaS?.stackAreas;
+      return (
+        <AreaChart data={data}>
+          {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridDash} stroke={theme.gridColor} />}
+          <XAxis dataKey={xAxisKey} tick={tickStyle} />
+          <YAxis tick={tickStyle} />
+          <Tooltip contentStyle={tooltipStyle} />
+          <Legend wrapperStyle={legendStyle} />
+          {(dataKeys || []).map((key: string, i: number) => (
+            <Area key={key} type={areaLt as any} dataKey={key} fill={chartColors[i % chartColors.length]} stroke={chartColors[i % chartColors.length]} fillOpacity={areaOp} stackId={stacked ? 'stack' : undefined} />
+          ))}
+        </AreaChart>
+      );
+    }
+
+    if (type === 'pie-chart') {
+      const innerR = pieS?.innerRadius ?? 0;
+      const outerR = pieS?.outerRadius ?? 70;
+      const paddingA = pieS?.paddingAngle ?? 0;
+      const showLabels = pieS?.showLabels ?? true;
+      return (
+        <PieChart>
+          <Pie data={data} dataKey={(dataKeys || ['value'])[0]} nameKey={xAxisKey} cx="50%" cy="50%" innerRadius={innerR} outerRadius={outerR} paddingAngle={paddingA} label={showLabels ? { fontSize: 10 } : false}>
+            {data.map((_: any, i: number) => (
+              <Cell key={i} fill={chartColors[i % chartColors.length]} />
+            ))}
+          </Pie>
+          <Tooltip contentStyle={tooltipStyle} />
+          <Legend wrapperStyle={legendStyle} />
+        </PieChart>
+      );
+    }
+
+    // Fallback: bar chart
+    return (
+      <BarChart data={data}>
+        {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridDash} stroke={theme.gridColor} />}
+        <XAxis dataKey={xAxisKey} tick={tickStyle} />
+        <YAxis tick={tickStyle} />
+        <Tooltip contentStyle={tooltipStyle} />
+        {(dataKeys || []).map((key: string, i: number) => (
+          <Bar key={key} dataKey={key} fill={chartColors[i % chartColors.length]} />
+        ))}
+      </BarChart>
+    );
+  };
+
   return (
-    <div className="my-2 p-3 rounded-lg border bg-background">
-      {title && <p className="text-xs font-semibold mb-2 text-center">{title}</p>}
-      <ResponsiveContainer width="100%" height={200}>
-        {type === 'bar-chart' ? (
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey={xAxisKey} tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
-            <Tooltip contentStyle={{ fontSize: 11 }} />
-            <Legend wrapperStyle={{ fontSize: 10 }} />
-            {(dataKeys || []).map((key: string, i: number) => (
-              <Bar key={key} dataKey={key} fill={chartColors[i % chartColors.length]} />
-            ))}
-          </BarChart>
-        ) : type === 'line-chart' ? (
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey={xAxisKey} tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
-            <Tooltip contentStyle={{ fontSize: 11 }} />
-            <Legend wrapperStyle={{ fontSize: 10 }} />
-            {(dataKeys || []).map((key: string, i: number) => (
-              <Line key={key} type="monotone" dataKey={key} stroke={chartColors[i % chartColors.length]} strokeWidth={2} />
-            ))}
-          </LineChart>
-        ) : type === 'area-chart' ? (
-          <AreaChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey={xAxisKey} tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
-            <Tooltip contentStyle={{ fontSize: 11 }} />
-            <Legend wrapperStyle={{ fontSize: 10 }} />
-            {(dataKeys || []).map((key: string, i: number) => (
-              <Area key={key} type="monotone" dataKey={key} fill={chartColors[i % chartColors.length]} stroke={chartColors[i % chartColors.length]} fillOpacity={0.3} />
-            ))}
-          </AreaChart>
-        ) : type === 'pie-chart' ? (
-          <PieChart>
-            <Pie data={data} dataKey={(dataKeys || ['value'])[0]} nameKey={xAxisKey} cx="50%" cy="50%" outerRadius={70} label={{ fontSize: 10 }}>
-              {data.map((_: any, i: number) => (
-                <Cell key={i} fill={chartColors[i % chartColors.length]} />
-              ))}
-            </Pie>
-            <Tooltip contentStyle={{ fontSize: 11 }} />
-            <Legend wrapperStyle={{ fontSize: 10 }} />
-          </PieChart>
-        ) : (
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey={xAxisKey} tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
-            <Tooltip contentStyle={{ fontSize: 11 }} />
-            {(dataKeys || []).map((key: string, i: number) => (
-              <Bar key={key} dataKey={key} fill={chartColors[i % chartColors.length]} />
-            ))}
-          </BarChart>
-        )}
-      </ResponsiveContainer>
-    </div>
+    <>
+      <div className="my-2 p-3 rounded-lg border bg-background relative group">
+        {title && <p className="text-xs font-semibold mb-2 text-center">{title}</p>}
+        {/* Style editor button - visible on hover */}
+        <button
+          onClick={() => setIsEditorOpen(true)}
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-muted border bg-background/80 backdrop-blur-sm z-10"
+          title="Personalizza stile grafico"
+        >
+          <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+        <ResponsiveContainer width="100%" height={200}>
+          {renderChart()}
+        </ResponsiveContainer>
+      </div>
+
+      {/* Style editor dialog */}
+      <Dialog open={isEditorOpen} onOpenChange={setIsEditorOpen}>
+        <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Personalizza Stile Grafico</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 grid grid-cols-5 gap-4 overflow-hidden">
+            {/* Preview */}
+            <div className="col-span-3 flex flex-col border rounded-lg p-3 bg-muted/20">
+              {title && <p className="text-xs font-semibold mb-2 text-center">{title}</p>}
+              <div className="flex-1 min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  {renderChart()}
+                </ResponsiveContainer>
+              </div>
+            </div>
+            {/* Editor */}
+            <div className="col-span-2 overflow-y-auto pr-1">
+              <ChartStyleEditor
+                chartType={type || 'bar-chart'}
+                style={chartStyle}
+                globalTheme={globalTheme}
+                onChange={setChartStyle}
+                dataKeys={dataKeys}
+              />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Play, Database, FileCode, FileCode2, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info } from 'lucide-react';
+import { Play, Database, FileCode, FileCode2, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info, Settings2 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig } from '@/lib/types';
 import { Input } from '../ui/input';
@@ -53,6 +53,10 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import SmartWidgetRenderer from '@/components/widgets/builder/SmartWidgetRenderer';
+import ChartStyleEditor from '@/components/widgets/builder/ChartStyleEditor';
+import PlotlyStyleEditor, { PlotlyStyleOverrides, applyPlotlyOverrides, plotlyJsonToHtml } from '@/components/widgets/builder/PlotlyStyleEditor';
+import { ChartStyle } from '@/lib/chart-style';
+import { useChartTheme } from '@/hooks/use-chart-theme';
 import { AgentChat } from '@/components/agents/agent-chat';
 import { NodeSchedulePopover } from '@/components/scheduler/node-schedule-popover';
 import { getAllNodeSchedulesAction } from '@/app/actions/scheduler';
@@ -276,7 +280,7 @@ interface EditNodeDialogProps {
   nodePath: string;
   treeId: string;
   isSaving: boolean;
-  availableInputTables?: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart' | 'html', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean }[];
+  availableInputTables?: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart' | 'html', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, plotlyStyleOverrides?: any }[];
   availableParentMedia?: MediaItem[];
   availableParentLinks?: LinkItem[];
   availableParentTriggers?: TriggerItem[];
@@ -405,15 +409,25 @@ export default function EditNodeDialog({
     html?: string;
     rechartsConfig?: any;
     rechartsData?: any[];
+    rechartsStyle?: any;
+    plotlyJson?: any;
+    plotlyStyleOverrides?: PlotlyStyleOverrides;
     debugLogs?: string[];
     timestamp?: number;
   } | null>(null);
   const [pythonConnectorId, setPythonConnectorId] = useState<string>('');
   const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
   const [pythonDebugLogs, setPythonDebugLogs] = useState<string[]>([]);
-  const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart' | 'html', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string, html?: string, rechartsConfig?: any, rechartsData?: any[] } }[]>([]);
+  const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart' | 'html', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string, html?: string, rechartsConfig?: any, rechartsData?: any[], plotlyJson?: any } }[]>([]);
   const [pythonPreviewExpanded, setPythonPreviewExpanded] = useState(true);
   const [pythonPreviewFullHeight, setPythonPreviewFullHeight] = useState(false);
+  const [chartStyleEditorOpen, setChartStyleEditorOpen] = useState(false);
+  const [chartStyleOverride, setChartStyleOverride] = useState<ChartStyle | undefined>(undefined);
+  const [plotlyStyleOverrides, setPlotlyStyleOverrides] = useState<PlotlyStyleOverrides>({});
+  const plotlyStyleOverridesRef = useRef<PlotlyStyleOverrides>({});
+  // Keep ref in sync with state for use in stale closures (e.g. useCallback)
+  useEffect(() => { plotlyStyleOverridesRef.current = plotlyStyleOverrides; }, [plotlyStyleOverrides]);
+  const { theme: globalChartTheme } = useChartTheme();
 
   // SQL Export State
   const [sqlExportEnabled, setSqlExportEnabled] = useState(true);
@@ -633,20 +647,19 @@ export default function EditNodeDialog({
       setPythonChatHistory((node as any).pythonChatHistory || []);
       // Load saved preview data if available, otherwise set to null
       const savedPreviewData = (node as any).pythonPreviewResult;
-      console.log('[DEBUG] Caricamento Python anteprima salvata:', { nodePath, hasPreviewData: !!savedPreviewData, hasTimestamp: !!savedPreviewData?.timestamp, timestampValue: savedPreviewData?.timestamp });
+      console.log('[DEBUG] Caricamento Python anteprima salvata:', {
+        nodePath,
+        hasPreviewData: !!savedPreviewData,
+        hasPlotlyJson: !!savedPreviewData?.plotlyJson,
+        plotlyJsonSize: savedPreviewData?.plotlyJson ? JSON.stringify(savedPreviewData.plotlyJson).length : 0,
+        hasPlotlyStyleOverrides: !!savedPreviewData?.plotlyStyleOverrides,
+        plotlyStyleOverridesKeys: savedPreviewData?.plotlyStyleOverrides ? Object.keys(savedPreviewData.plotlyStyleOverrides) : [],
+        hasChartHtml: !!savedPreviewData?.chartHtml,
+        type: savedPreviewData?.type,
+      });
       if (savedPreviewData) {
-        setPythonPreviewResult({
-          type: savedPreviewData.type,
-          data: savedPreviewData.data,
-          variables: savedPreviewData.variables,
-          chartBase64: savedPreviewData.chartBase64,
-          chartHtml: savedPreviewData.chartHtml,
-          rechartsConfig: savedPreviewData.rechartsConfig,
-          rechartsData: savedPreviewData.rechartsData,
-          html: savedPreviewData.html,
-          debugLogs: savedPreviewData.debugLogs,
-          timestamp: savedPreviewData.timestamp
-        });
+        // Use spread to capture ALL fields (including plotlyJson, plotlyStyleOverrides, etc.)
+        setPythonPreviewResult({ ...savedPreviewData });
         // Auto-expand preview and set full height for charts or html if saved data exists
         setPythonPreviewExpanded(true);
         setPythonPreviewFullHeight(savedPreviewData.type === 'chart' || savedPreviewData.type === 'html');
@@ -654,6 +667,13 @@ export default function EditNodeDialog({
         setPythonPreviewResult(null);
         setPythonPreviewFullHeight(false);
       }
+
+      // Load saved Plotly style overrides
+      const savedOverrides = savedPreviewData?.plotlyStyleOverrides || (node as any).plotlyStyleOverrides;
+      console.log('[LOAD DEBUG] plotlyStyleOverrides from savedPreviewData:', JSON.stringify(savedPreviewData?.plotlyStyleOverrides || null));
+      console.log('[LOAD DEBUG] plotlyStyleOverrides from node:', JSON.stringify((node as any).plotlyStyleOverrides || null));
+      console.log('[LOAD DEBUG] Final plotlyStyleOverrides:', JSON.stringify(savedOverrides || null));
+      setPlotlyStyleOverrides(savedOverrides || {});
 
       // Load Email Action Config with safe defaults merge
       if ((node as any).emailAction) {
@@ -983,10 +1003,33 @@ export default function EditNodeDialog({
               chartHtml: previewRes.chartHtml,
               rechartsConfig: previewRes.rechartsConfig,
               rechartsData: previewRes.rechartsData,
+              rechartsStyle: previewRes.rechartsStyle,
+              plotlyJson: previewRes.plotlyJson,
               debugLogs: previewRes.debugLogs,
               timestamp: Date.now()
             });
+            // NON resettare plotlyStyleOverrides: l'utente potrebbe aver già personalizzato lo stile
             setHasPythonCodeChanged(true);
+
+            // Auto-save preview (inclusi eventuali plotlyStyleOverrides esistenti)
+            if (onSavePreview && nodePath) {
+              const currentOverrides = plotlyStyleOverridesRef.current;
+              onSavePreview(nodePath, {
+                type: pythonOutputType,
+                data: previewRes.data,
+                columns: previewRes.columns,
+                variables: previewRes.variables,
+                chartBase64: previewRes.chartBase64,
+                chartHtml: previewRes.chartHtml,
+                rechartsConfig: previewRes.rechartsConfig,
+                rechartsData: previewRes.rechartsData,
+                rechartsStyle: previewRes.rechartsStyle,
+                plotlyJson: previewRes.plotlyJson,
+                plotlyStyleOverrides: Object.keys(currentOverrides).length > 0 ? currentOverrides : undefined,
+                debugLogs: previewRes.debugLogs,
+                timestamp: Date.now()
+              });
+            }
 
             // DEBUG AID: If data is empty, show logs to help user/AI debug
             if (!previewRes.data || previewRes.data.length === 0) {
@@ -1253,6 +1296,8 @@ export default function EditNodeDialog({
                   chartHtml: res.chartHtml,
                   rechartsConfig: res.rechartsConfig,
                   rechartsData: res.rechartsData,
+                  rechartsStyle: res.rechartsStyle,
+                  plotlyJson: res.plotlyJson,
                   variables: res.variables,
                   html: res.html
                 };
@@ -1575,8 +1620,15 @@ export default function EditNodeDialog({
       }
 
       if (pythonPreviewResult) {
-        newNodeData.pythonPreviewResult = pythonPreviewResult;
+        // Embed plotly style overrides inside the preview result so they're always saved/loaded together
+        const overridesToSave = Object.keys(plotlyStyleOverrides).length > 0 ? plotlyStyleOverrides : undefined;
+        console.log('[SAVE DEBUG] Saving pythonPreviewResult with plotlyStyleOverrides:', JSON.stringify(overridesToSave));
+        newNodeData.pythonPreviewResult = {
+          ...pythonPreviewResult,
+          plotlyStyleOverrides: overridesToSave,
+        };
       } else if ((initialNode as any).pythonPreviewResult) {
+        console.log('[SAVE DEBUG] Using initialNode pythonPreviewResult (no current state), hasOverrides:', !!(initialNode as any).pythonPreviewResult?.plotlyStyleOverrides);
         newNodeData.pythonPreviewResult = (initialNode as any).pythonPreviewResult;
       }
 
@@ -2576,6 +2628,8 @@ export default function EditNodeDialog({
                                     chartHtml: res.chartHtml,
                                     rechartsConfig: res.rechartsConfig,
                                     rechartsData: res.rechartsData,
+                                    rechartsStyle: res.rechartsStyle,
+                                    plotlyJson: res.plotlyJson,
                                     html: res.html,
                                     debugLogs: res.debugLogs,
                                     timestamp: Date.now()
@@ -2593,6 +2647,9 @@ export default function EditNodeDialog({
                                       html: res.html,
                                       rechartsConfig: res.rechartsConfig,
                                       rechartsData: res.rechartsData,
+                                      rechartsStyle: res.rechartsStyle,
+                                      plotlyJson: res.plotlyJson,
+                                      plotlyStyleOverrides: Object.keys(plotlyStyleOverrides).length > 0 ? plotlyStyleOverrides : undefined,
                                       debugLogs: res.debugLogs,
                                       timestamp: Date.now()
                                     };
@@ -2807,36 +2864,85 @@ export default function EditNodeDialog({
                             </div>
                           )}
                           {pythonPreviewResult.type === 'chart' && (
-                            <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 ${pythonPreviewFullHeight ? 'min-h-[500px]' : 'overflow-y-auto custom-scrollbar'}`} style={{ height: pythonPreviewFullHeight ? 'auto' : '400px' }}>
-                              {pythonPreviewResult.rechartsConfig && pythonPreviewResult.rechartsData ? (
-                                <div className="w-full p-4" style={{ height: pythonPreviewFullHeight ? '650px' : '100%' }}>
-                                  <SmartWidgetRenderer
-                                    data={pythonPreviewResult.rechartsData}
-                                    config={pythonPreviewResult.rechartsConfig}
-                                    onRefresh={() => { }}
-                                    isRefreshing={false}
+                            <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 relative ${pythonPreviewFullHeight ? 'min-h-[500px]' : 'overflow-y-auto custom-scrollbar'}`} style={{ height: pythonPreviewFullHeight ? 'auto' : '400px' }}>
+                              {/* PRIORITY 1: Plotly JSON available → always render with Plotly + style editor */}
+                              {pythonPreviewResult.plotlyJson ? (
+                                <>
+                                  {/* Plotly style editor button - always visible */}
+                                  <button
+                                    onClick={() => setChartStyleEditorOpen(true)}
+                                    className="absolute top-2 left-2 z-20 p-1.5 rounded-md border border-violet-500 bg-white hover:bg-violet-50 shadow-sm"
+                                    title="Personalizza stile grafico"
+                                  >
+                                    <Settings2 className="h-4 w-4 text-violet-500" />
+                                  </button>
+                                  <iframe
+                                    srcDoc={plotlyJsonToHtml(applyPlotlyOverrides(pythonPreviewResult.plotlyJson, plotlyStyleOverrides))}
+                                    className="w-full border-none"
+                                    title="Interactive Chart"
+                                    onLoad={(e) => {
+                                      const iframe = e.target as HTMLIFrameElement;
+                                      if (iframe.contentWindow) {
+                                        setTimeout(() => {
+                                          try {
+                                            const height = iframe.contentWindow?.document.body.scrollHeight;
+                                            if (height && height > 100) {
+                                              iframe.style.height = (height + 20) + 'px';
+                                            } else {
+                                              iframe.style.height = '600px';
+                                            }
+                                          } catch (err) {
+                                            iframe.style.height = '600px';
+                                          }
+                                        }, 500);
+                                      }
+                                    }}
+                                    style={{ height: `${Math.max(600, pythonPreviewResult.plotlyJson?.layout?.height || 600)}px`, minHeight: '100%' }}
                                   />
-                                </div>
+                                  {/* Plotly Style Editor Dialog */}
+                                  <Dialog open={chartStyleEditorOpen} onOpenChange={setChartStyleEditorOpen}>
+                                    <DialogContent className="!max-w-[95vw] !w-[95vw] !h-[93vh] flex flex-col">
+                                      <DialogHeader>
+                                        <DialogTitle className="text-sm">Personalizza Stile Grafico (Plotly)</DialogTitle>
+                                      </DialogHeader>
+                                      <div className="flex-1 min-h-0 grid grid-cols-[1fr_320px] gap-4 overflow-hidden">
+                                        <div className="border rounded-lg bg-muted/20 overflow-auto min-h-0">
+                                          <iframe
+                                            srcDoc={plotlyJsonToHtml(applyPlotlyOverrides(pythonPreviewResult.plotlyJson, plotlyStyleOverrides))}
+                                            className="w-full border-none"
+                                            style={{ height: `${Math.max(600, pythonPreviewResult.plotlyJson?.layout?.height || 600)}px` }}
+                                            title="Plotly Style Preview"
+                                          />
+                                        </div>
+                                        <div className="overflow-y-auto pr-1">
+                                          <PlotlyStyleEditor
+                                            plotlyJson={pythonPreviewResult.plotlyJson}
+                                            overrides={plotlyStyleOverrides}
+                                            onChange={setPlotlyStyleOverrides}
+                                          />
+                                        </div>
+                                      </div>
+                                    </DialogContent>
+                                  </Dialog>
+                                </>
                               ) : pythonPreviewResult.chartHtml ? (
+                                /* PRIORITY 2: HTML fallback (old data without plotlyJson) */
                                 <iframe
                                   srcDoc={`<html><head><style>body { margin: 0; padding: 0; background: transparent; overflow: hidden; }</style></head><body>${pythonPreviewResult.chartHtml}<script>window.onload = function() { const height = document.body.scrollHeight; window.parent.postMessage({ height: height, id: 'python-preview-iframe' }, '*'); };</script></body></html>`}
                                   className="w-full border-none"
                                   title="Interactive Chart"
                                   onLoad={(e) => {
-                                    // Auto-resize iframe to fit content
                                     const iframe = e.target as HTMLIFrameElement;
                                     if (iframe.contentWindow) {
                                       setTimeout(() => {
                                         try {
-                                          // Try to get height from body
                                           const height = iframe.contentWindow?.document.body.scrollHeight;
                                           if (height && height > 100) {
                                             iframe.style.height = (height + 20) + 'px';
                                           } else {
-                                            iframe.style.height = '600px'; // Fallback minimum
+                                            iframe.style.height = '600px';
                                           }
                                         } catch (err) {
-                                          // Cross-origin fallback
                                           iframe.style.height = '600px';
                                         }
                                       }, 500);
@@ -2844,6 +2950,19 @@ export default function EditNodeDialog({
                                   }}
                                   style={{ height: '600px', minHeight: '100%' }}
                                 />
+                              ) : pythonPreviewResult.rechartsConfig && pythonPreviewResult.rechartsData ? (
+                                /* PRIORITY 3: Recharts fallback (old data without plotlyJson/chartHtml) */
+                                <div className="w-full p-4" style={{ height: pythonPreviewFullHeight ? '650px' : '100%' }}>
+                                  <SmartWidgetRenderer
+                                    data={pythonPreviewResult.rechartsData}
+                                    config={{
+                                      ...pythonPreviewResult.rechartsConfig,
+                                      chartStyle: chartStyleOverride || pythonPreviewResult.rechartsStyle || undefined,
+                                    }}
+                                    onRefresh={() => { }}
+                                    isRefreshing={false}
+                                  />
+                                </div>
                               ) : pythonPreviewResult.chartBase64 ? (
                                 <img src={`data:image/png;base64,${pythonPreviewResult.chartBase64}`} alt="Chart Preview" className="block mx-auto w-full h-auto" />
                               ) : (
@@ -3770,6 +3889,7 @@ export default function EditNodeDialog({
                                 inBody: boolean;
                                 asAttachment: boolean;
                                 dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
+                                plotlyStyleOverrides?: any;
                               }> = [];
 
                               // Extract names referenced in placeholders from email body
@@ -3869,7 +3989,8 @@ export default function EditNodeDialog({
                                   outputType: pythonOutputType,
                                   connectorId: pythonConnectorId,
                                   isCurrent: true,
-                                  dependenciesOverride: null as any
+                                  dependenciesOverride: null as any,
+                                  plotlyStyleOverrides: plotlyStyleOverrides
                                 }] : []),
                                 ...(availableInputTables || [])
                                   .filter(t => t.isPython && t.pythonCode && t.name !== pythonResultName)
@@ -3880,14 +4001,21 @@ export default function EditNodeDialog({
                                     outputType: t.pythonOutputType || 'table',
                                     connectorId: t.connectorId,
                                     isCurrent: false,
-                                    dependenciesOverride: t.pipelineDependencies
+                                    dependenciesOverride: t.pipelineDependencies,
+                                    plotlyStyleOverrides: t.plotlyStyleOverrides
                                   }))
                               ];
 
                               // Iterate over all potential outputs and add if selected or placed in body
                               for (const output of allPotentialOutputs) {
                                 const inBody = safeEmailAttachments.pythonOutputsInBody.includes(output.name) || allReferencedPythonNames.includes(output.name);
-                                const asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name);
+                                let asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name);
+
+                                // Auto-include chart outputs as attachments (styled HTML)
+                                if (!inBody && !asAttachment && output.outputType === 'chart') {
+                                  console.log(`[EMAIL UI DEBUG] Auto-including chart "${output.name}" as attachment`);
+                                  asAttachment = true;
+                                }
 
                                 if (inBody || asAttachment) {
                                   let dependencies = output.dependenciesOverride || [];
@@ -3935,7 +4063,8 @@ export default function EditNodeDialog({
                                     connectorId: output.connectorId,
                                     inBody,
                                     asAttachment,
-                                    dependencies: dependencies.length > 0 ? dependencies : undefined
+                                    dependencies: dependencies.length > 0 ? dependencies : undefined,
+                                    plotlyStyleOverrides: output.plotlyStyleOverrides
                                   });
                                 }
                               }
@@ -3970,6 +4099,13 @@ export default function EditNodeDialog({
                                     }
                                   }
                                 }
+                              }
+
+                              console.log('[EMAIL UI DEBUG] Current plotlyStyleOverrides state:', JSON.stringify(plotlyStyleOverrides));
+                              console.log('[EMAIL UI DEBUG] selectedPythonOutputs:', selectedPythonOutputs.map(p => `${p.name} (type:${p.outputType}, inBody:${p.inBody}, asAttachment:${p.asAttachment}, styleOverrides:${JSON.stringify(p.plotlyStyleOverrides || null)})`));
+                              console.log('[EMAIL UI DEBUG] preCalculatedResults keys:', Object.keys(ancestorResults));
+                              for (const [key, val] of Object.entries(ancestorResults)) {
+                                console.log(`[EMAIL UI DEBUG] preCalculatedResults["${key}"]: hasPlotlyJson=${!!(val as any)?.plotlyJson}, hasChartBase64=${!!(val as any)?.chartBase64}, keys=${Object.keys(val as any).join(',')}`);
                               }
 
                               const res = await sendTestEmailWithDataAction({

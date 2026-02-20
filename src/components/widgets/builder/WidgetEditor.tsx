@@ -15,6 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { WidgetConfig, WidgetType } from '@/lib/types';
 import { useChartTheme } from '@/hooks/use-chart-theme';
 import { gridStrokeDasharray, lineStrokeDasharray } from '@/lib/chart-theme';
+import { ChartStyle, resolveChartStyle } from '@/lib/chart-style';
+import ChartStyleEditor from './ChartStyleEditor';
 
 interface WidgetEditorProps {
     data: any[]; // The preview data from the node
@@ -37,8 +39,7 @@ const getLegendProps = (position?: 'top' | 'bottom' | 'left' | 'right') => {
 };
 
 export default function WidgetEditor({ data, initialConfig, onSave, availableSources = [], onRefreshData, isRefreshing = false }: WidgetEditorProps) {
-    const { theme } = useChartTheme();
-    const COLORS = theme.colors;
+    const { theme: globalTheme } = useChartTheme();
 
     // Exclude data from initialConfig - always use prop data to prevent stale cache
     const { data: _ignoredData, ...configWithoutData } = initialConfig || {};
@@ -47,11 +48,15 @@ export default function WidgetEditor({ data, initialConfig, onSave, availableSou
         type: 'table',
         title: '',
         dataKeys: [],
-        colors: COLORS.slice(0, 2),
+        colors: globalTheme.colors.slice(0, 2),
         dataSourceType: 'current-sql',
         dataSourceId: 'sql',
         ...configWithoutData, // Merge initialConfig but without data field
     });
+
+    // Resolve per-chart style on top of global theme for live preview
+    const theme = useMemo(() => resolveChartStyle(globalTheme, config.chartStyle), [globalTheme, config.chartStyle]);
+    const COLORS = theme.colors;
 
     // Collapsible state
     const [axesOpen, setAxesOpen] = useState(true);
@@ -450,49 +455,36 @@ export default function WidgetEditor({ data, initialConfig, onSave, availableSou
                             </div>
                         </Collapsible>
 
-                        {/* Stile & Layout - Collapsible */}
+                        {/* Stile Grafico - ChartStyleEditor */}
                         <Collapsible open={styleOpen} onOpenChange={setStyleOpen}>
                             <div className="border rounded overflow-hidden">
                                 <CollapsibleTrigger className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
-                                    <h4 className="font-medium text-sm">Stile & Layout</h4>
+                                    <h4 className="font-medium text-sm">Stile Grafico</h4>
                                     {styleOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                                 </CollapsibleTrigger>
                                 <CollapsibleContent>
-                                    <div className="p-3 space-y-4 border-t bg-muted/10">
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-2">
-                                                <Label>X Axis Title Offset (dy)</Label>
-                                                <Input type="number" value={config.xAxisDy || -10} onChange={e => setConfig({ ...config, xAxisDy: parseInt(e.target.value) || -10 })} />
-                                            </div>
-                                            {config.yAxisTitle && (
-                                                <div className="space-y-2">
-                                                    <Label>Y Axis Title Offset (dx)</Label>
-                                                    <Input type="number" value={config.yAxisDx || -80} onChange={e => setConfig({ ...config, yAxisDx: parseInt(e.target.value) || -80 })} />
+                                    <div className="p-3 border-t bg-muted/10">
+                                        <ChartStyleEditor
+                                            chartType={config.type}
+                                            style={config.chartStyle}
+                                            globalTheme={globalTheme}
+                                            onChange={(newStyle) => setConfig(prev => ({ ...prev, chartStyle: newStyle }))}
+                                            dataKeys={config.dataKeys}
+                                        />
+                                        {/* Axis offsets */}
+                                        <div className="mt-3 pt-3 border-t space-y-3">
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-1">
+                                                    <Label className="text-xs">X Axis Offset (dy)</Label>
+                                                    <Input type="number" className="h-7 text-xs" value={config.xAxisDy || -10} onChange={e => setConfig({ ...config, xAxisDy: parseInt(e.target.value) || -10 })} />
                                                 </div>
-                                            )}
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <Label>Line Style</Label>
-                                            <Select value={config.lineStyle || 'solid'} onValueChange={(val: any) => setConfig({ ...config, lineStyle: val })}>
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Style" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="solid">Solid</SelectItem>
-                                                    <SelectItem value="dashed">Dashed</SelectItem>
-                                                    <SelectItem value="dotted">Dotted</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <Label>Chart Colors (comma separated hex)</Label>
-                                            <Input
-                                                value={config.colors?.join(',') || ''}
-                                                onChange={e => setConfig({ ...config, colors: e.target.value ? e.target.value.split(',').map(c => c.trim()) : undefined })}
-                                                placeholder="#0088FE, #00C49F, ..."
-                                            />
+                                                {config.yAxisTitle && (
+                                                    <div className="space-y-1">
+                                                        <Label className="text-xs">Y Axis Offset (dx)</Label>
+                                                        <Input type="number" className="h-7 text-xs" value={config.yAxisDx || -80} onChange={e => setConfig({ ...config, yAxisDx: parseInt(e.target.value) || -80 })} />
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </CollapsibleContent>
