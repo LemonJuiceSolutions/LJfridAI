@@ -99,7 +99,26 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' }
     });
 
-    return NextResponse.json({ tasks });
+    // Enrich with tree names
+    const treeIds = [...new Set(
+      tasks.map(t => (t.config as any)?.treeId).filter(Boolean)
+    )] as string[];
+
+    let treeNameMap: Record<string, string> = {};
+    if (treeIds.length > 0) {
+      const trees = await db.tree.findMany({
+        where: { id: { in: treeIds } },
+        select: { id: true, name: true }
+      });
+      treeNameMap = Object.fromEntries(trees.map(t => [t.id, t.name]));
+    }
+
+    const enrichedTasks = tasks.map(t => {
+      const treeId = (t.config as any)?.treeId;
+      return { ...t, treeName: treeId ? treeNameMap[treeId] || null : null };
+    });
+
+    return NextResponse.json({ tasks: enrichedTasks });
   } catch (error: any) {
     console.error('[API] Error fetching scheduled tasks:', error);
     return NextResponse.json(

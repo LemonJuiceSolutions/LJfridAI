@@ -16,6 +16,7 @@ interface ResultsDisplayProps {
   descriptionContent?: string;
   isRegenerating?: boolean;
   onRegenerate?: () => void;
+  initialNodePath?: string;
 }
 
 // Helper to render text with [[node:...]] markers highlighted in purple
@@ -37,7 +38,8 @@ export default function ResultsDisplay({
   isSaving = false,
   descriptionContent,
   isRegenerating = false,
-  onRegenerate
+  onRegenerate,
+  initialNodePath
 }: ResultsDisplayProps) {
 
   return (
@@ -54,6 +56,7 @@ export default function ResultsDisplay({
           treeData={result}
           onDataRefresh={onDataRefresh}
           isSaving={isSaving}
+          initialNodePath={initialNodePath}
         />
       </TabsContent>
       <TabsContent value="guide" className="mt-4">

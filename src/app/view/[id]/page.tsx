@@ -3,7 +3,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, BrainCircuit, Loader2, Pencil, Check, GitMerge, Trash2, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import _ from 'lodash';
@@ -25,7 +25,9 @@ import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 export default function ViewTreePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+  const initialNodePath = searchParams.get('node') || undefined;
   const [isLoading, setIsLoading] = useState(true);
   const [tree, setTree] = useState<StoredTree | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -289,6 +291,7 @@ export default function ViewTreePage() {
                 descriptionContent={tree.naturalLanguageDecisionTree || tree.description}
                 isRegenerating={isRegenerating}
                 onRegenerate={handleRegenerateDescription}
+                initialNodePath={initialNodePath}
               />
             </div>
           )}

@@ -51,6 +51,7 @@ const fridaiNavItems = [
     { name: 'Variabili', href: '/variables', icon: Database },
     { name: 'Knowledge Base', href: '/knowledge-base', icon: BookOpen },
     { name: 'Lead Generator', href: '/lead-generator', icon: UserSearch },
+    { name: 'Schedulazioni', href: '/scheduler', icon: Calendar },
 ] as const;
 
 import * as LucideIcons from 'lucide-react';

@@ -3662,3 +3662,1210 @@
 2026-02-20T15:39:05.802Z [Scheduler] [EmailSend] Python Node Fatturabile vs Spedito (Alternatives: Fatturabile vs Spedito): inBody=false, asAttachment=false, matchedName=none 
 2026-02-20T15:39:05.802Z [Scheduler] [EmailSend] Sending email with 0 SQL tables and 1 Python outputs 
 2026-02-20T16:15:06.811Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 3906.8s 
+2026-02-20T16:20:00.246Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T16:20:00.250Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T16:20:01.490Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-20T16:20:01.519Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-20T16:20:08.612Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: Dp76ZJOu 
+2026-02-20T16:20:08.615Z [Scheduler] [EmailSend] Found email node: Dp76ZJOu 
+2026-02-20T16:20:08.619Z [Scheduler] [EmailSend] Identified 1 required names: AAAA 
+2026-02-20T16:20:08.619Z [Scheduler] [DEBUG HR2] Node properties: isPython=false, sqlQuery=true, pythonCode=true, pythonResultName=undefined, pythonOutputType=chart, nodePath=root > ConnessioneSharePoint[0] > ElaboraDati[0] > Minuti Capacity > Chart 
+2026-02-20T16:20:08.619Z [Scheduler] [EmailSend] Flattened tree into 19 named nodes. Available names: EstrazioneSharePoint, PRODFIL, TABWID|AAAA, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity|Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto|Prodotto, Prodotto > Fatturato|Fatturato, Fatturato > Budget|Budget, Budget > Aggregato|Aggregato|BDG vs POC vs FAT, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT|BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito 
+2026-02-20T16:20:08.619Z [Scheduler] [EmailSend] Email task will execute ALL 19 tree nodes to ensure fresh data 
+2026-02-20T16:20:08.619Z [Scheduler] [EmailSend] Total nodes to execute: 19 (EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito) 
+2026-02-20T16:20:08.619Z [Scheduler] [AncestorChain] Execution Order: EstrazioneSharePoint -> PRODFIL -> TABWID -> PRODCommessa Mancante -> PRODFIL2 -> HR2 -> Gant e Capacity > Gantt vs Capacity -> Gantt - Capacity - Sum -> Capacity vs Saturazione -> Consegne -> HR2Local -> PRODUZIONE > Prodotto -> Prodotto > Fatturato -> Fatturato > Budget -> Budget > Aggregato -> BDG vs PROD vs FATTURATO > BDG vs POC vs FAT -> FatturabileMeseCorrente -> SpeditoMeseCorrente -> Fatturabile vs Spedito 
+2026-02-20T16:20:08.619Z [Scheduler] [AncestorChain] Executing ancestor: EstrazioneSharePoint (Python) 
+2026-02-20T16:20:08.619Z [Scheduler] [AncestorChain] Built inputData for EstrazioneSharePoint:  
+2026-02-20T16:20:08.620Z [Scheduler] [AncestorChain] Final inputData for EstrazioneSharePoint:  
+2026-02-20T16:20:13.097Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for EstrazioneSharePoint (feptUzSG) 
+2026-02-20T16:20:31.986Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for EstrazioneSharePoint 
+2026-02-20T16:20:31.986Z [Scheduler] [AncestorChain] Writing EstrazioneSharePoint to PROD 
+2026-02-20T16:20:48.643Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL (SQL) 
+2026-02-20T16:20:48.645Z [Scheduler] [AncestorChain] SQL node PRODFIL: injected 0 deps () 
+2026-02-20T16:20:50.042Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL (t4m_jbLn) 
+2026-02-20T16:20:58.671Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL 
+2026-02-20T16:20:58.672Z [Scheduler] [AncestorChain] Writing PRODFIL to PRODFILTRATA 
+2026-02-20T16:21:01.108Z [Scheduler] [AncestorChain] Executing ancestor: TABWID (SQL) 
+2026-02-20T16:21:01.108Z [Scheduler] [AncestorChain] SQL node TABWID: injected 0 deps () 
+2026-02-20T16:21:01.481Z [Scheduler] [AncestorChain] Hybrid node TABWID: SQL done, now running Python chart code 
+2026-02-20T16:21:09.396Z [Scheduler] [AncestorChain] Hybrid node TABWID: Python chart generated successfully 
+2026-02-20T16:21:09.396Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for TABWID (fVagNTtd) 
+2026-02-20T16:21:23.073Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for TABWID 
+2026-02-20T16:21:23.074Z [Scheduler] [AncestorChain] Executing ancestor: PRODCommessa Mancante (SQL) 
+2026-02-20T16:21:23.077Z [Scheduler] [AncestorChain] SQL node PRODCommessa Mancante: injected 1 deps (PRODFIL) 
+2026-02-20T16:21:24.552Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODCommessa Mancante (_CwXg6oQ) 
+2026-02-20T16:21:41.260Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODCommessa Mancante 
+2026-02-20T16:21:41.260Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL2 (SQL) 
+2026-02-20T16:21:41.261Z [Scheduler] [AncestorChain] SQL node PRODFIL2: injected 0 deps () 
+2026-02-20T16:21:41.611Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL2 (wC6CRuv7) 
+2026-02-20T16:21:49.062Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL2 
+2026-02-20T16:21:49.063Z [Scheduler] [AncestorChain] Executing ancestor: HR2 (SQL) 
+2026-02-20T16:21:49.064Z [Scheduler] [AncestorChain] SQL node HR2: injected 0 deps () 
+2026-02-20T16:21:50.330Z [Scheduler] [AncestorChain] Hybrid node HR2: SQL done, now running Python chart code 
+2026-02-20T16:21:52.290Z [Scheduler] [AncestorChain] Hybrid node HR2: Python chart generated successfully 
+2026-02-20T16:21:52.290Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2 (3NtNCoMB) 
+2026-02-20T16:22:00.669Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2 
+2026-02-20T16:22:00.674Z [Scheduler] [AncestorChain] Executing ancestor: Gant e Capacity > Gantt vs Capacity (Python) 
+2026-02-20T16:22:00.675Z [Scheduler] [AncestorChain] Built inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:22:00.698Z [Scheduler] [AncestorChain] Final inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:22:04.491Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gant e Capacity > Gantt vs Capacity (mT4fz_HR) 
+2026-02-20T16:22:11.294Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:22:11.294Z [Scheduler] [AncestorChain] Executing ancestor: Gantt - Capacity - Sum (Python) 
+2026-02-20T16:22:11.294Z [Scheduler] [AncestorChain] Built inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:22:11.294Z [Scheduler] [AncestorChain] Final inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:22:13.053Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gantt - Capacity - Sum (4BbRgfc5) 
+2026-02-20T16:22:20.353Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gantt - Capacity - Sum 
+2026-02-20T16:22:20.357Z [Scheduler] [AncestorChain] Executing ancestor: Capacity vs Saturazione (SQL) 
+2026-02-20T16:22:20.359Z [Scheduler] [AncestorChain] SQL node Capacity vs Saturazione: injected 1 deps (HR2) 
+2026-02-20T16:22:37.367Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: SQL done, now running Python chart code 
+2026-02-20T16:22:38.717Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: Python chart generated successfully 
+2026-02-20T16:22:38.718Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Capacity vs Saturazione (BTNiWkbT) 
+2026-02-20T16:22:49.088Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Capacity vs Saturazione 
+2026-02-20T16:22:49.089Z [Scheduler] [AncestorChain] Executing ancestor: Consegne (SQL) 
+2026-02-20T16:22:49.108Z [Scheduler] [AncestorChain] SQL node Consegne: injected 0 deps () 
+2026-02-20T16:22:57.550Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Consegne (2QH20NyR) 
+2026-02-20T16:23:05.359Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Consegne 
+2026-02-20T16:23:05.359Z [Scheduler] [AncestorChain] Executing ancestor: HR2Local (SQL) 
+2026-02-20T16:23:05.359Z [Scheduler] [AncestorChain] SQL node HR2Local: injected 1 deps (HR2) 
+2026-02-20T16:23:25.481Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2Local (P7OJwQA4) 
+2026-02-20T16:23:43.880Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2Local 
+2026-02-20T16:23:43.880Z [Scheduler] [AncestorChain] Executing ancestor: PRODUZIONE > Prodotto (SQL) 
+2026-02-20T16:23:43.880Z [Scheduler] [AncestorChain] SQL node PRODUZIONE > Prodotto: injected 0 deps () 
+2026-02-20T16:23:44.199Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODUZIONE > Prodotto (NC9jpnnG) 
+2026-02-20T16:23:52.047Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODUZIONE > Prodotto 
+2026-02-20T16:23:52.047Z [Scheduler] [AncestorChain] Writing PRODUZIONE > Prodotto to Prodotto 
+2026-02-20T16:23:52.519Z [Scheduler] [AncestorChain] Executing ancestor: Prodotto > Fatturato (SQL) 
+2026-02-20T16:23:52.520Z [Scheduler] [AncestorChain] SQL node Prodotto > Fatturato: injected 0 deps () 
+2026-02-20T16:23:52.810Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Prodotto > Fatturato (gye2BUuO) 
+2026-02-20T16:24:09.916Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Prodotto > Fatturato 
+2026-02-20T16:24:09.916Z [Scheduler] [AncestorChain] Writing Prodotto > Fatturato to Fatturato 
+2026-02-20T16:24:10.682Z [Scheduler] [AncestorChain] Executing ancestor: Fatturato > Budget (SQL) 
+2026-02-20T16:24:10.682Z [Scheduler] [AncestorChain] SQL node Fatturato > Budget: injected 0 deps () 
+2026-02-20T16:24:10.974Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturato > Budget (9LiHu3E2) 
+2026-02-20T16:24:17.252Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturato > Budget 
+2026-02-20T16:24:17.253Z [Scheduler] [AncestorChain] Writing Fatturato > Budget to Budget 
+2026-02-20T16:24:17.577Z [Scheduler] [AncestorChain] Executing ancestor: Budget > Aggregato (SQL) 
+2026-02-20T16:24:17.579Z [Scheduler] [AncestorChain] SQL node Budget > Aggregato: injected 3 deps (Prodotto, Fatturato, Budget) 
+2026-02-20T16:24:18.328Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: SQL done, now running Python chart code 
+2026-02-20T16:24:19.446Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: Python chart generated successfully 
+2026-02-20T16:24:19.446Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Budget > Aggregato (-A7oR6c8) 
+2026-02-20T16:24:26.909Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Budget > Aggregato 
+2026-02-20T16:24:26.910Z [Scheduler] [AncestorChain] Executing ancestor: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (SQL) 
+2026-02-20T16:24:26.910Z [Scheduler] [AncestorChain] SQL node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: injected 1 deps (Aggregato) 
+2026-02-20T16:24:27.318Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: SQL done, now running Python chart code 
+2026-02-20T16:24:28.916Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: Python chart generated successfully 
+2026-02-20T16:24:28.916Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (KhDnEWg8) 
+2026-02-20T16:24:35.408Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT 
+2026-02-20T16:24:35.408Z [Scheduler] [AncestorChain] Executing ancestor: FatturabileMeseCorrente (SQL) 
+2026-02-20T16:24:35.409Z [Scheduler] [AncestorChain] SQL node FatturabileMeseCorrente: injected 0 deps () 
+2026-02-20T16:24:35.728Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturabileMeseCorrente (ZwOVHdd4) 
+2026-02-20T16:24:44.364Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturabileMeseCorrente 
+2026-02-20T16:24:44.364Z [Scheduler] [AncestorChain] Executing ancestor: SpeditoMeseCorrente (SQL) 
+2026-02-20T16:24:44.365Z [Scheduler] [AncestorChain] SQL node SpeditoMeseCorrente: injected 0 deps () 
+2026-02-20T16:24:44.987Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for SpeditoMeseCorrente (gw4dLyqM) 
+2026-02-20T16:24:53.977Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for SpeditoMeseCorrente 
+2026-02-20T16:24:53.977Z [Scheduler] [AncestorChain] Executing ancestor: Fatturabile vs Spedito (Python) 
+2026-02-20T16:24:53.977Z [Scheduler] [AncestorChain] Built inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:24:53.977Z [Scheduler] [AncestorChain] Final inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:24:55.573Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturabile vs Spedito (vKJhk8mI) 
+2026-02-20T16:25:00.006Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T16:25:00.006Z [Scheduler] ⏭️ Task cmluyflus0029106u1hyfrxyb SKIPPED - still running from previous trigger 
+2026-02-20T16:25:02.282Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturabile vs Spedito 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] Ancestor chain completed with 26 results and 24 report entries 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: [] 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: EstrazioneSharePoint 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table PRODFIL (Alternatives: PRODFIL): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table TABWID (Alternatives: TABWID,AAAA): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table PRODCommessa Mancante (Alternatives: PRODCommessa Mancante): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table PRODFIL2 (Alternatives: PRODFIL2): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table HR2 (Alternatives: HR2): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gantt - Capacity - Sum 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table Consegne (Alternatives: Consegne): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table HR2Local (Alternatives: HR2Local): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table PRODUZIONE > Prodotto (Alternatives: PRODUZIONE > Prodotto,Prodotto): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table Prodotto > Fatturato (Alternatives: Prodotto > Fatturato,Fatturato): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table Fatturato > Budget (Alternatives: Fatturato > Budget,Budget): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:25:02.282Z [Scheduler] [EmailSend] SQL Table FatturabileMeseCorrente (Alternatives: FatturabileMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] SQL Table SpeditoMeseCorrente (Alternatives: SpeditoMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Fatturabile vs Spedito 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: ["AAAA","AAAA"] 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Python Node EstrazioneSharePoint (Alternatives: EstrazioneSharePoint): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Python Node TABWID (Alternatives: TABWID,AAAA): inBody=true, asAttachment=true, matchedName=AAAA 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Python Node HR2 (Alternatives: HR2): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Python Node Gant e Capacity > Gantt vs Capacity (Alternatives: Gant e Capacity > Gantt vs Capacity,Gantt vs Capacity): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Python Node Gantt - Capacity - Sum (Alternatives: Gantt - Capacity - Sum): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Python Node Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Python Node Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Python Node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Python Node Fatturabile vs Spedito (Alternatives: Fatturabile vs Spedito): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:25:02.283Z [Scheduler] [EmailSend] Sending email with 0 SQL tables and 1 Python outputs 
+2026-02-20T16:25:04.544Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 304.3s 
+2026-02-20T16:30:00.014Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T16:30:00.015Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T16:30:00.246Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-20T16:30:00.246Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-20T16:30:01.417Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: Dp76ZJOu 
+2026-02-20T16:30:01.417Z [Scheduler] [EmailSend] Found email node: Dp76ZJOu 
+2026-02-20T16:30:01.418Z [Scheduler] [EmailSend] Identified 1 required names: AAAA 
+2026-02-20T16:30:01.418Z [Scheduler] [DEBUG HR2] Node properties: isPython=false, sqlQuery=true, pythonCode=true, pythonResultName=undefined, pythonOutputType=chart, nodePath=root > ConnessioneSharePoint[0] > ElaboraDati[0] > Minuti Capacity > Chart 
+2026-02-20T16:30:01.418Z [Scheduler] [EmailSend] Flattened tree into 19 named nodes. Available names: EstrazioneSharePoint, PRODFIL, TABWID|AAAA, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity|Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto|Prodotto, Prodotto > Fatturato|Fatturato, Fatturato > Budget|Budget, Budget > Aggregato|Aggregato|BDG vs POC vs FAT, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT|BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito 
+2026-02-20T16:30:01.418Z [Scheduler] [EmailSend] Email task will execute ALL 19 tree nodes to ensure fresh data 
+2026-02-20T16:30:01.418Z [Scheduler] [EmailSend] Total nodes to execute: 19 (EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito) 
+2026-02-20T16:30:01.418Z [Scheduler] [AncestorChain] Execution Order: EstrazioneSharePoint -> PRODFIL -> TABWID -> PRODCommessa Mancante -> PRODFIL2 -> HR2 -> Gant e Capacity > Gantt vs Capacity -> Gantt - Capacity - Sum -> Capacity vs Saturazione -> Consegne -> HR2Local -> PRODUZIONE > Prodotto -> Prodotto > Fatturato -> Fatturato > Budget -> Budget > Aggregato -> BDG vs PROD vs FATTURATO > BDG vs POC vs FAT -> FatturabileMeseCorrente -> SpeditoMeseCorrente -> Fatturabile vs Spedito 
+2026-02-20T16:30:01.418Z [Scheduler] [AncestorChain] Executing ancestor: EstrazioneSharePoint (Python) 
+2026-02-20T16:30:01.418Z [Scheduler] [AncestorChain] Built inputData for EstrazioneSharePoint:  
+2026-02-20T16:30:01.418Z [Scheduler] [AncestorChain] Final inputData for EstrazioneSharePoint:  
+2026-02-20T16:30:03.006Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for EstrazioneSharePoint (feptUzSG) 
+2026-02-20T16:30:18.328Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for EstrazioneSharePoint 
+2026-02-20T16:30:18.329Z [Scheduler] [AncestorChain] Writing EstrazioneSharePoint to PROD 
+2026-02-20T16:30:37.568Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL (SQL) 
+2026-02-20T16:30:37.568Z [Scheduler] [AncestorChain] SQL node PRODFIL: injected 0 deps () 
+2026-02-20T16:30:38.018Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL (t4m_jbLn) 
+2026-02-20T16:30:45.680Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL 
+2026-02-20T16:30:45.681Z [Scheduler] [AncestorChain] Writing PRODFIL to PRODFILTRATA 
+2026-02-20T16:30:48.150Z [Scheduler] [AncestorChain] Executing ancestor: TABWID (SQL) 
+2026-02-20T16:30:48.151Z [Scheduler] [AncestorChain] SQL node TABWID: injected 0 deps () 
+2026-02-20T16:30:48.472Z [Scheduler] [AncestorChain] Hybrid node TABWID: SQL done, now running Python chart code 
+2026-02-20T16:30:49.420Z [Scheduler] [AncestorChain] Hybrid node TABWID: Python chart generated successfully 
+2026-02-20T16:30:49.420Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for TABWID (fVagNTtd) 
+2026-02-20T16:30:56.540Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for TABWID 
+2026-02-20T16:30:56.540Z [Scheduler] [AncestorChain] Executing ancestor: PRODCommessa Mancante (SQL) 
+2026-02-20T16:30:56.542Z [Scheduler] [AncestorChain] SQL node PRODCommessa Mancante: injected 1 deps (PRODFIL) 
+2026-02-20T16:30:57.908Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODCommessa Mancante (_CwXg6oQ) 
+2026-02-20T16:31:04.821Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODCommessa Mancante 
+2026-02-20T16:31:04.821Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL2 (SQL) 
+2026-02-20T16:31:04.821Z [Scheduler] [AncestorChain] SQL node PRODFIL2: injected 0 deps () 
+2026-02-20T16:31:05.182Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL2 (wC6CRuv7) 
+2026-02-20T16:31:12.309Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL2 
+2026-02-20T16:31:12.309Z [Scheduler] [AncestorChain] Executing ancestor: HR2 (SQL) 
+2026-02-20T16:31:12.309Z [Scheduler] [AncestorChain] SQL node HR2: injected 0 deps () 
+2026-02-20T16:31:13.503Z [Scheduler] [AncestorChain] Hybrid node HR2: SQL done, now running Python chart code 
+2026-02-20T16:31:16.662Z [Scheduler] [AncestorChain] Hybrid node HR2: Python chart generated successfully 
+2026-02-20T16:31:16.663Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2 (3NtNCoMB) 
+2026-02-20T16:31:27.152Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2 
+2026-02-20T16:31:27.152Z [Scheduler] [AncestorChain] Executing ancestor: Gant e Capacity > Gantt vs Capacity (Python) 
+2026-02-20T16:31:27.153Z [Scheduler] [AncestorChain] Built inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:31:27.155Z [Scheduler] [AncestorChain] Final inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:31:29.815Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gant e Capacity > Gantt vs Capacity (mT4fz_HR) 
+2026-02-20T16:31:40.585Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:31:40.585Z [Scheduler] [AncestorChain] Executing ancestor: Gantt - Capacity - Sum (Python) 
+2026-02-20T16:31:40.586Z [Scheduler] [AncestorChain] Built inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:31:40.586Z [Scheduler] [AncestorChain] Final inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:31:43.606Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gantt - Capacity - Sum (4BbRgfc5) 
+2026-02-20T16:31:53.009Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gantt - Capacity - Sum 
+2026-02-20T16:31:53.010Z [Scheduler] [AncestorChain] Executing ancestor: Capacity vs Saturazione (SQL) 
+2026-02-20T16:31:53.010Z [Scheduler] [AncestorChain] SQL node Capacity vs Saturazione: injected 1 deps (HR2) 
+2026-02-20T16:32:10.969Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: SQL done, now running Python chart code 
+2026-02-20T16:32:12.344Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: Python chart generated successfully 
+2026-02-20T16:32:12.344Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Capacity vs Saturazione (BTNiWkbT) 
+2026-02-20T16:32:26.883Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Capacity vs Saturazione 
+2026-02-20T16:32:26.885Z [Scheduler] [AncestorChain] Executing ancestor: Consegne (SQL) 
+2026-02-20T16:32:26.888Z [Scheduler] [AncestorChain] SQL node Consegne: injected 0 deps () 
+2026-02-20T16:32:35.810Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Consegne (2QH20NyR) 
+2026-02-20T16:32:42.714Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Consegne 
+2026-02-20T16:32:42.714Z [Scheduler] [AncestorChain] Executing ancestor: HR2Local (SQL) 
+2026-02-20T16:32:42.715Z [Scheduler] [AncestorChain] SQL node HR2Local: injected 1 deps (HR2) 
+2026-02-20T16:33:00.938Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2Local (P7OJwQA4) 
+2026-02-20T16:33:10.971Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2Local 
+2026-02-20T16:33:10.971Z [Scheduler] [AncestorChain] Executing ancestor: PRODUZIONE > Prodotto (SQL) 
+2026-02-20T16:33:10.972Z [Scheduler] [AncestorChain] SQL node PRODUZIONE > Prodotto: injected 0 deps () 
+2026-02-20T16:33:11.339Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODUZIONE > Prodotto (NC9jpnnG) 
+2026-02-20T16:33:18.306Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODUZIONE > Prodotto 
+2026-02-20T16:33:18.306Z [Scheduler] [AncestorChain] Writing PRODUZIONE > Prodotto to Prodotto 
+2026-02-20T16:33:18.757Z [Scheduler] [AncestorChain] Executing ancestor: Prodotto > Fatturato (SQL) 
+2026-02-20T16:33:18.758Z [Scheduler] [AncestorChain] SQL node Prodotto > Fatturato: injected 0 deps () 
+2026-02-20T16:33:19.057Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Prodotto > Fatturato (gye2BUuO) 
+2026-02-20T16:33:28.761Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Prodotto > Fatturato 
+2026-02-20T16:33:28.761Z [Scheduler] [AncestorChain] Writing Prodotto > Fatturato to Fatturato 
+2026-02-20T16:33:29.193Z [Scheduler] [AncestorChain] Executing ancestor: Fatturato > Budget (SQL) 
+2026-02-20T16:33:29.194Z [Scheduler] [AncestorChain] SQL node Fatturato > Budget: injected 0 deps () 
+2026-02-20T16:33:29.496Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturato > Budget (9LiHu3E2) 
+2026-02-20T16:33:41.914Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturato > Budget 
+2026-02-20T16:33:41.915Z [Scheduler] [AncestorChain] Writing Fatturato > Budget to Budget 
+2026-02-20T16:33:42.225Z [Scheduler] [AncestorChain] Executing ancestor: Budget > Aggregato (SQL) 
+2026-02-20T16:33:42.226Z [Scheduler] [AncestorChain] SQL node Budget > Aggregato: injected 3 deps (Prodotto, Fatturato, Budget) 
+2026-02-20T16:33:42.987Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: SQL done, now running Python chart code 
+2026-02-20T16:33:44.965Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: Python chart generated successfully 
+2026-02-20T16:33:44.966Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Budget > Aggregato (-A7oR6c8) 
+2026-02-20T16:33:57.097Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Budget > Aggregato 
+2026-02-20T16:33:57.102Z [Scheduler] [AncestorChain] Executing ancestor: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (SQL) 
+2026-02-20T16:33:57.104Z [Scheduler] [AncestorChain] SQL node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: injected 1 deps (Aggregato) 
+2026-02-20T16:33:57.509Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: SQL done, now running Python chart code 
+2026-02-20T16:33:58.627Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: Python chart generated successfully 
+2026-02-20T16:33:58.627Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (KhDnEWg8) 
+2026-02-20T16:34:06.725Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT 
+2026-02-20T16:34:06.725Z [Scheduler] [AncestorChain] Executing ancestor: FatturabileMeseCorrente (SQL) 
+2026-02-20T16:34:06.725Z [Scheduler] [AncestorChain] SQL node FatturabileMeseCorrente: injected 0 deps () 
+2026-02-20T16:34:07.027Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturabileMeseCorrente (ZwOVHdd4) 
+2026-02-20T16:34:13.833Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturabileMeseCorrente 
+2026-02-20T16:34:13.833Z [Scheduler] [AncestorChain] Executing ancestor: SpeditoMeseCorrente (SQL) 
+2026-02-20T16:34:13.837Z [Scheduler] [AncestorChain] SQL node SpeditoMeseCorrente: injected 0 deps () 
+2026-02-20T16:34:14.791Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for SpeditoMeseCorrente (gw4dLyqM) 
+2026-02-20T16:34:23.521Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for SpeditoMeseCorrente 
+2026-02-20T16:34:23.527Z [Scheduler] [AncestorChain] Executing ancestor: Fatturabile vs Spedito (Python) 
+2026-02-20T16:34:23.527Z [Scheduler] [AncestorChain] Built inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:34:23.527Z [Scheduler] [AncestorChain] Final inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:34:27.443Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturabile vs Spedito (vKJhk8mI) 
+2026-02-20T16:34:35.523Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturabile vs Spedito 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] Ancestor chain completed with 26 results and 24 report entries 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: [] 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: EstrazioneSharePoint 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] SQL Table PRODFIL (Alternatives: PRODFIL): inBody=false, asExcel=false 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] SQL Table TABWID (Alternatives: TABWID,AAAA): inBody=false, asExcel=false 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] SQL Table PRODCommessa Mancante (Alternatives: PRODCommessa Mancante): inBody=false, asExcel=false 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] SQL Table PRODFIL2 (Alternatives: PRODFIL2): inBody=false, asExcel=false 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] SQL Table HR2 (Alternatives: HR2): inBody=false, asExcel=false 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gantt - Capacity - Sum 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] SQL Table Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asExcel=false 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] SQL Table Consegne (Alternatives: Consegne): inBody=false, asExcel=false 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] SQL Table HR2Local (Alternatives: HR2Local): inBody=false, asExcel=false 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] SQL Table PRODUZIONE > Prodotto (Alternatives: PRODUZIONE > Prodotto,Prodotto): inBody=false, asExcel=false 
+2026-02-20T16:34:35.523Z [Scheduler] [EmailSend] SQL Table Prodotto > Fatturato (Alternatives: Prodotto > Fatturato,Fatturato): inBody=false, asExcel=false 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] SQL Table Fatturato > Budget (Alternatives: Fatturato > Budget,Budget): inBody=false, asExcel=false 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] SQL Table Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] SQL Table BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] SQL Table FatturabileMeseCorrente (Alternatives: FatturabileMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] SQL Table SpeditoMeseCorrente (Alternatives: SpeditoMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Fatturabile vs Spedito 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: ["AAAA","AAAA"] 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Python Node EstrazioneSharePoint (Alternatives: EstrazioneSharePoint): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Python Node TABWID (Alternatives: TABWID,AAAA): inBody=true, asAttachment=true, matchedName=AAAA 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Python Node HR2 (Alternatives: HR2): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Python Node Gant e Capacity > Gantt vs Capacity (Alternatives: Gant e Capacity > Gantt vs Capacity,Gantt vs Capacity): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Python Node Gantt - Capacity - Sum (Alternatives: Gantt - Capacity - Sum): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Python Node Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Python Node Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Python Node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Python Node Fatturabile vs Spedito (Alternatives: Fatturabile vs Spedito): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:34:35.524Z [Scheduler] [EmailSend] Sending email with 0 SQL tables and 1 Python outputs 
+2026-02-20T16:34:38.264Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 278.2s 
+2026-02-20T16:35:00.017Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T16:35:00.019Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T16:35:00.223Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-20T16:35:00.223Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-20T16:35:01.269Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: Dp76ZJOu 
+2026-02-20T16:35:01.270Z [Scheduler] [EmailSend] Found email node: Dp76ZJOu 
+2026-02-20T16:35:01.270Z [Scheduler] [EmailSend] Identified 1 required names: AAAA 
+2026-02-20T16:35:01.270Z [Scheduler] [DEBUG HR2] Node properties: isPython=false, sqlQuery=true, pythonCode=true, pythonResultName=undefined, pythonOutputType=chart, nodePath=root > ConnessioneSharePoint[0] > ElaboraDati[0] > Minuti Capacity > Chart 
+2026-02-20T16:35:01.270Z [Scheduler] [EmailSend] Flattened tree into 19 named nodes. Available names: EstrazioneSharePoint, PRODFIL, TABWID|AAAA, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity|Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto|Prodotto, Prodotto > Fatturato|Fatturato, Fatturato > Budget|Budget, Budget > Aggregato|Aggregato|BDG vs POC vs FAT, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT|BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito 
+2026-02-20T16:35:01.270Z [Scheduler] [EmailSend] Email task will execute ALL 19 tree nodes to ensure fresh data 
+2026-02-20T16:35:01.270Z [Scheduler] [EmailSend] Total nodes to execute: 19 (EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito) 
+2026-02-20T16:35:01.271Z [Scheduler] [AncestorChain] Execution Order: EstrazioneSharePoint -> PRODFIL -> TABWID -> PRODCommessa Mancante -> PRODFIL2 -> HR2 -> Gant e Capacity > Gantt vs Capacity -> Gantt - Capacity - Sum -> Capacity vs Saturazione -> Consegne -> HR2Local -> PRODUZIONE > Prodotto -> Prodotto > Fatturato -> Fatturato > Budget -> Budget > Aggregato -> BDG vs PROD vs FATTURATO > BDG vs POC vs FAT -> FatturabileMeseCorrente -> SpeditoMeseCorrente -> Fatturabile vs Spedito 
+2026-02-20T16:35:01.271Z [Scheduler] [AncestorChain] Executing ancestor: EstrazioneSharePoint (Python) 
+2026-02-20T16:35:01.271Z [Scheduler] [AncestorChain] Built inputData for EstrazioneSharePoint:  
+2026-02-20T16:35:01.271Z [Scheduler] [AncestorChain] Final inputData for EstrazioneSharePoint:  
+2026-02-20T16:35:02.704Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for EstrazioneSharePoint (feptUzSG) 
+2026-02-20T16:35:09.794Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for EstrazioneSharePoint 
+2026-02-20T16:35:09.794Z [Scheduler] [AncestorChain] Writing EstrazioneSharePoint to PROD 
+2026-02-20T16:35:26.306Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL (SQL) 
+2026-02-20T16:35:26.306Z [Scheduler] [AncestorChain] SQL node PRODFIL: injected 0 deps () 
+2026-02-20T16:35:26.659Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL (t4m_jbLn) 
+2026-02-20T16:35:35.895Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL 
+2026-02-20T16:35:35.895Z [Scheduler] [AncestorChain] Writing PRODFIL to PRODFILTRATA 
+2026-02-20T16:35:38.618Z [Scheduler] [AncestorChain] Executing ancestor: TABWID (SQL) 
+2026-02-20T16:35:38.619Z [Scheduler] [AncestorChain] SQL node TABWID: injected 0 deps () 
+2026-02-20T16:35:38.952Z [Scheduler] [AncestorChain] Hybrid node TABWID: SQL done, now running Python chart code 
+2026-02-20T16:35:39.808Z [Scheduler] [AncestorChain] Hybrid node TABWID: Python chart generated successfully 
+2026-02-20T16:35:39.808Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for TABWID (fVagNTtd) 
+2026-02-20T16:35:47.689Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for TABWID 
+2026-02-20T16:35:47.689Z [Scheduler] [AncestorChain] Executing ancestor: PRODCommessa Mancante (SQL) 
+2026-02-20T16:35:47.694Z [Scheduler] [AncestorChain] SQL node PRODCommessa Mancante: injected 1 deps (PRODFIL) 
+2026-02-20T16:35:49.060Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODCommessa Mancante (_CwXg6oQ) 
+2026-02-20T16:35:57.110Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODCommessa Mancante 
+2026-02-20T16:35:57.110Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL2 (SQL) 
+2026-02-20T16:35:57.110Z [Scheduler] [AncestorChain] SQL node PRODFIL2: injected 0 deps () 
+2026-02-20T16:35:57.861Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL2 (wC6CRuv7) 
+2026-02-20T16:36:06.234Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL2 
+2026-02-20T16:36:06.234Z [Scheduler] [AncestorChain] Executing ancestor: HR2 (SQL) 
+2026-02-20T16:36:06.234Z [Scheduler] [AncestorChain] SQL node HR2: injected 0 deps () 
+2026-02-20T16:36:07.394Z [Scheduler] [AncestorChain] Hybrid node HR2: SQL done, now running Python chart code 
+2026-02-20T16:36:09.745Z [Scheduler] [AncestorChain] Hybrid node HR2: Python chart generated successfully 
+2026-02-20T16:36:09.745Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2 (3NtNCoMB) 
+2026-02-20T16:36:19.120Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2 
+2026-02-20T16:36:19.120Z [Scheduler] [AncestorChain] Executing ancestor: Gant e Capacity > Gantt vs Capacity (Python) 
+2026-02-20T16:36:19.120Z [Scheduler] [AncestorChain] Built inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:36:19.121Z [Scheduler] [AncestorChain] Final inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:36:21.104Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gant e Capacity > Gantt vs Capacity (mT4fz_HR) 
+2026-02-20T16:36:29.709Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:36:29.709Z [Scheduler] [AncestorChain] Executing ancestor: Gantt - Capacity - Sum (Python) 
+2026-02-20T16:36:29.710Z [Scheduler] [AncestorChain] Built inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:36:29.710Z [Scheduler] [AncestorChain] Final inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:36:32.451Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gantt - Capacity - Sum (4BbRgfc5) 
+2026-02-20T16:36:40.145Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gantt - Capacity - Sum 
+2026-02-20T16:36:40.145Z [Scheduler] [AncestorChain] Executing ancestor: Capacity vs Saturazione (SQL) 
+2026-02-20T16:36:40.145Z [Scheduler] [AncestorChain] SQL node Capacity vs Saturazione: injected 1 deps (HR2) 
+2026-02-20T16:36:56.884Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: SQL done, now running Python chart code 
+2026-02-20T16:36:58.518Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: Python chart generated successfully 
+2026-02-20T16:36:58.519Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Capacity vs Saturazione (BTNiWkbT) 
+2026-02-20T16:37:09.168Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Capacity vs Saturazione 
+2026-02-20T16:37:09.169Z [Scheduler] [AncestorChain] Executing ancestor: Consegne (SQL) 
+2026-02-20T16:37:09.169Z [Scheduler] [AncestorChain] SQL node Consegne: injected 0 deps () 
+2026-02-20T16:37:17.486Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Consegne (2QH20NyR) 
+2026-02-20T16:37:23.354Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Consegne 
+2026-02-20T16:37:23.354Z [Scheduler] [AncestorChain] Executing ancestor: HR2Local (SQL) 
+2026-02-20T16:37:23.354Z [Scheduler] [AncestorChain] SQL node HR2Local: injected 1 deps (HR2) 
+2026-02-20T16:37:40.884Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2Local (P7OJwQA4) 
+2026-02-20T16:37:51.144Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2Local 
+2026-02-20T16:37:51.144Z [Scheduler] [AncestorChain] Executing ancestor: PRODUZIONE > Prodotto (SQL) 
+2026-02-20T16:37:51.145Z [Scheduler] [AncestorChain] SQL node PRODUZIONE > Prodotto: injected 0 deps () 
+2026-02-20T16:37:51.455Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODUZIONE > Prodotto (NC9jpnnG) 
+2026-02-20T16:37:59.914Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODUZIONE > Prodotto 
+2026-02-20T16:37:59.914Z [Scheduler] [AncestorChain] Writing PRODUZIONE > Prodotto to Prodotto 
+2026-02-20T16:38:00.920Z [Scheduler] [AncestorChain] Executing ancestor: Prodotto > Fatturato (SQL) 
+2026-02-20T16:38:00.921Z [Scheduler] [AncestorChain] SQL node Prodotto > Fatturato: injected 0 deps () 
+2026-02-20T16:38:01.220Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Prodotto > Fatturato (gye2BUuO) 
+2026-02-20T16:38:16.717Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Prodotto > Fatturato 
+2026-02-20T16:38:16.718Z [Scheduler] [AncestorChain] Writing Prodotto > Fatturato to Fatturato 
+2026-02-20T16:38:17.191Z [Scheduler] [AncestorChain] Executing ancestor: Fatturato > Budget (SQL) 
+2026-02-20T16:38:17.192Z [Scheduler] [AncestorChain] SQL node Fatturato > Budget: injected 0 deps () 
+2026-02-20T16:38:17.486Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturato > Budget (9LiHu3E2) 
+2026-02-20T16:38:29.500Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturato > Budget 
+2026-02-20T16:38:29.500Z [Scheduler] [AncestorChain] Writing Fatturato > Budget to Budget 
+2026-02-20T16:38:29.802Z [Scheduler] [AncestorChain] Executing ancestor: Budget > Aggregato (SQL) 
+2026-02-20T16:38:29.804Z [Scheduler] [AncestorChain] SQL node Budget > Aggregato: injected 3 deps (Prodotto, Fatturato, Budget) 
+2026-02-20T16:38:30.540Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: SQL done, now running Python chart code 
+2026-02-20T16:38:31.708Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: Python chart generated successfully 
+2026-02-20T16:38:31.708Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Budget > Aggregato (-A7oR6c8) 
+2026-02-20T16:38:38.698Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Budget > Aggregato 
+2026-02-20T16:38:38.699Z [Scheduler] [AncestorChain] Executing ancestor: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (SQL) 
+2026-02-20T16:38:38.699Z [Scheduler] [AncestorChain] SQL node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: injected 1 deps (Aggregato) 
+2026-02-20T16:38:39.091Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: SQL done, now running Python chart code 
+2026-02-20T16:38:41.071Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: Python chart generated successfully 
+2026-02-20T16:38:41.071Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (KhDnEWg8) 
+2026-02-20T16:38:52.484Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT 
+2026-02-20T16:38:52.484Z [Scheduler] [AncestorChain] Executing ancestor: FatturabileMeseCorrente (SQL) 
+2026-02-20T16:38:52.485Z [Scheduler] [AncestorChain] SQL node FatturabileMeseCorrente: injected 0 deps () 
+2026-02-20T16:38:52.774Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturabileMeseCorrente (ZwOVHdd4) 
+2026-02-20T16:39:03.154Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturabileMeseCorrente 
+2026-02-20T16:39:03.157Z [Scheduler] [AncestorChain] Executing ancestor: SpeditoMeseCorrente (SQL) 
+2026-02-20T16:39:03.160Z [Scheduler] [AncestorChain] SQL node SpeditoMeseCorrente: injected 0 deps () 
+2026-02-20T16:39:07.166Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for SpeditoMeseCorrente (gw4dLyqM) 
+2026-02-20T16:39:38.075Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for SpeditoMeseCorrente 
+2026-02-20T16:39:38.076Z [Scheduler] [AncestorChain] Executing ancestor: Fatturabile vs Spedito (Python) 
+2026-02-20T16:39:38.076Z [Scheduler] [AncestorChain] Built inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:39:38.076Z [Scheduler] [AncestorChain] Final inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:39:40.524Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturabile vs Spedito (vKJhk8mI) 
+2026-02-20T16:40:00.025Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T16:40:00.027Z [Scheduler] ⏭️ Task cmluyflus0029106u1hyfrxyb SKIPPED - still running from previous trigger 
+2026-02-20T16:40:43.093Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturabile vs Spedito 
+2026-02-20T16:40:43.097Z [Scheduler] [EmailSend] Ancestor chain completed with 26 results and 24 report entries 
+2026-02-20T16:40:43.098Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-20T16:40:43.098Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: [] 
+2026-02-20T16:40:43.098Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: EstrazioneSharePoint 
+2026-02-20T16:40:43.098Z [Scheduler] [EmailSend] SQL Table PRODFIL (Alternatives: PRODFIL): inBody=false, asExcel=false 
+2026-02-20T16:40:43.098Z [Scheduler] [EmailSend] SQL Table TABWID (Alternatives: TABWID,AAAA): inBody=false, asExcel=false 
+2026-02-20T16:40:43.098Z [Scheduler] [EmailSend] SQL Table PRODCommessa Mancante (Alternatives: PRODCommessa Mancante): inBody=false, asExcel=false 
+2026-02-20T16:40:43.098Z [Scheduler] [EmailSend] SQL Table PRODFIL2 (Alternatives: PRODFIL2): inBody=false, asExcel=false 
+2026-02-20T16:40:43.098Z [Scheduler] [EmailSend] SQL Table HR2 (Alternatives: HR2): inBody=false, asExcel=false 
+2026-02-20T16:40:43.098Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:40:43.098Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gantt - Capacity - Sum 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] SQL Table Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asExcel=false 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] SQL Table Consegne (Alternatives: Consegne): inBody=false, asExcel=false 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] SQL Table HR2Local (Alternatives: HR2Local): inBody=false, asExcel=false 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] SQL Table PRODUZIONE > Prodotto (Alternatives: PRODUZIONE > Prodotto,Prodotto): inBody=false, asExcel=false 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] SQL Table Prodotto > Fatturato (Alternatives: Prodotto > Fatturato,Fatturato): inBody=false, asExcel=false 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] SQL Table Fatturato > Budget (Alternatives: Fatturato > Budget,Budget): inBody=false, asExcel=false 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] SQL Table Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] SQL Table BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] SQL Table FatturabileMeseCorrente (Alternatives: FatturabileMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] SQL Table SpeditoMeseCorrente (Alternatives: SpeditoMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Fatturabile vs Spedito 
+2026-02-20T16:40:43.099Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: ["AAAA","AAAA"] 
+2026-02-20T16:40:43.100Z [Scheduler] [EmailSend] Python Node EstrazioneSharePoint (Alternatives: EstrazioneSharePoint): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:40:43.101Z [Scheduler] [EmailSend] Python Node TABWID (Alternatives: TABWID,AAAA): inBody=true, asAttachment=true, matchedName=AAAA 
+2026-02-20T16:40:43.101Z [Scheduler] [EmailSend] Python Node HR2 (Alternatives: HR2): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:40:43.103Z [Scheduler] [EmailSend] Python Node Gant e Capacity > Gantt vs Capacity (Alternatives: Gant e Capacity > Gantt vs Capacity,Gantt vs Capacity): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:40:43.103Z [Scheduler] [EmailSend] Python Node Gantt - Capacity - Sum (Alternatives: Gantt - Capacity - Sum): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:40:43.103Z [Scheduler] [EmailSend] Python Node Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:40:43.103Z [Scheduler] [EmailSend] Python Node Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:40:43.103Z [Scheduler] [EmailSend] Python Node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:40:43.103Z [Scheduler] [EmailSend] Python Node Fatturabile vs Spedito (Alternatives: Fatturabile vs Spedito): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:40:43.104Z [Scheduler] [EmailSend] Sending email with 0 SQL tables and 1 Python outputs 
+2026-02-20T16:40:47.164Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 347.1s 
+2026-02-20T16:45:00.037Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T16:45:00.038Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T16:45:00.288Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-20T16:45:00.288Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-20T16:45:01.638Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: Dp76ZJOu 
+2026-02-20T16:45:01.639Z [Scheduler] [EmailSend] Found email node: Dp76ZJOu 
+2026-02-20T16:45:01.639Z [Scheduler] [EmailSend] Identified 1 required names: AAAA 
+2026-02-20T16:45:01.639Z [Scheduler] [DEBUG HR2] Node properties: isPython=false, sqlQuery=true, pythonCode=true, pythonResultName=undefined, pythonOutputType=chart, nodePath=root > ConnessioneSharePoint[0] > ElaboraDati[0] > Minuti Capacity > Chart 
+2026-02-20T16:45:01.640Z [Scheduler] [EmailSend] Flattened tree into 19 named nodes. Available names: EstrazioneSharePoint, PRODFIL, TABWID|AAAA, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity|Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto|Prodotto, Prodotto > Fatturato|Fatturato, Fatturato > Budget|Budget, Budget > Aggregato|Aggregato|BDG vs POC vs FAT, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT|BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito 
+2026-02-20T16:45:01.640Z [Scheduler] [EmailSend] Email task will execute ALL 19 tree nodes to ensure fresh data 
+2026-02-20T16:45:01.640Z [Scheduler] [EmailSend] Total nodes to execute: 19 (EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito) 
+2026-02-20T16:45:01.640Z [Scheduler] [AncestorChain] Execution Order: EstrazioneSharePoint -> PRODFIL -> TABWID -> PRODCommessa Mancante -> PRODFIL2 -> HR2 -> Gant e Capacity > Gantt vs Capacity -> Gantt - Capacity - Sum -> Capacity vs Saturazione -> Consegne -> HR2Local -> PRODUZIONE > Prodotto -> Prodotto > Fatturato -> Fatturato > Budget -> Budget > Aggregato -> BDG vs PROD vs FATTURATO > BDG vs POC vs FAT -> FatturabileMeseCorrente -> SpeditoMeseCorrente -> Fatturabile vs Spedito 
+2026-02-20T16:45:01.640Z [Scheduler] [AncestorChain] Executing ancestor: EstrazioneSharePoint (Python) 
+2026-02-20T16:45:01.640Z [Scheduler] [AncestorChain] Built inputData for EstrazioneSharePoint:  
+2026-02-20T16:45:01.640Z [Scheduler] [AncestorChain] Final inputData for EstrazioneSharePoint:  
+2026-02-20T16:45:04.839Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for EstrazioneSharePoint (feptUzSG) 
+2026-02-20T16:45:13.583Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for EstrazioneSharePoint 
+2026-02-20T16:45:13.583Z [Scheduler] [AncestorChain] Writing EstrazioneSharePoint to PROD 
+2026-02-20T16:45:30.520Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL (SQL) 
+2026-02-20T16:45:30.521Z [Scheduler] [AncestorChain] SQL node PRODFIL: injected 0 deps () 
+2026-02-20T16:45:30.889Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL (t4m_jbLn) 
+2026-02-20T16:45:41.311Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL 
+2026-02-20T16:45:41.311Z [Scheduler] [AncestorChain] Writing PRODFIL to PRODFILTRATA 
+2026-02-20T16:45:46.447Z [Scheduler] [AncestorChain] Executing ancestor: TABWID (SQL) 
+2026-02-20T16:45:46.448Z [Scheduler] [AncestorChain] SQL node TABWID: injected 0 deps () 
+2026-02-20T16:45:46.824Z [Scheduler] [AncestorChain] Hybrid node TABWID: SQL done, now running Python chart code 
+2026-02-20T16:45:48.047Z [Scheduler] [AncestorChain] Hybrid node TABWID: Python chart generated successfully 
+2026-02-20T16:45:48.048Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for TABWID (fVagNTtd) 
+2026-02-20T16:45:55.737Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for TABWID 
+2026-02-20T16:45:55.738Z [Scheduler] [AncestorChain] Executing ancestor: PRODCommessa Mancante (SQL) 
+2026-02-20T16:45:55.738Z [Scheduler] [AncestorChain] SQL node PRODCommessa Mancante: injected 1 deps (PRODFIL) 
+2026-02-20T16:45:57.186Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODCommessa Mancante (_CwXg6oQ) 
+2026-02-20T16:46:03.911Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODCommessa Mancante 
+2026-02-20T16:46:03.912Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL2 (SQL) 
+2026-02-20T16:46:03.912Z [Scheduler] [AncestorChain] SQL node PRODFIL2: injected 0 deps () 
+2026-02-20T16:46:04.261Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL2 (wC6CRuv7) 
+2026-02-20T16:46:10.905Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL2 
+2026-02-20T16:46:10.905Z [Scheduler] [AncestorChain] Executing ancestor: HR2 (SQL) 
+2026-02-20T16:46:10.906Z [Scheduler] [AncestorChain] SQL node HR2: injected 0 deps () 
+2026-02-20T16:46:12.141Z [Scheduler] [AncestorChain] Hybrid node HR2: SQL done, now running Python chart code 
+2026-02-20T16:46:13.867Z [Scheduler] [AncestorChain] Hybrid node HR2: Python chart generated successfully 
+2026-02-20T16:46:13.868Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2 (3NtNCoMB) 
+2026-02-20T16:46:22.898Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2 
+2026-02-20T16:46:22.898Z [Scheduler] [AncestorChain] Executing ancestor: Gant e Capacity > Gantt vs Capacity (Python) 
+2026-02-20T16:46:22.898Z [Scheduler] [AncestorChain] Built inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:46:22.898Z [Scheduler] [AncestorChain] Final inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:46:25.054Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gant e Capacity > Gantt vs Capacity (mT4fz_HR) 
+2026-02-20T16:46:32.318Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:46:32.318Z [Scheduler] [AncestorChain] Executing ancestor: Gantt - Capacity - Sum (Python) 
+2026-02-20T16:46:32.318Z [Scheduler] [AncestorChain] Built inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:46:32.318Z [Scheduler] [AncestorChain] Final inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:46:34.374Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gantt - Capacity - Sum (4BbRgfc5) 
+2026-02-20T16:46:41.397Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gantt - Capacity - Sum 
+2026-02-20T16:46:41.397Z [Scheduler] [AncestorChain] Executing ancestor: Capacity vs Saturazione (SQL) 
+2026-02-20T16:46:41.397Z [Scheduler] [AncestorChain] SQL node Capacity vs Saturazione: injected 1 deps (HR2) 
+2026-02-20T16:47:01.765Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: SQL done, now running Python chart code 
+2026-02-20T16:47:02.920Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: Python chart generated successfully 
+2026-02-20T16:47:02.921Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Capacity vs Saturazione (BTNiWkbT) 
+2026-02-20T16:47:11.205Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Capacity vs Saturazione 
+2026-02-20T16:47:11.205Z [Scheduler] [AncestorChain] Executing ancestor: Consegne (SQL) 
+2026-02-20T16:47:11.207Z [Scheduler] [AncestorChain] SQL node Consegne: injected 0 deps () 
+2026-02-20T16:47:19.630Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Consegne (2QH20NyR) 
+2026-02-20T16:47:25.867Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Consegne 
+2026-02-20T16:47:25.868Z [Scheduler] [AncestorChain] Executing ancestor: HR2Local (SQL) 
+2026-02-20T16:47:25.869Z [Scheduler] [AncestorChain] SQL node HR2Local: injected 1 deps (HR2) 
+2026-02-20T16:47:43.179Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2Local (P7OJwQA4) 
+2026-02-20T16:47:52.444Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2Local 
+2026-02-20T16:47:52.444Z [Scheduler] [AncestorChain] Executing ancestor: PRODUZIONE > Prodotto (SQL) 
+2026-02-20T16:47:52.445Z [Scheduler] [AncestorChain] SQL node PRODUZIONE > Prodotto: injected 0 deps () 
+2026-02-20T16:47:52.768Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODUZIONE > Prodotto (NC9jpnnG) 
+2026-02-20T16:47:58.901Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODUZIONE > Prodotto 
+2026-02-20T16:47:58.901Z [Scheduler] [AncestorChain] Writing PRODUZIONE > Prodotto to Prodotto 
+2026-02-20T16:47:59.347Z [Scheduler] [AncestorChain] Executing ancestor: Prodotto > Fatturato (SQL) 
+2026-02-20T16:47:59.348Z [Scheduler] [AncestorChain] SQL node Prodotto > Fatturato: injected 0 deps () 
+2026-02-20T16:47:59.623Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Prodotto > Fatturato (gye2BUuO) 
+2026-02-20T16:48:05.967Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Prodotto > Fatturato 
+2026-02-20T16:48:05.967Z [Scheduler] [AncestorChain] Writing Prodotto > Fatturato to Fatturato 
+2026-02-20T16:48:06.425Z [Scheduler] [AncestorChain] Executing ancestor: Fatturato > Budget (SQL) 
+2026-02-20T16:48:06.426Z [Scheduler] [AncestorChain] SQL node Fatturato > Budget: injected 0 deps () 
+2026-02-20T16:48:06.719Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturato > Budget (9LiHu3E2) 
+2026-02-20T16:48:12.706Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturato > Budget 
+2026-02-20T16:48:12.706Z [Scheduler] [AncestorChain] Writing Fatturato > Budget to Budget 
+2026-02-20T16:48:13.010Z [Scheduler] [AncestorChain] Executing ancestor: Budget > Aggregato (SQL) 
+2026-02-20T16:48:13.013Z [Scheduler] [AncestorChain] SQL node Budget > Aggregato: injected 3 deps (Prodotto, Fatturato, Budget) 
+2026-02-20T16:48:13.740Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: SQL done, now running Python chart code 
+2026-02-20T16:48:14.702Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: Python chart generated successfully 
+2026-02-20T16:48:14.702Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Budget > Aggregato (-A7oR6c8) 
+2026-02-20T16:48:21.146Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Budget > Aggregato 
+2026-02-20T16:48:21.146Z [Scheduler] [AncestorChain] Executing ancestor: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (SQL) 
+2026-02-20T16:48:21.146Z [Scheduler] [AncestorChain] SQL node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: injected 1 deps (Aggregato) 
+2026-02-20T16:48:21.550Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: SQL done, now running Python chart code 
+2026-02-20T16:48:22.542Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: Python chart generated successfully 
+2026-02-20T16:48:22.542Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (KhDnEWg8) 
+2026-02-20T16:48:28.979Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT 
+2026-02-20T16:48:28.980Z [Scheduler] [AncestorChain] Executing ancestor: FatturabileMeseCorrente (SQL) 
+2026-02-20T16:48:28.980Z [Scheduler] [AncestorChain] SQL node FatturabileMeseCorrente: injected 0 deps () 
+2026-02-20T16:48:29.269Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturabileMeseCorrente (ZwOVHdd4) 
+2026-02-20T16:48:35.878Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturabileMeseCorrente 
+2026-02-20T16:48:35.878Z [Scheduler] [AncestorChain] Executing ancestor: SpeditoMeseCorrente (SQL) 
+2026-02-20T16:48:35.878Z [Scheduler] [AncestorChain] SQL node SpeditoMeseCorrente: injected 0 deps () 
+2026-02-20T16:48:36.465Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for SpeditoMeseCorrente (gw4dLyqM) 
+2026-02-20T16:48:42.715Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for SpeditoMeseCorrente 
+2026-02-20T16:48:42.716Z [Scheduler] [AncestorChain] Executing ancestor: Fatturabile vs Spedito (Python) 
+2026-02-20T16:48:42.717Z [Scheduler] [AncestorChain] Built inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:48:42.717Z [Scheduler] [AncestorChain] Final inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:48:43.756Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturabile vs Spedito (vKJhk8mI) 
+2026-02-20T16:48:49.675Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturabile vs Spedito 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] Ancestor chain completed with 26 results and 24 report entries 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: [] 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: EstrazioneSharePoint 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table PRODFIL (Alternatives: PRODFIL): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table TABWID (Alternatives: TABWID,AAAA): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table PRODCommessa Mancante (Alternatives: PRODCommessa Mancante): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table PRODFIL2 (Alternatives: PRODFIL2): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table HR2 (Alternatives: HR2): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gantt - Capacity - Sum 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table Consegne (Alternatives: Consegne): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table HR2Local (Alternatives: HR2Local): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table PRODUZIONE > Prodotto (Alternatives: PRODUZIONE > Prodotto,Prodotto): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table Prodotto > Fatturato (Alternatives: Prodotto > Fatturato,Fatturato): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table Fatturato > Budget (Alternatives: Fatturato > Budget,Budget): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table FatturabileMeseCorrente (Alternatives: FatturabileMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] SQL Table SpeditoMeseCorrente (Alternatives: SpeditoMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Fatturabile vs Spedito 
+2026-02-20T16:48:49.676Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: ["AAAA","AAAA"] 
+2026-02-20T16:48:49.677Z [Scheduler] [EmailSend] Python Node EstrazioneSharePoint (Alternatives: EstrazioneSharePoint): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:48:49.677Z [Scheduler] [EmailSend] Python Node TABWID (Alternatives: TABWID,AAAA): inBody=true, asAttachment=true, matchedName=AAAA 
+2026-02-20T16:48:49.677Z [Scheduler] [EmailSend] Python Node HR2 (Alternatives: HR2): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:48:49.677Z [Scheduler] [EmailSend] Python Node Gant e Capacity > Gantt vs Capacity (Alternatives: Gant e Capacity > Gantt vs Capacity,Gantt vs Capacity): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:48:49.677Z [Scheduler] [EmailSend] Python Node Gantt - Capacity - Sum (Alternatives: Gantt - Capacity - Sum): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:48:49.677Z [Scheduler] [EmailSend] Python Node Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:48:49.677Z [Scheduler] [EmailSend] Python Node Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:48:49.677Z [Scheduler] [EmailSend] Python Node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:48:49.677Z [Scheduler] [EmailSend] Python Node Fatturabile vs Spedito (Alternatives: Fatturabile vs Spedito): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:48:49.677Z [Scheduler] [EmailSend] Sending email with 0 SQL tables and 1 Python outputs 
+2026-02-20T16:48:54.131Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 234.1s 
+2026-02-20T16:50:00.048Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T16:50:00.049Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T16:50:00.663Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-20T16:50:00.666Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-20T16:50:02.218Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: Dp76ZJOu 
+2026-02-20T16:50:02.218Z [Scheduler] [EmailSend] Found email node: Dp76ZJOu 
+2026-02-20T16:50:02.219Z [Scheduler] [EmailSend] Identified 1 required names: AAAA 
+2026-02-20T16:50:02.220Z [Scheduler] [DEBUG HR2] Node properties: isPython=false, sqlQuery=true, pythonCode=true, pythonResultName=undefined, pythonOutputType=chart, nodePath=root > ConnessioneSharePoint[0] > ElaboraDati[0] > Minuti Capacity > Chart 
+2026-02-20T16:50:02.220Z [Scheduler] [EmailSend] Flattened tree into 19 named nodes. Available names: EstrazioneSharePoint, PRODFIL, TABWID|AAAA, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity|Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto|Prodotto, Prodotto > Fatturato|Fatturato, Fatturato > Budget|Budget, Budget > Aggregato|Aggregato|BDG vs POC vs FAT, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT|BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito 
+2026-02-20T16:50:02.220Z [Scheduler] [EmailSend] Email task will execute ALL 19 tree nodes to ensure fresh data 
+2026-02-20T16:50:02.221Z [Scheduler] [EmailSend] Total nodes to execute: 19 (EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito) 
+2026-02-20T16:50:02.221Z [Scheduler] [AncestorChain] Execution Order: EstrazioneSharePoint -> PRODFIL -> TABWID -> PRODCommessa Mancante -> PRODFIL2 -> HR2 -> Gant e Capacity > Gantt vs Capacity -> Gantt - Capacity - Sum -> Capacity vs Saturazione -> Consegne -> HR2Local -> PRODUZIONE > Prodotto -> Prodotto > Fatturato -> Fatturato > Budget -> Budget > Aggregato -> BDG vs PROD vs FATTURATO > BDG vs POC vs FAT -> FatturabileMeseCorrente -> SpeditoMeseCorrente -> Fatturabile vs Spedito 
+2026-02-20T16:50:02.222Z [Scheduler] [AncestorChain] Executing ancestor: EstrazioneSharePoint (Python) 
+2026-02-20T16:50:02.222Z [Scheduler] [AncestorChain] Built inputData for EstrazioneSharePoint:  
+2026-02-20T16:50:02.222Z [Scheduler] [AncestorChain] Final inputData for EstrazioneSharePoint:  
+2026-02-20T16:50:03.671Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for EstrazioneSharePoint (feptUzSG) 
+2026-02-20T16:50:12.761Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for EstrazioneSharePoint 
+2026-02-20T16:50:12.761Z [Scheduler] [AncestorChain] Writing EstrazioneSharePoint to PROD 
+2026-02-20T16:50:30.877Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL (SQL) 
+2026-02-20T16:50:30.880Z [Scheduler] [AncestorChain] SQL node PRODFIL: injected 0 deps () 
+2026-02-20T16:50:31.311Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL (t4m_jbLn) 
+2026-02-20T16:50:40.346Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL 
+2026-02-20T16:50:40.350Z [Scheduler] [AncestorChain] Writing PRODFIL to PRODFILTRATA 
+2026-02-20T16:50:43.262Z [Scheduler] [AncestorChain] Executing ancestor: TABWID (SQL) 
+2026-02-20T16:50:43.263Z [Scheduler] [AncestorChain] SQL node TABWID: injected 0 deps () 
+2026-02-20T16:50:43.608Z [Scheduler] [AncestorChain] Hybrid node TABWID: SQL done, now running Python chart code 
+2026-02-20T16:50:45.911Z [Scheduler] [AncestorChain] Hybrid node TABWID: Python chart generated successfully 
+2026-02-20T16:50:45.911Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for TABWID (fVagNTtd) 
+2026-02-20T16:50:54.245Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for TABWID 
+2026-02-20T16:50:54.247Z [Scheduler] [AncestorChain] Executing ancestor: PRODCommessa Mancante (SQL) 
+2026-02-20T16:50:54.248Z [Scheduler] [AncestorChain] SQL node PRODCommessa Mancante: injected 1 deps (PRODFIL) 
+2026-02-20T16:50:55.755Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODCommessa Mancante (_CwXg6oQ) 
+2026-02-20T16:51:04.932Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODCommessa Mancante 
+2026-02-20T16:51:04.933Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL2 (SQL) 
+2026-02-20T16:51:04.933Z [Scheduler] [AncestorChain] SQL node PRODFIL2: injected 0 deps () 
+2026-02-20T16:51:05.389Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL2 (wC6CRuv7) 
+2026-02-20T16:51:13.415Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL2 
+2026-02-20T16:51:13.416Z [Scheduler] [AncestorChain] Executing ancestor: HR2 (SQL) 
+2026-02-20T16:51:13.416Z [Scheduler] [AncestorChain] SQL node HR2: injected 0 deps () 
+2026-02-20T16:51:14.597Z [Scheduler] [AncestorChain] Hybrid node HR2: SQL done, now running Python chart code 
+2026-02-20T16:51:16.440Z [Scheduler] [AncestorChain] Hybrid node HR2: Python chart generated successfully 
+2026-02-20T16:51:16.440Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2 (3NtNCoMB) 
+2026-02-20T16:51:25.354Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2 
+2026-02-20T16:51:25.355Z [Scheduler] [AncestorChain] Executing ancestor: Gant e Capacity > Gantt vs Capacity (Python) 
+2026-02-20T16:51:25.355Z [Scheduler] [AncestorChain] Built inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:51:25.355Z [Scheduler] [AncestorChain] Final inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:51:27.756Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gant e Capacity > Gantt vs Capacity (mT4fz_HR) 
+2026-02-20T16:51:36.786Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:51:36.787Z [Scheduler] [AncestorChain] Executing ancestor: Gantt - Capacity - Sum (Python) 
+2026-02-20T16:51:36.787Z [Scheduler] [AncestorChain] Built inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:51:36.787Z [Scheduler] [AncestorChain] Final inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:51:38.699Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gantt - Capacity - Sum (4BbRgfc5) 
+2026-02-20T16:51:47.764Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gantt - Capacity - Sum 
+2026-02-20T16:51:47.765Z [Scheduler] [AncestorChain] Executing ancestor: Capacity vs Saturazione (SQL) 
+2026-02-20T16:51:47.766Z [Scheduler] [AncestorChain] SQL node Capacity vs Saturazione: injected 1 deps (HR2) 
+2026-02-20T16:52:04.774Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: SQL done, now running Python chart code 
+2026-02-20T16:52:05.999Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: Python chart generated successfully 
+2026-02-20T16:52:05.999Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Capacity vs Saturazione (BTNiWkbT) 
+2026-02-20T16:52:14.951Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Capacity vs Saturazione 
+2026-02-20T16:52:14.952Z [Scheduler] [AncestorChain] Executing ancestor: Consegne (SQL) 
+2026-02-20T16:52:14.953Z [Scheduler] [AncestorChain] SQL node Consegne: injected 0 deps () 
+2026-02-20T16:52:23.240Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Consegne (2QH20NyR) 
+2026-02-20T16:52:29.750Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Consegne 
+2026-02-20T16:52:29.751Z [Scheduler] [AncestorChain] Executing ancestor: HR2Local (SQL) 
+2026-02-20T16:52:29.751Z [Scheduler] [AncestorChain] SQL node HR2Local: injected 1 deps (HR2) 
+2026-02-20T16:52:47.413Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2Local (P7OJwQA4) 
+2026-02-20T16:52:56.269Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2Local 
+2026-02-20T16:52:56.270Z [Scheduler] [AncestorChain] Executing ancestor: PRODUZIONE > Prodotto (SQL) 
+2026-02-20T16:52:56.273Z [Scheduler] [AncestorChain] SQL node PRODUZIONE > Prodotto: injected 0 deps () 
+2026-02-20T16:52:56.586Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODUZIONE > Prodotto (NC9jpnnG) 
+2026-02-20T16:53:04.383Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODUZIONE > Prodotto 
+2026-02-20T16:53:04.384Z [Scheduler] [AncestorChain] Writing PRODUZIONE > Prodotto to Prodotto 
+2026-02-20T16:53:04.845Z [Scheduler] [AncestorChain] Executing ancestor: Prodotto > Fatturato (SQL) 
+2026-02-20T16:53:04.846Z [Scheduler] [AncestorChain] SQL node Prodotto > Fatturato: injected 0 deps () 
+2026-02-20T16:53:05.126Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Prodotto > Fatturato (gye2BUuO) 
+2026-02-20T16:53:11.662Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Prodotto > Fatturato 
+2026-02-20T16:53:11.662Z [Scheduler] [AncestorChain] Writing Prodotto > Fatturato to Fatturato 
+2026-02-20T16:53:13.025Z [Scheduler] [AncestorChain] Executing ancestor: Fatturato > Budget (SQL) 
+2026-02-20T16:53:13.026Z [Scheduler] [AncestorChain] SQL node Fatturato > Budget: injected 0 deps () 
+2026-02-20T16:53:13.630Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturato > Budget (9LiHu3E2) 
+2026-02-20T16:53:20.409Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturato > Budget 
+2026-02-20T16:53:20.409Z [Scheduler] [AncestorChain] Writing Fatturato > Budget to Budget 
+2026-02-20T16:53:20.715Z [Scheduler] [AncestorChain] Executing ancestor: Budget > Aggregato (SQL) 
+2026-02-20T16:53:20.717Z [Scheduler] [AncestorChain] SQL node Budget > Aggregato: injected 3 deps (Prodotto, Fatturato, Budget) 
+2026-02-20T16:53:21.466Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: SQL done, now running Python chart code 
+2026-02-20T16:53:22.502Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: Python chart generated successfully 
+2026-02-20T16:53:22.502Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Budget > Aggregato (-A7oR6c8) 
+2026-02-20T16:53:28.727Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Budget > Aggregato 
+2026-02-20T16:53:28.727Z [Scheduler] [AncestorChain] Executing ancestor: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (SQL) 
+2026-02-20T16:53:28.727Z [Scheduler] [AncestorChain] SQL node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: injected 1 deps (Aggregato) 
+2026-02-20T16:53:29.133Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: SQL done, now running Python chart code 
+2026-02-20T16:53:30.448Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: Python chart generated successfully 
+2026-02-20T16:53:30.448Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (KhDnEWg8) 
+2026-02-20T16:53:39.455Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT 
+2026-02-20T16:53:39.455Z [Scheduler] [AncestorChain] Executing ancestor: FatturabileMeseCorrente (SQL) 
+2026-02-20T16:53:39.456Z [Scheduler] [AncestorChain] SQL node FatturabileMeseCorrente: injected 0 deps () 
+2026-02-20T16:53:39.753Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturabileMeseCorrente (ZwOVHdd4) 
+2026-02-20T16:53:50.798Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturabileMeseCorrente 
+2026-02-20T16:53:50.799Z [Scheduler] [AncestorChain] Executing ancestor: SpeditoMeseCorrente (SQL) 
+2026-02-20T16:53:50.802Z [Scheduler] [AncestorChain] SQL node SpeditoMeseCorrente: injected 0 deps () 
+2026-02-20T16:53:51.403Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for SpeditoMeseCorrente (gw4dLyqM) 
+2026-02-20T16:53:58.505Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for SpeditoMeseCorrente 
+2026-02-20T16:53:58.506Z [Scheduler] [AncestorChain] Executing ancestor: Fatturabile vs Spedito (Python) 
+2026-02-20T16:53:58.506Z [Scheduler] [AncestorChain] Built inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:53:58.506Z [Scheduler] [AncestorChain] Final inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:54:01.767Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturabile vs Spedito (vKJhk8mI) 
+2026-02-20T16:54:09.513Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturabile vs Spedito 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] Ancestor chain completed with 26 results and 24 report entries 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: [] 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: EstrazioneSharePoint 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table PRODFIL (Alternatives: PRODFIL): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table TABWID (Alternatives: TABWID,AAAA): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table PRODCommessa Mancante (Alternatives: PRODCommessa Mancante): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table PRODFIL2 (Alternatives: PRODFIL2): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table HR2 (Alternatives: HR2): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gantt - Capacity - Sum 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table Consegne (Alternatives: Consegne): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table HR2Local (Alternatives: HR2Local): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table PRODUZIONE > Prodotto (Alternatives: PRODUZIONE > Prodotto,Prodotto): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table Prodotto > Fatturato (Alternatives: Prodotto > Fatturato,Fatturato): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table Fatturato > Budget (Alternatives: Fatturato > Budget,Budget): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:54:09.513Z [Scheduler] [EmailSend] SQL Table FatturabileMeseCorrente (Alternatives: FatturabileMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] SQL Table SpeditoMeseCorrente (Alternatives: SpeditoMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Fatturabile vs Spedito 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: ["AAAA","AAAA"] 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Python Node EstrazioneSharePoint (Alternatives: EstrazioneSharePoint): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Python Node TABWID (Alternatives: TABWID,AAAA): inBody=true, asAttachment=true, matchedName=AAAA 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Python Node HR2 (Alternatives: HR2): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Python Node Gant e Capacity > Gantt vs Capacity (Alternatives: Gant e Capacity > Gantt vs Capacity,Gantt vs Capacity): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Python Node Gantt - Capacity - Sum (Alternatives: Gantt - Capacity - Sum): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Python Node Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Python Node Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Python Node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Python Node Fatturabile vs Spedito (Alternatives: Fatturabile vs Spedito): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:54:09.514Z [Scheduler] [EmailSend] Sending email with 0 SQL tables and 1 Python outputs 
+2026-02-20T16:54:11.854Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 251.8s 
+2026-02-20T16:55:00.036Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T16:55:00.037Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T16:55:00.394Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-20T16:55:00.394Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-20T16:55:01.997Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: Dp76ZJOu 
+2026-02-20T16:55:01.997Z [Scheduler] [EmailSend] Found email node: Dp76ZJOu 
+2026-02-20T16:55:01.998Z [Scheduler] [EmailSend] Identified 1 required names: AAAA 
+2026-02-20T16:55:01.998Z [Scheduler] [DEBUG HR2] Node properties: isPython=false, sqlQuery=true, pythonCode=true, pythonResultName=undefined, pythonOutputType=chart, nodePath=root > ConnessioneSharePoint[0] > ElaboraDati[0] > Minuti Capacity > Chart 
+2026-02-20T16:55:01.998Z [Scheduler] [EmailSend] Flattened tree into 19 named nodes. Available names: EstrazioneSharePoint, PRODFIL, TABWID|AAAA, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity|Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto|Prodotto, Prodotto > Fatturato|Fatturato, Fatturato > Budget|Budget, Budget > Aggregato|Aggregato|BDG vs POC vs FAT, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT|BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito 
+2026-02-20T16:55:01.999Z [Scheduler] [EmailSend] Email task will execute ALL 19 tree nodes to ensure fresh data 
+2026-02-20T16:55:01.999Z [Scheduler] [EmailSend] Total nodes to execute: 19 (EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito) 
+2026-02-20T16:55:02.000Z [Scheduler] [AncestorChain] Execution Order: EstrazioneSharePoint -> PRODFIL -> TABWID -> PRODCommessa Mancante -> PRODFIL2 -> HR2 -> Gant e Capacity > Gantt vs Capacity -> Gantt - Capacity - Sum -> Capacity vs Saturazione -> Consegne -> HR2Local -> PRODUZIONE > Prodotto -> Prodotto > Fatturato -> Fatturato > Budget -> Budget > Aggregato -> BDG vs PROD vs FATTURATO > BDG vs POC vs FAT -> FatturabileMeseCorrente -> SpeditoMeseCorrente -> Fatturabile vs Spedito 
+2026-02-20T16:55:02.000Z [Scheduler] [AncestorChain] Executing ancestor: EstrazioneSharePoint (Python) 
+2026-02-20T16:55:02.000Z [Scheduler] [AncestorChain] Built inputData for EstrazioneSharePoint:  
+2026-02-20T16:55:02.000Z [Scheduler] [AncestorChain] Final inputData for EstrazioneSharePoint:  
+2026-02-20T16:55:03.801Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for EstrazioneSharePoint (feptUzSG) 
+2026-02-20T16:55:15.448Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for EstrazioneSharePoint 
+2026-02-20T16:55:15.448Z [Scheduler] [AncestorChain] Writing EstrazioneSharePoint to PROD 
+2026-02-20T16:55:36.659Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL (SQL) 
+2026-02-20T16:55:36.660Z [Scheduler] [AncestorChain] SQL node PRODFIL: injected 0 deps () 
+2026-02-20T16:55:37.031Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL (t4m_jbLn) 
+2026-02-20T16:55:54.331Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL 
+2026-02-20T16:55:54.331Z [Scheduler] [AncestorChain] Writing PRODFIL to PRODFILTRATA 
+2026-02-20T16:55:57.456Z [Scheduler] [AncestorChain] Executing ancestor: TABWID (SQL) 
+2026-02-20T16:55:57.457Z [Scheduler] [AncestorChain] SQL node TABWID: injected 0 deps () 
+2026-02-20T16:55:57.828Z [Scheduler] [AncestorChain] Hybrid node TABWID: SQL done, now running Python chart code 
+2026-02-20T16:55:59.799Z [Scheduler] [AncestorChain] Hybrid node TABWID: Python chart generated successfully 
+2026-02-20T16:55:59.800Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for TABWID (fVagNTtd) 
+2026-02-20T16:56:10.398Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for TABWID 
+2026-02-20T16:56:10.398Z [Scheduler] [AncestorChain] Executing ancestor: PRODCommessa Mancante (SQL) 
+2026-02-20T16:56:10.401Z [Scheduler] [AncestorChain] SQL node PRODCommessa Mancante: injected 1 deps (PRODFIL) 
+2026-02-20T16:56:11.742Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODCommessa Mancante (_CwXg6oQ) 
+2026-02-20T16:56:22.508Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODCommessa Mancante 
+2026-02-20T16:56:22.509Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL2 (SQL) 
+2026-02-20T16:56:22.509Z [Scheduler] [AncestorChain] SQL node PRODFIL2: injected 0 deps () 
+2026-02-20T16:56:22.869Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL2 (wC6CRuv7) 
+2026-02-20T16:56:34.229Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL2 
+2026-02-20T16:56:34.229Z [Scheduler] [AncestorChain] Executing ancestor: HR2 (SQL) 
+2026-02-20T16:56:34.230Z [Scheduler] [AncestorChain] SQL node HR2: injected 0 deps () 
+2026-02-20T16:56:35.395Z [Scheduler] [AncestorChain] Hybrid node HR2: SQL done, now running Python chart code 
+2026-02-20T16:56:39.836Z [Scheduler] [AncestorChain] Hybrid node HR2: Python chart generated successfully 
+2026-02-20T16:56:39.837Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2 (3NtNCoMB) 
+2026-02-20T16:56:58.237Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2 
+2026-02-20T16:56:58.238Z [Scheduler] [AncestorChain] Executing ancestor: Gant e Capacity > Gantt vs Capacity (Python) 
+2026-02-20T16:56:58.239Z [Scheduler] [AncestorChain] Built inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:56:58.241Z [Scheduler] [AncestorChain] Final inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T16:57:01.390Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gant e Capacity > Gantt vs Capacity (mT4fz_HR) 
+2026-02-20T16:57:12.702Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:57:12.702Z [Scheduler] [AncestorChain] Executing ancestor: Gantt - Capacity - Sum (Python) 
+2026-02-20T16:57:12.702Z [Scheduler] [AncestorChain] Built inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:57:12.702Z [Scheduler] [AncestorChain] Final inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:57:15.447Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gantt - Capacity - Sum (4BbRgfc5) 
+2026-02-20T16:57:24.036Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gantt - Capacity - Sum 
+2026-02-20T16:57:24.037Z [Scheduler] [AncestorChain] Executing ancestor: Capacity vs Saturazione (SQL) 
+2026-02-20T16:57:24.038Z [Scheduler] [AncestorChain] SQL node Capacity vs Saturazione: injected 1 deps (HR2) 
+2026-02-20T16:57:44.445Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: SQL done, now running Python chart code 
+2026-02-20T16:57:45.638Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: Python chart generated successfully 
+2026-02-20T16:57:45.639Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Capacity vs Saturazione (BTNiWkbT) 
+2026-02-20T16:57:55.302Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Capacity vs Saturazione 
+2026-02-20T16:57:55.304Z [Scheduler] [AncestorChain] Executing ancestor: Consegne (SQL) 
+2026-02-20T16:57:55.308Z [Scheduler] [AncestorChain] SQL node Consegne: injected 0 deps () 
+2026-02-20T16:58:03.818Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Consegne (2QH20NyR) 
+2026-02-20T16:58:10.640Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Consegne 
+2026-02-20T16:58:10.641Z [Scheduler] [AncestorChain] Executing ancestor: HR2Local (SQL) 
+2026-02-20T16:58:10.641Z [Scheduler] [AncestorChain] SQL node HR2Local: injected 1 deps (HR2) 
+2026-02-20T16:58:29.421Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2Local (P7OJwQA4) 
+2026-02-20T16:58:38.251Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2Local 
+2026-02-20T16:58:38.251Z [Scheduler] [AncestorChain] Executing ancestor: PRODUZIONE > Prodotto (SQL) 
+2026-02-20T16:58:38.252Z [Scheduler] [AncestorChain] SQL node PRODUZIONE > Prodotto: injected 0 deps () 
+2026-02-20T16:58:39.407Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODUZIONE > Prodotto (NC9jpnnG) 
+2026-02-20T16:58:45.892Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODUZIONE > Prodotto 
+2026-02-20T16:58:45.892Z [Scheduler] [AncestorChain] Writing PRODUZIONE > Prodotto to Prodotto 
+2026-02-20T16:58:46.366Z [Scheduler] [AncestorChain] Executing ancestor: Prodotto > Fatturato (SQL) 
+2026-02-20T16:58:46.367Z [Scheduler] [AncestorChain] SQL node Prodotto > Fatturato: injected 0 deps () 
+2026-02-20T16:58:46.662Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Prodotto > Fatturato (gye2BUuO) 
+2026-02-20T16:58:53.552Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Prodotto > Fatturato 
+2026-02-20T16:58:53.552Z [Scheduler] [AncestorChain] Writing Prodotto > Fatturato to Fatturato 
+2026-02-20T16:58:53.995Z [Scheduler] [AncestorChain] Executing ancestor: Fatturato > Budget (SQL) 
+2026-02-20T16:58:53.995Z [Scheduler] [AncestorChain] SQL node Fatturato > Budget: injected 0 deps () 
+2026-02-20T16:58:54.318Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturato > Budget (9LiHu3E2) 
+2026-02-20T16:59:01.901Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturato > Budget 
+2026-02-20T16:59:01.901Z [Scheduler] [AncestorChain] Writing Fatturato > Budget to Budget 
+2026-02-20T16:59:02.213Z [Scheduler] [AncestorChain] Executing ancestor: Budget > Aggregato (SQL) 
+2026-02-20T16:59:02.214Z [Scheduler] [AncestorChain] SQL node Budget > Aggregato: injected 3 deps (Prodotto, Fatturato, Budget) 
+2026-02-20T16:59:02.966Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: SQL done, now running Python chart code 
+2026-02-20T16:59:03.999Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: Python chart generated successfully 
+2026-02-20T16:59:03.999Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Budget > Aggregato (-A7oR6c8) 
+2026-02-20T16:59:10.207Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Budget > Aggregato 
+2026-02-20T16:59:10.208Z [Scheduler] [AncestorChain] Executing ancestor: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (SQL) 
+2026-02-20T16:59:10.208Z [Scheduler] [AncestorChain] SQL node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: injected 1 deps (Aggregato) 
+2026-02-20T16:59:10.616Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: SQL done, now running Python chart code 
+2026-02-20T16:59:11.705Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: Python chart generated successfully 
+2026-02-20T16:59:11.705Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (KhDnEWg8) 
+2026-02-20T16:59:18.136Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT 
+2026-02-20T16:59:18.136Z [Scheduler] [AncestorChain] Executing ancestor: FatturabileMeseCorrente (SQL) 
+2026-02-20T16:59:18.137Z [Scheduler] [AncestorChain] SQL node FatturabileMeseCorrente: injected 0 deps () 
+2026-02-20T16:59:18.431Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturabileMeseCorrente (ZwOVHdd4) 
+2026-02-20T16:59:25.712Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturabileMeseCorrente 
+2026-02-20T16:59:25.712Z [Scheduler] [AncestorChain] Executing ancestor: SpeditoMeseCorrente (SQL) 
+2026-02-20T16:59:25.713Z [Scheduler] [AncestorChain] SQL node SpeditoMeseCorrente: injected 0 deps () 
+2026-02-20T16:59:26.349Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for SpeditoMeseCorrente (gw4dLyqM) 
+2026-02-20T16:59:33.153Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for SpeditoMeseCorrente 
+2026-02-20T16:59:33.153Z [Scheduler] [AncestorChain] Executing ancestor: Fatturabile vs Spedito (Python) 
+2026-02-20T16:59:33.153Z [Scheduler] [AncestorChain] Built inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:59:33.153Z [Scheduler] [AncestorChain] Final inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T16:59:34.104Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturabile vs Spedito (vKJhk8mI) 
+2026-02-20T16:59:40.316Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturabile vs Spedito 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] Ancestor chain completed with 26 results and 24 report entries 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: [] 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: EstrazioneSharePoint 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table PRODFIL (Alternatives: PRODFIL): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table TABWID (Alternatives: TABWID,AAAA): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table PRODCommessa Mancante (Alternatives: PRODCommessa Mancante): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table PRODFIL2 (Alternatives: PRODFIL2): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table HR2 (Alternatives: HR2): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gant e Capacity > Gantt vs Capacity 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gantt - Capacity - Sum 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table Consegne (Alternatives: Consegne): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table HR2Local (Alternatives: HR2Local): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table PRODUZIONE > Prodotto (Alternatives: PRODUZIONE > Prodotto,Prodotto): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table Prodotto > Fatturato (Alternatives: Prodotto > Fatturato,Fatturato): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table Fatturato > Budget (Alternatives: Fatturato > Budget,Budget): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:59:40.316Z [Scheduler] [EmailSend] SQL Table BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T16:59:40.317Z [Scheduler] [EmailSend] SQL Table FatturabileMeseCorrente (Alternatives: FatturabileMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:59:40.317Z [Scheduler] [EmailSend] SQL Table SpeditoMeseCorrente (Alternatives: SpeditoMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T16:59:40.317Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Fatturabile vs Spedito 
+2026-02-20T16:59:40.317Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: ["AAAA","AAAA"] 
+2026-02-20T16:59:40.317Z [Scheduler] [EmailSend] Python Node EstrazioneSharePoint (Alternatives: EstrazioneSharePoint): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:59:40.318Z [Scheduler] [EmailSend] Python Node TABWID (Alternatives: TABWID,AAAA): inBody=true, asAttachment=true, matchedName=AAAA 
+2026-02-20T16:59:40.322Z [Scheduler] [EmailSend] Python Node HR2 (Alternatives: HR2): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:59:40.322Z [Scheduler] [EmailSend] Python Node Gant e Capacity > Gantt vs Capacity (Alternatives: Gant e Capacity > Gantt vs Capacity,Gantt vs Capacity): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:59:40.322Z [Scheduler] [EmailSend] Python Node Gantt - Capacity - Sum (Alternatives: Gantt - Capacity - Sum): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:59:40.322Z [Scheduler] [EmailSend] Python Node Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:59:40.322Z [Scheduler] [EmailSend] Python Node Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:59:40.323Z [Scheduler] [EmailSend] Python Node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:59:40.323Z [Scheduler] [EmailSend] Python Node Fatturabile vs Spedito (Alternatives: Fatturabile vs Spedito): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T16:59:40.323Z [Scheduler] [EmailSend] Sending email with 0 SQL tables and 1 Python outputs 
+2026-02-20T16:59:44.977Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 284.9s 
+2026-02-20T17:00:00.024Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T17:00:00.027Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T17:00:00.030Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-20T17:00:00.030Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-20T17:00:00.089Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-20T17:00:00.129Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-20T17:00:00.352Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-20T17:00:00.353Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-20T17:00:01.536Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: Dp76ZJOu 
+2026-02-20T17:00:01.536Z [Scheduler] [EmailSend] Found email node: Dp76ZJOu 
+2026-02-20T17:00:01.537Z [Scheduler] [EmailSend] Identified 1 required names: AAAA 
+2026-02-20T17:00:01.537Z [Scheduler] [DEBUG HR2] Node properties: isPython=false, sqlQuery=true, pythonCode=true, pythonResultName=undefined, pythonOutputType=chart, nodePath=root > ConnessioneSharePoint[0] > ElaboraDati[0] > Minuti Capacity > Chart 
+2026-02-20T17:00:01.537Z [Scheduler] [EmailSend] Flattened tree into 19 named nodes. Available names: EstrazioneSharePoint, PRODFIL, TABWID|AAAA, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity|Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto|Prodotto, Prodotto > Fatturato|Fatturato, Fatturato > Budget|Budget, Budget > Aggregato|Aggregato|BDG vs POC vs FAT, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT|BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito 
+2026-02-20T17:00:01.537Z [Scheduler] [EmailSend] Email task will execute ALL 19 tree nodes to ensure fresh data 
+2026-02-20T17:00:01.537Z [Scheduler] [EmailSend] Total nodes to execute: 19 (EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito) 
+2026-02-20T17:00:01.538Z [Scheduler] [AncestorChain] Execution Order: EstrazioneSharePoint -> PRODFIL -> TABWID -> PRODCommessa Mancante -> PRODFIL2 -> HR2 -> Gant e Capacity > Gantt vs Capacity -> Gantt - Capacity - Sum -> Capacity vs Saturazione -> Consegne -> HR2Local -> PRODUZIONE > Prodotto -> Prodotto > Fatturato -> Fatturato > Budget -> Budget > Aggregato -> BDG vs PROD vs FATTURATO > BDG vs POC vs FAT -> FatturabileMeseCorrente -> SpeditoMeseCorrente -> Fatturabile vs Spedito 
+2026-02-20T17:00:01.538Z [Scheduler] [AncestorChain] Executing ancestor: EstrazioneSharePoint (Python) 
+2026-02-20T17:00:01.538Z [Scheduler] [AncestorChain] Built inputData for EstrazioneSharePoint:  
+2026-02-20T17:00:01.538Z [Scheduler] [AncestorChain] Final inputData for EstrazioneSharePoint:  
+2026-02-20T17:00:03.554Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for EstrazioneSharePoint (feptUzSG) 
+2026-02-20T17:00:11.768Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for EstrazioneSharePoint 
+2026-02-20T17:00:11.768Z [Scheduler] [AncestorChain] Writing EstrazioneSharePoint to PROD 
+2026-02-20T17:00:28.875Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL (SQL) 
+2026-02-20T17:00:28.875Z [Scheduler] [AncestorChain] SQL node PRODFIL: injected 0 deps () 
+2026-02-20T17:00:29.269Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL (t4m_jbLn) 
+2026-02-20T17:00:36.524Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL 
+2026-02-20T17:00:36.524Z [Scheduler] [AncestorChain] Writing PRODFIL to PRODFILTRATA 
+2026-02-20T17:00:39.672Z [Scheduler] [AncestorChain] Executing ancestor: TABWID (SQL) 
+2026-02-20T17:00:39.678Z [Scheduler] [AncestorChain] SQL node TABWID: injected 0 deps () 
+2026-02-20T17:00:40.021Z [Scheduler] [AncestorChain] Hybrid node TABWID: SQL done, now running Python chart code 
+2026-02-20T17:00:41.300Z [Scheduler] [AncestorChain] Hybrid node TABWID: Python chart generated successfully 
+2026-02-20T17:00:41.300Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for TABWID (fVagNTtd) 
+2026-02-20T17:00:48.852Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for TABWID 
+2026-02-20T17:00:48.853Z [Scheduler] [AncestorChain] Executing ancestor: PRODCommessa Mancante (SQL) 
+2026-02-20T17:00:48.853Z [Scheduler] [AncestorChain] SQL node PRODCommessa Mancante: injected 1 deps (PRODFIL) 
+2026-02-20T17:00:50.166Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODCommessa Mancante (_CwXg6oQ) 
+2026-02-20T17:00:56.798Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODCommessa Mancante 
+2026-02-20T17:00:56.799Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL2 (SQL) 
+2026-02-20T17:00:56.799Z [Scheduler] [AncestorChain] SQL node PRODFIL2: injected 0 deps () 
+2026-02-20T17:00:57.140Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL2 (wC6CRuv7) 
+2026-02-20T17:01:05.007Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL2 
+2026-02-20T17:01:05.007Z [Scheduler] [AncestorChain] Executing ancestor: HR2 (SQL) 
+2026-02-20T17:01:05.007Z [Scheduler] [AncestorChain] SQL node HR2: injected 0 deps () 
+2026-02-20T17:01:06.253Z [Scheduler] [AncestorChain] Hybrid node HR2: SQL done, now running Python chart code 
+2026-02-20T17:01:08.759Z [Scheduler] [AncestorChain] Hybrid node HR2: Python chart generated successfully 
+2026-02-20T17:01:08.760Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2 (3NtNCoMB) 
+2026-02-20T17:01:18.010Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2 
+2026-02-20T17:01:18.011Z [Scheduler] [AncestorChain] Executing ancestor: Gant e Capacity > Gantt vs Capacity (Python) 
+2026-02-20T17:01:18.012Z [Scheduler] [AncestorChain] Built inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T17:01:18.014Z [Scheduler] [AncestorChain] Final inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T17:01:20.375Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gant e Capacity > Gantt vs Capacity (mT4fz_HR) 
+2026-02-20T17:01:27.740Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gant e Capacity > Gantt vs Capacity 
+2026-02-20T17:01:27.740Z [Scheduler] [AncestorChain] Executing ancestor: Gantt - Capacity - Sum (Python) 
+2026-02-20T17:01:27.740Z [Scheduler] [AncestorChain] Built inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T17:01:27.740Z [Scheduler] [AncestorChain] Final inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T17:01:29.818Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gantt - Capacity - Sum (4BbRgfc5) 
+2026-02-20T17:01:36.528Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gantt - Capacity - Sum 
+2026-02-20T17:01:36.528Z [Scheduler] [AncestorChain] Executing ancestor: Capacity vs Saturazione (SQL) 
+2026-02-20T17:01:36.528Z [Scheduler] [AncestorChain] SQL node Capacity vs Saturazione: injected 1 deps (HR2) 
+2026-02-20T17:01:56.427Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: SQL done, now running Python chart code 
+2026-02-20T17:01:57.777Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: Python chart generated successfully 
+2026-02-20T17:01:57.777Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Capacity vs Saturazione (BTNiWkbT) 
+2026-02-20T17:02:06.982Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Capacity vs Saturazione 
+2026-02-20T17:02:06.983Z [Scheduler] [AncestorChain] Executing ancestor: Consegne (SQL) 
+2026-02-20T17:02:06.984Z [Scheduler] [AncestorChain] SQL node Consegne: injected 0 deps () 
+2026-02-20T17:02:15.707Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Consegne (2QH20NyR) 
+2026-02-20T17:02:23.052Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Consegne 
+2026-02-20T17:02:23.053Z [Scheduler] [AncestorChain] Executing ancestor: HR2Local (SQL) 
+2026-02-20T17:02:23.053Z [Scheduler] [AncestorChain] SQL node HR2Local: injected 1 deps (HR2) 
+2026-02-20T17:02:40.919Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2Local (P7OJwQA4) 
+2026-02-20T17:02:52.277Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2Local 
+2026-02-20T17:02:52.278Z [Scheduler] [AncestorChain] Executing ancestor: PRODUZIONE > Prodotto (SQL) 
+2026-02-20T17:02:52.279Z [Scheduler] [AncestorChain] SQL node PRODUZIONE > Prodotto: injected 0 deps () 
+2026-02-20T17:02:52.651Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODUZIONE > Prodotto (NC9jpnnG) 
+2026-02-20T17:03:00.279Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODUZIONE > Prodotto 
+2026-02-20T17:03:00.279Z [Scheduler] [AncestorChain] Writing PRODUZIONE > Prodotto to Prodotto 
+2026-02-20T17:03:00.738Z [Scheduler] [AncestorChain] Executing ancestor: Prodotto > Fatturato (SQL) 
+2026-02-20T17:03:00.739Z [Scheduler] [AncestorChain] SQL node Prodotto > Fatturato: injected 0 deps () 
+2026-02-20T17:03:01.016Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Prodotto > Fatturato (gye2BUuO) 
+2026-02-20T17:03:08.642Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Prodotto > Fatturato 
+2026-02-20T17:03:08.643Z [Scheduler] [AncestorChain] Writing Prodotto > Fatturato to Fatturato 
+2026-02-20T17:03:09.128Z [Scheduler] [AncestorChain] Executing ancestor: Fatturato > Budget (SQL) 
+2026-02-20T17:03:09.130Z [Scheduler] [AncestorChain] SQL node Fatturato > Budget: injected 0 deps () 
+2026-02-20T17:03:09.426Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturato > Budget (9LiHu3E2) 
+2026-02-20T17:03:16.644Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturato > Budget 
+2026-02-20T17:03:16.644Z [Scheduler] [AncestorChain] Writing Fatturato > Budget to Budget 
+2026-02-20T17:03:17.060Z [Scheduler] [AncestorChain] Executing ancestor: Budget > Aggregato (SQL) 
+2026-02-20T17:03:17.065Z [Scheduler] [AncestorChain] SQL node Budget > Aggregato: injected 3 deps (Prodotto, Fatturato, Budget) 
+2026-02-20T17:03:17.839Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: SQL done, now running Python chart code 
+2026-02-20T17:03:19.120Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: Python chart generated successfully 
+2026-02-20T17:03:19.120Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Budget > Aggregato (-A7oR6c8) 
+2026-02-20T17:03:25.986Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Budget > Aggregato 
+2026-02-20T17:03:25.986Z [Scheduler] [AncestorChain] Executing ancestor: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (SQL) 
+2026-02-20T17:03:25.986Z [Scheduler] [AncestorChain] SQL node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: injected 1 deps (Aggregato) 
+2026-02-20T17:03:26.381Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: SQL done, now running Python chart code 
+2026-02-20T17:03:27.400Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: Python chart generated successfully 
+2026-02-20T17:03:27.400Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (KhDnEWg8) 
+2026-02-20T17:03:35.982Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT 
+2026-02-20T17:03:36.129Z [Scheduler] [AncestorChain] Executing ancestor: FatturabileMeseCorrente (SQL) 
+2026-02-20T17:03:36.130Z [Scheduler] [AncestorChain] SQL node FatturabileMeseCorrente: injected 0 deps () 
+2026-02-20T17:03:36.436Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturabileMeseCorrente (ZwOVHdd4) 
+2026-02-20T17:03:44.509Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturabileMeseCorrente 
+2026-02-20T17:03:44.509Z [Scheduler] [AncestorChain] Executing ancestor: SpeditoMeseCorrente (SQL) 
+2026-02-20T17:03:44.510Z [Scheduler] [AncestorChain] SQL node SpeditoMeseCorrente: injected 0 deps () 
+2026-02-20T17:03:45.151Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for SpeditoMeseCorrente (gw4dLyqM) 
+2026-02-20T17:03:53.991Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for SpeditoMeseCorrente 
+2026-02-20T17:03:53.992Z [Scheduler] [AncestorChain] Executing ancestor: Fatturabile vs Spedito (Python) 
+2026-02-20T17:03:53.992Z [Scheduler] [AncestorChain] Built inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T17:03:53.992Z [Scheduler] [AncestorChain] Final inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T17:03:56.167Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturabile vs Spedito (vKJhk8mI) 
+2026-02-20T17:04:05.596Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturabile vs Spedito 
+2026-02-20T17:04:05.596Z [Scheduler] [EmailSend] Ancestor chain completed with 26 results and 24 report entries 
+2026-02-20T17:04:05.596Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-20T17:04:05.596Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: [] 
+2026-02-20T17:04:05.596Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: EstrazioneSharePoint 
+2026-02-20T17:04:05.596Z [Scheduler] [EmailSend] SQL Table PRODFIL (Alternatives: PRODFIL): inBody=false, asExcel=false 
+2026-02-20T17:04:05.596Z [Scheduler] [EmailSend] SQL Table TABWID (Alternatives: TABWID,AAAA): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table PRODCommessa Mancante (Alternatives: PRODCommessa Mancante): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table PRODFIL2 (Alternatives: PRODFIL2): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table HR2 (Alternatives: HR2): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gant e Capacity > Gantt vs Capacity 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gantt - Capacity - Sum 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table Consegne (Alternatives: Consegne): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table HR2Local (Alternatives: HR2Local): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table PRODUZIONE > Prodotto (Alternatives: PRODUZIONE > Prodotto,Prodotto): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table Prodotto > Fatturato (Alternatives: Prodotto > Fatturato,Fatturato): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table Fatturato > Budget (Alternatives: Fatturato > Budget,Budget): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table FatturabileMeseCorrente (Alternatives: FatturabileMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] SQL Table SpeditoMeseCorrente (Alternatives: SpeditoMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Fatturabile vs Spedito 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: ["AAAA","AAAA"] 
+2026-02-20T17:04:05.597Z [Scheduler] [EmailSend] Python Node EstrazioneSharePoint (Alternatives: EstrazioneSharePoint): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:04:05.598Z [Scheduler] [EmailSend] Python Node TABWID (Alternatives: TABWID,AAAA): inBody=true, asAttachment=true, matchedName=AAAA 
+2026-02-20T17:04:05.600Z [Scheduler] [EmailSend] Python Node HR2 (Alternatives: HR2): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:04:05.600Z [Scheduler] [EmailSend] Python Node Gant e Capacity > Gantt vs Capacity (Alternatives: Gant e Capacity > Gantt vs Capacity,Gantt vs Capacity): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:04:05.600Z [Scheduler] [EmailSend] Python Node Gantt - Capacity - Sum (Alternatives: Gantt - Capacity - Sum): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:04:05.600Z [Scheduler] [EmailSend] Python Node Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:04:05.600Z [Scheduler] [EmailSend] Python Node Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:04:05.600Z [Scheduler] [EmailSend] Python Node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:04:05.600Z [Scheduler] [EmailSend] Python Node Fatturabile vs Spedito (Alternatives: Fatturabile vs Spedito): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:04:05.600Z [Scheduler] [EmailSend] Sending email with 0 SQL tables and 1 Python outputs 
+2026-02-20T17:04:09.107Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 249.1s 
+2026-02-20T17:05:00.054Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T17:05:00.059Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T17:05:00.478Z [Scheduler] Executing logic for type: EMAIL_SEND 
+2026-02-20T17:05:00.478Z [Scheduler] [EmailSend] Loading LIVE tree data for task execution 
+2026-02-20T17:05:01.635Z [Scheduler] [EmailSend] Path-based search failed, trying nodeId: Dp76ZJOu 
+2026-02-20T17:05:01.635Z [Scheduler] [EmailSend] Found email node: Dp76ZJOu 
+2026-02-20T17:05:01.636Z [Scheduler] [EmailSend] Identified 1 required names: AAAA 
+2026-02-20T17:05:01.637Z [Scheduler] [DEBUG HR2] Node properties: isPython=false, sqlQuery=true, pythonCode=true, pythonResultName=undefined, pythonOutputType=chart, nodePath=root > ConnessioneSharePoint[0] > ElaboraDati[0] > Minuti Capacity > Chart 
+2026-02-20T17:05:01.637Z [Scheduler] [EmailSend] Flattened tree into 19 named nodes. Available names: EstrazioneSharePoint, PRODFIL, TABWID|AAAA, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity|Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto|Prodotto, Prodotto > Fatturato|Fatturato, Fatturato > Budget|Budget, Budget > Aggregato|Aggregato|BDG vs POC vs FAT, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT|BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito 
+2026-02-20T17:05:01.637Z [Scheduler] [EmailSend] Email task will execute ALL 19 tree nodes to ensure fresh data 
+2026-02-20T17:05:01.638Z [Scheduler] [EmailSend] Total nodes to execute: 19 (EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente, Fatturabile vs Spedito) 
+2026-02-20T17:05:01.638Z [Scheduler] [AncestorChain] Execution Order: EstrazioneSharePoint -> PRODFIL -> TABWID -> PRODCommessa Mancante -> PRODFIL2 -> HR2 -> Gant e Capacity > Gantt vs Capacity -> Gantt - Capacity - Sum -> Capacity vs Saturazione -> Consegne -> HR2Local -> PRODUZIONE > Prodotto -> Prodotto > Fatturato -> Fatturato > Budget -> Budget > Aggregato -> BDG vs PROD vs FATTURATO > BDG vs POC vs FAT -> FatturabileMeseCorrente -> SpeditoMeseCorrente -> Fatturabile vs Spedito 
+2026-02-20T17:05:01.638Z [Scheduler] [AncestorChain] Executing ancestor: EstrazioneSharePoint (Python) 
+2026-02-20T17:05:01.638Z [Scheduler] [AncestorChain] Built inputData for EstrazioneSharePoint:  
+2026-02-20T17:05:01.638Z [Scheduler] [AncestorChain] Final inputData for EstrazioneSharePoint:  
+2026-02-20T17:05:03.011Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for EstrazioneSharePoint (feptUzSG) 
+2026-02-20T17:05:14.293Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for EstrazioneSharePoint 
+2026-02-20T17:05:14.296Z [Scheduler] [AncestorChain] Writing EstrazioneSharePoint to PROD 
+2026-02-20T17:05:31.462Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL (SQL) 
+2026-02-20T17:05:31.462Z [Scheduler] [AncestorChain] SQL node PRODFIL: injected 0 deps () 
+2026-02-20T17:05:31.824Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL (t4m_jbLn) 
+2026-02-20T17:05:39.792Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL 
+2026-02-20T17:05:39.800Z [Scheduler] [AncestorChain] Writing PRODFIL to PRODFILTRATA 
+2026-02-20T17:05:42.963Z [Scheduler] [AncestorChain] Executing ancestor: TABWID (SQL) 
+2026-02-20T17:05:42.963Z [Scheduler] [AncestorChain] SQL node TABWID: injected 0 deps () 
+2026-02-20T17:05:43.289Z [Scheduler] [AncestorChain] Hybrid node TABWID: SQL done, now running Python chart code 
+2026-02-20T17:05:44.966Z [Scheduler] [AncestorChain] Hybrid node TABWID: Python chart generated successfully 
+2026-02-20T17:05:44.966Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for TABWID (fVagNTtd) 
+2026-02-20T17:05:52.535Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for TABWID 
+2026-02-20T17:05:52.535Z [Scheduler] [AncestorChain] Executing ancestor: PRODCommessa Mancante (SQL) 
+2026-02-20T17:05:52.538Z [Scheduler] [AncestorChain] SQL node PRODCommessa Mancante: injected 1 deps (PRODFIL) 
+2026-02-20T17:05:54.137Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODCommessa Mancante (_CwXg6oQ) 
+2026-02-20T17:06:01.342Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODCommessa Mancante 
+2026-02-20T17:06:01.342Z [Scheduler] [AncestorChain] Executing ancestor: PRODFIL2 (SQL) 
+2026-02-20T17:06:01.342Z [Scheduler] [AncestorChain] SQL node PRODFIL2: injected 0 deps () 
+2026-02-20T17:06:01.706Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODFIL2 (wC6CRuv7) 
+2026-02-20T17:06:11.887Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODFIL2 
+2026-02-20T17:06:11.887Z [Scheduler] [AncestorChain] Executing ancestor: HR2 (SQL) 
+2026-02-20T17:06:11.887Z [Scheduler] [AncestorChain] SQL node HR2: injected 0 deps () 
+2026-02-20T17:06:13.672Z [Scheduler] [AncestorChain] Hybrid node HR2: SQL done, now running Python chart code 
+2026-02-20T17:06:17.636Z [Scheduler] [AncestorChain] Hybrid node HR2: Python chart generated successfully 
+2026-02-20T17:06:17.637Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2 (3NtNCoMB) 
+2026-02-20T17:06:28.637Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2 
+2026-02-20T17:06:28.637Z [Scheduler] [AncestorChain] Executing ancestor: Gant e Capacity > Gantt vs Capacity (Python) 
+2026-02-20T17:06:28.637Z [Scheduler] [AncestorChain] Built inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T17:06:28.639Z [Scheduler] [AncestorChain] Final inputData for Gant e Capacity > Gantt vs Capacity: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2 
+2026-02-20T17:06:31.950Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gant e Capacity > Gantt vs Capacity (mT4fz_HR) 
+2026-02-20T17:06:47.645Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gant e Capacity > Gantt vs Capacity 
+2026-02-20T17:06:47.646Z [Scheduler] [AncestorChain] Executing ancestor: Gantt - Capacity - Sum (Python) 
+2026-02-20T17:06:47.646Z [Scheduler] [AncestorChain] Built inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T17:06:47.646Z [Scheduler] [AncestorChain] Final inputData for Gantt - Capacity - Sum: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity 
+2026-02-20T17:06:50.792Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Gantt - Capacity - Sum (4BbRgfc5) 
+2026-02-20T17:07:26.110Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Gantt - Capacity - Sum 
+2026-02-20T17:07:26.112Z [Scheduler] [AncestorChain] Executing ancestor: Capacity vs Saturazione (SQL) 
+2026-02-20T17:07:26.115Z [Scheduler] [AncestorChain] SQL node Capacity vs Saturazione: injected 1 deps (HR2) 
+2026-02-20T17:07:44.119Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: SQL done, now running Python chart code 
+2026-02-20T17:07:48.251Z [Scheduler] [AncestorChain] Hybrid node Capacity vs Saturazione: Python chart generated successfully 
+2026-02-20T17:07:48.254Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Capacity vs Saturazione (BTNiWkbT) 
+2026-02-20T17:08:01.474Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Capacity vs Saturazione 
+2026-02-20T17:08:01.475Z [Scheduler] [AncestorChain] Executing ancestor: Consegne (SQL) 
+2026-02-20T17:08:01.477Z [Scheduler] [AncestorChain] SQL node Consegne: injected 0 deps () 
+2026-02-20T17:08:09.997Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Consegne (2QH20NyR) 
+2026-02-20T17:08:20.598Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Consegne 
+2026-02-20T17:08:20.599Z [Scheduler] [AncestorChain] Executing ancestor: HR2Local (SQL) 
+2026-02-20T17:08:20.600Z [Scheduler] [AncestorChain] SQL node HR2Local: injected 1 deps (HR2) 
+2026-02-20T17:08:38.899Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for HR2Local (P7OJwQA4) 
+2026-02-20T17:08:54.200Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for HR2Local 
+2026-02-20T17:08:54.201Z [Scheduler] [AncestorChain] Executing ancestor: PRODUZIONE > Prodotto (SQL) 
+2026-02-20T17:08:54.202Z [Scheduler] [AncestorChain] SQL node PRODUZIONE > Prodotto: injected 0 deps () 
+2026-02-20T17:08:54.600Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for PRODUZIONE > Prodotto (NC9jpnnG) 
+2026-02-20T17:09:07.290Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for PRODUZIONE > Prodotto 
+2026-02-20T17:09:07.291Z [Scheduler] [AncestorChain] Writing PRODUZIONE > Prodotto to Prodotto 
+2026-02-20T17:09:08.004Z [Scheduler] [AncestorChain] Executing ancestor: Prodotto > Fatturato (SQL) 
+2026-02-20T17:09:08.005Z [Scheduler] [AncestorChain] SQL node Prodotto > Fatturato: injected 0 deps () 
+2026-02-20T17:09:08.289Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Prodotto > Fatturato (gye2BUuO) 
+2026-02-20T17:09:20.431Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Prodotto > Fatturato 
+2026-02-20T17:09:20.440Z [Scheduler] [AncestorChain] Writing Prodotto > Fatturato to Fatturato 
+2026-02-20T17:09:20.880Z [Scheduler] [AncestorChain] Executing ancestor: Fatturato > Budget (SQL) 
+2026-02-20T17:09:20.881Z [Scheduler] [AncestorChain] SQL node Fatturato > Budget: injected 0 deps () 
+2026-02-20T17:09:21.168Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturato > Budget (9LiHu3E2) 
+2026-02-20T17:10:00.118Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T17:10:00.134Z [Scheduler] ⏭️ Task cmluyflus0029106u1hyfrxyb SKIPPED - still running from previous trigger 
+2026-02-20T17:10:14.643Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturato > Budget 
+2026-02-20T17:10:14.652Z [Scheduler] [AncestorChain] Writing Fatturato > Budget to Budget 
+2026-02-20T17:10:15.598Z [Scheduler] [AncestorChain] Executing ancestor: Budget > Aggregato (SQL) 
+2026-02-20T17:10:15.631Z [Scheduler] [AncestorChain] SQL node Budget > Aggregato: injected 3 deps (Prodotto, Fatturato, Budget) 
+2026-02-20T17:10:16.556Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: SQL done, now running Python chart code 
+2026-02-20T17:10:26.749Z [Scheduler] [AncestorChain] Hybrid node Budget > Aggregato: Python chart generated successfully 
+2026-02-20T17:10:26.750Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Budget > Aggregato (-A7oR6c8) 
+2026-02-20T17:11:14.168Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Budget > Aggregato 
+2026-02-20T17:11:14.175Z [Scheduler] [AncestorChain] Executing ancestor: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (SQL) 
+2026-02-20T17:11:14.178Z [Scheduler] [AncestorChain] SQL node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: injected 1 deps (Aggregato) 
+2026-02-20T17:11:14.872Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: SQL done, now running Python chart code 
+2026-02-20T17:11:18.257Z [Scheduler] [AncestorChain] Hybrid node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT: Python chart generated successfully 
+2026-02-20T17:11:18.257Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (KhDnEWg8) 
+2026-02-20T17:11:39.227Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for BDG vs PROD vs FATTURATO > BDG vs POC vs FAT 
+2026-02-20T17:11:39.228Z [Scheduler] [AncestorChain] Executing ancestor: FatturabileMeseCorrente (SQL) 
+2026-02-20T17:11:39.228Z [Scheduler] [AncestorChain] SQL node FatturabileMeseCorrente: injected 0 deps () 
+2026-02-20T17:11:39.519Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for FatturabileMeseCorrente (ZwOVHdd4) 
+2026-02-20T17:12:07.299Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for FatturabileMeseCorrente 
+2026-02-20T17:12:07.304Z [Scheduler] [AncestorChain] Executing ancestor: SpeditoMeseCorrente (SQL) 
+2026-02-20T17:12:07.308Z [Scheduler] [AncestorChain] SQL node SpeditoMeseCorrente: injected 0 deps () 
+2026-02-20T17:12:07.962Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for SpeditoMeseCorrente (gw4dLyqM) 
+2026-02-20T17:12:32.331Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for SpeditoMeseCorrente 
+2026-02-20T17:12:32.333Z [Scheduler] [AncestorChain] Executing ancestor: Fatturabile vs Spedito (Python) 
+2026-02-20T17:12:32.334Z [Scheduler] [AncestorChain] Built inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T17:12:32.334Z [Scheduler] [AncestorChain] Final inputData for Fatturabile vs Spedito: EstrazioneSharePoint, PRODFIL, TABWID, PRODCommessa Mancante, PRODFIL2, HR2, Gant e Capacity > Gantt vs Capacity, Gantt - Capacity - Sum, Capacity vs Saturazione, Consegne, HR2Local, PRODUZIONE > Prodotto, Prodotto > Fatturato, Fatturato > Budget, Budget > Aggregato, BDG vs PROD vs FATTURATO > BDG vs POC vs FAT, FatturabileMeseCorrente, SpeditoMeseCorrente 
+2026-02-20T17:12:36.007Z [Scheduler] [AncestorChain] [DEBUG] Starting incremental preview for Fatturabile vs Spedito (vKJhk8mI) 
+2026-02-20T17:15:00.474Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T17:15:00.481Z [Scheduler] ⏭️ Task cmluyflus0029106u1hyfrxyb SKIPPED - still running from previous trigger 
+2026-02-20T17:15:34.726Z [Scheduler] [AncestorChain] [DEBUG] Incremental preview SAVED for Fatturabile vs Spedito 
+2026-02-20T17:15:34.732Z [Scheduler] [EmailSend] Ancestor chain completed with 26 results and 24 report entries 
+2026-02-20T17:15:34.733Z [Scheduler] [EmailSend] No saved config, falling back to tree discovery 
+2026-02-20T17:15:34.733Z [Scheduler] [EmailSend] Matching SQL tables. Placeholders in body: [] 
+2026-02-20T17:15:34.733Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: EstrazioneSharePoint 
+2026-02-20T17:15:34.733Z [Scheduler] [EmailSend] SQL Table PRODFIL (Alternatives: PRODFIL): inBody=false, asExcel=false 
+2026-02-20T17:15:34.734Z [Scheduler] [EmailSend] SQL Table TABWID (Alternatives: TABWID,AAAA): inBody=false, asExcel=false 
+2026-02-20T17:15:34.734Z [Scheduler] [EmailSend] SQL Table PRODCommessa Mancante (Alternatives: PRODCommessa Mancante): inBody=false, asExcel=false 
+2026-02-20T17:15:34.735Z [Scheduler] [EmailSend] SQL Table PRODFIL2 (Alternatives: PRODFIL2): inBody=false, asExcel=false 
+2026-02-20T17:15:34.736Z [Scheduler] [EmailSend] SQL Table HR2 (Alternatives: HR2): inBody=false, asExcel=false 
+2026-02-20T17:15:34.736Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gant e Capacity > Gantt vs Capacity 
+2026-02-20T17:15:34.738Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Gantt - Capacity - Sum 
+2026-02-20T17:15:34.738Z [Scheduler] [EmailSend] SQL Table Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asExcel=false 
+2026-02-20T17:15:34.738Z [Scheduler] [EmailSend] SQL Table Consegne (Alternatives: Consegne): inBody=false, asExcel=false 
+2026-02-20T17:15:34.738Z [Scheduler] [EmailSend] SQL Table HR2Local (Alternatives: HR2Local): inBody=false, asExcel=false 
+2026-02-20T17:15:34.738Z [Scheduler] [EmailSend] SQL Table PRODUZIONE > Prodotto (Alternatives: PRODUZIONE > Prodotto,Prodotto): inBody=false, asExcel=false 
+2026-02-20T17:15:34.738Z [Scheduler] [EmailSend] SQL Table Prodotto > Fatturato (Alternatives: Prodotto > Fatturato,Fatturato): inBody=false, asExcel=false 
+2026-02-20T17:15:34.738Z [Scheduler] [EmailSend] SQL Table Fatturato > Budget (Alternatives: Fatturato > Budget,Budget): inBody=false, asExcel=false 
+2026-02-20T17:15:34.855Z [Scheduler] [EmailSend] SQL Table Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T17:15:34.856Z [Scheduler] [EmailSend] SQL Table BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asExcel=false 
+2026-02-20T17:15:34.856Z [Scheduler] [EmailSend] SQL Table FatturabileMeseCorrente (Alternatives: FatturabileMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T17:15:34.856Z [Scheduler] [EmailSend] SQL Table SpeditoMeseCorrente (Alternatives: SpeditoMeseCorrente): inBody=false, asExcel=false 
+2026-02-20T17:15:34.856Z [Scheduler] [EmailSend] Skipping Python node during SQL phase: Fatturabile vs Spedito 
+2026-02-20T17:15:34.857Z [Scheduler] [EmailSend] Matching Python outputs. Placeholders in body: ["AAAA","AAAA"] 
+2026-02-20T17:15:34.857Z [Scheduler] [EmailSend] Python Node EstrazioneSharePoint (Alternatives: EstrazioneSharePoint): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:15:34.859Z [Scheduler] [EmailSend] Python Node TABWID (Alternatives: TABWID,AAAA): inBody=true, asAttachment=true, matchedName=AAAA 
+2026-02-20T17:15:34.860Z [Scheduler] [EmailSend] Python Node HR2 (Alternatives: HR2): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:15:34.860Z [Scheduler] [EmailSend] Python Node Gant e Capacity > Gantt vs Capacity (Alternatives: Gant e Capacity > Gantt vs Capacity,Gantt vs Capacity): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:15:34.861Z [Scheduler] [EmailSend] Python Node Gantt - Capacity - Sum (Alternatives: Gantt - Capacity - Sum): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:15:34.861Z [Scheduler] [EmailSend] Python Node Capacity vs Saturazione (Alternatives: Capacity vs Saturazione): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:15:34.861Z [Scheduler] [EmailSend] Python Node Budget > Aggregato (Alternatives: Budget > Aggregato,Aggregato,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:15:34.861Z [Scheduler] [EmailSend] Python Node BDG vs PROD vs FATTURATO > BDG vs POC vs FAT (Alternatives: BDG vs PROD vs FATTURATO > BDG vs POC vs FAT,BDG vs POC vs FAT): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:15:34.861Z [Scheduler] [EmailSend] Python Node Fatturabile vs Spedito (Alternatives: Fatturabile vs Spedito): inBody=false, asAttachment=false, matchedName=none 
+2026-02-20T17:15:34.861Z [Scheduler] [EmailSend] Sending email with 0 SQL tables and 1 Python outputs 
+2026-02-20T17:15:53.815Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 653.8s 
+2026-02-20T17:20:00.021Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T17:20:00.022Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T17:20:00.032Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 0.0s 
+2026-02-20T17:25:00.036Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T17:25:00.037Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T17:25:00.075Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 0.0s 
+2026-02-20T17:30:00.032Z [Scheduler] Executing task: Node-RzX9nFJGQUs832cLVvecO-Dp76ZJOu (EMAIL_SEND) (cmluyflus0029106u1hyfrxyb) 
+2026-02-20T17:30:00.034Z [Scheduler] ▶️ Starting task cmluyflus0029106u1hyfrxyb 
+2026-02-20T17:30:00.152Z [Scheduler] ⏱️ Task cmluyflus0029106u1hyfrxyb finished in 0.1s 
+2026-02-20T17:37:20.172Z [Scheduler] Initializing Scheduler Service... 
+2026-02-20T17:37:26.388Z [Scheduler] Found 55 active tasks. 
+2026-02-20T17:37:26.442Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-20T17:37:26.445Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-20T17:37:26.446Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.446Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.446Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.447Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.447Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.450Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-xP3NFhd- (EMAIL_SEND) (cmlus0csd000r5627dr8y4p9g) with cron: 0 12 * * 5 
+2026-02-20T17:37:26.450Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.451Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.451Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.451Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.451Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.451Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.452Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.452Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.452Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.452Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.453Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.453Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.453Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.453Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.453Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.454Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.454Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.454Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.455Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.455Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.455Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.457Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-20T17:37:26.457Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.457Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.459Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-20T17:37:26.459Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.461Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-20T17:37:26.461Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.462Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.462Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.464Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-uyKUI8pS (EMAIL_SEND) (cmlus241o000t5627hdobjp0i) with cron: 0 12 * * 5 
+2026-02-20T17:37:26.465Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-20T17:37:26.466Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.466Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.466Z [Scheduler] ERROR: Task cmlksn45z000d10l312k32jj1 (Node-4OtZT6m_2q7T7LpEpYoDC-hXm206kX (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.467Z [Scheduler] ERROR: Task cmloy3lfe001m327449u47xcm (Node-4OtZT6m_2q7T7LpEpYoDC-xM4Rh1ZF (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.469Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-20T17:37:26.469Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.470Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.472Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-20T17:37:26.472Z [Scheduler] ERROR: Task cmlnha1200025eyc54vu1jdj2 (Node-cmkkpn5lo00033e4pgigfk53z-H9RIhqib (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.474Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-20T17:37:26.474Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.476Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-20T17:37:26.478Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-20T17:37:26.478Z [Scheduler] ERROR: Task cmlv0j6ns002r11eu9rntbva8 (Node-cmktbirhb0001ywhh0j9z4j0q-sdBQDqvt (Implicit)) has no valid schedule. 
+2026-02-20T17:37:26.480Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) with cron: */60 * * * * 
+2026-02-20T17:37:26.480Z [Scheduler] Scheduler Service Initialized. 

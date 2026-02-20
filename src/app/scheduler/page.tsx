@@ -7,7 +7,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Play, Pause, Trash2, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Plus, Play, Pause, Trash2, Clock, CheckCircle, XCircle, AlertCircle, List, FileText, CalendarClock, ExternalLink, ChevronRight } from 'lucide-react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -27,8 +28,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TaskForm } from '@/components/scheduler/task-form';
 import { TaskExecutions } from '@/components/scheduler/task-executions';
+import { SchedulerExecutionLog } from '@/components/scheduler/scheduler-execution-log';
+import { SchedulerUpcoming } from '@/components/scheduler/scheduler-upcoming';
 import { toast } from '@/hooks/use-toast';
 
 interface ScheduledTask {
@@ -36,6 +40,7 @@ interface ScheduledTask {
   name: string;
   description: string | null;
   type: string;
+  config: any;
   scheduleType: string;
   status: string;
   lastRunAt: string | null;
@@ -45,6 +50,52 @@ interface ScheduledTask {
   failureCount: number;
   createdAt: string;
   updatedAt: string;
+  treeName: string | null;
+}
+
+function parseNodePath(nodePath: string): string[] {
+  // Format: root.options['B2B'].options['Query'].options['Mail']
+  // or: root.options['Commesse'].options['Join'][0]
+  // or: root->A->B->C (legacy)
+  if (nodePath.includes('.options[')) {
+    const matches = nodePath.match(/\['([^']+)'\]/g);
+    if (matches && matches.length > 0) {
+      return matches.map(m => m.replace(/\['|'\]/g, ''));
+    }
+  }
+  if (nodePath.includes('->')) {
+    return nodePath.split('->').filter(p => p !== 'root');
+  }
+  return [];
+}
+
+function getTaskNodeName(task: { name: string; config?: any; treeName?: string | null }): string {
+  const config = task.config as any;
+  if (!config) return task.name;
+  if (config.nodePath) {
+    const parts = parseNodePath(config.nodePath);
+    if (parts.length > 0) return parts[parts.length - 1];
+  }
+  if (config.subject) return config.subject;
+  if (config.sqlResultName) return config.sqlResultName;
+  if (config.pythonResultName) return config.pythonResultName;
+  // Handle implicit nodes: Node-xxx-yyy (Implicit) or Node-xxx-yyy (TYPE)
+  if (task.name.startsWith('Node-') && task.treeName) {
+    return task.treeName;
+  }
+  return task.name;
+}
+
+function getTaskPathParts(task: { name: string; config?: any }): string[] | null {
+  const config = task.config as any;
+  if (!config?.nodePath) return null;
+  const parts = parseNodePath(config.nodePath);
+  return parts.length > 1 ? parts : null;
+}
+
+function getTaskTreeId(task: { config?: any }): string | null {
+  const config = task.config as any;
+  return config?.treeId || null;
 }
 
 export default function SchedulerPage() {
@@ -263,117 +314,175 @@ export default function SchedulerPage() {
         </Dialog>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Task Pianificati</CardTitle>
-          <CardDescription>
-            Gestisci e monitora tutti i task pianificati
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-              <p className="mt-4 text-muted-foreground">Caricamento task...</p>
-            </div>
-          ) : tasks.length === 0 ? (
-            <div className="text-center py-12">
-              <Clock className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Nessun task pianificato</h3>
-              <p className="text-muted-foreground mb-4">
-                Crea il tuo primo task pianificato per automatizzare le operazioni
-              </p>
-              <Button onClick={() => setShowCreateDialog(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Crea Primo Task
-              </Button>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Stato</TableHead>
-                  <TableHead>Ultima Esecuzione</TableHead>
-                  <TableHead>Prossima Esecuzione</TableHead>
-                  <TableHead>Esecuzioni</TableHead>
-                  <TableHead>Azioni</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tasks.map((task) => (
-                  <TableRow key={task.id}>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{task.name}</div>
-                        {task.description && (
-                          <div className="text-sm text-muted-foreground">{task.description}</div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{getTypeBadge(task.type)}</TableCell>
-                    <TableCell>{getStatusBadge(task.status)}</TableCell>
-                    <TableCell>{formatDate(task.lastRunAt)}</TableCell>
-                    <TableCell>{formatDate(task.nextRunAt)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-green-600">{task.successCount}</span>
-                        <span>/</span>
-                        <span className="text-red-600">{task.failureCount}</span>
-                        <span className="text-muted-foreground">({task.runCount})</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleTriggerTask(task.id)}
-                          title="Esegui ora"
-                        >
-                          <Play className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleToggleStatus(task)}
-                          title={task.status === 'active' ? 'Pausa' : 'Attiva'}
-                        >
-                          {task.status === 'active' ? (
-                            <Pause className="w-4 h-4" />
-                          ) : (
-                            <Play className="w-4 h-4" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedTask(task);
-                            setShowExecutionsDialog(true);
-                          }}
-                          title="Storico esecuzioni"
-                        >
-                          <Clock className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteTask(task.id)}
-                          title="Elimina"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="tasks" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="tasks">
+            <List className="w-4 h-4 mr-2" />
+            Schedulazioni
+          </TabsTrigger>
+          <TabsTrigger value="executions">
+            <FileText className="w-4 h-4 mr-2" />
+            Registro Invii
+          </TabsTrigger>
+          <TabsTrigger value="upcoming">
+            <CalendarClock className="w-4 h-4 mr-2" />
+            Prossimi Invii
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tasks">
+          <Card>
+            <CardHeader>
+              <CardTitle>Task Pianificati</CardTitle>
+              <CardDescription>
+                Gestisci e monitora tutti i task pianificati
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+                  <p className="mt-4 text-muted-foreground">Caricamento task...</p>
+                </div>
+              ) : tasks.length === 0 ? (
+                <div className="text-center py-12">
+                  <Clock className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">Nessun task pianificato</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Crea il tuo primo task pianificato per automatizzare le operazioni
+                  </p>
+                  <Button onClick={() => setShowCreateDialog(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Crea Primo Task
+                  </Button>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Nome</TableHead>
+                      <TableHead className="text-xs">Tipo</TableHead>
+                      <TableHead className="text-xs">Stato</TableHead>
+                      <TableHead className="text-xs">Ultima Esecuzione</TableHead>
+                      <TableHead className="text-xs">Prossima Esecuzione</TableHead>
+                      <TableHead className="text-xs">Esecuzioni</TableHead>
+                      <TableHead className="text-xs">Azioni</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tasks.map((task) => (
+                      <TableRow key={task.id}>
+                        <TableCell className="whitespace-nowrap">
+                          <div>
+                            {task.treeName && (
+                              <div className="text-[10px] text-muted-foreground leading-tight">{task.treeName}</div>
+                            )}
+                            {getTaskTreeId(task) ? (
+                              <Link
+                                href={`/view/${getTaskTreeId(task)}${(task.config as any)?.nodePath ? `?node=${encodeURIComponent((task.config as any).nodePath)}` : ''}`}
+                                className="text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline inline-flex items-center gap-1"
+                              >
+                                {getTaskNodeName(task)}
+                                <ExternalLink className="w-3 h-3" />
+                              </Link>
+                            ) : (
+                              <div className="text-xs font-medium">{getTaskNodeName(task)}</div>
+                            )}
+                            {getTaskPathParts(task) && (
+                              <div className="flex items-center gap-0.5 mt-0.5">
+                                {getTaskPathParts(task)!.map((part, i, arr) => (
+                                  <span key={i} className="inline-flex items-center">
+                                    <span className={`text-[10px] ${i === arr.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
+                                      {part}
+                                    </span>
+                                    {i < arr.length - 1 && (
+                                      <ChevronRight className="w-2.5 h-2.5 text-muted-foreground/50 mx-0.5" />
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {task.description && (
+                              <div className="text-[10px] text-muted-foreground">{task.description}</div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{getTypeBadge(task.type)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{getStatusBadge(task.status)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{formatDate(task.lastRunAt)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{formatDate(task.nextRunAt)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="text-green-600">{task.successCount}</span>
+                            <span>/</span>
+                            <span className="text-red-600">{task.failureCount}</span>
+                            <span className="text-muted-foreground">({task.runCount})</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleTriggerTask(task.id)}
+                              title="Esegui ora"
+                              className="h-7 w-7 p-0"
+                            >
+                              <Play className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleToggleStatus(task)}
+                              title={task.status === 'active' ? 'Pausa' : 'Attiva'}
+                              className="h-7 w-7 p-0"
+                            >
+                              {task.status === 'active' ? (
+                                <Pause className="w-3.5 h-3.5" />
+                              ) : (
+                                <Play className="w-3.5 h-3.5" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedTask(task);
+                                setShowExecutionsDialog(true);
+                              }}
+                              title="Storico esecuzioni"
+                              className="h-7 w-7 p-0"
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteTask(task.id)}
+                              title="Elimina"
+                              className="h-7 w-7 p-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="executions">
+          <SchedulerExecutionLog />
+        </TabsContent>
+
+        <TabsContent value="upcoming">
+          <SchedulerUpcoming />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={showExecutionsDialog} onOpenChange={setShowExecutionsDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">

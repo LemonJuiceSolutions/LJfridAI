@@ -30,6 +30,7 @@ interface VisualTreeProps {
     treeData: StoredTree;
     onDataRefresh?: (freshData?: StoredTree) => void;
     isSaving: boolean;
+    initialNodePath?: string;
 }
 
 // --- Layout Constants ---
@@ -330,7 +331,7 @@ function getNodeFromPath(obj: any, path: string): any {
 }
 
 
-export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIsSaving }: VisualTreeProps) {
+export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIsSaving, initialNodePath }: VisualTreeProps) {
     const { toast } = useToast();
     const [scheduledNodeIds, setScheduledNodeIds] = useState<Set<string>>(new Set());
 
@@ -518,6 +519,22 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     const [deletingNodeInfo, setDeletingNodeInfo] = useState<{ path: string; impactReport: any } | null>(null);
     const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
     const [zoomReset, setZoomReset] = useState(0);
+    const [initialNodeOpened, setInitialNodeOpened] = useState(false);
+
+    // Auto-open node from deep-link
+    useEffect(() => {
+        if (!initialNodePath || !tree || initialNodeOpened) return;
+        setInitialNodeOpened(true);
+        const node = getNodeFromPath(tree, initialNodePath);
+        if (!node) return;
+        if (typeof node === 'object' && node !== null && 'question' in node) {
+            setEditingNodeInfo({ path: initialNodePath, node, type: 'question' });
+        } else if (typeof node === 'object' && node !== null && 'decision' in node) {
+            setEditingNodeInfo({ path: initialNodePath, node, type: 'decision' });
+        } else if (typeof node === 'string') {
+            setEditingNodeInfo({ path: initialNodePath, node: { decision: node }, type: 'decision' });
+        }
+    }, [initialNodePath, tree, initialNodeOpened]);
 
     const handleNodeUpdateAction = async (treeId: string, nodePath: string, nodeData: string) => {
         if (!onDataRefresh) return;
