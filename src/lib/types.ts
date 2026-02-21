@@ -217,6 +217,7 @@ export interface AgentChatMessage {
   content: string;
   timestamp?: number;
   scriptSnapshot?: string;
+  clarificationQuestions?: string[];
 }
 
 export interface AgentConversation {

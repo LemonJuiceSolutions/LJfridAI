@@ -424,58 +424,49 @@ export class SchedulerService {
           // This allows scripts to access any table computed earlier in the pipeline
           const inputData: Record<string, any> = {};
 
-          // First, add all available results by their original names
-          // IMPORTANT: Extract .data from result objects (matching button UI behavior)
-          for (const [normKey, val] of Object.entries(resultsNormalized)) {
-            const origName = nodeNameMap.get(normKey) || normKey;
+          // Helper: extract usable data from a result value
+          const extractData = (val: any): any | undefined => {
+            if (val === undefined || val === null) return undefined;
+            if (Array.isArray(val)) return val;
+            if (typeof val === 'object' && 'data' in val && Array.isArray(val.data)) return val.data;
+            if (typeof val === 'object' && 'data' in val && val.data !== null && val.data !== undefined) return val.data;
+            if (typeof val === 'object' && 'rechartsData' in val && Array.isArray((val as any).rechartsData)) return (val as any).rechartsData;
+            if (typeof val === 'object' && 'variables' in val && (val as any).variables) return (val as any).variables;
+            if (typeof val === 'object' && !('data' in val)) return val;
+            if (typeof val === 'object' && ('chartBase64' in val || 'chartHtml' in val || 'rechartsConfig' in val)) return val;
+            return undefined;
+          };
 
-            if (val !== undefined && val !== null) {
-              if (Array.isArray(val)) {
-                inputData[origName] = val;
-              } else if (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) {
-                inputData[origName] = val.data;
-              } else if (val && typeof val === 'object' && 'data' in val && val.data !== null && val.data !== undefined) {
-                inputData[origName] = val.data;
-              } else if (val && typeof val === 'object' && 'rechartsData' in val && Array.isArray((val as any).rechartsData)) {
-                inputData[origName] = (val as any).rechartsData;
-              } else if (val && typeof val === 'object' && 'variables' in val && (val as any).variables) {
-                inputData[origName] = (val as any).variables;
-              } else if (val && typeof val === 'object' && !('data' in val)) {
-                inputData[origName] = val;
-              } else if (val && typeof val === 'object' && ('chartBase64' in val || 'chartHtml' in val || 'rechartsConfig' in val)) {
-                inputData[origName] = val;
-              }
-            }
-          }
-          logger.log(`[AncestorChain] Built inputData for ${originalName}: ${Object.keys(inputData).join(', ')}`);
-
-          // Also add using explicit dependency names (might be aliased differently)
+          // FIX: Add EXPLICIT pipeline dependencies FIRST so that the primary dependency
+          // becomes 'df' in Python (the backend maps the first table to 'df').
+          // This matches the behavior of the node preview button, which only passes
+          // the configured dependencies.
+          const explicitDepNames = new Set<string>();
           (tableDef.pipelineDependencies || []).forEach((d: any) => {
             const depNorm = d.tableName.toLowerCase().trim();
             const val = resultsNormalized[depNorm];
             if (val !== undefined) {
-              // Same extraction logic for explicit dependencies
-              if (Array.isArray(val)) {
-                inputData[d.tableName] = val;
-              } else if (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) {
-                inputData[d.tableName] = val.data;
-              } else if (val && typeof val === 'object' && 'data' in val && val.data !== null && val.data !== undefined) {
-                inputData[d.tableName] = val.data;
-              } else if (val && typeof val === 'object' && 'rechartsData' in val && Array.isArray((val as any).rechartsData)) {
-                inputData[d.tableName] = (val as any).rechartsData;
-              } else if (val && typeof val === 'object' && 'variables' in val && (val as any).variables) {
-                inputData[d.tableName] = (val as any).variables;
-              } else if (val && typeof val === 'object' && !('data' in val)) {
-                inputData[d.tableName] = val;
-              } else if (val && typeof val === 'object' && ('chartBase64' in val || 'chartHtml' in val || 'rechartsConfig' in val)) {
-                inputData[d.tableName] = val;
+              const extracted = extractData(val);
+              if (extracted !== undefined) {
+                inputData[d.tableName] = extracted;
+                explicitDepNames.add(depNorm);
               }
-              // else: skip if data is null/undefined and no chart info
             }
           });
 
-          // DEBUG: Log final inputData keys
-          logger.log(`[AncestorChain] Final inputData for ${originalName}: ${Object.keys(inputData).join(', ')}`);
+          // Then add all remaining available results by their original names
+          for (const [normKey, val] of Object.entries(resultsNormalized)) {
+            if (explicitDepNames.has(normKey)) continue; // Already added as explicit dep
+            const origName = nodeNameMap.get(normKey) || normKey;
+            const extracted = extractData(val);
+            if (extracted !== undefined) {
+              inputData[origName] = extracted;
+            }
+          }
+
+          // DEBUG: Log final inputData keys (first key = 'df' in Python)
+          const inputKeys = Object.keys(inputData);
+          logger.log(`[AncestorChain] Final inputData for ${originalName}: [${inputKeys.join(', ')}] (df → ${inputKeys[0] || 'none'})`);
 
           // Prepare dependencies definitions
           // FIX: Strip nested pipelineDependencies to prevent recursive re-fetching.
@@ -512,6 +503,7 @@ export class SchedulerService {
               rechartsConfig: res.rechartsConfig,
               rechartsData: res.rechartsData,
               plotlyJson: res.plotlyJson,
+              html: res.html,
               variables: res.variables,
               stdout: res.stdout
             };
@@ -625,6 +617,7 @@ export class SchedulerService {
                   rechartsConfig: pyRes.rechartsConfig,
                   rechartsData: pyRes.rechartsData,
                   plotlyJson: pyRes.plotlyJson,
+                  html: pyRes.html,
                   variables: pyRes.variables,
                   stdout: pyRes.stdout
                 };
@@ -1127,6 +1120,7 @@ export class SchedulerService {
               asAttachment,
               pipelineDependencies: pythonNode.pipelineDependencies,
               plotlyStyleOverrides: pythonNode.pythonPreviewResult?.plotlyStyleOverrides,
+              htmlStyleOverrides: pythonNode.pythonPreviewResult?.htmlStyleOverrides,
             });
           }
         }
@@ -1152,6 +1146,22 @@ export class SchedulerService {
 
     logger.log(`[EmailSend] Sending email with ${selectedTables.length} SQL tables and ${selectedPythonOutputs.length} Python outputs`);
 
+    // Extract htmlStyleOverrides - search email node first, then all tree nodes (Python HTML nodes store overrides in pythonPreviewResult)
+    let htmlStyleOverrides = emailNode.pythonPreviewResult?.htmlStyleOverrides
+      || (emailNode as any).htmlStyleOverrides
+      || (config as any).htmlStyleOverrides
+      || undefined;
+    if (!htmlStyleOverrides) {
+      for (const treeNode of globalNodes) {
+        const nodeOverrides = treeNode.pythonPreviewResult?.htmlStyleOverrides || treeNode.htmlStyleOverrides;
+        if (nodeOverrides && typeof nodeOverrides === 'object' && Object.keys(nodeOverrides).length > 0) {
+          htmlStyleOverrides = nodeOverrides;
+          logger.log(`[EmailSend] Found htmlStyleOverrides on node "${treeNode.name}"`);
+          break;
+        }
+      }
+    }
+
     // 9. Call the SAME function as UI's "Send Test Email" button
     const result = await sendTestEmailWithDataAction({
       connectorId: emailConfig.connectorId || connectorId,
@@ -1169,6 +1179,7 @@ export class SchedulerService {
       mediaAttachments: emailAttachments.mediaAsAttachment || [],
       preCalculatedResults: ancestorResults,
       pipelineReport,
+      htmlStyleOverrides,
       _bypassAuth: true
     });
 

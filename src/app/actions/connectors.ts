@@ -10,6 +10,8 @@ import type { MediaItem, LinkItem, TriggerItem } from '@/lib/types';
 import { applyPlotlyOverrides, plotlyJsonToHtml } from '@/lib/plotly-utils';
 import { resolveTheme } from '@/lib/chart-theme';
 import { testSharePointConnectionAction } from './sharepoint';
+import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
+import { generateHtmlStyleCss, applyHtmlStyleOverrides } from '@/lib/html-style-utils';
 
 // ... (existing functions)
 
@@ -442,6 +444,7 @@ export async function sendTestEmailWithDataAction(params: {
         asAttachment: boolean;
         dependencies?: Array<{ tableName: string; connectorId?: string; query?: string; pipelineDependencies?: any[] }>;
         plotlyStyleOverrides?: any;
+        htmlStyleOverrides?: HtmlStyleOverrides;
     }>;
     availableMedia?: MediaItem[];
     availableLinks?: LinkItem[];
@@ -449,6 +452,7 @@ export async function sendTestEmailWithDataAction(params: {
     mediaAttachments?: string[];
     preCalculatedResults?: Record<string, any>;
     pipelineReport?: Array<{ name: string, type: string, status: 'success' | 'error' | 'skipped', error?: string, timestamp: string, nodePath?: string }>;
+    htmlStyleOverrides?: HtmlStyleOverrides;
     _bypassAuth?: boolean; // INTERNAL USE ONLY: For scheduler
 }) {
     console.log('[EMAIL DEBUG] sendTestEmailWithDataAction called with:', {
@@ -809,6 +813,7 @@ export async function sendTestEmailWithDataAction(params: {
             chartHtml?: string;
             plotlyJson?: any;
             plotlyStyleOverrides?: any;
+            htmlStyleOverrides?: HtmlStyleOverrides;
             html?: string;
             variables?: Record<string, any>;
             type: 'table' | 'variable' | 'chart' | 'html';
@@ -836,6 +841,7 @@ export async function sendTestEmailWithDataAction(params: {
                             chartHtml: preRes.chartHtml,
                             plotlyJson: preRes.plotlyJson,
                             plotlyStyleOverrides: pyOutput.plotlyStyleOverrides,
+                            htmlStyleOverrides: pyOutput.htmlStyleOverrides,
                             html: preRes.html,
                             variables: preRes.variables,
                             type: pyOutput.outputType
@@ -876,6 +882,7 @@ export async function sendTestEmailWithDataAction(params: {
                             chartHtml: result.chartHtml,
                             plotlyJson: result.plotlyJson,
                             plotlyStyleOverrides: pyOutput.plotlyStyleOverrides,
+                            htmlStyleOverrides: pyOutput.htmlStyleOverrides,
                             html: result.html,
                             variables: result.variables,
                             type: pyOutput.outputType
@@ -906,27 +913,23 @@ export async function sendTestEmailWithDataAction(params: {
             }
         }
 
-        // Build HTML body with tables
+        // Build HTML body with tables - use htmlStyleOverrides if provided, fallback to Python output overrides
+        const effectiveHtmlOverrides = params.htmlStyleOverrides
+            || params.selectedPythonOutputs?.find(p => p.htmlStyleOverrides && Object.keys(p.htmlStyleOverrides).length > 0)?.htmlStyleOverrides
+            || {};
+        const emailCss = generateHtmlStyleCss(effectiveHtmlOverrides);
         let fullHtml = `
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 950px; margin: 0 auto; padding: 15px; color: #374151; font-size: 12px; }
+        ${emailCss}
         .user-content { margin-bottom: 15px; line-height: 1.5; }
         .table-section { margin: 15px 0; }
         .table-title { font-size: 12px; font-weight: 600; color: #1f2937; margin-bottom: 6px; padding: 6px 10px; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 4px; border-left: 3px solid #3b82f6; }
         .row-info { color: #6b7280; font-size: 9px; margin: 4px 0 8px 0; }
-        table { border-collapse: collapse; width: 100%; font-size: 10px; border: 1px solid #d1d5db; }
-        th { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: #f1f5f9; padding: 5px 7px; text-align: left; font-weight: 500; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; border: 1px solid #475569; white-space: nowrap; }
-        td { padding: 4px 7px; border: 1px solid #d1d5db; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        tr:nth-child(even) { background-color: #f9fafb; }
-        tr:hover { background-color: #f3f4f6; }
         .chart-container { text-align: center; padding: 10px; margin: 15px 0; }
-        h1, h2, h3 { color: #1f2937; margin: 10px 0; }
-        p { line-height: 1.5; margin: 8px 0; }
-        a { color: #2563eb; }
     </style>
 </head>
 <body>
@@ -1421,8 +1424,13 @@ print(f"PNG generated: {len(result)} chars base64")
                         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                     });
                 } else if (pyResult.type === 'html' && pyResult.html) {
-                    // Attach HTML content as .html file
-                    const buffer = Buffer.from(pyResult.html, 'utf8');
+                    // Attach HTML content as .html file - apply style overrides
+                    const attachOverrides = pyResult.htmlStyleOverrides || effectiveHtmlOverrides;
+                    const hasOverrides = attachOverrides && Object.keys(attachOverrides).length > 0;
+                    const styledHtml = hasOverrides
+                        ? applyHtmlStyleOverrides(pyResult.html, attachOverrides)
+                        : pyResult.html;
+                    const buffer = Buffer.from(styledHtml, 'utf8');
                     console.log(`[EMAIL DEBUG] HTML file ${pyResult.name}.html size: ${(buffer.length / 1024).toFixed(2)} KB`);
 
                     attachments.push({

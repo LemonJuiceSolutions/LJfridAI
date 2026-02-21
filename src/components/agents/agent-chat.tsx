@@ -407,6 +407,7 @@ interface AgentChatProps {
   inputTables?: Record<string, any[]>;
   connectorId?: string;
   onScriptUpdate?: (newScript: string) => void;
+  onAutoExecutePreview?: (script: string) => Promise<{ success: boolean; error?: string }>;
   onClose?: () => void;
   onGoBack?: (messageIndex: number) => void;
 }
@@ -419,6 +420,7 @@ export function AgentChat({
   inputTables,
   connectorId,
   onScriptUpdate,
+  onAutoExecutePreview,
   onClose,
   onGoBack,
 }: AgentChatProps) {
@@ -434,6 +436,9 @@ export function AgentChat({
   const [totalUsage, setTotalUsage] = useState<{ tokens: number; cost: number }>({ tokens: 0, cost: 0 });
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<Set<number>>(new Set());
+  const [isAutoExecuting, setIsAutoExecuting] = useState(false);
+  const [autoRetryCount, setAutoRetryCount] = useState(0);
+  const MAX_AUTO_RETRIES = 3;
 
   // Ref to auto-scroll version timeline to active version
   const versionTimelineRef = useRef<HTMLDivElement>(null);
@@ -523,6 +528,9 @@ export function AgentChat({
     });
   }, []);
 
+  // Collapsible script preview in messages
+  const [expandedScripts, setExpandedScripts] = useState<Set<number>>(new Set());
+
   // Correction dialog state
   const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
   const [correctionMessageIndex, setCorrectionMessageIndex] = useState<number | null>(null);
@@ -565,6 +573,192 @@ export function AgentChat({
   useEffect(() => {
     loadConversation();
   }, [nodeId, agentType]);
+
+  // Auto-scroll to bottom when messages change or loading state changes
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading, isAutoExecuting]);
+
+  // Auto-execute preview and retry on errors (up to MAX_AUTO_RETRIES)
+  const triggerAutoExecute = useCallback(async (scriptToExecute: string, retryAttempt: number = 0) => {
+    if (!onAutoExecutePreview) return;
+
+    setIsAutoExecuting(true);
+    setAutoRetryCount(retryAttempt);
+
+    try {
+      const result = await onAutoExecutePreview(scriptToExecute);
+
+      if (result.success) {
+        setMessages(prev => [...prev, {
+          role: 'assistant' as const,
+          content: retryAttempt > 0
+            ? `✅ **Anteprima eseguita con successo** (dopo ${retryAttempt} correzione/i)`
+            : '✅ **Anteprima eseguita con successo!**',
+          timestamp: Date.now(),
+        }]);
+        setIsAutoExecuting(false);
+        setAutoRetryCount(0);
+      } else if (retryAttempt < MAX_AUTO_RETRIES) {
+        // Check if this is a non-retryable configuration error (agent can't fix these)
+        const nonRetryableErrors = [
+          'Nessun connettore SQL configurato',
+          'Connettore SQL non trovato o non configurato',
+          'connettore non configurato',
+          'connector not found',
+          'No connector',
+        ];
+        const isConfigError = nonRetryableErrors.some(e =>
+          result.error?.toLowerCase().includes(e.toLowerCase())
+        );
+
+        if (isConfigError) {
+          setMessages(prev => [...prev, {
+            role: 'assistant' as const,
+            content: `⚠️ **Errore di configurazione**: ${result.error}\n\nQuesto non e' un errore di codice — assicurati di aver selezionato un connettore SQL nel pannello del nodo prima di eseguire.`,
+            timestamp: Date.now(),
+          }]);
+          setIsAutoExecuting(false);
+          setAutoRetryCount(0);
+          return;
+        }
+
+        // Execution failed - send error to agent for auto-correction
+        const errorMessage = `ERRORE ESECUZIONE AUTOMATICA (tentativo ${retryAttempt + 1}/${MAX_AUTO_RETRIES}): ${result.error}\n\nCORREGGI il codice e restituisci il codice COMPLETO corretto in updatedScript. E' OBBLIGATORIO includere updatedScript nella risposta, altrimenti il sistema non puo' riprovare.`;
+
+        setMessages(prev => [...prev, {
+          role: 'user' as const,
+          content: `🔄 **Auto-retry ${retryAttempt + 1}/${MAX_AUTO_RETRIES}**: ${result.error}`,
+          timestamp: Date.now(),
+          scriptSnapshot: scriptToExecute,
+        }]);
+
+        setIsAutoExecuting(false);
+        setIsLoading(true);
+        setLoadingStatus(`Correzione automatica (tentativo ${retryAttempt + 1}/${MAX_AUTO_RETRIES})...`);
+
+        try {
+          const response = await fetch('/api/agents/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              nodeId,
+              agentType,
+              userMessage: errorMessage,
+              script: scriptToExecute,
+              tableSchema,
+              inputTables,
+              connectorId,
+            }),
+          });
+
+          const data: AgentResponse = await response.json();
+
+          if (data.success) {
+            setMessages(prev => [...prev, {
+              role: 'assistant' as const,
+              content: data.message,
+              timestamp: Date.now(),
+              scriptSnapshot: data.updatedScript || scriptToExecute,
+              clarificationQuestions: data.needsClarification ? data.clarificationQuestions : undefined,
+            }]);
+
+            if (data.usage) {
+              setTotalUsage(prev => ({
+                tokens: prev.tokens + (data.usage?.total_tokens || 0),
+                cost: prev.cost + (data.usage?.total_cost || 0),
+              }));
+            }
+
+            if (data.updatedScript && onScriptUpdate) {
+              onScriptUpdate(data.updatedScript);
+
+              if (!data.needsClarification) {
+                setIsLoading(false);
+                setLoadingStatus('');
+                setTimeout(() => {
+                  triggerAutoExecute(data.updatedScript!, retryAttempt + 1);
+                }, 500);
+                return;
+              }
+            } else if (!data.updatedScript && retryAttempt < MAX_AUTO_RETRIES) {
+              // Agent responded without updatedScript - re-send insisting
+              setMessages(prev => [...prev, {
+                role: 'user' as const,
+                content: `⚠️ **Manca updatedScript** - reinvio richiesta di correzione...`,
+                timestamp: Date.now(),
+              }]);
+
+              const insistMessage = `NON hai incluso updatedScript nella risposta precedente. DEVI restituire il codice COMPLETO corretto in updatedScript. Riprova ora - correggi l'errore e includi il codice completo.`;
+
+              const retryResponse = await fetch('/api/agents/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  nodeId,
+                  agentType,
+                  userMessage: insistMessage,
+                  script: scriptToExecute,
+                  tableSchema,
+                  inputTables,
+                  connectorId,
+                }),
+              });
+
+              const retryData: AgentResponse = await retryResponse.json();
+
+              if (retryData.success) {
+                setMessages(prev => [...prev, {
+                  role: 'assistant' as const,
+                  content: retryData.message,
+                  timestamp: Date.now(),
+                  scriptSnapshot: retryData.updatedScript || scriptToExecute,
+                }]);
+
+                if (retryData.updatedScript && onScriptUpdate) {
+                  onScriptUpdate(retryData.updatedScript);
+                  setIsLoading(false);
+                  setLoadingStatus('');
+                  setTimeout(() => {
+                    triggerAutoExecute(retryData.updatedScript!, retryAttempt + 1);
+                  }, 500);
+                  return;
+                }
+              }
+            }
+          }
+        } catch (agentError: any) {
+          setMessages(prev => [...prev, {
+            role: 'assistant' as const,
+            content: `❌ **Errore comunicazione agente:** ${agentError.message}`,
+            timestamp: Date.now(),
+          }]);
+        } finally {
+          setIsLoading(false);
+          setLoadingStatus('');
+          setIsAutoExecuting(false);
+          setAutoRetryCount(0);
+        }
+      } else {
+        // Max retries exhausted
+        setMessages(prev => [...prev, {
+          role: 'assistant' as const,
+          content: `❌ **Esecuzione fallita dopo ${MAX_AUTO_RETRIES} tentativi.** Errore: ${result.error}\n\nPuoi provare a correggere manualmente o dare istruzioni piu' specifiche.`,
+          timestamp: Date.now(),
+        }]);
+        setIsAutoExecuting(false);
+        setAutoRetryCount(0);
+      }
+    } catch (error: any) {
+      setMessages(prev => [...prev, {
+        role: 'assistant' as const,
+        content: `❌ **Errore inatteso:** ${error.message}`,
+        timestamp: Date.now(),
+      }]);
+      setIsAutoExecuting(false);
+      setAutoRetryCount(0);
+    }
+  }, [onAutoExecutePreview, nodeId, agentType, tableSchema, inputTables, connectorId, onScriptUpdate]);
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -611,19 +805,23 @@ export function AgentChat({
             content: data.message,
             timestamp: Date.now(),
             scriptSnapshot: data.updatedScript || script,
+            clarificationQuestions: data.needsClarification ? data.clarificationQuestions : undefined,
           },
         ]);
 
-        if (data.needsClarification && data.clarificationQuestions) {
-          setNeedsClarification(true);
-          setClarificationQuestions(data.clarificationQuestions);
-        } else {
-          setNeedsClarification(false);
-          setClarificationQuestions([]);
-        }
+        // Clear floating clarification state (now rendered inline in messages)
+        setNeedsClarification(false);
+        setClarificationQuestions([]);
 
         if (data.updatedScript && onScriptUpdate) {
           onScriptUpdate(data.updatedScript);
+
+          // Auto-execute preview if callback available and no clarification needed
+          if (onAutoExecutePreview && !data.needsClarification) {
+            setTimeout(() => {
+              triggerAutoExecute(data.updatedScript!, 0);
+            }, 300);
+          }
         }
 
         // Track usage/cost
@@ -1070,11 +1268,80 @@ export function AgentChat({
                       : "bg-muted/50 border rounded-tl-none"
                   )}>
                     <div className="min-w-0">
+                      {/* Inline clarification questions - preserved in chat history */}
+                      {m.role === 'assistant' && m.clarificationQuestions && m.clarificationQuestions.length > 0 && (
+                        <div className="mb-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                          <div className="flex items-start gap-1.5 mb-1">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                            <p className="font-medium text-amber-900 dark:text-amber-200 text-[11px]">
+                              Ho bisogno di chiarimenti:
+                            </p>
+                          </div>
+                          <ul className="space-y-0.5 ml-5">
+                            {m.clarificationQuestions.map((q, idx) => (
+                              <li key={idx} className="text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-1.5">
+                                <span className="flex-shrink-0 font-bold">{idx + 1}.</span>
+                                <span>{q}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                       {m.role === 'assistant' ? (
                         <RichContent content={text} charts={charts} onApplyCode={onScriptUpdate} />
                       ) : (
                         m.content
                       )}
+                      {/* Collapsible script preview - same style as CollapsibleCode */}
+                      {m.role === 'assistant' && m.scriptSnapshot && (() => {
+                        const vIdx = scriptVersions.findIndex(v => v.messageIndex === i);
+                        if (vIdx <= 0) return null;
+                        const isExpanded = expandedScripts.has(i);
+                        const scriptLang = agentType === 'sql' ? 'SQL' : 'PYTHON';
+                        const lineCount = m.scriptSnapshot.trim().split('\n').length;
+                        return (
+                          <div className="relative my-2">
+                            <button
+                              onClick={() => {
+                                setExpandedScripts(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(i)) next.delete(i);
+                                  else next.add(i);
+                                  return next;
+                                });
+                              }}
+                              className="flex items-center justify-between w-full px-3 py-1 bg-muted rounded-t-lg border border-b-0 hover:bg-muted/80 transition-colors cursor-pointer"
+                            >
+                              <div className="flex items-center gap-1">
+                                <Code2 className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-[10px] uppercase font-medium text-muted-foreground">{scriptLang}</span>
+                                <span className="text-[9px] text-muted-foreground/60 ml-1">({lineCount} righe)</span>
+                              </div>
+                              {isExpanded ? (
+                                <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </button>
+                            {isExpanded && (
+                              <pre className="bg-zinc-950 text-zinc-100 px-3 py-2 rounded-b-lg text-[11px] overflow-x-auto max-w-full whitespace-pre-wrap break-all border animate-in slide-in-from-top-1 duration-150">
+                                <code className="block min-w-0">{m.scriptSnapshot}</code>
+                              </pre>
+                            )}
+                            {!isExpanded && (
+                              <div className="bg-zinc-950 text-zinc-500 px-3 py-1.5 rounded-b-lg text-[10px] border cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => {
+                                setExpandedScripts(prev => {
+                                  const next = new Set(prev);
+                                  next.add(i);
+                                  return next;
+                                });
+                              }}>
+                                Clicca per espandere...
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                   {m.role === 'assistant' && (
@@ -1146,28 +1413,16 @@ export function AgentChat({
               </div>
             )}
 
-            {needsClarification && clarificationQuestions.length > 0 && (
-              <div className="flex justify-start">
-                <div className="max-w-[85%] bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl px-4 py-3">
-                  <div className="flex items-start gap-2 mb-2">
-                    <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-amber-900 dark:text-amber-200 text-[12px]">
-                        Ho bisogno di chiarimenti
-                      </p>
-                      <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5">
-                        Per aiutarti meglio, rispondi a queste domande:
-                      </p>
-                    </div>
+            {isAutoExecuting && (
+              <div className="flex items-start gap-2">
+                <div className="h-5 w-5 rounded-full flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
+                  <Loader2 className="h-3 w-3 animate-spin text-white" />
+                </div>
+                <div className="bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-2xl rounded-tl-none px-3 py-2">
+                  <div className="text-[11px] text-purple-700 dark:text-purple-300">
+                    Esecuzione anteprima automatica...
+                    {autoRetryCount > 0 && ` (tentativo ${autoRetryCount + 1}/${MAX_AUTO_RETRIES})`}
                   </div>
-                  <ul className="space-y-1 mt-2">
-                    {clarificationQuestions.map((question, idx) => (
-                      <li key={idx} className="text-[12px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
-                        <span className="flex-shrink-0 font-bold">{idx + 1}.</span>
-                        <span>{question}</span>
-                      </li>
-                    ))}
-                  </ul>
                 </div>
               </div>
             )}

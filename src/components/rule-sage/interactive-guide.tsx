@@ -1787,6 +1787,10 @@ function EmailActionBox({
 
             console.log(`[EmailActionBox] 📧 Sending email with ${selectedTables.length} tables, ${selectedPythonOutputs.length} Python outputs`);
 
+            // Extract htmlStyleOverrides from node
+            const nodeHtmlOverrides = (currentNode as any)?.pythonPreviewResult?.htmlStyleOverrides
+                || (currentNode as any)?.htmlStyleOverrides;
+
             // Helper function to try sending
             const trySend = async (connId: string) => {
                 return await sendTestEmailWithDataAction({
@@ -1806,7 +1810,8 @@ function EmailActionBox({
                     availableMedia: effectiveMedia,
                     availableLinks: effectiveLinks,
                     availableTriggers: effectiveTriggers,
-                    mediaAttachments: emailAction.attachments?.mediaAsAttachment
+                    mediaAttachments: emailAction.attachments?.mediaAsAttachment,
+                    htmlStyleOverrides: nodeHtmlOverrides && Object.keys(nodeHtmlOverrides).length > 0 ? nodeHtmlOverrides : undefined,
                 });
             };
 

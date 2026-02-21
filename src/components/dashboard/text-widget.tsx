@@ -26,6 +26,8 @@ import {
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '../ui/scroll-area';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
+import { applyHtmlStyleOverrides } from '@/lib/html-style-utils';
 
 
 interface TextWidgetProps {
@@ -33,11 +35,12 @@ interface TextWidgetProps {
     onContentChange: (content: string) => void;
     isEditing: boolean;
     reportData?: any;
-    reportType?: 'table' | 'kpi' | 'chart';
+    reportType?: 'table' | 'kpi' | 'chart' | 'html';
     isLoadingData?: boolean;
     onRefresh?: () => void;
     isRefreshing?: boolean;
     onUpdateHierarchy?: () => void;
+    htmlStyleOverrides?: HtmlStyleOverrides;
 }
 
 const ChartRenderer = ({ data }: { data: { name: string; value: number }[] }) => {
@@ -231,7 +234,8 @@ export default function TextWidget({
     isLoadingData,
     onRefresh,
     isRefreshing,
-    onUpdateHierarchy
+    onUpdateHierarchy,
+    htmlStyleOverrides
 }: TextWidgetProps) {
     const editorRef = useRef<HTMLDivElement>(null);
     const [liveContent, setLiveContent] = useState(content);
@@ -288,6 +292,24 @@ export default function TextWidget({
                             case 'table': return <TableRenderer key={index} data={reportData} />;
                             case 'kpi': return <KpiRenderer key={index} data={reportData} />;
                             case 'chart': return <ChartRenderer key={index} data={reportData} />;
+                            case 'html': {
+                                const htmlContent = typeof reportData === 'string' ? reportData : (reportData?.html || '');
+                                if (!htmlContent) return <p key={index} className="text-xs text-muted-foreground my-4">[Contenuto HTML vuoto]</p>;
+                                const styledSrcDoc = htmlStyleOverrides
+                                    ? applyHtmlStyleOverrides(htmlContent, htmlStyleOverrides)
+                                    : `<html><head><style>body { margin: 0; padding: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: auto; }</style></head><body>${htmlContent}</body></html>`;
+                                return (
+                                    <div key={index} className="w-full my-4 bg-white dark:bg-zinc-950 overflow-hidden rounded-md border" style={{ minHeight: 200 }}>
+                                        <iframe
+                                            srcDoc={styledSrcDoc}
+                                            className="w-full border-none"
+                                            style={{ minHeight: 200, height: '100%' }}
+                                            title="HTML Widget"
+                                            sandbox="allow-same-origin"
+                                        />
+                                    </div>
+                                );
+                            }
                             default:
                                 if (typeof reportData === 'object' && reportData !== null && 'value' in reportData && 'label' in reportData) {
                                     return <KpiRenderer key={index} data={reportData} />;

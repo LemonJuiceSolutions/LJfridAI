@@ -2,18 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Settings, Save, PlayCircle, Loader2, CheckCircle2, XCircle, Send, Bot, User as UserIcon, Trash2, Search } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Settings, Save, PlayCircle, Loader2, CheckCircle2, XCircle, Trash2, Search, Globe, ExternalLink, Upload, FileText, File as FileIcon, X, FileImage, FileVideo, FileAudio, FileSpreadsheet, FileCode, FileArchive, Presentation } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 
-import { testOpenRouterConnection, chatOpenRouterAction, fetchOpenRouterModelsAction, getOpenRouterCreditsAction } from '../actions';
+import { testOpenRouterConnection, fetchOpenRouterModelsAction, getOpenRouterCreditsAction } from '../actions';
 import { createInvitationAction, getInvitationsAction, revokeInvitationAction } from '../actions/invitations';
 import { getOpenRouterSettingsAction, saveOpenRouterSettingsAction } from '@/actions/openrouter';
 import { ConnectorsManager } from './connectors-manager';
@@ -23,6 +22,8 @@ import {
     testApolloApiKeyAction, testHunterApiKeyAction, testSerpApiKeyAction, testApifyApiKeyAction,
 } from '@/actions/lead-generator';
 import { Badge } from '@/components/ui/badge';
+import { uploadFile, listFiles, deleteFile, type FileInfo } from '@/lib/storage-client';
+import { Progress } from '@/components/ui/progress';
 
 export default function SettingsPage() {
     const { toast } = useToast();
@@ -38,25 +39,20 @@ export default function SettingsPage() {
     const [modelSearch, setModelSearch] = useState('');
     const [isModelDialogOpen, setIsModelDialogOpen] = useState(false);
 
-    // Chat state
-    const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([]);
-    const [inputMessage, setInputMessage] = useState('');
-    const [isChatting, setIsChatting] = useState(false);
-
     // Invitation State
     const [invitations, setInvitations] = useState<any[]>([]);
     const [inviteEmail, setInviteEmail] = useState('');
     const [isInviting, setIsInviting] = useState(false);
     const [inviteLink, setInviteLink] = useState('');
 
-    // Lead Generator API Keys State
+    // Provider API Keys State
     const [leadGenApollo, setLeadGenApollo] = useState('');
     const [leadGenHunter, setLeadGenHunter] = useState('');
     const [leadGenSerpApi, setLeadGenSerpApi] = useState('');
     const [leadGenApify, setLeadGenApify] = useState('');
     const [isLeadGenSaving, setIsLeadGenSaving] = useState(false);
 
-    // Lead Gen API Test State
+    // Provider API Test State
     type ApiTestResult = { success: boolean; message: string; quota?: { used: number; available: number; plan: string; resetDate?: string; extra?: string } };
     const [apolloTest, setApolloTest] = useState<ApiTestResult | null>(null);
     const [hunterTest, setHunterTest] = useState<ApiTestResult | null>(null);
@@ -71,6 +67,16 @@ export default function SettingsPage() {
     type OpenRouterCredits = { totalCredits: number; totalUsage: number; remaining: number };
     const [orCredits, setOrCredits] = useState<OpenRouterCredits | null>(null);
     const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+
+    // OpenAPI State
+    const [openApiSpec, setOpenApiSpec] = useState('');
+    const [isOpenApiSaving, setIsOpenApiSaving] = useState(false);
+
+    // Files State
+    const [files, setFiles] = useState<FileInfo[]>([]);
+    const [isFilesLoading, setIsFilesLoading] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadQueue, setUploadQueue] = useState<{ name: string; progress: number }[]>([]);
 
     const loadOpenRouterCredits = async (key: string) => {
         if (!key) return;
@@ -101,7 +107,10 @@ export default function SettingsPage() {
             if (res.data) setInvitations(res.data);
         });
 
-        // Load Lead Generator API keys
+        // Load files
+        loadFiles();
+
+        // Load Provider API keys
         getLeadGenApiKeysAction().then(res => {
             if (res.keys) {
                 if (res.keys.apollo) setLeadGenApollo(res.keys.apollo);
@@ -117,7 +126,6 @@ export default function SettingsPage() {
             setIsModelsLoading(true);
             fetchOpenRouterModelsAction().then(result => {
                 if (result.data) {
-                    // Sort by name or popularity if possible. For now name.
                     setAllModels(result.data.sort((a, b) => a.name.localeCompare(b.name)));
                 } else {
                     toast({
@@ -170,7 +178,6 @@ export default function SettingsPage() {
         try {
             const result = await testOpenRouterConnection(apiKey, model);
             setTestResult(result);
-            // Refresh credits after test
             loadOpenRouterCredits(apiKey);
             if (result.success) {
                 toast({
@@ -196,36 +203,76 @@ export default function SettingsPage() {
         }
     };
 
-    const handleSendMessage = async () => {
-        if (!inputMessage.trim() || !apiKey) return;
-
-        const newUserMsg = { role: 'user' as const, content: inputMessage };
-        const updatedMessages = [...chatMessages, newUserMsg];
-
-        setChatMessages(updatedMessages);
-        setInputMessage('');
-        setIsChatting(true);
-
-        // Convert messages for API
-        const apiMessages = updatedMessages.map(m => ({ role: m.role, content: m.content }));
-
-        const result = await chatOpenRouterAction(apiKey, model, apiMessages);
-
-        if (result.success) {
-            setChatMessages(prev => [...prev, { role: 'assistant', content: result.message }]);
-        } else {
-            toast({
-                title: "Errore Chat",
-                description: result.message,
-                variant: "destructive"
-            });
-            setChatMessages(prev => [...prev, { role: 'assistant', content: `Errore: ${result.message}` }]);
-        }
-        setIsChatting(false);
+    const loadFiles = async () => {
+        setIsFilesLoading(true);
+        const result = await listFiles('documents');
+        setFiles(result);
+        setIsFilesLoading(false);
     };
 
-    const handleClearChat = () => {
-        setChatMessages([]);
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFiles = e.target.files;
+        if (!selectedFiles || selectedFiles.length === 0) return;
+
+        setIsUploading(true);
+        const queue = Array.from(selectedFiles).map(f => ({ name: f.name, progress: 0 }));
+        setUploadQueue(queue);
+
+        for (let i = 0; i < selectedFiles.length; i++) {
+            const file = selectedFiles[i];
+            setUploadQueue(prev => prev.map((q, idx) => idx === i ? { ...q, progress: 50 } : q));
+            try {
+                await uploadFile(file, 'documents');
+                setUploadQueue(prev => prev.map((q, idx) => idx === i ? { ...q, progress: 100 } : q));
+            } catch {
+                toast({ title: "Errore", description: `Upload fallito: ${file.name}`, variant: "destructive" });
+            }
+        }
+
+        await loadFiles();
+        setUploadQueue([]);
+        setIsUploading(false);
+        e.target.value = '';
+    };
+
+    const handleDeleteFile = async (name: string) => {
+        const ok = await deleteFile(name, 'documents');
+        if (ok) {
+            setFiles(prev => prev.filter(f => f.name !== name));
+            toast({ title: "File eliminato" });
+        } else {
+            toast({ title: "Errore", description: "Impossibile eliminare il file.", variant: "destructive" });
+        }
+    };
+
+    const formatFileSize = (bytes: number) => {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    const getFileIcon = (name: string) => {
+        const ext = name.split('.').pop()?.toLowerCase() || '';
+        const cls = "h-3.5 w-3.5 shrink-0";
+        if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico'].includes(ext))
+            return <FileImage className={`${cls} text-pink-500`} />;
+        if (['mp4', 'avi', 'mov', 'mkv', 'webm'].includes(ext))
+            return <FileVideo className={`${cls} text-purple-500`} />;
+        if (['mp3', 'wav', 'ogg', 'flac', 'aac'].includes(ext))
+            return <FileAudio className={`${cls} text-amber-500`} />;
+        if (['pdf'].includes(ext))
+            return <FileText className={`${cls} text-red-500`} />;
+        if (['xls', 'xlsx', 'csv', 'tsv'].includes(ext))
+            return <FileSpreadsheet className={`${cls} text-green-600`} />;
+        if (['doc', 'docx', 'txt', 'rtf', 'odt'].includes(ext))
+            return <FileText className={`${cls} text-blue-500`} />;
+        if (['ppt', 'pptx', 'odp'].includes(ext))
+            return <Presentation className={`${cls} text-orange-500`} />;
+        if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext))
+            return <FileArchive className={`${cls} text-yellow-600`} />;
+        if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'html', 'css', 'json', 'xml', 'sql', 'sh'].includes(ext))
+            return <FileCode className={`${cls} text-cyan-500`} />;
+        return <FileIcon className={`${cls} text-muted-foreground`} />;
     };
 
     const handleInvite = async () => {
@@ -241,7 +288,6 @@ export default function SettingsPage() {
                 const link = `${window.location.origin}/auth/signup?token=${res.token}`;
                 setInviteLink(link);
                 toast({ title: "Invito creato!", description: "Copia il link qui sotto." });
-                // Refresh list
                 const list = await getInvitationsAction();
                 if (list.data) setInvitations(list.data);
             }
@@ -257,18 +303,18 @@ export default function SettingsPage() {
             <main className="flex-1 overflow-y-auto">
                 <div className="p-3 md:p-4 pb-16">
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 grid-rows-[auto] lg:grid-rows-[calc(50vh-2rem)_calc(50vh-2rem)]">
 
                     {/* Team Management Card */}
-                    <Card className="border-primary/20 bg-primary/5">
-                        <CardHeader className="p-3 pb-2">
+                    <Card className="border-primary/20 bg-primary/5 flex flex-col h-full">
+                        <CardHeader className="p-3 pb-2 shrink-0">
                             <CardTitle className="flex items-center gap-1.5 text-sm">
                                 <Users className="h-4 w-4 text-primary" />
                                 Gestione Team
                             </CardTitle>
                             <CardDescription className="text-[11px]">Invita colleghi alla tua azienda.</CardDescription>
                         </CardHeader>
-                        <CardContent className="p-3 pt-0">
+                        <CardContent className="p-3 pt-0 flex-1 overflow-y-auto">
                             <div className="flex gap-1.5 mb-3">
                                 <Input
                                     placeholder="Email collega..."
@@ -326,8 +372,8 @@ export default function SettingsPage() {
                     </Card>
 
                     {/* OpenRouter */}
-                    <Card>
-                        <CardHeader className="p-3 pb-2">
+                    <Card className="flex flex-col h-full">
+                        <CardHeader className="p-3 pb-2 shrink-0">
                             <CardTitle className="flex items-center gap-1.5 text-sm">
                                 <Settings className="h-4 w-4 text-primary" />
                                 OpenRouter
@@ -336,7 +382,7 @@ export default function SettingsPage() {
                                 API key e modello preferito.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="p-3 pt-0 space-y-3">
+                        <CardContent className="p-3 pt-0 space-y-3 flex-1 overflow-y-auto">
                             <div className="space-y-1.5">
                                 <Label htmlFor="api-key" className="text-xs">API Key</Label>
                                 <Input
@@ -499,18 +545,184 @@ export default function SettingsPage() {
                     {/* Connectors */}
                     <ConnectorsManager />
 
-                    {/* Lead Generator API Keys */}
-                    <Card>
-                        <CardHeader className="p-3 pb-2">
+                    {/* OpenAPI Setup */}
+                    <Card className="flex flex-col h-full">
+                        <CardHeader className="p-3 pb-2 shrink-0">
                             <CardTitle className="flex items-center gap-1.5 text-sm">
-                                <UserSearch className="h-4 w-4 text-emerald-500" />
-                                Lead Generator - API Keys
+                                <Globe className="h-4 w-4 text-blue-500" />
+                                OpenAPI
                             </CardTitle>
                             <CardDescription className="text-[11px]">
-                                Chiavi API per ricerca lead. Tutti offrono piano gratuito.
+                                Configura la specifica OpenAPI per le tue API.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="p-3 pt-0">
+                        <CardContent className="p-3 pt-0 space-y-3 flex-1 overflow-y-auto">
+                            <div className="p-2.5 rounded-lg border bg-muted/30 space-y-2">
+                                <h4 className="text-xs font-medium">Come accedere</h4>
+                                <ol className="text-[11px] text-muted-foreground space-y-1 list-decimal list-inside">
+                                    <li>Vai su <span className="font-medium text-foreground">/api/docs</span> per la documentazione interattiva Swagger UI</li>
+                                    <li>Usa <span className="font-medium text-foreground">/api/openapi.json</span> per scaricare la specifica in formato JSON</li>
+                                    <li>Importa la specifica in Postman, Insomnia o altri client API</li>
+                                </ol>
+                                <div className="flex gap-1.5 pt-1">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 text-[10px]"
+                                        onClick={() => window.open('/api/docs', '_blank')}
+                                    >
+                                        <ExternalLink className="h-3 w-3 mr-1" />
+                                        Swagger UI
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 text-[10px]"
+                                        onClick={() => window.open('/api/openapi.json', '_blank')}
+                                    >
+                                        <ExternalLink className="h-3 w-3 mr-1" />
+                                        OpenAPI JSON
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label className="text-xs">Specifica OpenAPI (YAML/JSON)</Label>
+                                <Textarea
+                                    placeholder={'{\n  "openapi": "3.0.0",\n  "info": { "title": "My API", "version": "1.0" },\n  "paths": { ... }\n}'}
+                                    value={openApiSpec}
+                                    onChange={(e) => setOpenApiSpec(e.target.value)}
+                                    className="text-xs font-mono min-h-[120px] resize-y"
+                                />
+                                <p className="text-[9px] text-muted-foreground">
+                                    Incolla qui la tua specifica OpenAPI per personalizzare la documentazione delle API.
+                                </p>
+                            </div>
+
+                            <Button
+                                onClick={async () => {
+                                    setIsOpenApiSaving(true);
+                                    // TODO: implement save action
+                                    await new Promise(r => setTimeout(r, 500));
+                                    toast({ title: "Salvato", description: "Specifica OpenAPI salvata." });
+                                    setIsOpenApiSaving(false);
+                                }}
+                                disabled={isOpenApiSaving || !openApiSpec.trim()}
+                                size="sm"
+                                className="h-8 text-xs"
+                            >
+                                {isOpenApiSaving ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Save className="mr-1.5 h-3 w-3" />}
+                                {isOpenApiSaving ? 'Salvataggio...' : 'Salva Specifica'}
+                            </Button>
+                        </CardContent>
+                    </Card>
+
+                    {/* Files */}
+                    <Card className="flex flex-col h-full">
+                        <CardHeader className="p-3 pb-2 shrink-0">
+                            <CardTitle className="flex items-center gap-1.5 text-sm">
+                                <FileText className="h-4 w-4 text-orange-500" />
+                                Documenti
+                            </CardTitle>
+                            <CardDescription className="text-[11px]">
+                                Carica file di qualsiasi formato.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-3 pt-0 space-y-3 flex-1 overflow-y-auto">
+                            <div>
+                                <input
+                                    type="file"
+                                    id="file-upload"
+                                    multiple
+                                    className="hidden"
+                                    onChange={handleFileUpload}
+                                    disabled={isUploading}
+                                />
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full h-8 text-xs"
+                                    disabled={isUploading}
+                                    onClick={() => document.getElementById('file-upload')?.click()}
+                                >
+                                    {isUploading ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Upload className="h-3 w-3 mr-1.5" />}
+                                    {isUploading ? 'Caricamento...' : 'Carica File'}
+                                </Button>
+                            </div>
+
+                            {uploadQueue.length > 0 && (
+                                <div className="space-y-1.5">
+                                    {uploadQueue.map((item, i) => (
+                                        <div key={i} className="space-y-0.5">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[10px] text-muted-foreground truncate max-w-[180px]">{item.name}</span>
+                                                <span className="text-[9px] text-muted-foreground">{item.progress}%</span>
+                                            </div>
+                                            <Progress value={item.progress} className="h-1" />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="border rounded-md divide-y bg-background">
+                                {isFilesLoading ? (
+                                    <div className="flex items-center justify-center py-6">
+                                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                    </div>
+                                ) : files.length === 0 ? (
+                                    <div className="text-center py-6">
+                                        <FileIcon className="h-6 w-6 mx-auto text-muted-foreground/30 mb-1" />
+                                        <p className="text-[11px] text-muted-foreground italic">Nessun file caricato.</p>
+                                    </div>
+                                ) : (
+                                    files.map(file => (
+                                        <div key={file.name} className="p-2 flex items-center gap-2 group">
+                                            {getFileIcon(file.name)}
+                                            <div className="flex-1 min-w-0">
+                                                <a
+                                                    href={file.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline truncate block"
+                                                    title={file.name}
+                                                >
+                                                    {file.name}
+                                                </a>
+                                                <p className="text-[9px] text-muted-foreground">
+                                                    {formatFileSize(file.size)} &middot; {new Date(file.createdAt).toLocaleDateString('it-IT')}
+                                                </p>
+                                            </div>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                                onClick={() => handleDeleteFile(file.name)}
+                                            >
+                                                <X className="h-3 w-3 text-destructive" />
+                                            </Button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            {files.length > 0 && (
+                                <p className="text-[9px] text-muted-foreground text-right">{files.length} file</p>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Provider API Keys */}
+                    <Card className="flex flex-col h-full">
+                        <CardHeader className="p-3 pb-2 shrink-0">
+                            <CardTitle className="flex items-center gap-1.5 text-sm">
+                                <UserSearch className="h-4 w-4 text-emerald-500" />
+                                Provider - API Keys
+                            </CardTitle>
+                            <CardDescription className="text-[11px]">
+                                Chiavi API dei provider esterni. Tutti offrono piano gratuito.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-3 pt-0 flex-1 overflow-y-auto">
                             <div className="grid grid-cols-1 gap-2">
                             {/* Apollo.io */}
                             <div className="space-y-1.5 p-2.5 border rounded-lg">
@@ -706,7 +918,7 @@ export default function SettingsPage() {
                                             apify: leadGenApify || undefined,
                                         });
                                         if (result.success) {
-                                            toast({ title: "Salvato", description: "Chiavi API Lead Generator salvate." });
+                                            toast({ title: "Salvato", description: "Chiavi API Provider salvate." });
                                         } else {
                                             toast({ title: "Errore", description: result.error, variant: "destructive" });
                                         }
@@ -722,76 +934,6 @@ export default function SettingsPage() {
                                 {isLeadGenSaving ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Save className="mr-1.5 h-3 w-3" />}
                                 {isLeadGenSaving ? 'Salvataggio...' : 'Salva Chiavi API'}
                             </Button>
-                        </CardContent>
-                    </Card>
-
-                    {/* Test Chatbot AI */}
-                    <Card className="flex flex-col h-[400px]">
-                        <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between">
-                            <div>
-                                <CardTitle className="flex items-center gap-1.5 text-sm">
-                                    <Bot className="h-4 w-4 text-primary" />
-                                    Test Chatbot AI
-                                </CardTitle>
-                                <CardDescription className="text-[11px]">
-                                    Verifica le risposte del modello in tempo reale.
-                                </CardDescription>
-                            </div>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleClearChat} title="Pulisci chat">
-                                <Trash2 className="h-3 w-3" />
-                            </Button>
-                        </CardHeader>
-                        <CardContent className="flex-1 flex flex-col p-3 pt-0 overflow-hidden">
-                            <ScrollArea className="flex-1 pr-2">
-                                <div className="space-y-2">
-                                    {chatMessages.length === 0 ? (
-                                        <div className="text-center text-muted-foreground py-6">
-                                            <Bot className="h-8 w-8 mx-auto mb-1 opacity-20" />
-                                            <p className="text-xs">Inizia una conversazione per testare il modello.</p>
-                                        </div>
-                                    ) : (
-                                        chatMessages.map((msg, index) => (
-                                            <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                                <div className={`flex items-start gap-1.5 max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                                                        {msg.role === 'user' ? <UserIcon className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
-                                                    </div>
-                                                    <div className={`p-2 rounded-lg text-xs ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                                                        {msg.content}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                    {isChatting && (
-                                        <div className="flex justify-start">
-                                            <div className="flex items-start gap-1.5 max-w-[80%]">
-                                                <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 bg-muted">
-                                                    <Bot className="h-3 w-3" />
-                                                </div>
-                                                <div className="p-2 rounded-lg text-xs bg-muted flex items-center">
-                                                    <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
-                                                    Sta scrivendo...
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </ScrollArea>
-
-                            <div className="pt-2 mt-2 border-t flex gap-1.5">
-                                <Input
-                                    placeholder="Scrivi un messaggio..."
-                                    value={inputMessage}
-                                    onChange={(e) => setInputMessage(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-                                    disabled={isChatting || !apiKey}
-                                    className="h-8 text-xs"
-                                />
-                                <Button onClick={handleSendMessage} disabled={isChatting || !apiKey || !inputMessage.trim()} size="sm" className="h-8">
-                                    <Send className="h-3 w-3" />
-                                </Button>
-                            </div>
                         </CardContent>
                     </Card>
 

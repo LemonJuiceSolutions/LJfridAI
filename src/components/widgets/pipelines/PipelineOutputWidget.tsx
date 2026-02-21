@@ -7,6 +7,7 @@ import { executeScript } from '@/ai/flows/execute-script-flow';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getPipelines } from '@/actions/pipelines';
+import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
 
 import { useSession } from 'next-auth/react';
 import { getLastNodeExecutionResultAction } from '@/app/actions/scheduler';
@@ -18,7 +19,7 @@ type PipelineOutputWidgetProps = {
 };
 
 // Client-side cache for pipeline results to avoid re-fetching on every page navigation
-const pipelineResultCache = new Map<string, { data: any; config: any; content: string; type: any; timestamp: number }>();
+const pipelineResultCache = new Map<string, { data: any; config: any; content: string; type: any; htmlOverrides?: any; timestamp: number }>();
 const PIPELINE_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // This is a simplified version of the runNode logic from PipelinesWidget
@@ -64,6 +65,7 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
     const [reportContent, setReportContent] = useState<string>('');
     const [reportType, setReportType] = useState<'table' | 'kpi' | 'chart' | undefined>(undefined);
     const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | undefined>(undefined);
+    const [htmlStyleOverrides, setHtmlStyleOverrides] = useState<HtmlStyleOverrides | undefined>(undefined);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [showExecutionDialog, setShowExecutionDialog] = useState(false);
@@ -93,6 +95,7 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
                 setReportContent(cached.content);
                 setReportType(cached.type);
                 setWidgetConfig(cached.config);
+                setHtmlStyleOverrides(cached.htmlOverrides || undefined);
                 setIsLoading(false);
                 return;
             }
@@ -114,6 +117,9 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
                 setReportContent(node.content || '{{result}}');
                 setReportType(node.previewType);
                 setWidgetConfig(node.widgetConfig);
+                // Load htmlStyleOverrides from pythonPreviewResult or directly from node
+                const nodeHtmlOverrides = node.pythonPreviewResult?.htmlStyleOverrides || node.htmlStyleOverrides;
+                setHtmlStyleOverrides(nodeHtmlOverrides || undefined);
 
                 // Always try to get persisted result from DB
                 let result: any = null;
@@ -140,6 +146,7 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
                     config: node.widgetConfig,
                     content: node.content || '{{result}}',
                     type: node.previewType,
+                    htmlOverrides: nodeHtmlOverrides,
                     timestamp: Date.now(),
                 });
 
@@ -222,6 +229,7 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
                     isLoadingData={isLoading}
                     onRefresh={handleRefresh}
                     onUpdateHierarchy={handleUpdateHierarchyClick}
+                    htmlStyleOverrides={htmlStyleOverrides}
                 />
             )}
 

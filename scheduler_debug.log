@@ -4869,3 +4869,476 @@
 2026-02-20T17:37:26.478Z [Scheduler] ERROR: Task cmlv0j6ns002r11eu9rntbva8 (Node-cmktbirhb0001ywhh0j9z4j0q-sdBQDqvt (Implicit)) has no valid schedule. 
 2026-02-20T17:37:26.480Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) with cron: */60 * * * * 
 2026-02-20T17:37:26.480Z [Scheduler] Scheduler Service Initialized. 
+2026-02-20T18:00:00.026Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-20T18:00:00.028Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-20T18:00:00.039Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-20T18:00:00.058Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.0s 
+2026-02-20T19:00:00.104Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-20T19:00:00.105Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-20T19:00:00.175Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-20T19:00:00.191Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-20T20:00:00.065Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-20T20:00:00.066Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-20T20:00:00.130Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-20T20:00:00.139Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-20T21:00:00.047Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-20T21:00:00.049Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-20T21:00:00.109Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-20T21:00:00.119Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-20T22:00:00.044Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-20T22:00:00.045Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-20T22:00:00.145Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-20T22:00:00.158Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-20T23:00:00.056Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-20T23:00:00.058Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-20T23:00:00.129Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-20T23:00:00.140Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-21T00:00:00.038Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-21T00:00:00.039Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-21T00:00:00.106Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-21T00:00:00.116Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-21T01:00:00.034Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-21T01:00:00.035Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-21T01:00:00.089Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-21T01:00:00.098Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-21T02:00:00.066Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-21T02:00:00.068Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-21T02:00:00.134Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-21T02:00:00.143Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-21T03:00:00.050Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-21T03:00:00.051Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-21T03:00:00.105Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-21T03:00:00.123Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-21T04:00:00.060Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-21T04:00:00.061Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-21T04:00:00.131Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-21T04:00:00.146Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-21T05:00:00.039Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-21T05:00:00.040Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-21T05:00:00.126Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-21T05:00:00.161Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-21T05:18:42.439Z [Scheduler] Initializing Scheduler Service... 
+2026-02-21T05:18:48.692Z [Scheduler] Found 55 active tasks. 
+2026-02-21T05:18:48.791Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-21T05:18:48.836Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-21T05:18:48.837Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.837Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.837Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.838Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.838Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.841Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-xP3NFhd- (EMAIL_SEND) (cmlus0csd000r5627dr8y4p9g) with cron: 0 12 * * 5 
+2026-02-21T05:18:48.842Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.842Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.843Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.843Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.843Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.844Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.844Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.844Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.844Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.845Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.845Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.845Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.845Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.845Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.845Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.845Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.846Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.846Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.846Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.846Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.846Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.848Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-21T05:18:48.848Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.849Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.851Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-21T05:18:48.851Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.853Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-21T05:18:48.853Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.853Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.853Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.855Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-uyKUI8pS (EMAIL_SEND) (cmlus241o000t5627hdobjp0i) with cron: 0 12 * * 5 
+2026-02-21T05:18:48.857Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-21T05:18:48.858Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.858Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.859Z [Scheduler] ERROR: Task cmlksn45z000d10l312k32jj1 (Node-4OtZT6m_2q7T7LpEpYoDC-hXm206kX (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.860Z [Scheduler] ERROR: Task cmloy3lfe001m327449u47xcm (Node-4OtZT6m_2q7T7LpEpYoDC-xM4Rh1ZF (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.862Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-21T05:18:48.862Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.862Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.865Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-21T05:18:48.866Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) with cron: */60 * * * * 
+2026-02-21T05:18:48.866Z [Scheduler] ERROR: Task cmlv0j6ns002r11eu9rntbva8 (Node-cmktbirhb0001ywhh0j9z4j0q-sdBQDqvt (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.866Z [Scheduler] ERROR: Task cmlnha1200025eyc54vu1jdj2 (Node-cmkkpn5lo00033e4pgigfk53z-H9RIhqib (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.868Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-21T05:18:48.868Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-21T05:18:48.871Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-21T05:18:48.874Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-21T05:18:48.874Z [Scheduler] Scheduler Service Initialized. 
+2026-02-21T05:41:56.914Z [Scheduler] Initializing Scheduler Service... 
+2026-02-21T05:42:02.628Z [Scheduler] Found 55 active tasks. 
+2026-02-21T05:42:02.743Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-21T05:42:02.746Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-21T05:42:02.746Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.746Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.746Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.746Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.746Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.748Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-xP3NFhd- (EMAIL_SEND) (cmlus0csd000r5627dr8y4p9g) with cron: 0 12 * * 5 
+2026-02-21T05:42:02.749Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.749Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.749Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.749Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.749Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.749Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.750Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.750Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.750Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.750Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.750Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.751Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.751Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.751Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.751Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.751Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.751Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.751Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.751Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.752Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.752Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.754Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-21T05:42:02.754Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.754Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.756Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-21T05:42:02.756Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.758Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-21T05:42:02.758Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.759Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.759Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.761Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-uyKUI8pS (EMAIL_SEND) (cmlus241o000t5627hdobjp0i) with cron: 0 12 * * 5 
+2026-02-21T05:42:02.764Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-21T05:42:02.765Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.765Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.766Z [Scheduler] ERROR: Task cmlksn45z000d10l312k32jj1 (Node-4OtZT6m_2q7T7LpEpYoDC-hXm206kX (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.766Z [Scheduler] ERROR: Task cmloy3lfe001m327449u47xcm (Node-4OtZT6m_2q7T7LpEpYoDC-xM4Rh1ZF (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.768Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-21T05:42:02.769Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.769Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.771Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-21T05:42:02.772Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) with cron: */60 * * * * 
+2026-02-21T05:42:02.773Z [Scheduler] ERROR: Task cmlnha1200025eyc54vu1jdj2 (Node-cmkkpn5lo00033e4pgigfk53z-H9RIhqib (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.773Z [Scheduler] ERROR: Task cmlv0j6ns002r11eu9rntbva8 (Node-cmktbirhb0001ywhh0j9z4j0q-sdBQDqvt (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.775Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-21T05:42:02.775Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-21T05:42:02.777Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-21T05:42:02.780Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-21T05:42:02.780Z [Scheduler] Scheduler Service Initialized. 
+2026-02-21T06:00:00.052Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-21T06:00:00.053Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-21T06:00:00.103Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-21T06:00:00.123Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-21T06:08:10.925Z [Scheduler] Initializing Scheduler Service... 
+2026-02-21T06:08:17.077Z [Scheduler] Found 55 active tasks. 
+2026-02-21T06:08:17.117Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-21T06:08:17.120Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-21T06:08:17.120Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.120Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.120Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.120Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.121Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.122Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-xP3NFhd- (EMAIL_SEND) (cmlus0csd000r5627dr8y4p9g) with cron: 0 12 * * 5 
+2026-02-21T06:08:17.123Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.123Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.123Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.123Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.123Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.123Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.123Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.124Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.124Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.124Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.124Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.125Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.125Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.125Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.125Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.126Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.126Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.126Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.126Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.126Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.126Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.128Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-21T06:08:17.129Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.129Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.131Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-21T06:08:17.131Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.133Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-21T06:08:17.133Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.133Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.133Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.135Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-uyKUI8pS (EMAIL_SEND) (cmlus241o000t5627hdobjp0i) with cron: 0 12 * * 5 
+2026-02-21T06:08:17.137Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-21T06:08:17.137Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.138Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.138Z [Scheduler] ERROR: Task cmlksn45z000d10l312k32jj1 (Node-4OtZT6m_2q7T7LpEpYoDC-hXm206kX (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.138Z [Scheduler] ERROR: Task cmloy3lfe001m327449u47xcm (Node-4OtZT6m_2q7T7LpEpYoDC-xM4Rh1ZF (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.140Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-21T06:08:17.140Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.140Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.143Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-21T06:08:17.143Z [Scheduler] ERROR: Task cmlv0j6ns002r11eu9rntbva8 (Node-cmktbirhb0001ywhh0j9z4j0q-sdBQDqvt (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.144Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) with cron: */60 * * * * 
+2026-02-21T06:08:17.144Z [Scheduler] ERROR: Task cmlnha1200025eyc54vu1jdj2 (Node-cmkkpn5lo00033e4pgigfk53z-H9RIhqib (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.146Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-21T06:08:17.146Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-21T06:08:17.148Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-21T06:08:17.151Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-21T06:08:17.151Z [Scheduler] Scheduler Service Initialized. 
+2026-02-21T07:00:00.049Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-21T07:00:00.051Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-21T07:00:00.090Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-21T07:00:00.107Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-21T07:29:54.238Z [Scheduler] Initializing Scheduler Service... 
+2026-02-21T07:29:58.987Z [Scheduler] Found 56 active tasks. 
+2026-02-21T07:29:59.047Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-21T07:29:59.049Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-21T07:29:59.050Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.050Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.050Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.050Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.050Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.052Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-xP3NFhd- (EMAIL_SEND) (cmlus0csd000r5627dr8y4p9g) with cron: 0 12 * * 5 
+2026-02-21T07:29:59.052Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.053Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.053Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.053Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.053Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.053Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.053Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.054Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.054Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.054Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.054Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.054Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.054Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.054Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.055Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.055Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.055Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.055Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.055Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.055Z [Scheduler] ERROR: Task cmlvy75mq000the3n002qs07j (Node-cmktbirhb0001ywhh0j9z4j0q-p6SlDcmf (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.055Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.055Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.057Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-21T07:29:59.057Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.058Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.060Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-21T07:29:59.061Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.062Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-21T07:29:59.063Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.063Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.063Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.065Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-uyKUI8pS (EMAIL_SEND) (cmlus241o000t5627hdobjp0i) with cron: 0 12 * * 5 
+2026-02-21T07:29:59.067Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-21T07:29:59.067Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.067Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.067Z [Scheduler] ERROR: Task cmlksn45z000d10l312k32jj1 (Node-4OtZT6m_2q7T7LpEpYoDC-hXm206kX (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.067Z [Scheduler] ERROR: Task cmloy3lfe001m327449u47xcm (Node-4OtZT6m_2q7T7LpEpYoDC-xM4Rh1ZF (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.069Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-21T07:29:59.069Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.070Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.072Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-21T07:29:59.073Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) with cron: */60 * * * * 
+2026-02-21T07:29:59.073Z [Scheduler] ERROR: Task cmlnha1200025eyc54vu1jdj2 (Node-cmkkpn5lo00033e4pgigfk53z-H9RIhqib (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.073Z [Scheduler] ERROR: Task cmlv0j6ns002r11eu9rntbva8 (Node-cmktbirhb0001ywhh0j9z4j0q-sdBQDqvt (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.075Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-21T07:29:59.075Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-21T07:29:59.083Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-21T07:29:59.110Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-21T07:29:59.110Z [Scheduler] Scheduler Service Initialized. 
+2026-02-21T07:35:00.277Z [Scheduler] Initializing Scheduler Service... 
+2026-02-21T07:35:06.060Z [Scheduler] Found 56 active tasks. 
+2026-02-21T07:35:06.155Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-21T07:35:06.158Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-21T07:35:06.158Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.158Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.158Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.159Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.159Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.161Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-xP3NFhd- (EMAIL_SEND) (cmlus0csd000r5627dr8y4p9g) with cron: 0 12 * * 5 
+2026-02-21T07:35:06.161Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.161Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.162Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.162Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.162Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.162Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.162Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.162Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.163Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.163Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.163Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.163Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.163Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.163Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.163Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.163Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.164Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.164Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.164Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.164Z [Scheduler] ERROR: Task cmlvy75mq000the3n002qs07j (Node-cmktbirhb0001ywhh0j9z4j0q-p6SlDcmf (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.164Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.164Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.166Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-21T07:35:06.166Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.167Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.169Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-21T07:35:06.169Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.171Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-21T07:35:06.171Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.172Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.172Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.174Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-uyKUI8pS (EMAIL_SEND) (cmlus241o000t5627hdobjp0i) with cron: 0 12 * * 5 
+2026-02-21T07:35:06.176Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-21T07:35:06.176Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.177Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.177Z [Scheduler] ERROR: Task cmlksn45z000d10l312k32jj1 (Node-4OtZT6m_2q7T7LpEpYoDC-hXm206kX (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.177Z [Scheduler] ERROR: Task cmloy3lfe001m327449u47xcm (Node-4OtZT6m_2q7T7LpEpYoDC-xM4Rh1ZF (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.179Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-21T07:35:06.179Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.179Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.181Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-21T07:35:06.183Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) with cron: */60 * * * * 
+2026-02-21T07:35:06.183Z [Scheduler] ERROR: Task cmlnha1200025eyc54vu1jdj2 (Node-cmkkpn5lo00033e4pgigfk53z-H9RIhqib (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.183Z [Scheduler] ERROR: Task cmlv0j6ns002r11eu9rntbva8 (Node-cmktbirhb0001ywhh0j9z4j0q-sdBQDqvt (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.185Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-21T07:35:06.185Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-21T07:35:06.187Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-21T07:35:06.190Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-21T07:35:06.190Z [Scheduler] Scheduler Service Initialized. 
+2026-02-21T07:53:32.947Z [Scheduler] Initializing Scheduler Service... 
+2026-02-21T07:53:38.961Z [Scheduler] Found 56 active tasks. 
+2026-02-21T07:53:39.020Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-21T07:53:39.023Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-21T07:53:39.023Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.023Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.023Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.023Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.024Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.026Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-xP3NFhd- (EMAIL_SEND) (cmlus0csd000r5627dr8y4p9g) with cron: 0 12 * * 5 
+2026-02-21T07:53:39.026Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.026Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.026Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.026Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.027Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.027Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.027Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.027Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.027Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.027Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.027Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.028Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.028Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.028Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.028Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.028Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.028Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.028Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.029Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.029Z [Scheduler] ERROR: Task cmlvy75mq000the3n002qs07j (Node-cmktbirhb0001ywhh0j9z4j0q-p6SlDcmf (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.029Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.029Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.031Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-21T07:53:39.031Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.031Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.034Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-21T07:53:39.034Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.036Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-21T07:53:39.036Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.036Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.036Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.039Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-uyKUI8pS (EMAIL_SEND) (cmlus241o000t5627hdobjp0i) with cron: 0 12 * * 5 
+2026-02-21T07:53:39.041Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-21T07:53:39.041Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.041Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.041Z [Scheduler] ERROR: Task cmlksn45z000d10l312k32jj1 (Node-4OtZT6m_2q7T7LpEpYoDC-hXm206kX (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.042Z [Scheduler] ERROR: Task cmloy3lfe001m327449u47xcm (Node-4OtZT6m_2q7T7LpEpYoDC-xM4Rh1ZF (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.044Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-21T07:53:39.044Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.044Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.047Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-21T07:53:39.048Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) with cron: */60 * * * * 
+2026-02-21T07:53:39.048Z [Scheduler] ERROR: Task cmlv0j6ns002r11eu9rntbva8 (Node-cmktbirhb0001ywhh0j9z4j0q-sdBQDqvt (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.048Z [Scheduler] ERROR: Task cmlnha1200025eyc54vu1jdj2 (Node-cmkkpn5lo00033e4pgigfk53z-H9RIhqib (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.050Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-21T07:53:39.050Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-21T07:53:39.053Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-21T07:53:39.055Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-21T07:53:39.055Z [Scheduler] Scheduler Service Initialized. 
+2026-02-21T07:59:24.288Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-K09gAWs0 (EMAIL_SEND) (cmlw12qm0000l5f0ndlkvcnkk) with cron: 0 10 * * 1 
+2026-02-21T08:00:00.023Z [Scheduler] Executing task: Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) 
+2026-02-21T08:00:00.024Z [Scheduler] ▶️ Starting task cmlktqg6b000h1mvulcamfkc3 
+2026-02-21T08:00:00.061Z [Scheduler] Executing logic for type: SQL_EXECUTE 
+2026-02-21T08:00:00.104Z [Scheduler] ⏱️ Task cmlktqg6b000h1mvulcamfkc3 finished in 0.1s 
+2026-02-21T08:17:55.207Z [Scheduler] Initializing Scheduler Service... 
+2026-02-21T08:17:59.363Z [Scheduler] Found 58 active tasks. 
+2026-02-21T08:17:59.419Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-2k-zprv2 (EMAIL_SEND) (cmlfqtksx002bwa5gn41ezd6s) with cron: 0 9 * * 1 
+2026-02-21T08:17:59.438Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-vKJhk8mI (EMAIL_SEND) (cmlfskvf9004lwa5gnvnog499) with cron: 0 9 * * 1,5 
+2026-02-21T08:17:59.438Z [Scheduler] ERROR: Task cmld9p7220001oiphvqk265za (Node-RzX9nFJGQUs832cLVvecO-feptUzSG (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.439Z [Scheduler] ERROR: Task cmld9p9uy000noiphe0lqvmoh (Node-RzX9nFJGQUs832cLVvecO-gye2BUuO (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.439Z [Scheduler] ERROR: Task cmldt67c0000z111kqqpuqjd9 (Node-RzX9nFJGQUs832cLVvecO--A7oR6c8 (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.439Z [Scheduler] ERROR: Task cmldmj1uf0011fa2kycf398ef (Node-4OtZT6m_2q7T7LpEpYoDC-8IxOFrvh (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.439Z [Scheduler] ERROR: Task cmldmj7vn001bfa2kuslvdxg3 (Node-4OtZT6m_2q7T7LpEpYoDC-HDXBylGO (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.441Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-xP3NFhd- (EMAIL_SEND) (cmlus0csd000r5627dr8y4p9g) with cron: 0 12 * * 5 
+2026-02-21T08:17:59.441Z [Scheduler] ERROR: Task cmlfkc5wz006hdit5cytmb9hf (Node-RzX9nFJGQUs832cLVvecO-7m6E7fwp (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.441Z [Scheduler] ERROR: Task cmlfrxih4003fwa5gn8mfze3l (Node-RzX9nFJGQUs832cLVvecO-ZwOVHdd4 (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.441Z [Scheduler] ERROR: Task cmld9p9v9000roiph52ujcca6 (Node-RzX9nFJGQUs832cLVvecO-9LiHu3E2 (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.442Z [Scheduler] ERROR: Task cmled52960009fi5pm23i9doj (Node-RzX9nFJGQUs832cLVvecO-_CwXg6oQ (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.442Z [Scheduler] ERROR: Task cmlfs96ku003rwa5g24rjvm9a (Node-RzX9nFJGQUs832cLVvecO-gw4dLyqM (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.442Z [Scheduler] ERROR: Task cmldt66tx000p111kkrbywmyo (Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.442Z [Scheduler] ERROR: Task cmldqo5400017pdr66boem8xk (Node-RzX9nFJGQUs832cLVvecO-2QH20NyR (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.442Z [Scheduler] ERROR: Task cmldqnzwv000zpdr6kz80c3lw (Node-RzX9nFJGQUs832cLVvecO-fVagNTtd (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.442Z [Scheduler] ERROR: Task cmlepnx3n000vbda046iru4fn (Node-RzX9nFJGQUs832cLVvecO-KhDnEWg8 (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.442Z [Scheduler] ERROR: Task cmldqo64z001bpdr6d0qlhgvj (Node-RzX9nFJGQUs832cLVvecO-P7OJwQA4 (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.443Z [Scheduler] ERROR: Task cmldmixbz000xfa2ksq4gvf6g (Node-4OtZT6m_2q7T7LpEpYoDC-KlyDG-Eu (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.443Z [Scheduler] ERROR: Task cmld9p7hx000doiphizuje6a1 (Node-RzX9nFJGQUs832cLVvecO-3NtNCoMB (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.443Z [Scheduler] ERROR: Task cmldmjsjj001ffa2kpp8ftlze (Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.443Z [Scheduler] ERROR: Task cmld9p9te000joiphgudr3ej8 (Node-RzX9nFJGQUs832cLVvecO-NC9jpnnG (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.443Z [Scheduler] ERROR: Task cmld9p7gg0009oiph3vlqb72l (Node-RzX9nFJGQUs832cLVvecO-wC6CRuv7 (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.443Z [Scheduler] ERROR: Task cmldmj6st0017fa2k1q4zmo43 (Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.443Z [Scheduler] ERROR: Task cmld9p7f30005oiphuvncs7mi (Node-RzX9nFJGQUs832cLVvecO-t4m_jbLn (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.443Z [Scheduler] ERROR: Task cmlib72lp000bx42llyggaje3 (Node-cmktbirhb0001ywhh0j9z4j0q-G0BkWBfM (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.444Z [Scheduler] ERROR: Task cmlknpzj7002fwiakoqu5uxiu (Node-cmkkpn5lo00033e4pgigfk53z-Zx7-4gto (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.444Z [Scheduler] ERROR: Task cmlib72m2000fx42lm0s3jazg (Node-cmktbirhb0001ywhh0j9z4j0q-z-khqugw (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.444Z [Scheduler] ERROR: Task cmlib7363000jx42lwzy0zl27 (Node-cmktbirhb0001ywhh0j9z4j0q-xo44U2XZ (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.446Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-MVSmqlEO (EMAIL_SEND) (cmlib7xaf000nx42l9nzmfd4b) with cron: 0 10 * * 1,3,5 
+2026-02-21T08:17:59.446Z [Scheduler] ERROR: Task cmlknq6av002lwiaku3e8q93i (Node-cmkkpn5lo00033e4pgigfk53z-AfJiuv51 (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.446Z [Scheduler] ERROR: Task cmlvy75mq000the3n002qs07j (Node-cmktbirhb0001ywhh0j9z4j0q-p6SlDcmf (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.446Z [Scheduler] ERROR: Task cmlib72ka0003x42l746q29o0 (Node-cmktbirhb0001ywhh0j9z4j0q-qJDbemso (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.448Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-zklNd9pZ (EMAIL_SEND) (cmlkfalmz00178131q1siv7mv) with cron: 0 10 * * 1 
+2026-02-21T08:17:59.449Z [Scheduler] ERROR: Task cmlib72lc0007x42lz1dqjuvd (Node-cmktbirhb0001ywhh0j9z4j0q--dM9EfAR (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.451Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-4BbRgfc5 (EMAIL_SEND) (cmldruvte000110htjh6syrqn) with cron: 0 8 * * 1,2,3,4,5 
+2026-02-21T08:17:59.451Z [Scheduler] ERROR: Task cmlfqyltl002twa5gnam8nizs (Node-RzX9nFJGQUs832cLVvecO-BTNiWkbT (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.451Z [Scheduler] ERROR: Task cmlko793l002rwiak3h7sc9g6 (Node-cmkkpn5lo00033e4pgigfk53z-o3PdeQ7w (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.451Z [Scheduler] ERROR: Task cmlhi6r40001z14l4ij6hzkm5 (Node-cmktdmtil0015ywhhna2ejczb-G54tgXtp (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.453Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-uyKUI8pS (EMAIL_SEND) (cmlus241o000t5627hdobjp0i) with cron: 0 12 * * 5 
+2026-02-21T08:17:59.455Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-GPR8yEEU (EMAIL_SEND) (cmljk5psd000981311w0wyifu) with cron: 0 9 * * 5 
+2026-02-21T08:17:59.455Z [Scheduler] ERROR: Task cmlhjkwr4003f14l4dhppo5f7 (Node-cmktdmtil0015ywhhna2ejczb-4kX3mfm6 (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.456Z [Scheduler] ERROR: Task cmljv8v3d000l8131bhw0bpub (Node-4OtZT6m_2q7T7LpEpYoDC-4irAUgpf (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.456Z [Scheduler] ERROR: Task cmlksn45z000d10l312k32jj1 (Node-4OtZT6m_2q7T7LpEpYoDC-hXm206kX (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.456Z [Scheduler] ERROR: Task cmloy3lfe001m327449u47xcm (Node-4OtZT6m_2q7T7LpEpYoDC-xM4Rh1ZF (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.458Z [Scheduler] Scheduled task Node-RzX9nFJGQUs832cLVvecO-mT4fz_HR (PYTHON_EXECUTE) (cmlf4afol001rdit5b7s9xm2c) with cron: 0 9 * * 1,2,3,4,5 
+2026-02-21T08:17:59.458Z [Scheduler] ERROR: Task cmlw0w9od00055f0nmq8ddg63 (Node-cmktbirhb0001ywhh0j9z4j0q-vrhttM2d (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.458Z [Scheduler] ERROR: Task cmlknpwb10025wiakirwczscq (Node-cmkkpn5lo00033e4pgigfk53z-lI_oU46X (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.458Z [Scheduler] ERROR: Task cmli18dho001rbq7a3lziknsb (Node-cmkkpn5lo00033e4pgigfk53z-ipkMB7Cy (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.460Z [Scheduler] Scheduled task Node-cmktcphgp0013ywhh0zy6lgrp-HezwWr-A (EMAIL_SEND) (cmlg6n86j000t14l4nyowkval) with cron: 0 10 * * 1 
+2026-02-21T08:17:59.461Z [Scheduler] ERROR: Task cmlv0j6ns002r11eu9rntbva8 (Node-cmktbirhb0001ywhh0j9z4j0q-sdBQDqvt (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.463Z [Scheduler] Scheduled task Node-cmktbirhb0001ywhh0j9z4j0q-K09gAWs0 (EMAIL_SEND) (cmlw12qm0000l5f0ndlkvcnkk) with cron: 0 10 * * 1 
+2026-02-21T08:17:59.463Z [Scheduler] ERROR: Task cmlnha1200025eyc54vu1jdj2 (Node-cmkkpn5lo00033e4pgigfk53z-H9RIhqib (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.464Z [Scheduler] Scheduled task Node-4OtZT6m_2q7T7LpEpYoDC-C4G9NQNE (SQL_EXECUTE) (cmlktqg6b000h1mvulcamfkc3) with cron: */60 * * * * 
+2026-02-21T08:17:59.466Z [Scheduler] Scheduled task Node-cmkkpn5lo00033e4pgigfk53z-1VCNHa6X (EMAIL_SEND) (cmli16dze001pbq7ao98nfsyy) with cron: 0 10 * * 5 
+2026-02-21T08:17:59.466Z [Scheduler] ERROR: Task cmlgavqow001114l4ysto3g7b (Node-4OtZT6m_2q7T7LpEpYoDC-0Fi5fzy- (Implicit)) has no valid schedule. 
+2026-02-21T08:17:59.469Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-kvbQCCL7 (EMAIL_SEND) (cmlg3czsw000713zkykadru20) with cron: 0 9 * * 2 
+2026-02-21T08:17:59.471Z [Scheduler] Scheduled task Node-cmktdmtil0015ywhhna2ejczb-yMdvR5-A (EMAIL_SEND) (cmlg3cgif000513zk4sfvr5jm) with cron: 0 9 * * 3 
+2026-02-21T08:17:59.471Z [Scheduler] Scheduler Service Initialized. 

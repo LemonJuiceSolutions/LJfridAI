@@ -266,18 +266,35 @@ def execute_python():
         }
 
         # Inject input data
+        # NOTE: In a pipeline A→B→C, inputData arrives as {A: ..., B: ...}.
+        # The LAST table is the direct parent (B), so we map 'df' to the last table.
+        # If a table is explicitly named 'df', that always wins.
         print(f"🐍 [v{VERSION}] Received {len(input_data)} tables.")
-        for i, (table_name, table_data) in enumerate(input_data.items()):
+        last_table_name = None
+        last_df_table = None
+        explicit_df = False
+        for table_name, table_data in input_data.items():
             if isinstance(table_data, list):
                 df_table = pd.DataFrame(table_data)
                 ns[table_name] = df_table
                 cols = df_table.columns.tolist()
                 print(f"   - Table '{table_name}': {len(df_table)} rows, Columns: {cols}")
-                
-                if i == 0 or table_name == 'df':
+
+                if table_name == 'df':
                     ns['df'] = df_table
-                    ns['data'] = df_table # Alias 'data' for the first table
-                    print(f"   - 'df' & 'data' mapped to '{table_name}'")
+                    ns['data'] = df_table
+                    explicit_df = True
+                    print(f"   - 'df' & 'data' mapped to '{table_name}' (explicit name)")
+                else:
+                    last_table_name = table_name
+                    last_df_table = df_table
+
+        # If no explicit 'df' was provided, map df/data to the LAST table
+        # (the direct parent in a pipeline)
+        if not explicit_df and last_df_table is not None:
+            ns['df'] = last_df_table
+            ns['data'] = last_df_table
+            print(f"   - 'df' & 'data' mapped to '{last_table_name}' (last table = direct parent)")
 
         
         # --- Prevent blocking calls ---
@@ -418,12 +435,22 @@ def execute_python():
                 with patch.dict(os.environ, env_vars):
                     exec(safe_code, ns, ns) # Use ns for both globals and locals
         except Exception as e:
-            error_details = traceback.format_exc()
+            import traceback as _tb
+            error_details = _tb.format_exc()
             error_msg = str(e)
             
             # Make common errors more readable
             if isinstance(e, KeyError):
-                error_msg = f"KeyError: La colonna {error_msg} non è presente nei dati. Controlla i nomi delle colonne nel terminale."
+                # Collect available columns from all DataFrames in the namespace
+                available_info = []
+                for var_name, var_val in ns.items():
+                    if isinstance(var_val, pd.DataFrame) and var_name not in ('__builtins__',):
+                        cols = var_val.columns.tolist()
+                        available_info.append(f"  '{var_name}': {len(var_val)} righe, colonne: {cols}")
+
+                error_msg = f"KeyError: La colonna {error_msg} non è presente nei dati."
+                if available_info:
+                    error_msg += f"\n\n📊 DataFrame disponibili:\n" + "\n".join(available_info)
             elif isinstance(e, NameError):
                 # Extract the variable name from the error message
                 missing_var_match = re.search(r"name '(\w+)' is not defined", str(e))
@@ -482,27 +509,47 @@ def execute_python():
         # Discovery: try to find the best result in the namespace
         res_val = None
         
-        # Priority 1: Common result names (ordered by most likely output)
+        # Helper: check if a value is a chart object (NOT a DataFrame)
+        def _is_chart_object(val):
+            if isinstance(val, pd.DataFrame):
+                return False
+            if isinstance(val, (plt.Figure, go.Figure)):
+                return True
+            # Plotly figures have to_json but so do DataFrames - check for layout attribute (Plotly-specific)
+            if hasattr(val, 'to_json') and hasattr(val, 'layout'):
+                return True
+            return False
+
         # Priority 1: Common result names (ordered by most likely output)
         if output_type == 'chart':
             search_order = ['fig', 'chart', 'result', 'output']
-            # Filter: we strictly want a chart object if possible
+            # Filter: we strictly want a chart object (NOT DataFrames)
             for key in search_order:
                 if key in ns:
                     val = ns[key]
-                    if hasattr(val, 'to_json') or isinstance(val, (plt.Figure, go.Figure)):
+                    if _is_chart_object(val):
                         res_val = val
                         print(f"✅ [EXECUTE] Found chart result in variable: '{key}'")
                         break
-            
+
             # Fallback: look for ANY chart object if none of the priority names matched
             if res_val is None:
                 for key, val in reversed(list(ns.items())):
-                    if key not in ['plt', 'px', 'go', 'pd', 'np', 'data', 'df'] and \
-                       (hasattr(val, 'to_json') or isinstance(val, (plt.Figure, go.Figure))):
+                    if key not in ['plt', 'px', 'go', 'pd', 'np', 'data', 'df', '__builtins__'] and \
+                       _is_chart_object(val):
                         res_val = val
                         print(f"✅ [EXECUTE] Found chart result in generic variable: '{key}'")
                         break
+
+            # Fallback 2: If still nothing found, check for matplotlib current figure
+            if res_val is None:
+                try:
+                    curr_fig = plt.gcf()
+                    if curr_fig and len(curr_fig.get_axes()) > 0:
+                        res_val = curr_fig
+                        print(f"✅ [EXECUTE] Found chart in plt.gcf() (matplotlib current figure)")
+                except:
+                    pass
         elif output_type == 'html':
             search_order = ['html_result', 'html', 'result', 'output']
             for key in search_order:
@@ -663,9 +710,9 @@ def execute_python():
 
                 print(f"🎨 [THEME] Force-applied full theme to Plotly figure (font={ff}, axes={afs}px, grid={gc})", file=sys.stderr, flush=True)
             except Exception as e:
-                import traceback
+                import traceback as _tb
                 print(f"⚠️ [THEME] Could not force-apply theme to figure: {e}", file=sys.stderr, flush=True)
-                traceback.print_exc(file=sys.stderr)
+                _tb.print_exc(file=sys.stderr)
 
         # Process result based on requested output type
         if output_type == 'table':
@@ -807,8 +854,8 @@ def execute_python():
             # Fallback: If conversion failed, use old logic (PNG/HTML)
             print(f"⚠️ [EXECUTE] Recharts conversion failed, falling back to PNG/HTML")
             
-            # 1. Plotly Figure (Check this first for interactivity)
-            if hasattr(res_val, 'to_json') or isinstance(res_val, go.Figure) or hasattr(res_val, 'to_image'):
+            # 1. Plotly Figure (Check this first for interactivity) - exclude DataFrames
+            if _is_chart_object(res_val) and (hasattr(res_val, 'to_json') or isinstance(res_val, go.Figure) or hasattr(res_val, 'to_image')):
                 try:
                     # Return HTML for interactivity
                     chart_html = pio.to_html(res_val, full_html=False, include_plotlyjs='cdn')
@@ -902,9 +949,14 @@ def execute_python():
                 except:
                     pass
                     
+                error_detail = f'Result is not a valid chart object (Matplotlib Fig or Plotly), got {type(res_val).__name__}'
+                if isinstance(res_val, pd.DataFrame):
+                    error_detail += '. Il codice produce un DataFrame ma il nodo richiede un grafico. Usa plotly (px o go) o matplotlib per creare un grafico dal DataFrame e salvalo nella variabile "fig".'
+                elif res_val is None:
+                    error_detail = 'Nessun oggetto grafico trovato. Il codice deve creare un grafico Plotly (fig = px.bar(...) o fig = go.Figure(...)) o Matplotlib (fig = plt.figure()) e salvarlo nella variabile "fig".'
                 return jsonify({
                     'success': False,
-                    'error': f'Result is not a valid chart object (Matplotlib Fig or Plotly), got {type(res_val).__name__}',
+                    'error': error_detail,
                     'stdout': stdout_val
                 })
         
@@ -915,7 +967,8 @@ def execute_python():
             })
     
     except Exception as e:
-        error_trace = traceback.format_exc()
+        import traceback as _tb
+        error_trace = _tb.format_exc()
         return jsonify({
             'success': False,
             'error': str(e),

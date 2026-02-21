@@ -1,0 +1,324 @@
+
+    <!DOCTYPE html>
+    <html lang="it">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Tabella Collassabile per Cliente</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background-color: #f5f5f5;
+                padding: 20px;
+            }
+            
+            .container {
+                max-width: 100%;
+                margin: 0 auto;
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }
+            
+            h1 {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 20px;
+                text-align: center;
+            }
+            
+            .table-wrapper {
+                overflow-x: auto;
+            }
+            
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                min-width: 100%;
+            }
+            
+            .cliente-row {
+                background-color: #667eea;
+                color: white;
+                font-weight: bold;
+                cursor: pointer;
+                user-select: none;
+                transition: background-color 0.3s ease;
+            }
+            
+            .cliente-row:hover {
+                background-color: #5568d3;
+            }
+            
+            .cliente-row td {
+                padding: 15px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            
+            .toggle-icon {
+                display: inline-block;
+                width: 20px;
+                height: 20px;
+                text-align: center;
+                line-height: 20px;
+                font-size: 14px;
+                transition: transform 0.3s ease;
+                flex-shrink: 0;
+            }
+            
+            .cliente-row.collapsed .toggle-icon {
+                transform: rotate(-90deg);
+            }
+            
+            .detail-row {
+                background-color: #f9f9f9;
+                display: none;
+            }
+            
+            .detail-row.visible {
+                display: table-row;
+            }
+            
+            .detail-row td {
+                padding: 15px 20px;
+                border-bottom: 1px solid #e0e0e0;
+                font-size: 13px;
+            }
+            
+            .detail-content {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 20px;
+                width: 100%;
+            }
+            
+            .detail-item {
+                display: flex;
+                flex-direction: column;
+            }
+            
+            .detail-cell-label {
+                font-weight: 600;
+                color: #333;
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 4px;
+            }
+            
+            .detail-cell-value {
+                color: #666;
+                font-size: 14px;
+                word-break: break-word;
+            }
+            
+            .positive {
+                color: #10b981;
+                font-weight: 600;
+            }
+            
+            .negative {
+                color: #ef4444;
+                font-weight: 600;
+            }
+            
+            .neutral {
+                color: #6b7280;
+            }
+            
+            .stats-row {
+                background-color: #e8eaf6;
+                font-weight: 600;
+                display: none;
+            }
+            
+            .stats-row.visible {
+                display: table-row;
+            }
+            
+            .stats-row td {
+                padding: 12px 15px;
+                border-bottom: 2px solid #667eea;
+            }
+            
+            thead tr {
+                background-color: #333;
+                color: white;
+            }
+            
+            thead th {
+                padding: 15px;
+                text-align: left;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>📊 Gestione Commesse per Cliente</h1>
+            <div class="table-wrapper">
+                <table id="mainTable">
+                    <thead>
+                        <tr>
+                            <th style="text-align: left;">Cliente</th>
+                            <th style="text-align: center;">N. Commesse</th>
+                            <th style="text-align: right;">Tot. Venduto</th>
+                            <th style="text-align: right;">Margine Budget</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <script>
+            // Dati raggruppati per cliente
+            const clientiData = {"AZZEDINE ALAIA SAS": [{"Commessa": "26/000002C", "Stato Ordine": "Aperto", "Stato Spedizione": "Spedito Completo", "Codici Articolo": "SHAL1843", "Descrizioni": "SHOPPER LAIA", "Totale Q.t\u00e0 Ordinata": "618", "Totale Q.t\u00e0 Spedita": "632", "Totale Venduto": "11124", "Prezzo Medio Vendita": "18", "Scheda Costi": "21,419", "MO Budget Cost": "13236,75", "Gross Margin \u20ac (Budget)": "-2112,75", "Gross Margin % (Budget)": "-0,1899", "MO Forecast Cost": "13236,75", "Costo Actual": "18,521", "MO Actual Cost": "11445,72", "Gross Margin \u20ac (Actual)": "-321,72", "Gross Margin % (Actual)": "-0,0289", "Materials Budget Cost": "1281,54", "Materials Actual Cost": "0", "Production Budget Cost": "11955,21", "Production Actual Cost": "11445,72"}], "MEC-CARNI S.P.A": [{"Commessa": "26/000001C", "Stato Ordine": "Aperto", "Stato Spedizione": "Spedito Parzialmente", "Codici Articolo": "SHLE1302", "Descrizioni": "SHOPPER OVIEDO", "Totale Q.t\u00e0 Ordinata": "1040", "Totale Q.t\u00e0 Spedita": "1036", "Totale Venduto": "9880", "Prezzo Medio Vendita": "9,5", "Scheda Costi": "3,544", "MO Budget Cost": "3685,37", "Gross Margin \u20ac (Budget)": "6194,63", "Gross Margin % (Budget)": "0,627", "MO Forecast Cost": "3685,37", "Costo Actual": "0", "MO Actual Cost": "0", "Gross Margin \u20ac (Actual)": "9880", "Gross Margin % (Actual)": "1", "Materials Budget Cost": "68,77", "Materials Actual Cost": "0", "Production Budget Cost": "3616,6", "Production Actual Cost": "0"}]};
+            
+            function formatCurrency(value) {
+                try {
+                    const num = parseFloat(String(value).replace(',', '.'));
+                    if (isNaN(num)) return value;
+                    return new Intl.NumberFormat('it-IT', {
+                        style: 'currency',
+                        currency: 'EUR',
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    }).format(num);
+                } catch (e) {
+                    return value;
+                }
+            }
+            
+            function formatPercentage(value) {
+                try {
+                    const str = String(value).trim();
+                    if (str.includes('%')) return str;
+                    const num = parseFloat(str.replace(',', '.'));
+                    if (isNaN(num)) return value;
+                    return (num * 100).toFixed(2) + '%';
+                } catch (e) {
+                    return value;
+                }
+            }
+            
+            function getValueClass(value) {
+                try {
+                    const num = parseFloat(String(value).replace(',', '.'));
+                    if (num > 0) return 'positive';
+                    if (num < 0) return 'negative';
+                    return 'neutral';
+                } catch (e) {
+                    return 'neutral';
+                }
+            }
+            
+            function renderTable() {
+                const tbody = document.getElementById('tableBody');
+                tbody.innerHTML = '';
+                
+                for (const [cliente, records] of Object.entries(clientiData)) {
+                    const totVenduto = records.reduce((sum, r) => sum + parseFloat(String(r['Totale Venduto'] || 0).replace(',', '.')), 0);
+                    const totMargine = records.reduce((sum, r) => sum + parseFloat(String(r['Gross Margin € (Budget)'] || 0).replace(',', '.')), 0);
+                    
+                    // Riga cliente (header collassabile)
+                    const clienteRow = document.createElement('tr');
+                    clienteRow.className = 'cliente-row collapsed';
+                    clienteRow.id = 'cliente-' + cliente.replace(/[^a-z0-9]/gi, '_');
+                    clienteRow.innerHTML = `
+                        <td colspan="4">
+                            <span class="toggle-icon">▼</span>
+                            <strong>${cliente}</strong>
+                            <span style="margin-left: auto; font-size: 12px; opacity: 0.8;">
+                                ${records.length} commessa${records.length > 1 ? 'e' : ''}
+                            </span>
+                        </td>
+                    `;
+                    
+                    clienteRow.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        this.classList.toggle('collapsed');
+                        
+                        // Trova tutte le righe di dettaglio e stats per questo cliente
+                        let nextRow = this.nextElementSibling;
+                        while (nextRow) {
+                            if (nextRow.classList.contains('detail-row') || nextRow.classList.contains('stats-row')) {
+                                nextRow.classList.toggle('visible');
+                                nextRow = nextRow.nextElementSibling;
+                            } else if (nextRow.classList.contains('cliente-row')) {
+                                // Abbiamo raggiunto il prossimo cliente
+                                break;
+                            } else {
+                                nextRow = nextRow.nextElementSibling;
+                            }
+                        }
+                    });
+                    
+                    tbody.appendChild(clienteRow);
+                    
+                    // Righe dettagli per ogni commessa
+                    records.forEach((record, idx) => {
+                        const detailRow = document.createElement('tr');
+                        detailRow.className = 'detail-row';
+                        
+                        let detailHTML = '<td colspan="4">';
+                        detailHTML += '<div class="detail-content">';
+                        
+                        // Mostra TUTTI i campi del record
+                        for (const [colonna, valore] of Object.entries(record)) {
+                            if (colonna === 'Cliente') continue; // Salta il cliente (già nel header)
+                            
+                            const displayValue = valore === null || valore === undefined ? '—' : String(valore);
+                            const isPercentage = colonna.includes('%');
+                            const isCurrency = colonna.includes('€') || colonna.includes('Venduto') || colonna.includes('Margine') || colonna.includes('Costo') || colonna.includes('Cost');
+                            
+                            let formattedValue = displayValue;
+                            if (isPercentage && displayValue !== '—') {
+                                formattedValue = formatPercentage(displayValue);
+                            } else if (isCurrency && displayValue !== '—') {
+                                formattedValue = formatCurrency(displayValue);
+                            }
+                            
+                            const valueClass = getValueClass(displayValue);
+                            
+                            detailHTML += `
+                                <div class="detail-item">
+                                    <span class="detail-cell-label">${colonna}</span>
+                                    <span class="detail-cell-value ${valueClass}">${formattedValue}</span>
+                                </div>
+                            `;
+                        }
+                        
+                        detailHTML += '</div></td>';
+                        detailRow.innerHTML = detailHTML;
+                        tbody.appendChild(detailRow);
+                    });
+                    
+                    // Riga statistiche cliente
+                    const statsRow = document.createElement('tr');
+                    statsRow.className = 'stats-row';
+                    statsRow.innerHTML = `
+                        <td style="padding-left: 40px;"><strong>Totali Cliente:</strong></td>
+                        <td style="text-align: center;"><strong>${records.length}</strong></td>
+                        <td style="text-align: right;"><strong>${formatCurrency(totVenduto)}</strong></td>
+                        <td style="text-align: right;"><strong class="${getValueClass(totMargine)}">${formatCurrency(totMargine)}</strong></td>
+                    `;
+                    tbody.appendChild(statsRow);
+                }
+            }
+            
+            // Rendering iniziale
+            renderTable();
+        </script>
+    </body>
+    </html>
+    

@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
         content: agentResponse.message,
         timestamp: Date.now(),
         scriptSnapshot: agentResponse.updatedScript || script,
+        clarificationQuestions: agentResponse.needsClarification ? agentResponse.clarificationQuestions : undefined,
       },
     ];
 

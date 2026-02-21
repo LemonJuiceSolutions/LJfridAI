@@ -178,31 +178,6 @@ export function SchedulerExecutionLog() {
     return `${(ms / 60000).toFixed(1)}min`;
   };
 
-  const getDetails = (execution: ExecutionWithTask) => {
-    if (execution.error) {
-      return (
-        <div className="text-red-600 truncate max-w-xs" title={execution.error}>
-          {execution.error}
-        </div>
-      );
-    }
-    if (execution.result) {
-      const resultStr = typeof execution.result === 'string'
-        ? execution.result
-        : JSON.stringify(execution.result);
-      return (
-        <div className="text-green-600 truncate max-w-xs" title={resultStr}>
-          {resultStr.substring(0, 80)}
-        </div>
-      );
-    }
-    // Show recipient for email tasks even if no result yet
-    const config = execution.task?.config as any;
-    if (config?.to && (execution.task.type === 'EMAIL_SEND' || execution.task.type === 'EMAIL_PREVIEW')) {
-      return <div className="text-muted-foreground truncate max-w-xs">A: {config.to}</div>;
-    }
-    return '-';
-  };
 
   return (
     <div className="space-y-4">

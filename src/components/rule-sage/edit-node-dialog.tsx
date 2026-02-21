@@ -55,6 +55,9 @@ import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import SmartWidgetRenderer from '@/components/widgets/builder/SmartWidgetRenderer';
 import ChartStyleEditor from '@/components/widgets/builder/ChartStyleEditor';
 import PlotlyStyleEditor, { PlotlyStyleOverrides, applyPlotlyOverrides, plotlyJsonToHtml } from '@/components/widgets/builder/PlotlyStyleEditor';
+import HtmlStyleEditor from '@/components/widgets/builder/HtmlStyleEditor';
+import type { HtmlStyleOverrides, HtmlInspectorZone } from '@/lib/html-style-utils';
+import { applyHtmlStyleOverrides } from '@/lib/html-style-utils';
 import { ChartStyle } from '@/lib/chart-style';
 import { useChartTheme } from '@/hooks/use-chart-theme';
 import { AgentChat } from '@/components/agents/agent-chat';
@@ -382,6 +385,7 @@ export default function EditNodeDialog({
 
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
   const [sqlPreviewTimestamp, setSqlPreviewTimestamp] = useState<number | null>(null);
+  const [sqlPreviewExpanded, setSqlPreviewExpanded] = useState(true);
   const [sqlChatHistory, setSqlChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number }[]>([]);
 
   // Use connectors hook with caching for better performance
@@ -427,6 +431,24 @@ export default function EditNodeDialog({
   const plotlyStyleOverridesRef = useRef<PlotlyStyleOverrides>({});
   // Keep ref in sync with state for use in stale closures (e.g. useCallback)
   useEffect(() => { plotlyStyleOverridesRef.current = plotlyStyleOverrides; }, [plotlyStyleOverrides]);
+  const [htmlStyleEditorOpen, setHtmlStyleEditorOpen] = useState(false);
+  const [htmlStyleOverrides, setHtmlStyleOverrides] = useState<HtmlStyleOverrides>({});
+  const htmlStyleOverridesRef = useRef<HtmlStyleOverrides>({});
+  useEffect(() => { htmlStyleOverridesRef.current = htmlStyleOverrides; }, [htmlStyleOverrides]);
+  const [htmlInspectorZone, setHtmlInspectorZone] = useState<HtmlInspectorZone>(null);
+  const [htmlInspectorElementInfo, setHtmlInspectorElementInfo] = useState('');
+  // Listen for inspector messages from HTML preview iframe
+  useEffect(() => {
+    if (!htmlStyleEditorOpen) { setHtmlInspectorZone(null); setHtmlInspectorElementInfo(''); return; }
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'html-inspector-select') {
+        setHtmlInspectorZone(e.data.zone as HtmlInspectorZone);
+        setHtmlInspectorElementInfo(e.data.elementInfo || '');
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [htmlStyleEditorOpen]);
   const { theme: globalChartTheme } = useChartTheme();
 
   // SQL Export State
@@ -674,6 +696,10 @@ export default function EditNodeDialog({
       console.log('[LOAD DEBUG] plotlyStyleOverrides from node:', JSON.stringify((node as any).plotlyStyleOverrides || null));
       console.log('[LOAD DEBUG] Final plotlyStyleOverrides:', JSON.stringify(savedOverrides || null));
       setPlotlyStyleOverrides(savedOverrides || {});
+
+      // Load saved HTML style overrides
+      const savedHtmlOverrides = savedPreviewData?.htmlStyleOverrides || (node as any).htmlStyleOverrides;
+      setHtmlStyleOverrides(savedHtmlOverrides || {});
 
       // Load Email Action Config with safe defaults merge
       if ((node as any).emailAction) {
@@ -1251,25 +1277,46 @@ export default function EditNodeDialog({
             if (ancestor.isPython && ancestor.pythonCode) {
               // Python Execution
               // Build inputData from accumulated ancestorResults
+              // FIX: Add EXPLICIT pipeline dependencies FIRST so that the primary dependency
+              // becomes 'df' in Python (the backend maps the first table to 'df').
               const inputData: Record<string, any[]> = {};
               console.log(`[BUTTON DEBUG] Building inputData for ${ancestor.name}. ancestorResults keys: ${Object.keys(ancestorResults).join(', ')}`);
-              for (const [key, val] of Object.entries(ancestorResults)) {
-                const valType = val === null ? 'null' : (Array.isArray(val) ? 'array' : typeof val);
-                const hasData = val && typeof val === 'object' && 'data' in val;
-                const dataIsArray = hasData && Array.isArray((val as any).data);
-                console.log(`[BUTTON DEBUG]   Key '${key}': valType=${valType}, hasData=${hasData}, dataIsArray=${dataIsArray}`);
 
-                if (Array.isArray(val)) {
-                  inputData[key] = val;
-                  console.log(`[BUTTON DEBUG]     -> Added as array (${val.length} items)`);
-                } else if (val && val.data && Array.isArray(val.data)) {
-                  inputData[key] = val.data;
-                  console.log(`[BUTTON DEBUG]     -> Extracted .data array (${val.data.length} items)`);
-                } else {
-                  console.log(`[BUTTON DEBUG]     -> SKIPPED (not array and data not array)`);
+              // Helper to extract data from a result value
+              const extractVal = (val: any): any[] | null => {
+                if (Array.isArray(val)) return val;
+                if (val && val.data && Array.isArray(val.data)) return val.data;
+                return null;
+              };
+
+              // Step 1: Add explicit pipeline dependencies FIRST (determines 'df' mapping)
+              const explicitDepNames = new Set<string>();
+              const pipeDeps = Array.isArray(ancestor.pipelineDependencies) ? ancestor.pipelineDependencies : [];
+              for (const dep of pipeDeps) {
+                const depName = dep.tableName;
+                if (depName && ancestorResults[depName] !== undefined) {
+                  const extracted = extractVal(ancestorResults[depName]);
+                  if (extracted) {
+                    inputData[depName] = extracted;
+                    explicitDepNames.add(depName);
+                    console.log(`[BUTTON DEBUG]   Dep '${depName}': Added FIRST as explicit dependency (${extracted.length} items)`);
+                  }
                 }
               }
-              console.log(`[BUTTON DEBUG] Final inputData for ${ancestor.name}: ${Object.keys(inputData).join(', ')}`);
+
+              // Step 2: Add remaining ancestor results
+              for (const [key, val] of Object.entries(ancestorResults)) {
+                if (explicitDepNames.has(key)) continue; // Already added
+                const extracted = extractVal(val);
+                if (extracted) {
+                  inputData[key] = extracted;
+                  console.log(`[BUTTON DEBUG]   Key '${key}': Added (${extracted.length} items)`);
+                } else {
+                  console.log(`[BUTTON DEBUG]   Key '${key}': SKIPPED (not array data)`);
+                }
+              }
+              const inputKeys = Object.keys(inputData);
+              console.log(`[BUTTON DEBUG] Final inputData for ${ancestor.name}: [${inputKeys.join(', ')}] (df -> ${inputKeys[0] || 'none'})`);
 
               const res = await executePythonPreviewAction(
                 ancestor.pythonCode,
@@ -1623,9 +1670,11 @@ export default function EditNodeDialog({
         // Embed plotly style overrides inside the preview result so they're always saved/loaded together
         const overridesToSave = Object.keys(plotlyStyleOverrides).length > 0 ? plotlyStyleOverrides : undefined;
         console.log('[SAVE DEBUG] Saving pythonPreviewResult with plotlyStyleOverrides:', JSON.stringify(overridesToSave));
+        const htmlOverridesToSave = Object.keys(htmlStyleOverrides).length > 0 ? htmlStyleOverrides : undefined;
         newNodeData.pythonPreviewResult = {
           ...pythonPreviewResult,
           plotlyStyleOverrides: overridesToSave,
+          htmlStyleOverrides: htmlOverridesToSave,
         };
       } else if ((initialNode as any).pythonPreviewResult) {
         console.log('[SAVE DEBUG] Using initialNode pythonPreviewResult (no current state), hasOverrides:', !!(initialNode as any).pythonPreviewResult?.plotlyStyleOverrides);
@@ -2325,19 +2374,58 @@ export default function EditNodeDialog({
                           setSqlQuery(newScript);
                           toast({ title: "Query Aggiornata", description: "L'editor SQL è stato aggiornato." });
                         }}
+                        onAutoExecutePreview={async (scriptToExecute) => {
+                          try {
+                            const deps = (availableInputTables || []).filter(t => selectedPipelines.includes(t.name)).map(t => ({
+                              tableName: t.name,
+                              nodeName: t.nodeName,
+                              displayName: (t as any).displayName,
+                              query: t.sqlQuery,
+                              isPython: t.isPython,
+                              pythonCode: t.pythonCode,
+                              connectorId: t.connectorId,
+                              pipelineDependencies: t.pipelineDependencies,
+                              data: (t as any).data || undefined,
+                            }));
+                            // Pass '' if no connector: executeSqlPreviewAction will inherit from deps or use company fallback
+                            const res = await executeSqlPreviewAction(scriptToExecute, sqlConnectorId || '', deps);
+                            if (res.data) {
+                              setSqlPreviewData(res.data);
+                              setSqlPreviewTimestamp(Date.now());
+                              if (onSavePreview && nodePath) {
+                                onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
+                              }
+                              return { success: true };
+                            }
+                            return { success: false, error: res.error || 'Errore SQL sconosciuto' };
+                          } catch (e: any) {
+                            return { success: false, error: e.message };
+                          }
+                        }}
                       />
                     </div>
                   </div>
 
-                  {/* Preview section BELOW the columns - max 200px height */}
+                  {/* Preview section BELOW the columns - collapsible like Python */}
                   {sqlPreviewData && (
-                    <div className="border rounded-md overflow-hidden mt-4">
+                    <div className="border rounded-md overflow-hidden mt-4 bg-white dark:bg-zinc-950">
                       <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
                         <span className="font-semibold text-xs flex items-center gap-2">
                           <Database className="h-3 w-3" />
                           Risultati Anteprima ({sqlPreviewData.length} record)
                         </span>
-                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setSqlPreviewData(null)}><X className="h-3 w-3" /></Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            title={sqlPreviewExpanded ? "Comprimi" : "Espandi"}
+                            onClick={() => setSqlPreviewExpanded(!sqlPreviewExpanded)}
+                          >
+                            {sqlPreviewExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setSqlPreviewData(null)}><X className="h-3 w-3" /></Button>
+                        </div>
                       </div>
 
                       {/* Timestamp Display - Always Visible */}
@@ -2347,9 +2435,11 @@ export default function EditNodeDialog({
                         </div>
                       )}
 
-                      <div className="max-h-[200px] overflow-auto">
-                        <DataTable data={sqlPreviewData} />
-                      </div>
+                      {sqlPreviewExpanded && (
+                        <div className="max-h-[400px] overflow-auto transition-all duration-300">
+                          <DataTable data={sqlPreviewData} />
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2701,6 +2791,47 @@ export default function EditNodeDialog({
                           setPythonCode(newScript);
                           toast({ title: "Codice Aggiornato", description: "Lo script Python è stato aggiornato." });
                         }}
+                        onAutoExecutePreview={async (scriptToExecute) => {
+                          try {
+                            const inputData: Record<string, any[]> = {};
+                            const deps = pythonSelectedPipelines.map(tableName => {
+                              const depMeta = availableInputTables?.find(t => t.name === tableName);
+                              if ((depMeta as any)?.data && Array.isArray((depMeta as any).data)) {
+                                inputData[tableName] = (depMeta as any).data;
+                              }
+                              return {
+                                tableName,
+                                query: depMeta?.sqlQuery || '',
+                                isPython: !!depMeta?.isPython,
+                                pythonCode: depMeta?.pythonCode,
+                                connectorId: depMeta?.connectorId,
+                                pipelineDependencies: depMeta?.pipelineDependencies,
+                              };
+                            });
+                            const res = await executePythonPreviewAction(scriptToExecute, pythonOutputType, inputData, deps, pythonConnectorId);
+                            if (res.success) {
+                              setPythonPreviewResult({
+                                type: pythonOutputType,
+                                data: res.data,
+                                variables: res.variables,
+                                chartBase64: res.chartBase64,
+                                chartHtml: res.chartHtml,
+                                rechartsConfig: res.rechartsConfig,
+                                rechartsData: res.rechartsData,
+                                rechartsStyle: res.rechartsStyle,
+                                plotlyJson: res.plotlyJson,
+                                html: res.html,
+                                debugLogs: res.debugLogs,
+                                timestamp: Date.now(),
+                              });
+                              setPythonPreviewExpanded(true);
+                              return { success: true };
+                            }
+                            return { success: false, error: res.error || 'Errore Python sconosciuto' };
+                          } catch (e: any) {
+                            return { success: false, error: e.message };
+                          }
+                        }}
                       />
                     </div>
                   </div>
@@ -2855,12 +2986,47 @@ export default function EditNodeDialog({
                             <pre className="p-3 text-xs">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
                           )}
                           {pythonPreviewResult.type === 'html' && pythonPreviewResult.html && (
-                            <div className={`bg-white dark:bg-zinc-950 ${pythonPreviewFullHeight ? 'min-h-[500px]' : 'max-h-[400px] overflow-auto'}`}>
+                            <div className={`bg-white dark:bg-zinc-950 relative ${pythonPreviewFullHeight ? 'min-h-[500px]' : 'max-h-[400px] overflow-auto'}`}>
+                              {/* HTML style editor button */}
+                              <button
+                                onClick={() => setHtmlStyleEditorOpen(true)}
+                                className="absolute top-2 left-2 z-20 p-1.5 rounded-md border border-violet-500 bg-white hover:bg-violet-50 shadow-sm"
+                                title="Personalizza stile HTML"
+                              >
+                                <Settings2 className="h-4 w-4 text-violet-500" />
+                              </button>
                               <iframe
-                                srcDoc={`<html><head><style>body { margin: 0; padding: 10px; font-family: sans-serif; }</style></head><body>${pythonPreviewResult.html}</body></html>`}
+                                srcDoc={applyHtmlStyleOverrides(pythonPreviewResult.html, htmlStyleOverrides)}
                                 className="w-full border-none min-h-[400px]"
                                 title="HTML Preview"
                               />
+                              {/* HTML Style Editor Dialog */}
+                              <Dialog open={htmlStyleEditorOpen} onOpenChange={setHtmlStyleEditorOpen}>
+                                <DialogContent className="!max-w-[95vw] !w-[95vw] !h-[93vh] flex flex-col">
+                                  <DialogHeader>
+                                    <DialogTitle className="text-sm">Personalizza Stile HTML</DialogTitle>
+                                    <p className="text-[11px] text-muted-foreground">Clicca su un elemento nell&apos;anteprima per modificare le sue proprieta&apos;</p>
+                                  </DialogHeader>
+                                  <div className="flex-1 min-h-0 grid grid-cols-[1fr_320px] gap-4 overflow-hidden">
+                                    <div className="border rounded-lg bg-muted/20 overflow-auto min-h-0">
+                                      <iframe
+                                        srcDoc={applyHtmlStyleOverrides(pythonPreviewResult.html, htmlStyleOverrides, true)}
+                                        className="w-full h-full border-none min-h-[500px]"
+                                        title="HTML Style Preview"
+                                      />
+                                    </div>
+                                    <div className="overflow-y-auto pr-1">
+                                      <HtmlStyleEditor
+                                        overrides={htmlStyleOverrides}
+                                        onChange={setHtmlStyleOverrides}
+                                        selectedZone={htmlInspectorZone}
+                                        elementInfo={htmlInspectorElementInfo}
+                                        onClearZone={() => { setHtmlInspectorZone(null); setHtmlInspectorElementInfo(''); }}
+                                      />
+                                    </div>
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
                             </div>
                           )}
                           {pythonPreviewResult.type === 'chart' && (
@@ -4117,7 +4283,8 @@ export default function EditNodeDialog({
                                 availableTriggers: availableParentTriggers,
                                 mediaAttachments: emailConfig.attachments?.mediaAsAttachment || [],
                                 preCalculatedResults: ancestorResults,
-                                pipelineReport: executionReport
+                                pipelineReport: executionReport,
+                                htmlStyleOverrides: Object.keys(htmlStyleOverrides).length > 0 ? htmlStyleOverrides : undefined,
                               });
 
                               if (res.success) {

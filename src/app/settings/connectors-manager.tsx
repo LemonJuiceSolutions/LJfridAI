@@ -630,8 +630,8 @@ export function ConnectorsManager() {
     };
 
     return (
-        <Card className="border-slate-200 dark:border-slate-800">
-            <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between">
+        <Card className="border-slate-200 dark:border-slate-800 flex flex-col h-full">
+            <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between shrink-0">
                 <div>
                     <CardTitle className="text-sm flex items-center gap-1.5">
                         <Database className="h-4 w-4 text-violet-500" />
@@ -920,7 +920,7 @@ export function ConnectorsManager() {
                 </Dialog>
                 </div>
             </CardHeader>
-            <CardContent className="p-3 pt-0">
+            <CardContent className="p-3 pt-0 flex-1 overflow-y-auto">
                 {isLoading ? (
                     <div className="flex justify-center p-4">
                         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
