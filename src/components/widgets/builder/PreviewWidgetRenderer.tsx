@@ -5,6 +5,7 @@ import { getCachedTree, invalidateAndNotifyWidgets } from '@/lib/tree-cache';
 import { DataTable } from '@/components/ui/data-table';
 import SmartWidgetRenderer from './SmartWidgetRenderer';
 import { applyPlotlyOverrides, plotlyJsonToHtml } from '@/lib/plotly-utils';
+import { applyHtmlStyleOverrides } from '@/lib/html-style-utils';
 import { Loader2, Database, Code, AlertCircle, RefreshCw, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -260,7 +261,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                 ) : previewData.type === 'html' && previewData.html ? (
                     <div className="w-full h-full bg-white dark:bg-zinc-950 overflow-hidden min-h-[300px]">
                         <iframe
-                            srcDoc={`<html><head><style>body { margin: 0; padding: 10px; font-family: sans-serif; overflow: auto; }</style></head><body>${previewData.html}</body></html>`}
+                            srcDoc={applyHtmlStyleOverrides(previewData.html, previewData.htmlStyleOverrides || {})}
                             className="w-full h-full border-none min-h-[300px]"
                             title="HTML Widget Preview"
                         />

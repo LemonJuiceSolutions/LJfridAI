@@ -337,7 +337,11 @@ export function generateHtmlStyleCss(overrides: HtmlStyleOverrides): string {
   // Links
   css += `a { color: ${o.link_color}; text-decoration: ${o.link_decoration}; }\n`;
 
-  // Custom CSS last (highest priority)
+  // Add !important to all generated declarations so they override inline styles
+  // from Python/pandas HTML output (inline styles beat stylesheet rules without !important)
+  css = css.replace(/: ([^;{}]+);/g, ': $1 !important;');
+
+  // Custom CSS last (highest priority, user-controlled — no forced !important)
   if (o.custom_css) {
     css += `\n/* Custom CSS */\n${o.custom_css}\n`;
   }
@@ -368,19 +372,6 @@ export const ZONE_LABELS: Record<Exclude<HtmlInspectorZone, null>, string> = {
   'value-color': 'Colore Valore',
 };
 
-/** Maps each zone to the section titles visible in HtmlStyleEditor */
-export const ZONE_SECTION_MAP: Record<Exclude<HtmlInspectorZone, null>, string[]> = {
-  th:            ['Intestazione Tabella', 'Spaziatura Intestazione'],
-  td:            ['Corpo Tabella', 'Spaziatura Celle'],
-  table:         ['Bordi', 'Layout Tabella'],
-  body:          ['Pagina / Contenitore', 'Tipografia'],
-  heading:       ['Titoli & Didascalie'],
-  link:          ['Link'],
-  caption:       ['Titoli & Didascalie'],
-  'first-col':   ['Prima Colonna', 'Corpo Tabella', 'Spaziatura Celle'],
-  tr:            ['Righe Alternate & Hover'],
-  'value-color': ['Colori Valori (+/-)'],
-};
 
 /** Inspector message payload from the iframe */
 export interface HtmlInspectorMessage {
