@@ -283,7 +283,7 @@ interface EditNodeDialogProps {
   nodePath: string;
   treeId: string;
   isSaving: boolean;
-  availableInputTables?: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart' | 'html', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, plotlyStyleOverrides?: any }[];
+  availableInputTables?: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart' | 'html', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, plotlyStyleOverrides?: any, htmlStyleOverrides?: any }[];
   availableParentMedia?: MediaItem[];
   availableParentLinks?: LinkItem[];
   availableParentTriggers?: TriggerItem[];
@@ -4156,7 +4156,8 @@ export default function EditNodeDialog({
                                   connectorId: pythonConnectorId,
                                   isCurrent: true,
                                   dependenciesOverride: null as any,
-                                  plotlyStyleOverrides: plotlyStyleOverrides
+                                  plotlyStyleOverrides: plotlyStyleOverrides,
+                                  htmlStyleOverrides: htmlStyleOverrides
                                 }] : []),
                                 ...(availableInputTables || [])
                                   .filter(t => t.isPython && t.pythonCode && t.name !== pythonResultName)
@@ -4168,7 +4169,8 @@ export default function EditNodeDialog({
                                     connectorId: t.connectorId,
                                     isCurrent: false,
                                     dependenciesOverride: t.pipelineDependencies,
-                                    plotlyStyleOverrides: t.plotlyStyleOverrides
+                                    plotlyStyleOverrides: t.plotlyStyleOverrides,
+                                    htmlStyleOverrides: t.htmlStyleOverrides
                                   }))
                               ];
 
@@ -4224,7 +4226,8 @@ export default function EditNodeDialog({
                                     inBody,
                                     asAttachment,
                                     dependencies: dependencies.length > 0 ? dependencies : undefined,
-                                    plotlyStyleOverrides: output.plotlyStyleOverrides
+                                    plotlyStyleOverrides: output.plotlyStyleOverrides,
+                                    htmlStyleOverrides: output.htmlStyleOverrides
                                   });
                                 }
                               }
