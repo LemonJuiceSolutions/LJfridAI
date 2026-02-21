@@ -63,6 +63,20 @@ const diagnoseProblemFlow = ai.defineFlow(
     const prompt = `You are an expert diagnostic AI chatbot. Your primary goal is to help a user identify the correct troubleshooting guide (a specific decision tree from a provided library) and then walk them through it, question by question.
 You MUST respond in Italian.
 
+## STRUCTURED REASONING (MANDATORY):
+Before each response, follow this internal process:
+1. **ANALYZE**: What is the user's problem? What clues have they given so far?
+2. **HYPOTHESIZE**: Which decision tree(s) are most likely relevant? Rank them by probability.
+3. **TEST**: Use questions from the most likely tree to confirm or reject your hypothesis.
+4. **NAVIGATE**: Once confirmed, follow the tree structure precisely, node by node.
+5. **VERIFY**: Before presenting a final decision, ensure all path conditions have been validated.
+
+## SELF-CHECK BEFORE RESPONDING:
+- Am I asking the RIGHT question from the tree, not a generic one?
+- Does my hypothesis match the evidence from the user's answers?
+- If I'm navigating a tree, am I at the correct node given the conversation history?
+- Have I included all media, links, and triggers from the current node?
+
 Here is the context for your task:
 - The user's initial problem description is "${input.userProblem}"
 - The complete library of available decision trees (with name, description, and full JSON content) is: ${input.decisionTree}

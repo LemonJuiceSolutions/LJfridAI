@@ -28,6 +28,9 @@ const SetupWidget = React.lazy(() => import('./setup/SetupWidget').then(m => ({ 
 const PipelinesWidget = React.lazy(() => import('./pipelines/PipelinesWidget').then(m => ({ default: m.default })));
 const SqlTestTable = React.lazy(() => import('../dashboard/sql-test-table').then(m => ({ default: m.default })));
 const PipelineOutputWidget = React.lazy(() => import('./pipelines/PipelineOutputWidget').then(m => ({ default: m.default })));
+const XbrlAnalysisWidget = React.lazy(() => import('./xbrl/XbrlAnalysisWidget').then(m => ({ default: m.default })));
+const XbrlKpiWidget = React.lazy(() => import('./xbrl/XbrlKpiWidget').then(m => ({ default: m.default })));
+const XbrlDashboardSummary = React.lazy(() => import('./xbrl/XbrlDashboardSummary').then(m => ({ default: m.default })));
 
 // Simple loading fallback for lazy-loaded components
 const WidgetLoader = () => (
@@ -68,6 +71,23 @@ const staticWidgets: Record<string, Widget> = {
     'magazzino': { id: 'magazzino', component: <React.Suspense fallback={<WidgetLoader />}><MagazzinoWidget /></React.Suspense>, name: 'Magazzino' },
     'setup': { id: 'setup', component: <React.Suspense fallback={<WidgetLoader />}><SetupWidget /></React.Suspense>, name: 'Setup Connessioni' },
     'pipelines': { id: 'pipelines', component: <React.Suspense fallback={<WidgetLoader />}><PipelinesWidget /></React.Suspense>, name: 'Pipeline ETL' },
+    // XBRL Financial Analysis Widgets
+    'xbrl-summary': { id: 'xbrl-summary', component: <React.Suspense fallback={<WidgetLoader />}><XbrlDashboardSummary /></React.Suspense>, name: 'XBRL Riepilogo Analisi' },
+    'xbrl-kpi-roe': { id: 'xbrl-kpi-roe', component: <React.Suspense fallback={<WidgetLoader />}><XbrlKpiWidget metric="roe" /></React.Suspense>, name: 'XBRL KPI ROE' },
+    'xbrl-kpi-ebitda-margin': { id: 'xbrl-kpi-ebitda-margin', component: <React.Suspense fallback={<WidgetLoader />}><XbrlKpiWidget metric="ebitdaMargin" /></React.Suspense>, name: 'XBRL KPI EBITDA Margin' },
+    'xbrl-kpi-pfn-ebitda': { id: 'xbrl-kpi-pfn-ebitda', component: <React.Suspense fallback={<WidgetLoader />}><XbrlKpiWidget metric="pfnEbitda" /></React.Suspense>, name: 'XBRL KPI PFN/EBITDA' },
+    'xbrl-kpi-current-ratio': { id: 'xbrl-kpi-current-ratio', component: <React.Suspense fallback={<WidgetLoader />}><XbrlKpiWidget metric="currentRatio" /></React.Suspense>, name: 'XBRL KPI Current Ratio' },
+    'xbrl-kpi-utile': { id: 'xbrl-kpi-utile', component: <React.Suspense fallback={<WidgetLoader />}><XbrlKpiWidget metric="utile" /></React.Suspense>, name: 'XBRL KPI Utile Netto' },
+    'xbrl-composizione-attivo': { id: 'xbrl-composizione-attivo', component: <React.Suspense fallback={<WidgetLoader />}><XbrlAnalysisWidget nodeId="equilibrio-patrimoniale" chartId="composizione-attivo" /></React.Suspense>, name: 'XBRL Composizione Attivo' },
+    'xbrl-composizione-passivo': { id: 'xbrl-composizione-passivo', component: <React.Suspense fallback={<WidgetLoader />}><XbrlAnalysisWidget nodeId="equilibrio-patrimoniale" chartId="composizione-passivo" /></React.Suspense>, name: 'XBRL Composizione Passivo' },
+    'xbrl-indici-liquidita': { id: 'xbrl-indici-liquidita', component: <React.Suspense fallback={<WidgetLoader />}><XbrlAnalysisWidget nodeId="equilibrio-finanziario" chartId="indici-liquidita" /></React.Suspense>, name: 'XBRL Indici Liquidita' },
+    'xbrl-struttura-costi': { id: 'xbrl-struttura-costi', component: <React.Suspense fallback={<WidgetLoader />}><XbrlAnalysisWidget nodeId="equilibrio-economico" chartId="struttura-costi" /></React.Suspense>, name: 'XBRL Struttura Costi' },
+    'xbrl-margini-trend': { id: 'xbrl-margini-trend', component: <React.Suspense fallback={<WidgetLoader />}><XbrlAnalysisWidget nodeId="equilibrio-economico" chartId="margini-trend" /></React.Suspense>, name: 'XBRL Margini Trend' },
+    'xbrl-evoluzione-ricavi': { id: 'xbrl-evoluzione-ricavi', component: <React.Suspense fallback={<WidgetLoader />}><XbrlAnalysisWidget nodeId="trend-sviluppo" chartId="evoluzione-ricavi" /></React.Suspense>, name: 'XBRL Evoluzione Ricavi' },
+    'xbrl-evoluzione-patrimonio': { id: 'xbrl-evoluzione-patrimonio', component: <React.Suspense fallback={<WidgetLoader />}><XbrlAnalysisWidget nodeId="trend-sviluppo" chartId="evoluzione-patrimonio" /></React.Suspense>, name: 'XBRL Evoluzione Patrimonio' },
+    'xbrl-indicatori-redditivita': { id: 'xbrl-indicatori-redditivita', component: <React.Suspense fallback={<WidgetLoader />}><XbrlAnalysisWidget nodeId="indicatori-redditivita" chartId="trend-indicatori" /></React.Suspense>, name: 'XBRL Indicatori Redditivita' },
+    'xbrl-giorni-ciclo': { id: 'xbrl-giorni-ciclo', component: <React.Suspense fallback={<WidgetLoader />}><XbrlAnalysisWidget nodeId="capitale-circolante" chartId="giorni-ciclo" /></React.Suspense>, name: 'XBRL Giorni Incasso/Pagamento' },
+    'xbrl-leverage-trend': { id: 'xbrl-leverage-trend', component: <React.Suspense fallback={<WidgetLoader />}><XbrlAnalysisWidget nodeId="sostenibilita-debito" chartId="leverage-trend" /></React.Suspense>, name: 'XBRL Leverage Trend' },
 };
 
 

@@ -416,8 +416,79 @@ DATA DI OGGI: ${today}
 
 ${connectorInfo}${companyInfo}
 
+## RAGIONAMENTO STRUTTURATO (OBBLIGATORIO):
+Prima di scrivere o modificare codice, segui SEMPRE questo processo:
+1. **COMPRENDI**: Cosa vuole l'utente? Riformula mentalmente la richiesta
+2. **ANALIZZA**: Quali dati servono? Controlla schema, colonne e dati di esempio disponibili
+3. **PROGETTA**: Pianifica la struttura del codice (import → dati → elaborazione → output)
+4. **SCRIVI**: Genera il codice Python ottimale e pulito
+5. **TESTA**: Verifica con pyTestCode - MAI saltare
+6. **VALIDA**: L'output risponde alla domanda? Il grafico mostra i dati giusti?
+7. **RISPONDI**: Solo dopo la validazione, restituisci il codice
+
 LIBRERIE DISPONIBILI: pandas (pd), numpy (np), requests, plotly.express (px), plotly.graph_objects (go)
-NON USARE MAI LA LIBRERIA 'tabulate' (non e' installata). Usa SOLO plotly per le tabelle.
+NON USARE MAI LA LIBRERIA 'tabulate' (non e' installata).
+
+## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
+Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.
+La variabile DEVE essere del tipo giusto per l'outputType del nodo:
+
+### outputType='table' (TABELLA):
+- Il backend si aspetta un pandas DataFrame come risultato
+- ASSEGNA il DataFrame a \`result\` (o modifica \`df\` in-place)
+- NON usare fig.show() - NON usare go.Table - NON usare print() come output principale
+- print() va nello stdout (utile per debug), ma NON e' il risultato
+- Il DataFrame viene renderizzato automaticamente come tabella HTML dalla piattaforma
+- ESEMPIO CORRETTO:
+  \`\`\`python
+  # df e' gia' disponibile con i dati dall'input
+  result = df  # Mostra tutto il DataFrame cosi' com'e'
+  # oppure con filtri/trasformazioni:
+  result = df[df['importo'] > 1000].sort_values('importo', ascending=False)
+  \`\`\`
+- ESEMPIO SBAGLIATO (causa errore "Expected DataFrame but got NoneType"):
+  \`\`\`python
+  print(df)  # SBAGLIATO: print va in stdout, non restituisce nulla
+  fig.show()  # SBAGLIATO: questo e' per chart, non per table
+  \`\`\`
+
+### outputType='chart' (GRAFICO):
+- Usa plotly (px o go) e chiama fig.show() alla fine
+- Il backend cattura il grafico Plotly e lo converte in Recharts
+- ESEMPIO CORRETTO:
+  \`\`\`python
+  import plotly.express as px
+  fig = px.bar(df, x='mese', y='vendite', title='Vendite per mese')
+  fig.show()
+  \`\`\`
+
+### outputType='variable' (VARIABILE):
+- Assegna un dizionario a \`result\`: result = {"valore": 42, "nome": "test"}
+
+### outputType='html' (HTML LIBERO):
+- Assegna una stringa HTML a \`result\`: result = "<h1>Titolo</h1><p>Contenuto</p>"
+- Per TABELLE HTML con stile: usa df.to_html(escape=False) + CSS inline in un tag <style>
+- Per GESTIRE NaN/None con stile visivo (es. colore diverso), usa SEMPRE questo pattern:
+  \`\`\`python
+  nan_span = '<span style="color:#ff8c00;font-weight:bold;">NaN</span>'
+  def format_cell(val):
+      if pd.isna(val):
+          return nan_span
+      s = str(val)
+      if s.strip().lower() in ('nan', 'none', ''):
+          return nan_span
+      return s
+  df_html = df_filtered.applymap(format_cell)
+  html_table = df_html.to_html(index=False, escape=False)
+  \`\`\`
+- NON usare MAI \`df.astype(str).replace('nan', ...)\` per stilizzare NaN - NON FUNZIONA in modo affidabile
+- Usa SEMPRE \`pd.isna(val)\` PRIMA di convertire a stringa - e' l'unico modo sicuro per catturare NaN/None/NaT
+
+## COME ARRIVANO I DATI DALLE DIPENDENZE (PIPELINE):
+- I dati dal nodo precedente (SQL o Python) arrivano AUTOMATICAMENTE come \`df\` (e \`data\`)
+- Se il nodo ha piu' dipendenze, ogni dipendenza e' disponibile col suo NOME (es: "GM_Budget", "Vendite")
+- \`df\` viene mappato all'ULTIMA dipendenza (il nodo padre diretto)
+- Se \`df\` ha 0 righe/colonne, significa che il nodo precedente NON e' collegato o non ha dati → segnalalo all'utente
 
 ## REGOLE GRAFICI (CRITICO):
 - Usa SEMPRE e SOLO plotly per generare grafici (plotly.express o plotly.graph_objects).
@@ -438,7 +509,6 @@ NON USARE MAI LA LIBRERIA 'tabulate' (non e' installata). Usa SOLO plotly per le
   fig.update_layout(title='Gantt', barmode='stack')
   fig.show()
   \`\`\`
-- Per visualizzare dati tabellari: usa go.Table (come da esempio sotto).
 - PREFERISCI SEMPRE tipi di grafico semplici (bar, line, scatter, pie, area) che la piattaforma puo' stilizzare.
 
 ## CONTESTO PIATTAFORMA (IMPORTANTE):
@@ -476,12 +546,6 @@ NON USARE MAI LA LIBRERIA 'tabulate' (non e' installata). Usa SOLO plotly per le
        return None
    \`\`\`
 2. **RATE LIMITING**: Inserisci SEMPRE \`time.sleep(0.05)\` (o simile) tra le chiamate in loop.
-3. **TABELLE**: Usa SOLO \`plotly.graph_objects\` per visualizzare i risultati tabellari. Esempio:
-   \`\`\`python
-   import plotly.graph_objects as go
-   fig = go.Figure(data=[go.Table(header=dict(values=list(df.columns)), cells=dict(values=[df[col] for col in df.columns]))])
-   fig.show()
-   \`\`\`
 
 ## REGOLA D'ORO: FAI, NON SPIEGARE
 - Quando l'utente chiede una modifica (es. "Rinomina colonna X in Y"), ESEGUI ESATTAMENTE LA RINOMINA nel codice finale.
@@ -506,6 +570,17 @@ NON USARE MAI LA LIBRERIA 'tabulate' (non e' installata). Usa SOLO plotly per le
 - NON ripetere spiegazioni lunghe - vai dritto alla correzione con il codice corretto.
 - Rispondi con una breve spiegazione di cosa hai corretto + il codice completo corretto.
 
+### ERRORE COMUNE: "Expected DataFrame result for output type table, but got NoneType":
+- Significa che il codice NON ha assegnato un DataFrame a result/output/df/data
+- CAUSA TIPICA: hai usato print(df) o fig.show() invece di assegnare result = df
+- SOLUZIONE: aggiungi \`result = df\` (o \`result = df_trasformato\`) come ultima riga significativa
+- Se stdout dice "0 righe, 0 colonne": il DataFrame in input e' vuoto → il nodo precedente non e' collegato, dillo all'utente
+
+### ERRORE COMUNE: DataFrame vuoto (0 righe):
+- Se df ha 0 righe e 0 colonne, NON provare a elaborarlo
+- Dillo SUBITO all'utente: "Il DataFrame di input e' vuoto. Verifica che il nodo precedente sia collegato e abbia dati."
+- NON chiedere "quale connettore" o "quale query" - il problema e' nella connessione tra nodi
+
 ## AUTO-APPRENDIMENTO KB (OBBLIGATORIO):
 Devi imparare dai tuoi errori AUTOMATICAMENTE. Segui queste regole:
 
@@ -529,11 +604,35 @@ Devi imparare dai tuoi errori AUTOMATICAMENTE. Segui queste regole:
 - Usa **grassetto** per evidenziare.
 - Rispondi SOLO in JSON come richiesto sotto.
 
+## AUTO-REVIEW CODICE (CONTROLLA PRIMA DI RISPONDERE):
+Prima di restituire il codice, verifica mentalmente:
+- Il codice restituisce il TIPO GIUSTO per l'outputType? (table→DataFrame in result, chart→fig.show(), variable→dict, html→stringa)
+- Per outputType='table': c'e' \`result = ...\` con un DataFrame? (NON print, NON fig.show)
+- Per outputType='chart': c'e' \`fig.show()\` alla fine?
+- Tutti gli import sono presenti all'inizio del file?
+- I nomi delle colonne corrispondono ESATTAMENTE ai dati di esempio/schema?
+- Le conversioni di tipo sono gestite? (stringhe → numeri, date, formati italiani)
+- Il codice gestisce valori null/NaN senza crashare?
+- Per outputType='html': se devo stilizzare NaN, sto usando pd.isna() con applymap? (MAI .astype(str).replace('nan',...))
+- Per outputType='html': ho messo escape=False in to_html() se uso HTML inline nelle celle?
+- Il grafico ha titolo, etichette assi e legenda comprensibili?
+- Il codice e' autocontenuto e pronto da eseguire senza modifiche?
+- Se qualcosa non torna, correggi PRIMA di rispondere.
+
 ## PREVENZIONE ERRORI (CRITICO):
 - NON Chiudere una lista [ con una graffa } o viceversa.
 - Assicurati che le stringhe multilinea siano chiuse.
 - Se definisci dizionari lunghi, assicurati di chiuderli correttamente con }.
 - NON inserire "}}" o markdown code delimiters extra all'interno del blocco di codice Python. Il codice deve essere pulito e pronto all'uso.
+
+## STRATEGIA DI FALLBACK PROGRESSIVA:
+Quando il codice fallisce, segui questa scala:
+1. Correggi l'errore specifico (nome colonna, import mancante, tipo sbagliato)
+2. Esplora i dati con pyTestCode: print(df.columns.tolist()), print(df.dtypes)
+3. Riscrivi la parte problematica con approccio diverso
+4. Se e' un problema di dati (NaN, formati), aggiungi pulizia dati robusta
+5. Solo come ULTIMO passo, chiedi all'utente
+- NON ripetere MAI lo stesso errore - cambia approccio ad ogni tentativo
 
 ## FORMATO RISPOSTA(OBBLIGATORIO):
         1. PRIMA Scrivi il codice Python completo in un blocco markdown:
@@ -671,14 +770,8 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
             // Prefer extracted script from markdown, fallback to JSON script if provided (legacy/fallback)
             const finalScript = extractedScript || parsedMetadata.updatedScript;
 
-            if (finalScript && !displayMessage.includes('```python')) {
-                // Ensure the code is shown in the chat bubble if not already there
-                // (Though typically the Chat UI renders the script separately, 
-                // putting it in the message body ensures visibility history)
-                // Actually, let's NOT duplicate it if the UI shows the script editor.
-                // But for the "message" bubble history, it is good to have.
-                displayMessage += `\n\n\`\`\`python\n${finalScript}\n\`\`\``;
-            }
+            // Lo script viene gia' mostrato nell'editor dalla UI tramite updatedScript.
+            // NON aggiungerlo anche al messaggio per evitare duplicazione.
 
             return {
                 message: displayMessage,

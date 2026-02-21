@@ -1,18 +1,21 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RotateCcw } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { RotateCcw, Palette, Save, Trash2, Globe, Loader2, ChevronDown, ChevronUp, Bookmark } from 'lucide-react';
 
 // Re-export from shared utility so existing imports keep working
 export { applyHtmlStyleOverrides, generateHtmlStyleCss, HTML_STYLE_DEFAULTS } from '@/lib/html-style-utils';
 export type { HtmlStyleOverrides, HtmlInspectorZone } from '@/lib/html-style-utils';
-import type { HtmlStyleOverrides, HtmlInspectorZone } from '@/lib/html-style-utils';
-import { HTML_STYLE_DEFAULTS, ZONE_LABELS } from '@/lib/html-style-utils';
+import type { HtmlStyleOverrides, HtmlInspectorZone, SavedHtmlStylePreset } from '@/lib/html-style-utils';
+import { HTML_STYLE_DEFAULTS, ZONE_LABELS, HTML_STYLE_PRESETS } from '@/lib/html-style-utils';
+import { getHtmlStylePresetsAction, saveHtmlStylePresetAction, deleteHtmlStylePresetAction, scrapeWebsiteStyleAction } from '@/actions/html-style-presets';
 
 // ── Inline field helpers (kept from before) ──
 
@@ -264,6 +267,7 @@ function fieldsForZone(zone: Exclude<HtmlInspectorZone, null>): CategoryGroup[] 
         { type: 'slider', key: 'header_font_size', label: 'Dimensione intestazione', min: 7, max: 24, step: 1, unit: 'px' },
       ]},
       { category: 'Spaziatura', fields: [
+        { type: 'slider', key: 'table_margin_v', label: 'Margine esterno V', min: 0, max: 40, step: 2, unit: 'px' },
         { type: 'slider', key: 'cell_padding_v', label: 'Padding V celle', min: 0, max: 24, step: 1, unit: 'px' },
         { type: 'slider', key: 'cell_padding_h', label: 'Padding H celle', min: 0, max: 30, step: 1, unit: 'px' },
         { type: 'slider', key: 'header_padding_v', label: 'Padding V intestazione', min: 1, max: 24, step: 1, unit: 'px' },
@@ -291,6 +295,8 @@ function fieldsForZone(zone: Exclude<HtmlInspectorZone, null>): CategoryGroup[] 
       ]},
       { category: 'Spaziatura', fields: [
         { type: 'slider', key: 'page_padding', label: 'Padding pagina', min: 0, max: 40, step: 2, unit: 'px' },
+        { type: 'slider', key: 'p_margin_v', label: 'Margine paragrafi', min: 0, max: 24, step: 1, unit: 'px' },
+        { type: 'slider', key: 'p_font_size', label: 'Dimensione paragrafi', min: 0, max: 24, step: 1, unit: 'px', zeroLabel: ' (eredita)' },
       ]},
       { category: 'Contenitore', fields: [
         { type: 'slider', key: 'container_max_width', label: 'Larghezza max', min: 0, max: 1600, step: 50, unit: 'px', zeroLabel: ' (auto)' },
@@ -312,9 +318,15 @@ function fieldsForZone(zone: Exclude<HtmlInspectorZone, null>): CategoryGroup[] 
       { category: 'Testo', fields: [
         { type: 'select', key: 'font_family', label: 'Font', options: FONTS },
         { type: 'slider', key: 'heading_font_size', label: 'Dimensione h1', min: 12, max: 36, step: 1, unit: 'px' },
+        { type: 'select', key: 'heading_font_weight', label: 'Peso', options: FONT_WEIGHTS },
+        { type: 'select', key: 'heading_text_align', label: 'Allineamento', options: TEXT_ALIGNS },
+        { type: 'select', key: 'heading_text_transform', label: 'Trasformazione', options: TEXT_TRANSFORMS },
+        { type: 'slider', key: 'heading_letter_spacing', label: 'Spaziatura lettere', min: 0, max: 5, step: 0.1, unit: 'px' },
+        { type: 'slider', key: 'heading_line_height', label: 'Altezza riga', min: 0.8, max: 2.5, step: 0.1 },
       ]},
       { category: 'Spaziatura', fields: [
-        { type: 'slider', key: 'heading_margin_v', label: 'Margine verticale', min: 0, max: 30, step: 2, unit: 'px' },
+        { type: 'slider', key: 'heading_margin_top', label: 'Margine sopra', min: 0, max: 40, step: 2, unit: 'px' },
+        { type: 'slider', key: 'heading_margin_bottom', label: 'Margine sotto', min: 0, max: 40, step: 2, unit: 'px' },
       ]},
     ];
 
@@ -326,10 +338,14 @@ function fieldsForZone(zone: Exclude<HtmlInspectorZone, null>): CategoryGroup[] 
       { category: 'Testo', fields: [
         { type: 'select', key: 'font_family', label: 'Font', options: FONTS },
         { type: 'slider', key: 'caption_font_size', label: 'Dimensione', min: 10, max: 28, step: 1, unit: 'px' },
+        { type: 'select', key: 'caption_font_weight', label: 'Peso', options: FONT_WEIGHTS },
         { type: 'select', key: 'caption_text_align', label: 'Allineamento', options: TEXT_ALIGNS },
+        { type: 'select', key: 'caption_text_transform', label: 'Trasformazione', options: TEXT_TRANSFORMS },
+        { type: 'slider', key: 'caption_letter_spacing', label: 'Spaziatura lettere', min: 0, max: 3, step: 0.1, unit: 'px' },
       ]},
       { category: 'Spaziatura', fields: [
         { type: 'slider', key: 'caption_padding', label: 'Padding', min: 0, max: 30, step: 2, unit: 'px' },
+        { type: 'slider', key: 'caption_margin_bottom', label: 'Margine sotto', min: 0, max: 30, step: 2, unit: 'px' },
       ]},
     ];
 
@@ -337,10 +353,12 @@ function fieldsForZone(zone: Exclude<HtmlInspectorZone, null>): CategoryGroup[] 
       { category: 'Colori', fields: [
         { type: 'color', key: 'link_color', label: 'Colore' },
       ]},
-      { category: 'Stile', fields: [
+      { category: 'Testo', fields: [
         { type: 'select', key: 'link_decoration', label: 'Decorazione', options: [
           { value: 'underline', label: 'Sottolineato' }, { value: 'none', label: 'Nessuna' },
         ]},
+        { type: 'select', key: 'link_font_weight', label: 'Peso', options: FONT_WEIGHTS, inheritLabel: 'Ereditato' },
+        { type: 'slider', key: 'link_font_size', label: 'Dimensione', min: 0, max: 24, step: 1, unit: 'px', zeroLabel: ' (eredita)' },
       ]},
     ];
 
@@ -361,6 +379,11 @@ function fieldsForZone(zone: Exclude<HtmlInspectorZone, null>): CategoryGroup[] 
       { category: 'Bordi', fields: [
         { type: 'color', key: 'row_border_color', label: 'Separatori riga', fallbackKey: 'border_color' },
         { type: 'color', key: 'border_color', label: 'Colore bordo' },
+        { type: 'select', key: 'border_style', label: 'Stile bordo', options: [
+          { value: 'solid', label: 'Continuo' }, { value: 'dashed', label: 'Tratteggiato' },
+          { value: 'dotted', label: 'Puntinato' }, { value: 'none', label: 'Nessuno' },
+        ]},
+        { type: 'slider', key: 'border_width', label: 'Spessore bordo', min: 0, max: 4, step: 1, unit: 'px' },
       ]},
     ];
 
@@ -391,15 +414,103 @@ interface HtmlStyleEditorProps {
   selectedZone?: HtmlInspectorZone;
   elementInfo?: string;
   onClearZone?: () => void;
+  openRouterConfig?: { apiKey: string; model: string };
 }
 
-export default function HtmlStyleEditor({ overrides, onChange, selectedZone, elementInfo, onClearZone }: HtmlStyleEditorProps) {
+export default function HtmlStyleEditor({ overrides, onChange, selectedZone, elementInfo, onClearZone, openRouterConfig }: HtmlStyleEditorProps) {
   const [showAll, setShowAll] = useState(false);
+  const [savedPresets, setSavedPresets] = useState<SavedHtmlStylePreset[]>([]);
+  const [presetDropdownOpen, setPresetDropdownOpen] = useState(false);
+  const [saveDropdownOpen, setSaveDropdownOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [scrapeUrl, setScrapeUrl] = useState('');
+  const [isScraping, setIsScraping] = useState(false);
+  const [scrapeError, setScrapeError] = useState('');
+  const presetDropdownRef = useRef<HTMLDivElement>(null);
+  const saveDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fetch saved presets on mount
+  useEffect(() => {
+    getHtmlStylePresetsAction().then(r => {
+      if (r.presets) setSavedPresets(r.presets);
+    });
+  }, []);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (presetDropdownRef.current && !presetDropdownRef.current.contains(e.target as Node)) {
+        setPresetDropdownOpen(false);
+      }
+      if (saveDropdownRef.current && !saveDropdownRef.current.contains(e.target as Node)) {
+        setSaveDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   // Reset showAll when a zone is selected via inspector
   useEffect(() => {
     if (selectedZone) setShowAll(false);
   }, [selectedZone]);
+
+  const handleSavePreset = async () => {
+    if (!saveName.trim()) return;
+    setIsSaving(true);
+    const res = await saveHtmlStylePresetAction(saveName.trim(), '', overrides);
+    if (res.success && res.preset) {
+      setSavedPresets(prev => [...prev, res.preset!]);
+      setSaveName('');
+      setSaveDropdownOpen(false);
+    }
+    setIsSaving(false);
+  };
+
+  const handleDeletePreset = async (id: string) => {
+    const res = await deleteHtmlStylePresetAction(id);
+    if (res.success) {
+      setSavedPresets(prev => prev.filter(p => p.id !== id));
+    }
+  };
+
+  const applyPreset = (presetOverrides: Partial<HtmlStyleOverrides>) => {
+    onChange({ ...presetOverrides } as HtmlStyleOverrides);
+    setPresetDropdownOpen(false);
+  };
+
+  const handleScrape = async () => {
+    if (!scrapeUrl.trim() || !openRouterConfig?.apiKey) return;
+    setIsScraping(true);
+    setScrapeError('');
+    try {
+      const res = await scrapeWebsiteStyleAction(scrapeUrl.trim(), openRouterConfig.apiKey, openRouterConfig.model);
+      if (res.overrides) {
+        // Unwrap nested AI response if AI returned { overrides: {...} } or similar wrapper
+        let finalOverrides = res.overrides as any;
+        if (finalOverrides.overrides && typeof finalOverrides.overrides === 'object') {
+          finalOverrides = finalOverrides.overrides;
+        }
+        // Apply the scraped style
+        onChange({ ...finalOverrides } as HtmlStyleOverrides);
+        // Auto-save as a preset using domain name
+        try {
+          const domain = new URL(scrapeUrl.trim()).hostname.replace(/^www\./, '');
+          const saveRes = await saveHtmlStylePresetAction(domain, `Stile estratto da ${scrapeUrl.trim()}`, finalOverrides);
+          if (saveRes.success && saveRes.preset) {
+            setSavedPresets(prev => [...prev, saveRes.preset!]);
+          }
+        } catch { /* save failure is non-critical */ }
+        setScrapeUrl('');
+      } else if (res.error) {
+        setScrapeError(res.error);
+      }
+    } catch (err: any) {
+      setScrapeError(err?.message || 'Errore imprevisto durante lo scraping');
+    }
+    setIsScraping(false);
+  };
 
   const set = useCallback((key: keyof HtmlStyleOverrides, value: any) => {
     onChange({ ...overrides, [key]: value });
@@ -549,6 +660,122 @@ export default function HtmlStyleEditor({ overrides, onChange, selectedZone, ele
           </button>
         </div>
       </div>
+
+      {/* ── Preset selector + Save ── */}
+      <div className="flex items-center gap-1.5">
+        {/* Preset dropdown — plain div, no Portal */}
+        <div ref={presetDropdownRef} className="relative flex-1">
+          <button
+            onClick={() => setPresetDropdownOpen(v => !v)}
+            className="h-7 text-xs w-full flex items-center gap-2 border rounded-md px-2 hover:bg-muted/50 transition-colors"
+          >
+            <Palette className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="text-muted-foreground truncate">Preset...</span>
+            {presetDropdownOpen
+              ? <ChevronUp className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />
+              : <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />}
+          </button>
+          {presetDropdownOpen && (
+            <div className="absolute left-0 top-full mt-1 w-72 bg-popover border rounded-md shadow-md z-50 p-1 max-h-[320px] overflow-y-auto">
+              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Built-in</div>
+              {HTML_STYLE_PRESETS.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => applyPreset(p.overrides)}
+                  className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs transition-colors"
+                >
+                  <div className="font-medium">{p.label}</div>
+                  <div className="text-[10px] text-muted-foreground leading-tight">{p.description}</div>
+                </button>
+              ))}
+              {savedPresets.length > 0 && (
+                <>
+                  <Separator className="my-1" />
+                  <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                    <Bookmark className="h-3 w-3" /> Salvati
+                  </div>
+                  {savedPresets.map(p => (
+                    <div key={p.id} className="flex items-center">
+                      <button
+                        onClick={() => applyPreset(p.overrides)}
+                        className="flex-1 text-left px-2 py-1.5 rounded hover:bg-muted text-xs transition-colors min-w-0"
+                      >
+                        <div className="font-medium truncate">{p.label}</div>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeletePreset(p.id); }}
+                        className="p-1 rounded hover:bg-destructive/10 shrink-0"
+                        title="Elimina preset"
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Save dropdown — plain div, no Portal */}
+        <div ref={saveDropdownRef} className="relative shrink-0">
+          <button
+            onClick={() => setSaveDropdownOpen(v => !v)}
+            className="h-7 px-2 border rounded-md hover:bg-muted/50 transition-colors flex items-center gap-1 text-xs"
+            title="Salva stile corrente"
+          >
+            <Save className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+          {saveDropdownOpen && (
+            <div className="absolute right-0 top-full mt-1 w-56 bg-popover border rounded-md shadow-md z-50 p-3 space-y-2">
+              <div className="text-xs font-medium">Salva come preset</div>
+              <Input
+                value={saveName}
+                onChange={e => setSaveName(e.target.value)}
+                placeholder="Nome dello stile"
+                className="h-7 text-xs"
+                onKeyDown={e => { if (e.key === 'Enter') handleSavePreset(); }}
+                autoFocus
+              />
+              <button
+                onClick={handleSavePreset}
+                disabled={!saveName.trim() || isSaving}
+                className="w-full h-7 text-xs bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+              >
+                {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                {isSaving ? 'Salvataggio...' : 'Salva'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Scrape URL ── */}
+      {openRouterConfig?.apiKey && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5">
+            <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <Input
+              value={scrapeUrl}
+              onChange={e => { setScrapeUrl(e.target.value); setScrapeError(''); }}
+              placeholder="https://esempio.com"
+              className="h-7 text-xs flex-1"
+              onKeyDown={e => { if (e.key === 'Enter') handleScrape(); }}
+            />
+            <button
+              onClick={handleScrape}
+              disabled={isScraping || !scrapeUrl.trim()}
+              className="h-7 px-2 text-xs border rounded-md hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0"
+            >
+              {isScraping ? <Loader2 className="h-3 w-3 animate-spin" /> : <Globe className="h-3 w-3" />}
+              {isScraping ? 'Scraping...' : 'Scrape'}
+            </button>
+          </div>
+          {scrapeError && (
+            <div className="text-[10px] text-destructive px-1">{scrapeError}</div>
+          )}
+        </div>
+      )}
 
       {/* ── Zone badge ── */}
       {selectedZone && (

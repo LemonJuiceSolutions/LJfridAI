@@ -1,19 +1,7 @@
 import { LayoutGrid, ShoppingCart, Calendar, Truck, Scissors, Brush, Shirt, PencilRuler, Wind, Droplets, Sparkles, Package, Boxes, Settings, Plug, GitCommitHorizontal, RefreshCw, Compass } from 'lucide-react';
 
 export const navItems = [
-    { href: '/dashboard', icon: 'LayoutGrid', label: 'Dashboard' },
-    { href: '/orders', icon: 'ShoppingCart', label: 'Orders' },
-    { href: '/planning', icon: 'Calendar', label: 'Planning' },
-    { href: '/acquisti', icon: 'Truck', label: 'Acquisti' },
-    { href: '/cutting', icon: 'Scissors', label: 'Cutting' },
-    { href: '/sewing', icon: 'Shirt', label: 'Sewing' },
-    { href: '/printing', icon: 'Brush', label: 'Printing' },
-    { href: '/embroidery', icon: 'PencilRuler', label: 'Embroidery' },
-    { href: '/lavanderia', icon: 'Droplets', label: 'Lavanderia' },
-    { href: '/stiro', icon: 'Wind', label: 'Stiro' },
-    { href: '/controllo-qualita', icon: 'Sparkles', label: 'Controllo Qualità' },
-    { href: '/packaging', icon: 'Package', label: 'Packaging' },
-    { href: '/magazzino', icon: 'Boxes', label: 'Magazzino' },
+    { href: '/xbrl-analysis', icon: 'FileSpreadsheet', label: 'Analisi XBRL' },
 ];
 
 export const settingsNavItems = [

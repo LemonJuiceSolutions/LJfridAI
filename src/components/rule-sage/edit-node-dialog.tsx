@@ -433,10 +433,24 @@ export default function EditNodeDialog({
   useEffect(() => { plotlyStyleOverridesRef.current = plotlyStyleOverrides; }, [plotlyStyleOverrides]);
   const [htmlStyleEditorOpen, setHtmlStyleEditorOpen] = useState(false);
   const [htmlStyleOverrides, setHtmlStyleOverrides] = useState<HtmlStyleOverrides>({});
-  const htmlStyleOverridesRef = useRef<HtmlStyleOverrides>({});
-  useEffect(() => { htmlStyleOverridesRef.current = htmlStyleOverrides; }, [htmlStyleOverrides]);
   const [htmlInspectorZone, setHtmlInspectorZone] = useState<HtmlInspectorZone>(null);
   const [htmlInspectorElementInfo, setHtmlInspectorElementInfo] = useState('');
+  // Debounced srcDoc for the style editor fullscreen iframe.
+  // We directly recompute srcDoc with latest overrides — simple and always works.
+  const [editorSrcDoc, setEditorSrcDoc] = useState('');
+  const editorSrcDocTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!htmlStyleEditorOpen || !pythonPreviewResult?.html) {
+      setEditorSrcDoc('');
+      return;
+    }
+    // Debounce srcDoc updates (80ms) to avoid excessive iframe reloads during slider drags
+    if (editorSrcDocTimerRef.current) clearTimeout(editorSrcDocTimerRef.current);
+    editorSrcDocTimerRef.current = setTimeout(() => {
+      setEditorSrcDoc(applyHtmlStyleOverrides(pythonPreviewResult.html!, htmlStyleOverrides, true));
+    }, 80);
+    return () => { if (editorSrcDocTimerRef.current) clearTimeout(editorSrcDocTimerRef.current); };
+  }, [htmlStyleOverrides, htmlStyleEditorOpen, pythonPreviewResult?.html]);
   // Listen for inspector messages from HTML preview iframe
   useEffect(() => {
     if (!htmlStyleEditorOpen) { setHtmlInspectorZone(null); setHtmlInspectorElementInfo(''); return; }
@@ -3010,7 +3024,7 @@ export default function EditNodeDialog({
                                   <div className="flex-1 min-h-0 grid grid-cols-[1fr_320px] gap-4 overflow-hidden">
                                     <div className="border rounded-lg bg-muted/20 overflow-auto min-h-0">
                                       <iframe
-                                        srcDoc={applyHtmlStyleOverrides(pythonPreviewResult.html, htmlStyleOverrides, true)}
+                                        srcDoc={editorSrcDoc}
                                         className="w-full h-full border-none min-h-[500px]"
                                         title="HTML Style Preview"
                                       />
@@ -3022,6 +3036,7 @@ export default function EditNodeDialog({
                                         selectedZone={htmlInspectorZone}
                                         elementInfo={htmlInspectorElementInfo}
                                         onClearZone={() => { setHtmlInspectorZone(null); setHtmlInspectorElementInfo(''); }}
+                                        openRouterConfig={openRouterApiKey ? { apiKey: openRouterApiKey, model: openRouterModel } : undefined}
                                       />
                                     </div>
                                   </div>

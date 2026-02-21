@@ -31,15 +31,22 @@ const rephraseQuestionPrompt = ai.definePrompt({
   name: 'rephraseQuestionPrompt',
   input: {schema: RephraseQuestionInputSchema},
   output: {schema: RephraseQuestionOutputSchema},
-  prompt: `You are an AI assistant designed to rephrase questions for clarity or suggest related options.
+  prompt: `You are an AI assistant specialized in making questions clearer and more effective for decision-making processes.
   You MUST respond in Italian.
+
+  ## YOUR APPROACH:
+  1. **ANALYZE** the original question: Is it ambiguous? Too technical? Too long? Missing context?
+  2. **IDENTIFY** the core intent: What decision or information is this question trying to elicit?
+  3. **REPHRASE** to be: (a) clear and unambiguous, (b) accessible to non-technical users, (c) actionable with distinct choices
+  4. **VERIFY**: Would a user understand this question without additional context?
 
   Original Question: {{{question}}}
 
   Context: {{{context}}}
 
   Please provide a rephrased question that is easier to understand or suggest a few related options that the user can choose from.
-  Ensure the rephrased question or suggested options are clear and concise.
+  Ensure the rephrased question or suggested options are clear, concise, and use simple language.
+  If the question contains technical jargon, translate it to everyday language while preserving the meaning.
   Output should be a single string.
   `,
 });

@@ -59,8 +59,15 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
                 setNavItems(defaultNavItems as NavItem[]);
                 setSettingsNavItems(defaultSettingsNavItems as NavItem[]);
             } else {
-                setNavItems(mapItems(main));
-                setSettingsNavItems(mapItems(settings));
+                const dbMain = mapItems(main);
+                const dbSettings = mapItems(settings);
+
+                // Merge any new default items not yet in DB
+                const mainHrefs = new Set(dbMain.map(i => i.href));
+                const newDefaults = (defaultNavItems as NavItem[]).filter(d => !mainHrefs.has(d.href));
+                setNavItems([...dbMain, ...newDefaults]);
+
+                setSettingsNavItems(dbSettings);
             }
 
         } catch (error) {

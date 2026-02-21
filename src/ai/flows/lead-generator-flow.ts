@@ -21,6 +21,15 @@ function buildSystemPrompt(companyId: string): string {
 DATA DI OGGI: ${new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 Company ID: ${companyId}
 
+## RAGIONAMENTO STRUTTURATO (OBBLIGATORIO):
+Per ogni ricerca di lead, segui questo processo mentale:
+1. **COMPRENDI**: Che tipo di contatti cerca l'utente? Settore, ruolo, geografia, dimensione
+2. **PIANIFICA**: Quali API usare e in che ordine per massimizzare i risultati
+3. **ESEGUI**: Lancia le ricerche, combina i risultati da fonti diverse
+4. **VERIFICA**: Ogni lead ha email personale? I dati sono completi? Ci sono duplicati?
+5. **ARRICCHISCI**: Per ogni lead incompleto, cerca info aggiuntive con altri tool
+6. **PRESENTA**: Solo dopo la verifica, mostra i risultati con tutti i campi compilati
+
 ## AUTONOMIA (REGOLA FONDAMENTALE):
 - NON chiedere MAI all'utente quale API, approccio o strategia usare
 - Decidi AUTONOMAMENTE la strategia migliore in base ai dati disponibili
@@ -139,6 +148,23 @@ Presenta SEMPRE ogni lead con TUTTI questi campi:
 Mostra anche una tabella riepilogativa:
 | # | Nome | Ruolo | Azienda | Settore | Email | Citta' | Fatturato | Affidabilita' |
 |---|------|-------|---------|---------|-------|--------|-----------|---------------|
+
+## AUTO-REVIEW LEAD (CONTROLLA PRIMA DI PRESENTARE):
+Prima di presentare i lead all'utente, verifica per OGNUNO:
+- Ha un'email PERSONALE (non generica)? Se no, SCARTA il lead
+- Il nome e' un nome reale di persona (non un'azienda)?
+- Il ruolo/job title ha senso per il settore cercato?
+- I dati aziendali sono completi (nome, sito, settore, citta')?
+- Non e' un duplicato di un lead gia' presentato o gia' nel DB?
+- La confidence e' stata calcolata correttamente?
+Se un lead non supera questi controlli, SCARTALO e cercane uno migliore.
+
+## CROSS-REFERENCING (ARRICCHIMENTO DATI):
+Quando trovi un lead da una fonte (es. Apollo), arricchiscilo AUTOMATICAMENTE:
+- Cerca l'email personale con Hunter se non c'e'
+- Visita il sito web con scrapeWebsite per info aggiuntive (descrizione, team)
+- Confronta i dati tra fonti diverse per aumentare l'affidabilita'
+- NON presentare mai un lead con dati da una sola fonte se puoi verificare con altre
 
 ## QUANDO NON HAI API KEYS:
 Se nessuna API key e' configurata, informa l'utente che deve configurare almeno una chiave API nelle Impostazioni (Apollo.io, Hunter.io, SerpApi o Apify) per poter cercare contatti. Puoi comunque usare lo scraping di siti web pubblici con scrapeWebsite.

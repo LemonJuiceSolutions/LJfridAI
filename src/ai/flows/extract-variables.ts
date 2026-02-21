@@ -71,6 +71,15 @@ const extractVariablesFlow = ai.defineFlow(
   async input => {
     const prompt = `You are a highly intelligent entity tasked with parsing natural language descriptions of processes and extracting key variables. Your output MUST be in Italian.
 
+## STRUCTURED REASONING (MANDATORY):
+Before extracting variables, follow this process:
+1. **READ THOROUGHLY**: Read the ENTIRE text at least twice to understand all conditions and branches
+2. **MAP THE LOGIC**: Identify all decision points, conditions, and branching paths in the process
+3. **EXTRACT CANDIDATES**: List all potential variables that drive decisions
+4. **VALIDATE EACH**: For each candidate, verify it has clear, distinct options and is NOT a final action
+5. **CLASSIFY**: Determine the correct type (boolean/enumeration/numeric/text)
+6. **SELF-CHECK**: Review your output - are there duplicates? Missing variables? Incorrect types?
+
 TASK:
 From the user's descriptive text provided below, identify all the distinct variables that influence the outcomes. For each variable, determine its type and list all its possible values mentioned in the text.
 
@@ -89,6 +98,7 @@ Follow these rules strictly:
     *   **DO NOT include an 'id' field.** It will be generated automatically.
 5.  **CRITICAL RULE - Discard Irrelevant Variables**: You MUST ignore and discard any potential "variable" that is too generic, does not have clear, distinct options, or simply represents a final action or decision. For example, do not extract a variable for "issue a quote" or "check the circuit".
 6.  **CRITICAL RULE - Empty Array**: If you analyze the text and find absolutely no valid variables according to these rules, you MUST return a JSON object with an empty array: \`{"variables": []}\`. Do not return an empty response or a string saying "no variables found".
+7.  **QUALITY CHECK**: Before returning, verify: (a) each variable name is descriptive and unique, (b) each variable has at least 2 possible values, (c) abbreviations are distinct and meaningful, (d) no two variables overlap in meaning.
 
 Example:
 -   **Input Text**: "Se una macchina segnala un codice di errore, controlla se è in garanzia. Se è in garanzia, la riparazione è gratuita, altrimenti emetti un preventivo."

@@ -234,6 +234,107 @@ def scrape_website():
     except Exception as e:
         return jsonify({"error": f"Errore scraping: {str(e)}"}), 500
 
+@app.route('/scrape-css', methods=['POST'])
+def scrape_css():
+    """Extract CSS styles from a public website for AI-based style mapping."""
+    import requests as req
+    from bs4 import BeautifulSoup
+    from urllib.parse import urljoin
+
+    try:
+        data = request.get_json()
+        url = data.get('url', '')
+
+        if not url:
+            return jsonify({"error": "URL is required"}), 400
+
+        if not url.startswith('http'):
+            url = 'https://' + url
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+
+        response = req.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        extracted = {
+            'url': url,
+            'styleBlocks': [],
+            'linkedStylesheets': [],
+            'inlineStyles': [],
+            'themeColor': '',
+            'fontLinks': [],
+        }
+
+        # 1. Extract <style> block contents
+        for style_tag in soup.find_all('style'):
+            text = style_tag.string or style_tag.get_text()
+            if text and text.strip():
+                extracted['styleBlocks'].append(text.strip()[:5000])
+
+        # 2. Fetch linked stylesheets (max 3, max 10K chars each)
+        link_count = 0
+        for link in soup.find_all('link', rel='stylesheet'):
+            if link_count >= 3:
+                break
+            href = link.get('href', '')
+            if not href:
+                continue
+            full_url = urljoin(url, href)
+            try:
+                css_resp = req.get(full_url, headers=headers, timeout=10)
+                if css_resp.ok:
+                    extracted['linkedStylesheets'].append(css_resp.text[:10000])
+                    link_count += 1
+            except Exception:
+                pass
+
+        # 3. Extract inline styles (first 30 elements with style attr)
+        inline_count = 0
+        for tag in soup.find_all(style=True):
+            if inline_count >= 30:
+                break
+            extracted['inlineStyles'].append({
+                'tag': tag.name,
+                'classes': tag.get('class', []),
+                'style': tag.get('style', '')
+            })
+            inline_count += 1
+
+        # 4. Meta theme-color
+        meta_theme = soup.find('meta', attrs={'name': 'theme-color'})
+        if meta_theme:
+            extracted['themeColor'] = meta_theme.get('content', '')
+
+        # 5. Font links (Google Fonts etc.)
+        for link in soup.find_all('link'):
+            href = link.get('href', '')
+            if 'fonts.googleapis.com' in href or 'fonts.gstatic.com' in href:
+                extracted['fontLinks'].append(href)
+
+        # 6. Extract body/root computed-like styles from CSS custom properties
+        for style_text in extracted['styleBlocks']:
+            if ':root' in style_text or 'body' in style_text:
+                # Already captured in styleBlocks, AI will parse it
+                break
+
+        return jsonify(extracted)
+
+    except req.exceptions.ConnectionError:
+        return jsonify({"error": f"Impossibile raggiungere il sito. Verifica che l'URL sia corretto e che il sito sia online."}), 400
+    except req.exceptions.Timeout:
+        return jsonify({"error": "Il sito non ha risposto entro 30 secondi. Riprova piu' tardi."}), 400
+    except req.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else '?'
+        return jsonify({"error": f"Il sito ha risposto con errore HTTP {status}."}), 400
+    except req.exceptions.RequestException as e:
+        return jsonify({"error": f"Errore di connessione: {str(e)}"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Errore scraping CSS: {str(e)}"}), 500
+
 @app.route('/execute', methods=['POST'])
 def execute_python():
     # ... (skipping docstring)

@@ -47,6 +47,14 @@ const prompt = ai.definePrompt({
   prompt: `You are a Business Rules Engine with natural language interpretation capabilities.
 Your output, including all text in the natural language description, the JSON content (questions and decisions), and the question script, MUST be in Italian.
 
+## STRUCTURED REASONING (MANDATORY):
+Before generating the decision tree, follow this process:
+1. **UNDERSTAND**: Read the text and variables table completely. Identify the main decision flow.
+2. **MAP**: Draw a mental map of all possible paths from start to end. Every variable should create a branching point.
+3. **STRUCTURE**: Organize the branches logically - most important/common decisions first, edge cases later.
+4. **GENERATE**: Create the tree ensuring EVERY path leads to a clear, actionable decision.
+5. **VALIDATE**: Check that (a) every variable is used, (b) no path is a dead end, (c) the JSON is valid and parsable, (d) decisions are specific, not generic.
+
 Input: A descriptive text in natural language that tells a process, an experience, or a problem-solving case, along with a table of extracted variables.
 
 Task:
