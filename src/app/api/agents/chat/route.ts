@@ -20,7 +20,9 @@ export async function POST(request: NextRequest) {
       script,
       tableSchema,
       inputTables,
+      nodeQueries,
       connectorId,
+      selectedDocuments,
     } = body;
 
     if (!nodeId || !agentType || !userMessage) {
@@ -65,6 +67,7 @@ export async function POST(request: NextRequest) {
         script,
         tableSchema,
         inputTables,
+        nodeQueries,
         conversationHistory,
         connectorId: connectorId || undefined,
         companyId: user.company.id,
@@ -77,8 +80,10 @@ export async function POST(request: NextRequest) {
         script,
         tableSchema,
         inputTables,
+        nodeQueries,
         conversationHistory,
         connectorId: connectorId || undefined,
+        selectedDocuments: selectedDocuments || undefined,
         companyId: user.company.id,
       });
     } else {

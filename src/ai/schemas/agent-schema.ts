@@ -16,6 +16,7 @@ export const AgentInputSchema = z.object({
   script: z.string().describe('The current SQL query or Python code'),
   tableSchema: z.any().describe('Schema information about input tables (columns, types)'),
   inputTables: z.any().describe('Sample data from input tables for context'),
+  nodeQueries: z.any().optional().describe('SQL/Python queries from other nodes in the same tree'),
   conversationHistory: z.array(z.object({
     role: z.enum(['user', 'assistant']),
     content: z.string(),
@@ -23,6 +24,7 @@ export const AgentInputSchema = z.object({
   })).describe('Previous conversation messages'),
   needsClarification: z.boolean().optional().describe('Whether the agent needs clarification'),
   connectorId: z.string().optional().describe('The SQL connector ID for executing queries'),
+  selectedDocuments: z.array(z.string()).optional().describe('Selected document filenames from Settings (available in public/documents/)'),
   companyId: z.string().optional().describe('The company ID for KB and tree access'),
   openRouterConfig: z.object({
     apiKey: z.string().optional(),

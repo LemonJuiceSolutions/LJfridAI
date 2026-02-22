@@ -1319,6 +1319,7 @@ export class SchedulerService {
       const preservedFields = {
         ...(existingPreview?.plotlyStyleOverrides ? { plotlyStyleOverrides: existingPreview.plotlyStyleOverrides } : {}),
         ...(existingPreview?.plotlyJson && !result.plotlyJson ? { plotlyJson: existingPreview.plotlyJson } : {}),
+        ...(existingPreview?.htmlStyleOverrides ? { htmlStyleOverrides: existingPreview.htmlStyleOverrides } : {}),
       };
 
       const updatePayload: any = {
@@ -1336,6 +1337,14 @@ export class SchedulerService {
           rechartsStyle: (result as any).rechartsStyle,
           plotlyJson: result.plotlyJson,
           widgetConfig: (result as any).widgetConfig,
+          timestamp: Date.now(),
+          ...preservedFields,
+        };
+      } else if (runType === 'html') {
+        updatePayload.pythonPreviewResult = {
+          type: 'html',
+          html: (result as any).html,
+          data: result.data,
           timestamp: Date.now(),
           ...preservedFields,
         };

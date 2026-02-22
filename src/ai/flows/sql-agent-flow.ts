@@ -106,6 +106,98 @@ async function doSaveToKB(input: { question: string, answer: string, tags: strin
     }
 }
 
+// --- Browse Other Queries (cross-tree/pipeline) ---
+
+function collectSqlNodes(node: any, results: { nodeId: string; sqlQuery: string; sqlResultName?: string; sqlConnectorId?: string }[] = []): typeof results {
+    if (!node || typeof node === 'string') return results;
+    if (node.ref || node.subTreeRef) return results;
+
+    if (node.sqlQuery) {
+        results.push({
+            nodeId: node.id || null,
+            sqlQuery: node.sqlQuery,
+            sqlResultName: node.sqlResultName,
+            sqlConnectorId: node.sqlConnectorId,
+        });
+    }
+
+    if (node.options) {
+        for (const [, child] of Object.entries(node.options)) {
+            if (Array.isArray(child)) {
+                for (const c of child) collectSqlNodes(c, results);
+            } else {
+                collectSqlNodes(child as any, results);
+            }
+        }
+    }
+    return results;
+}
+
+async function doBrowseOtherQueries(input: { companyId: string; connectorId?: string }) {
+    try {
+        const queries: { source: string; name: string; query: string; connectorId?: string; sameConnector: boolean }[] = [];
+
+        // 1. Query SQL dagli alberi
+        const trees = await db.tree.findMany({
+            where: { companyId: input.companyId },
+            select: { id: true, name: true, jsonDecisionTree: true },
+        });
+
+        for (const tree of trees) {
+            let treeData: any;
+            try { treeData = JSON.parse(tree.jsonDecisionTree); } catch { continue; }
+            const nodes = collectSqlNodes(treeData);
+            for (const node of nodes) {
+                queries.push({
+                    source: `Albero: ${tree.name}`,
+                    name: node.sqlResultName || node.nodeId || 'query',
+                    query: (node.sqlQuery || '').substring(0, 500),
+                    connectorId: node.sqlConnectorId,
+                    sameConnector: !!(input.connectorId && node.sqlConnectorId === input.connectorId),
+                });
+            }
+        }
+
+        // 2. Query SQL dalle pipeline
+        const pipelines = await db.pipeline.findMany({
+            where: { companyId: input.companyId },
+            select: { id: true, name: true, nodes: true },
+        });
+
+        for (const pipeline of pipelines) {
+            const pNodes = pipeline.nodes as any;
+            if (!pNodes || typeof pNodes !== 'object') continue;
+            const nodeEntries = Array.isArray(pNodes) ? pNodes : Object.values(pNodes);
+            for (const node of nodeEntries as any[]) {
+                const isPython = node.isPython === true || node.type === 'python';
+                const script = node.script || node.sqlQuery || '';
+                if (!script || isPython) continue;
+                if (node.type === 'start' || node.type === 'end') continue;
+                const nodeConnId = node.sqlConnectorId || node.connectorId;
+                queries.push({
+                    source: `Pipeline: ${pipeline.name}`,
+                    name: node.sqlResultName || node.name || node.id || 'query',
+                    query: script.substring(0, 500),
+                    connectorId: nodeConnId,
+                    sameConnector: !!(input.connectorId && nodeConnId === input.connectorId),
+                });
+            }
+        }
+
+        // Ordina: query dello STESSO connettore prima
+        queries.sort((a, b) => (b.sameConnector ? 1 : 0) - (a.sameConnector ? 1 : 0));
+
+        const limited = queries.slice(0, 50);
+        if (limited.length === 0) {
+            return JSON.stringify({ results: [], message: 'Nessuna query SQL trovata in altri alberi o pipeline.' });
+        }
+        const sameCount = limited.filter(q => q.sameConnector).length;
+        return JSON.stringify({ totalFound: queries.length, showing: limited.length, sameConnectorCount: sameCount, queries: limited }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
 // --- Genkit Tools Definitions (Legacy / Google) ---
 
 const exploreDbSchema = ai.defineTool(
@@ -131,8 +223,8 @@ const exploreTableColumns = ai.defineTool(
 const testSqlQuery = ai.defineTool(
     {
         name: 'testSqlQuery',
-        description: 'Esegue una query SQL di test per verificare che funzioni e vedere i risultati. Usa per validare query prima di proporle.',
-        inputSchema: z.object({ query: z.string().describe("La query SQL da testare."), connectorId: z.string().describe("L'ID del connettore database.") }),
+        description: 'Esegue QUALSIASI query SQL sul database e restituisce i risultati. Puoi usarlo per: (1) testare query prima di proporle, (2) CERCARE TABELLE con SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE \'%parola%\', (3) esplorare dati con SELECT TOP 5 * FROM tabella. Questo tool e\' il tuo strumento principale di esplorazione!',
+        inputSchema: z.object({ query: z.string().describe("La query SQL da eseguire (qualsiasi query valida, incluse INFORMATION_SCHEMA)."), connectorId: z.string().describe("L'ID del connettore database.") }),
         outputSchema: z.string(),
     },
     doTestSqlQuery
@@ -174,6 +266,19 @@ const saveToKB = ai.defineTool(
     doSaveToKB
 );
 
+const browseOtherQueries = ai.defineTool(
+    {
+        name: 'browseOtherQueries',
+        description: 'Sfoglia le query SQL scritte in ALTRI alberi e pipeline della company. Utile per scoprire nomi di tabelle, colonne e pattern SQL gia\' usati con successo. Passa il connectorId per vedere prima le query dello STESSO database.',
+        inputSchema: z.object({
+            companyId: z.string().describe("L'ID della company."),
+            connectorId: z.string().optional().describe("L'ID del connettore attuale. Se fornito, le query dello stesso connettore vengono mostrate per prime."),
+        }),
+        outputSchema: z.string(),
+    },
+    doBrowseOtherQueries
+);
+
 // --- OpenRouter Tools Definitions ---
 
 const openRouterTools: OpenRouterTool[] = [
@@ -210,11 +315,11 @@ const openRouterTools: OpenRouterTool[] = [
         type: 'function',
         function: {
             name: 'testSqlQuery',
-            description: 'Esegue una query SQL di test per verificare che funzioni.',
+            description: 'Esegue QUALSIASI query SQL sul database e restituisce i risultati. Usalo per: (1) testare query, (2) CERCARE TABELLE con INFORMATION_SCHEMA.TABLES, (3) esplorare dati. E\' il tuo strumento principale di esplorazione!',
             parameters: {
                 type: 'object',
                 properties: {
-                    query: { type: 'string', description: "La query SQL da testare." },
+                    query: { type: 'string', description: "La query SQL da eseguire (qualsiasi query valida, incluse INFORMATION_SCHEMA)." },
                     connectorId: { type: 'string', description: "L'ID del connettore database." }
                 },
                 required: ['query', 'connectorId']
@@ -265,6 +370,21 @@ const openRouterTools: OpenRouterTool[] = [
                     companyId: { type: 'string', description: "L'ID della company." }
                 },
                 required: ['question', 'answer', 'tags', 'category', 'companyId']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'browseOtherQueries',
+            description: 'Sfoglia le query SQL scritte in altri alberi e pipeline della company. Passa il connectorId per filtrare le query dello stesso database.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    companyId: { type: 'string', description: "L'ID della company." },
+                    connectorId: { type: 'string', description: "L'ID del connettore attuale per prioritizzare query dello stesso DB." }
+                },
+                required: ['companyId']
             }
         }
     }
@@ -338,6 +458,17 @@ export async function sqlAgentChat(input: AgentInput): Promise<AgentOutput> {
             }
         }
 
+        if (input.nodeQueries && typeof input.nodeQueries === 'object' && Object.keys(input.nodeQueries).length > 0) {
+            context += '\nQUERY SQL DA ALTRI NODI NELLO STESSO ALBERO:\n';
+            for (const [nodeName, info] of Object.entries(input.nodeQueries as Record<string, { query: string; isPython: boolean; connectorId?: string }>)) {
+                const type = info.isPython ? 'Python' : 'SQL';
+                const sameConn = input.connectorId && info.connectorId === input.connectorId;
+                const connNote = sameConn ? ' [STESSO CONNETTORE]' : (info.connectorId ? ' [altro connettore]' : '');
+                const truncatedQuery = info.query.length > 600 ? info.query.substring(0, 600) + '...' : info.query;
+                context += `- ${nodeName} (${type}${connNote}):\n  ${truncatedQuery}\n`;
+            }
+        }
+
         let historyContext = '';
         if (input.conversationHistory && input.conversationHistory.length > 0) {
             const recent = input.conversationHistory.slice(-10);
@@ -350,6 +481,7 @@ export async function sqlAgentChat(input: AgentInput): Promise<AgentOutput> {
         const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
         const systemPrompt = `Sei un agente AI esperto in SQL. Stai utilizzando il modello: ${modelName}. NON MOLLARE MAI. Sei tenace e persistente.
+RICORDA: Se una tabella non esiste, CERCALA con testSqlQuery su INFORMATION_SCHEMA.TABLES. NON oscillare tra varianti del nome!
 DATA DI OGGI: ${today}
 
 ${connectorInfo}${companyInfo}
@@ -377,6 +509,31 @@ Prima di generare o modificare una query, segui SEMPRE questo processo:
 - ARRANGIATI: se qualcosa non e' chiaro, esplora il DB con exploreDbSchema e exploreTableColumns prima di chiedere. Chiedi all'utente SOLO per decisioni di business (es. "quale metrica preferisci?"), MAI per cose tecniche che puoi scoprire da solo.
 - ALL'INIZIO di ogni richiesta, se hai un connectorId, esplora PROATTIVAMENTE il database: prima exploreDbSchema per vedere le tabelle, poi exploreTableColumns sulle tabelle rilevanti. NON aspettare che l'utente te lo chieda.
 - ATTENZIONE AI TIPI DI DATO: Prima di usare SUM(), AVG() o operazioni matematiche, verifica il tipo delle colonne. Se una colonna e' nvarchar/varchar, usa CAST(colonna AS DECIMAL) o TRY_CAST(colonna AS DECIMAL). Errori come "Operand data type nvarchar is invalid for sum operator" si risolvono SEMPRE con il CAST.
+
+## !!!! REGOLA CRITICA: DISCOVERY TABELLE (LEGGI PRIMA DI TUTTO) !!!!
+Tu HAI il tool testSqlQuery. Puoi eseguire QUALSIASI query SQL, incluse query su INFORMATION_SCHEMA.TABLES e sys.tables.
+Se una tabella NON ESISTE ("Invalid object name"), NON provare varianti del nome. CERCA la tabella giusta cosi':
+
+STEP 1 - CERCA: testSqlQuery con:
+  SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%Customer%'
+  (sostituisci "Customer" con la parola chiave che cerchi)
+STEP 2 - ALLARGA: Se non trovi nulla, prova piu' parole chiave:
+  SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%Cust%' OR TABLE_NAME LIKE '%Client%' OR TABLE_NAME LIKE '%Anag%'
+STEP 3 - FALLBACK: Se ancora nulla: SELECT name, schema_id FROM sys.tables WHERE name LIKE '%Cust%'
+STEP 4 - VERIFICA: Usa exploreTableColumns sulla tabella trovata per vedere le colonne
+STEP 5 - COSTRUISCI: Scrivi la query con il nome ESATTO trovato
+
+ESEMPIO COMPLETO DI DISCOVERY:
+- L'utente chiede "ordini con nome cliente"
+- browseOtherQueries ti mostra una query con MA_Customer
+- Provi: SELECT TOP 5 * FROM MA_Customer → ERRORE "Invalid object name 'MA_Customer'"
+- NON provi [PROGETTO_QUID].[dbo].[MA_Customer] (stesso nome = stesso errore!)
+- INVECE chiami testSqlQuery con: SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%Cust%' OR TABLE_NAME LIKE '%Client%'
+- Risultato: dbo.ClientiAnagrafiche
+- Chiami exploreTableColumns su ClientiAnagrafiche → vedi le colonne
+- Scrivi la query corretta con ClientiAnagrafiche
+
+DIVIETO ASSOLUTO: MAI oscillare tra varianti dello stesso nome (MA_Customer → [PROGETTO_QUID].[dbo].[MA_Customer] → dbo.MA_Customer). Se il nome non funziona, il nome e' SBAGLIATO. Cerca quello giusto.
 
 ## CONNETTORE DB (NON CHIEDERE MAI):
 - Se hai un connectorId nel contesto, USALO direttamente.
@@ -407,28 +564,50 @@ Prima di restituire una query in updatedScript, verifica mentalmente:
 1. ALL'INIZIO di ogni richiesta: cerca nella KB (searchKnowledgeBase) E esplora il DB se hai un connectorId (exploreDbSchema + exploreTableColumns sulle tabelle rilevanti).
 2. LEGGI lo schema e i dati di esempio gia' forniti nel contesto. NON chiedere mai dati che sono gia' visibili.
 3. Se non conosci il connettore, usa listSqlConnectors per trovarlo.
-4. TESTA SEMPRE la query con testSqlQuery prima di proporla - MAI saltare questo passaggio.
-5. Se la query fallisce per ERRORE LOGICO, correggi e RIPROVA (fino a 3 tentativi).
-6. Quando trovi la soluzione, SALVALA nella Knowledge Base con sqlSaveToKnowledgeBase.
+4. Se non trovi le tabelle/colonne che ti servono, usa browseOtherQueries per vedere query SQL gia' scritte in altri alberi e pipeline della stessa company. Le query esistenti sono gia' testate e funzionanti - sono la migliore fonte di ispirazione.
+5. TESTA SEMPRE la query con testSqlQuery prima di proporla - MAI saltare questo passaggio.
+6. Se la query fallisce per ERRORE LOGICO, correggi e RIPROVA (fino a 3 tentativi).
+7. Quando trovi la soluzione, SALVALA nella Knowledge Base con sqlSaveToKnowledgeBase.
 
 ## CORREZIONE ERRORI AUTOMATICA (CRITICO):
 - Se ricevi un messaggio "ERRORE ESECUZIONE AUTOMATICA", significa che la query che hai generato e' stata eseguita automaticamente ma ha fallito.
 - DEVI SEMPRE restituire la query corretta completa in updatedScript. Questo e' OBBLIGATORIO - senza updatedScript il sistema non puo' riprovare.
 - Analizza l'errore SQL, correggi la query, e restituisci la versione corretta in updatedScript.
 - Concentrati sull'errore specifico: spesso e' un nome tabella/colonna sbagliato, una funzione non supportata, o un errore di sintassi.
+- ERRORE "Invalid object name 'XXX'": STOP! NON cambiare il prefisso schema. NON provare XXX → dbo.XXX → [DB].[dbo].[XXX]. Il nome e' SBAGLIATO. Chiama SUBITO testSqlQuery con: SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%parola_chiave%' per trovare il nome VERO della tabella.
 - NON ripetere spiegazioni lunghe - vai dritto alla correzione con la query corretta.
 - Rispondi con una breve spiegazione di cosa hai corretto + la query completa corretta.
+- RICORDA: updatedScript e' la query FINALE per il nodo dell'utente, NON una query di debug. Se hai usato testSqlQuery per scoprire nomi tabella, la query di scoperta resta INTERNA al tool call. In updatedScript metti SOLO la query che soddisfa la richiesta dell'utente.
 
 ## STRATEGIA DI FALLBACK PROGRESSIVA:
 Quando una query fallisce, segui questa scala di tentativi:
 1. Correggi l'errore specifico (nome colonna, sintassi)
 2. Esplora lo schema con exploreTableColumns per verificare nomi esatti
-3. Prova SINONIMI per i nomi tabelle/colonne
+3. Se l'errore e' "Invalid object name": CHIAMA testSqlQuery con SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%parola%'. NON cambiare prefisso schema, CERCA il nome vero!
 4. Elenca TUTTE le tabelle con exploreDbSchema e cerca quella giusta
 5. Cerca nella KB soluzioni a problemi simili
-6. Riscrivi la query da zero con approccio diverso
-7. Solo come ULTIMO passo, CHIEDI all'utente il nome esatto
+6. Sfoglia le query di altri alberi/pipeline con browseOtherQueries — ma VERIFICA ogni tabella con testSqlQuery prima di usarla
+7. Riscrivi la query da zero con approccio diverso
+8. Solo come ULTIMO passo, CHIEDI all'utente il nome esatto
 - NON ripetere MAI la stessa risposta - cambia approccio ad ogni tentativo
+- NON OSCILLARE MAI tra varianti dello stesso nome (con/senza schema) — se un nome non funziona, e' SBAGLIATO
+
+## ISPIRAZIONE DA ALTRE QUERY (browseOtherQueries):
+- Se dopo exploreDbSchema e exploreTableColumns non riesci a trovare i nomi corretti, usa browseOtherQueries.
+- PASSA SEMPRE il connectorId se ce l'hai: le query dello STESSO connettore (sameConnector=true) sono le piu' affidabili.
+- Questo tool ti mostra TUTTE le query SQL gia' scritte in altri alberi e pipeline della stessa company.
+- Cerca nei risultati: nomi di tabelle, pattern di JOIN, nomi di colonne, filtri WHERE, prefissi schema.
+- Le query con sameConnector=true usano lo STESSO database: i nomi tabelle/colonne sono PROBABILMENTE validi, ma VERIFICA SEMPRE con testSqlQuery prima di usarli (tabelle potrebbero essere state rinominate o eliminate).
+- Le query con sameConnector=false usano un ALTRO database: i pattern (JOIN, filtri) possono ispirarti ma i nomi tabelle potrebbero NON esistere nel tuo connettore. Verifica SEMPRE con exploreDbSchema prima di usarli.
+- REGOLA CRITICA: Se trovi un pattern da un altro connettore (es. JOIN con MA_Customer) ma la tabella non esiste nel tuo DB, NON insistere con quel nome! Usa exploreDbSchema per trovare la tabella equivalente nel TUO database.
+- Usa questo tool anche quando l'utente dice "guarda le altre query", "prendi esempio da altri nodi", "cerca negli altri alberi".
+
+## QUERY DA NODI FRATELLI (PRIORITA' ALTA):
+- Nel contesto sotto "QUERY SQL DA ALTRI NODI NELLO STESSO ALBERO" trovi le query scritte in altri nodi dello STESSO albero.
+- Queste query sono la fonte PIU' affidabile: sono gia' testate e funzionanti.
+- Le query marcate "[STESSO CONNETTORE]" usano il TUO stesso database: i nomi tabella/colonna sono DIRETTAMENTE utilizzabili.
+- PRIMA di usare browseOtherQueries o esplorare il DB, controlla se le query dei nodi fratelli gia' contengono i nomi tabella che ti servono.
+- Usa i nomi tabella/colonna che trovi come punto di partenza, ma VERIFICA SEMPRE con testSqlQuery.
 
 ## AUTO-APPRENDIMENTO KB (OBBLIGATORIO):
 Devi imparare dai tuoi errori AUTOMATICAMENTE:
@@ -457,7 +636,29 @@ Devi imparare dai tuoi errori AUTOMATICAMENTE:
 
 ## FORMATO RISPOSTA (OBBLIGATORIO):
 Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo:
-{"message": "spiegazione breve in italiano", "updatedScript": "query SQL aggiornata", "needsClarification": false, "clarificationQuestions": []}`;
+{"message": "spiegazione breve in italiano", "updatedScript": "query SQL aggiornata", "needsClarification": false, "clarificationQuestions": []}
+
+## !!!! DIVIETO SU updatedScript !!!!
+updatedScript DEVE SEMPRE essere la query SQL FINALE che l'utente vuole eseguire nel suo nodo.
+
+VIETATO in updatedScript:
+- Query su INFORMATION_SCHEMA.TABLES/COLUMNS
+- Query su sys.tables, sys.columns
+- Query di discovery/diagnostica usate solo per esplorare
+
+Queste query vanno usate SOLO tramite testSqlQuery/exploreDbSchema/exploreTableColumns (tool calls interni).
+
+WORKFLOW CORRETTO per "Invalid object name":
+1. Chiama testSqlQuery con INFORMATION_SCHEMA → tool call interno, NON va in updatedScript
+2. Chiama exploreTableColumns sulla tabella trovata → tool call interno, NON va in updatedScript
+3. RISCRIVI la query dell'utente con il nome tabella CORRETTO → QUESTA va in updatedScript
+
+ESEMPIO:
+- Errore: Invalid object name 'MA_Customer'
+- Tool call: testSqlQuery("SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%Cust%'")
+- Risultato: dbo.ClientiAnagrafiche
+- updatedScript CORRETTO: "SELECT * FROM dbo.ClientiAnagrafiche WHERE IsActive = 1"
+- updatedScript VIETATO: "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%Cust%'"`;
 
         const userPrompt = `=== RICHIESTA ===
 ${input.userMessage}
@@ -478,7 +679,7 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
                 prompt: `${systemPrompt}\n\n${userPrompt}`,
                 tools: [
                     ...(input.connectorId ? [exploreDbSchema, exploreTableColumns, testSqlQuery] : []),
-                    ...(input.companyId ? [searchKB, listConnectors, saveToKB] : []),
+                    ...(input.companyId ? [searchKB, listConnectors, saveToKB, browseOtherQueries] : []),
                 ],
                 config: { temperature: 0.7 },
             });
@@ -511,7 +712,8 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
                 ...(input.companyId ? [
                     openRouterTools.find(t => t.function.name === 'searchKnowledgeBase'),
                     openRouterTools.find(t => t.function.name === 'listSqlConnectors'),
-                    openRouterTools.find(t => t.function.name === 'sqlSaveToKnowledgeBase')
+                    openRouterTools.find(t => t.function.name === 'sqlSaveToKnowledgeBase'),
+                    openRouterTools.find(t => t.function.name === 'browseOtherQueries')
                 ] : [])
             ].filter(Boolean) as OpenRouterTool[];
 
@@ -524,6 +726,7 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
                     case 'searchKnowledgeBase': return doSearchKB(args);
                     case 'listSqlConnectors': return doListConnectors(args);
                     case 'sqlSaveToKnowledgeBase': return doSaveToKB(args);
+                    case 'browseOtherQueries': return doBrowseOtherQueries(args);
                     default: return JSON.stringify({ error: `Tool sconosciuto: ${name}` });
                 }
             };
@@ -543,6 +746,20 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
         // Parse the response
         const parsed = parseAgentJson(resultText);
         if (parsed) {
+            // Safety net: block discovery queries from leaking into updatedScript
+            if (parsed.updatedScript) {
+                const upper = parsed.updatedScript.toUpperCase();
+                if (upper.includes('INFORMATION_SCHEMA.TABLES') || upper.includes('INFORMATION_SCHEMA.COLUMNS') ||
+                    upper.includes('FROM SYS.TABLES') || upper.includes('FROM SYS.COLUMNS')) {
+                    console.warn('[SQL AGENT] Blocked discovery query from updatedScript:', parsed.updatedScript.substring(0, 200));
+                    return {
+                        message: (parsed.message || '') + '\n\n**Nota:** Ho trovato informazioni sulle tabelle ma devo ancora riscrivere la query corretta. Riformulo la query con i nomi tabella corretti.',
+                        updatedScript: undefined,
+                        needsClarification: false,
+                        usage,
+                    };
+                }
+            }
             return {
                 message: parsed.message || resultText,
                 updatedScript: parsed.updatedScript,

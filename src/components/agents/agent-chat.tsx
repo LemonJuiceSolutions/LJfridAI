@@ -405,7 +405,9 @@ interface AgentChatProps {
   script: string;
   tableSchema?: Record<string, string[]>;
   inputTables?: Record<string, any[]>;
+  nodeQueries?: Record<string, { query: string; isPython: boolean; connectorId?: string }>;
   connectorId?: string;
+  selectedDocuments?: string[];
   onScriptUpdate?: (newScript: string) => void;
   onAutoExecutePreview?: (script: string) => Promise<{ success: boolean; error?: string }>;
   onClose?: () => void;
@@ -418,7 +420,9 @@ export function AgentChat({
   script,
   tableSchema,
   inputTables,
+  nodeQueries,
   connectorId,
+  selectedDocuments,
   onScriptUpdate,
   onAutoExecutePreview,
   onClose,
@@ -648,7 +652,9 @@ export function AgentChat({
               script: scriptToExecute,
               tableSchema,
               inputTables,
+              nodeQueries,
               connectorId,
+              selectedDocuments,
             }),
           });
 
@@ -701,7 +707,9 @@ export function AgentChat({
                   script: scriptToExecute,
                   tableSchema,
                   inputTables,
+                  nodeQueries,
                   connectorId,
+                  selectedDocuments,
                 }),
               });
 
@@ -791,7 +799,9 @@ export function AgentChat({
           script,
           tableSchema,
           inputTables,
+          nodeQueries,
           connectorId,
+          selectedDocuments,
         }),
       });
 

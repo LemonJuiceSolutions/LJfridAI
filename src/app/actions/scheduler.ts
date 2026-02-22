@@ -481,6 +481,7 @@ export async function saveAncestorPreviewsBatchAction(
                 const preservedFields = {
                     ...(existingPreview?.plotlyStyleOverrides ? { plotlyStyleOverrides: existingPreview.plotlyStyleOverrides } : {}),
                     ...(existingPreview?.plotlyJson && !res.plotlyJson ? { plotlyJson: existingPreview.plotlyJson } : {}),
+                    ...(existingPreview?.htmlStyleOverrides ? { htmlStyleOverrides: existingPreview.htmlStyleOverrides } : {}),
                 };
 
                 if (hasPythonChart || outputType === 'chart') {
@@ -492,6 +493,15 @@ export async function saveAncestorPreviewsBatchAction(
                         rechartsData: res.rechartsData,
                         rechartsStyle: res.rechartsStyle,
                         plotlyJson: res.plotlyJson,
+                        data: res.data,
+                        timestamp: nowMs,
+                        ...preservedFields,
+                    };
+                    nodeUpdated = true;
+                } else if (outputType === 'html' && res.html) {
+                    node.pythonPreviewResult = {
+                        type: 'html',
+                        html: res.html,
                         data: res.data,
                         timestamp: nowMs,
                         ...preservedFields,

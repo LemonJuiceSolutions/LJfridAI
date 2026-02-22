@@ -123,6 +123,110 @@ async function doPySaveToKB(input: { question: string, answer: string, tags: str
     }
 }
 
+// --- Browse Other Scripts (cross-tree/pipeline) ---
+
+function collectScriptNodes(node: any, results: { nodeId: string; sqlQuery?: string; pythonCode?: string; resultName?: string; connectorId?: string; type: string }[] = []): typeof results {
+    if (!node || typeof node === 'string') return results;
+    if (node.ref || node.subTreeRef) return results;
+
+    if (node.sqlQuery) {
+        results.push({
+            nodeId: node.id || null,
+            sqlQuery: node.sqlQuery,
+            resultName: node.sqlResultName,
+            connectorId: node.sqlConnectorId,
+            type: 'sql',
+        });
+    }
+    if (node.pythonCode) {
+        results.push({
+            nodeId: node.id || null,
+            pythonCode: node.pythonCode,
+            resultName: node.pythonResultName,
+            connectorId: node.pythonConnectorId,
+            type: 'python',
+        });
+    }
+
+    if (node.options) {
+        for (const [, child] of Object.entries(node.options)) {
+            if (Array.isArray(child)) {
+                for (const c of child) collectScriptNodes(c, results);
+            } else {
+                collectScriptNodes(child as any, results);
+            }
+        }
+    }
+    return results;
+}
+
+async function doPyBrowseOtherScripts(input: { companyId: string; connectorId?: string }) {
+    try {
+        const scripts: { source: string; name: string; code: string; type: string; connectorId?: string; sameConnector: boolean }[] = [];
+
+        // 1. Script da alberi
+        const trees = await db.tree.findMany({
+            where: { companyId: input.companyId },
+            select: { id: true, name: true, jsonDecisionTree: true },
+        });
+
+        for (const tree of trees) {
+            let treeData: any;
+            try { treeData = JSON.parse(tree.jsonDecisionTree); } catch { continue; }
+            const nodes = collectScriptNodes(treeData);
+            for (const node of nodes) {
+                scripts.push({
+                    source: `Albero: ${tree.name}`,
+                    name: node.resultName || node.nodeId || 'script',
+                    code: ((node.sqlQuery || node.pythonCode) || '').substring(0, 500),
+                    type: node.type,
+                    connectorId: node.connectorId,
+                    sameConnector: !!(input.connectorId && node.connectorId === input.connectorId),
+                });
+            }
+        }
+
+        // 2. Script da pipeline
+        const pipelines = await db.pipeline.findMany({
+            where: { companyId: input.companyId },
+            select: { id: true, name: true, nodes: true },
+        });
+
+        for (const pipeline of pipelines) {
+            const pNodes = pipeline.nodes as any;
+            if (!pNodes || typeof pNodes !== 'object') continue;
+            const nodeEntries = Array.isArray(pNodes) ? pNodes : Object.values(pNodes);
+            for (const node of nodeEntries as any[]) {
+                const script = node.script || node.sqlQuery || node.pythonCode || '';
+                if (!script) continue;
+                if (node.type === 'start' || node.type === 'end') continue;
+                const isPython = node.isPython === true || node.type === 'python';
+                const nodeConnId = node.sqlConnectorId || node.pythonConnectorId || node.connectorId;
+                scripts.push({
+                    source: `Pipeline: ${pipeline.name}`,
+                    name: node.sqlResultName || node.pythonResultName || node.name || node.id || 'script',
+                    code: script.substring(0, 500),
+                    type: isPython ? 'python' : 'sql',
+                    connectorId: nodeConnId,
+                    sameConnector: !!(input.connectorId && nodeConnId === input.connectorId),
+                });
+            }
+        }
+
+        // Ordina: script dello STESSO connettore prima
+        scripts.sort((a, b) => (b.sameConnector ? 1 : 0) - (a.sameConnector ? 1 : 0));
+
+        const limited = scripts.slice(0, 50);
+        if (limited.length === 0) {
+            return JSON.stringify({ results: [], message: 'Nessuno script trovato in altri alberi o pipeline.' });
+        }
+        const sameCount = limited.filter(s => s.sameConnector).length;
+        return JSON.stringify({ totalFound: scripts.length, showing: limited.length, sameConnectorCount: sameCount, scripts: limited }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
 // --- Genkit Tools Definitions (Legacy / Google) ---
 
 const exploreDbSchema = ai.defineTool(
@@ -199,6 +303,19 @@ const saveToKB = ai.defineTool(
         outputSchema: z.string(),
     },
     doPySaveToKB
+);
+
+const browseOtherScripts = ai.defineTool(
+    {
+        name: 'pyBrowseOtherScripts',
+        description: 'Sfoglia le query SQL e gli script Python scritti in ALTRI alberi e pipeline della company. Passa il connectorId per vedere prima gli script dello STESSO database.',
+        inputSchema: z.object({
+            companyId: z.string().describe("L'ID della company."),
+            connectorId: z.string().optional().describe("L'ID del connettore attuale per prioritizzare script dello stesso DB."),
+        }),
+        outputSchema: z.string(),
+    },
+    doPyBrowseOtherScripts
 );
 
 // --- OpenRouter Tools Definitions ---
@@ -295,6 +412,21 @@ const openRouterTools: OpenRouterTool[] = [
                     companyId: { type: 'string', description: "L'ID della company." }
                 },
                 required: ['question', 'answer', 'tags', 'category', 'companyId']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'pyBrowseOtherScripts',
+            description: 'Sfoglia query SQL e script Python di altri alberi e pipeline della company. Passa connectorId per filtrare per stesso DB.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    companyId: { type: 'string', description: "L'ID della company." },
+                    connectorId: { type: 'string', description: "L'ID del connettore attuale per prioritizzare script dello stesso DB." }
+                },
+                required: ['companyId']
             }
         }
     }
@@ -409,12 +541,27 @@ export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
         const connectorInfo = input.connectorId ? `\nConnettore DB attuale: ${input.connectorId}` : '';
         const companyInfo = input.companyId ? `\nCompany ID: ${input.companyId}` : '';
 
+        let documentsContext = '';
+        if (input.selectedDocuments && input.selectedDocuments.length > 0) {
+            documentsContext = `\n\n## DOCUMENTI DISPONIBILI (INPUT FILE — GIA' CONFIGURATI)\nI seguenti file sono DISPONIBILI sul filesystem locale. NON chiedere all'utente dove sono. Sono già configurati.\n\nCome accedere:\n\`\`\`python\nimport os\ndocs_dir = os.environ['DOCUMENTS_DIR']\nselected = os.environ['SELECTED_DOCUMENTS'].split(',')\nfor filename in selected:\n    filepath = os.path.join(docs_dir, filename)\n    # leggi il file\n\`\`\`\n\nFile selezionati:\n`;
+            for (const name of input.selectedDocuments) {
+                const ext = name.split('.').pop()?.toLowerCase() || '';
+                let hint = '';
+                if (ext === 'xbrl' || ext === 'xml') hint = ' → usa xml.etree.ElementTree per parsare';
+                else if (ext === 'xlsx' || ext === 'xls') hint = ' → usa pd.read_excel(filepath)';
+                else if (ext === 'csv') hint = ' → usa pd.read_csv(filepath)';
+                else if (ext === 'json') hint = ' → usa json.load(open(filepath))';
+                documentsContext += `- ${name}${hint}\n`;
+            }
+            documentsContext += `\nIMPORTANTE: Questi file SONO i dati di input. Genera il codice per leggerli DIRETTAMENTE. NON chiedere dove sono.`;
+        }
+
         const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
         const systemPrompt = `Sei un agente AI esperto in Python per analisi dati. Stai utilizzando il modello: ${modelName}. NON MOLLARE MAI. Sei tenace e persistente.
 DATA DI OGGI: ${today}
 
-${connectorInfo}${companyInfo}
+${connectorInfo}${companyInfo}${documentsContext}
 
 ## RAGIONAMENTO STRUTTURATO (OBBLIGATORIO):
 Prima di scrivere o modificare codice, segui SEMPRE questo processo:
@@ -426,8 +573,14 @@ Prima di scrivere o modificare codice, segui SEMPRE questo processo:
 6. **VALIDA**: L'output risponde alla domanda? Il grafico mostra i dati giusti?
 7. **RISPONDI**: Solo dopo la validazione, restituisci il codice
 
-LIBRERIE DISPONIBILI: pandas (pd), numpy (np), requests, plotly.express (px), plotly.graph_objects (go)
+LIBRERIE DISPONIBILI: pandas (pd), numpy (np), requests, plotly.express (px), plotly.graph_objects (go), os, json, xml.etree.ElementTree (ET), openpyxl
 NON USARE MAI LA LIBRERIA 'tabulate' (non e' installata).
+
+## !!!! DIVIETI ASSOLUTI - LEGGI PRIMA DI TUTTO !!!!
+1. MAI scrivere query SQL raw come codice Python. Tu sei un NODO PYTHON, non SQL. Se scrivi "SELECT * FROM tabella" come codice, dara' syntax error.
+2. MAI connetterti al database direttamente (NO pyodbc, NO sqlalchemy, NO sqlite3, NO connection string). Il sandbox Python NON ha accesso al database. I dati arrivano SOLO dalle dipendenze (nodi upstream collegati via pipeline).
+3. Se \`df\` ha 0 righe e 0 colonne → il nodo upstream NON e' collegato. Dillo SUBITO all'utente: "Il nodo SQL upstream non e' collegato o non restituisce dati. Collegalo nella pipeline." NON provare a "risolvere" il problema scrivendo codice — il problema e' nella PIPELINE, non nel codice.
+4. Se l'utente dice "Nessun dato da visualizzare" → il codice ha restituito un DataFrame vuoto. Controlla: (a) l'input df e' vuoto? → dillo all'utente (b) i filtri sono troppo restrittivi? → allargali (c) i nomi delle colonne sono sbagliati? → controlla con print(df.columns.tolist())
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
 Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.
@@ -489,6 +642,7 @@ La variabile DEVE essere del tipo giusto per l'outputType del nodo:
 - Se il nodo ha piu' dipendenze, ogni dipendenza e' disponibile col suo NOME (es: "GM_Budget", "Vendite")
 - \`df\` viene mappato all'ULTIMA dipendenza (il nodo padre diretto)
 - Se \`df\` ha 0 righe/colonne, significa che il nodo precedente NON e' collegato o non ha dati → segnalalo all'utente
+- IMPORTANTE: NON provare a connetterti al database per risolvere il problema. NON usare pyodbc, sqlalchemy, o connection string. Il tuo UNICO modo per ottenere dati e' attraverso le dipendenze della pipeline. Se mancano i dati, l'utente deve collegare un nodo SQL upstream.
 
 ## REGOLE GRAFICI (CRITICO):
 - Usa SEMPRE e SOLO plotly per generare grafici (plotly.express o plotly.graph_objects).
@@ -557,10 +711,11 @@ La variabile DEVE essere del tipo giusto per l'outputType del nodo:
 ## IL TUO WORKFLOW:
 1. ALL'INIZIO di ogni richiesta: cerca nella KB (pySearchKnowledgeBase) E esplora il DB se hai un connectorId (pyExploreDbSchema + pyExploreTableColumns sulle tabelle rilevanti).
 2. LEGGI lo schema e i dati di esempio gia' forniti nel contesto. NON chiedere mai dati che sono gia' visibili.
-3. Scrivi codice ROBUSTO (retry, sleep, no tabulate).
-4. TESTA SEMPRE con pyTestCode prima di rispondere - MAI saltare questo passaggio.
-5. Se fallisce per Token, ignora e restituisci il codice comunque.
-6. Se fallisce per logica, correggi e riprova (fino a 3 tentativi).
+3. Se non trovi le tabelle/colonne che ti servono, usa pyBrowseOtherScripts per vedere query SQL e script Python gia' scritti in altri alberi e pipeline della stessa company.
+4. Scrivi codice ROBUSTO (retry, sleep, no tabulate).
+5. TESTA SEMPRE con pyTestCode prima di rispondere - MAI saltare questo passaggio.
+6. Se fallisce per Token, ignora e restituisci il codice comunque.
+7. Se fallisce per logica, correggi e riprova (fino a 3 tentativi).
 
 ## CORREZIONE ERRORI AUTOMATICA (CRITICO):
 - Se ricevi un messaggio "ERRORE ESECUZIONE AUTOMATICA", significa che il codice che hai generato e' stato eseguito automaticamente ma ha fallito.
@@ -580,6 +735,9 @@ La variabile DEVE essere del tipo giusto per l'outputType del nodo:
 - Se df ha 0 righe e 0 colonne, NON provare a elaborarlo
 - Dillo SUBITO all'utente: "Il DataFrame di input e' vuoto. Verifica che il nodo precedente sia collegato e abbia dati."
 - NON chiedere "quale connettore" o "quale query" - il problema e' nella connessione tra nodi
+- NON provare soluzioni alternative come connetterti al DB direttamente o scrivere query SQL nel codice Python
+- NON iterare 4+ volte con approcci diversi. Se df e' vuoto al PRIMO tentativo, dillo SUBITO
+- La risposta CORRETTA e': needsClarification: true con messaggio "Il DataFrame di input e' vuoto. Assicurati che il nodo SQL upstream sia collegato e restituisca dati."
 
 ## AUTO-APPRENDIMENTO KB (OBBLIGATORIO):
 Devi imparare dai tuoi errori AUTOMATICAMENTE. Segui queste regole:
@@ -631,7 +789,8 @@ Quando il codice fallisce, segui questa scala:
 2. Esplora i dati con pyTestCode: print(df.columns.tolist()), print(df.dtypes)
 3. Riscrivi la parte problematica con approccio diverso
 4. Se e' un problema di dati (NaN, formati), aggiungi pulizia dati robusta
-5. Solo come ULTIMO passo, chiedi all'utente
+5. Sfoglia gli script di altri alberi/pipeline con pyBrowseOtherScripts per trovare nomi tabelle e pattern corretti
+6. Solo come ULTIMO passo, chiedi all'utente
 - NON ripetere MAI lo stesso errore - cambia approccio ad ogni tentativo
 
 ## FORMATO RISPOSTA(OBBLIGATORIO):
@@ -668,7 +827,7 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
                 prompt: `${systemPrompt} \n\n${userPrompt} `,
                 tools: [
                     ...(input.connectorId ? [exploreDbSchema, exploreTableColumns, testSqlQuery, testPythonCode] : [testPythonCode]),
-                    ...(input.companyId ? [searchKB, listConnectors, saveToKB] : []),
+                    ...(input.companyId ? [searchKB, listConnectors, saveToKB, browseOtherScripts] : []),
                 ],
                 config: { temperature: 0.7 },
             });
@@ -694,7 +853,8 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
                 ...(input.companyId ? [
                     openRouterTools.find(t => t.function.name === 'pySearchKnowledgeBase'),
                     openRouterTools.find(t => t.function.name === 'pyListSqlConnectors'),
-                    openRouterTools.find(t => t.function.name === 'pySaveToKnowledgeBase')
+                    openRouterTools.find(t => t.function.name === 'pySaveToKnowledgeBase'),
+                    openRouterTools.find(t => t.function.name === 'pyBrowseOtherScripts')
                 ] : [])
             ].filter(Boolean) as OpenRouterTool[];
 
@@ -707,6 +867,7 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
                     case 'pySearchKnowledgeBase': return doPySearchKB(args);
                     case 'pyListSqlConnectors': return doPyListConnectors(args);
                     case 'pySaveToKnowledgeBase': return doPySaveToKB(args);
+                    case 'pyBrowseOtherScripts': return doPyBrowseOtherScripts(args);
                     default: return JSON.stringify({ error: `Tool sconosciuto: ${name}` });
                 }
             };

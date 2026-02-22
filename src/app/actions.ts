@@ -1775,6 +1775,7 @@ export async function generatePythonAction(
             isDataFrame?: boolean;
         }[];
         currentCode?: string;
+        selectedDocuments?: string[];
     }
 ): Promise<{ code: string | null; error: string | null }> {
     try {
@@ -1820,6 +1821,22 @@ html`
             });
         }
 
+        console.log('[generatePythonAction] context.selectedDocuments:', context?.selectedDocuments);
+
+        if (context?.selectedDocuments && context.selectedDocuments.length > 0) {
+            contextInfo += `\n\n### IMPORTANT — Available Document Files (INPUT DATA):\nThese files are ALREADY available on the local filesystem. You MUST use them as input data. Do NOT ask where they are — they are pre-configured.\n\nHow to access:\n\`\`\`python\nimport os\ndocs_dir = os.environ['DOCUMENTS_DIR']\nselected = os.environ['SELECTED_DOCUMENTS'].split(',')\nfor filename in selected:\n    filepath = os.path.join(docs_dir, filename)\n    # read the file...\n\`\`\`\n\nSelected files:\n`;
+            context.selectedDocuments.forEach(name => {
+                const ext = name.split('.').pop()?.toLowerCase() || '';
+                let hint = '';
+                if (ext === 'xbrl' || ext === 'xml') hint = ' (XML/XBRL — use xml.etree.ElementTree to parse)';
+                else if (ext === 'xlsx' || ext === 'xls') hint = ' (Excel — use pd.read_excel(filepath))';
+                else if (ext === 'csv') hint = ' (CSV — use pd.read_csv(filepath))';
+                else if (ext === 'json') hint = ' (JSON — use json.load(open(filepath)))';
+                contextInfo += `- ${name}${hint}\n`;
+            });
+            contextInfo += `\nDo NOT ask the user where these files are. They are already configured and accessible via os.environ.\n`;
+        }
+
         if (context?.currentCode) {
             contextInfo += `\n\n### Current Draft Code:\n\`\`\`python\n${context.currentCode}\n\`\`\`\n`;
         }
@@ -1827,7 +1844,7 @@ html`
         const systemPrompt = `You are a Python code generator. Generate ONLY Python code that accomplishes the user's request.
 ${outputInstructions[outputType]}
 
-Available libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), plotly.express (px), plotly.graph_objects (go).
+Available libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), plotly.express (px), plotly.graph_objects (go), os, json, xml.etree.ElementTree (ET), openpyxl.
 
 Available Dataframes: ${availableDataframes.length > 0 ? availableDataframes.join(', ') : 'None'}.
 ${contextInfo}
@@ -1842,11 +1859,13 @@ STRICT RULES:
    - **DO NOT** use generic names like 'df1', 'df2', or 'data' unless they are in the available list.
    - **DO NOT** create mock data. Assume the variables are already loaded and available.
    - **CONTEXT**: You are writing a script that will be executed in an environment where these variables are pre-loaded.
+   - **EXCEPTION**: If "Available Document Files" are listed above, you MUST read them from the filesystem using os.environ['DOCUMENTS_DIR']. These files ARE your input data — do not ask the user for them.
 7. **ALWAYS USE PLOTLY** (plotly.express or plotly.graph_objects) for charts unless specifically told otherwise. Do not use Matplotlib if possible.
    - For charts, the last line MUST be the figure object 'fig'.
    - Do NOT use fig.show().
 8. **ROBUST DATE PARSING**: When converting columns to datetime, ALWAYS use \`pd.to_datetime(..., dayfirst=True, errors='coerce')\` to correctly handle European formats (DD-MM-YYYY) and prevent crashes.
-9. **ASK FOR CLARIFICATION**: If you are unsure about column names, dataframe logic, or if the user's request is ambiguous, invalid, or refers to non-existent columns based on the provided context, you MUST ask the user for clarification instead of guessing. Return a polite question describing what is unclear.`;
+9. **ASK FOR CLARIFICATION**: If you are unsure about column names, dataframe logic, or if the user's request is ambiguous, invalid, or refers to non-existent columns based on the provided context, you MUST ask the user for clarification instead of guessing. Return a polite question describing what is unclear.
+10. **DOCUMENT FILES**: When document files are listed in "Available Document Files" section, NEVER ask the user where the files are. They are ALREADY available. Read them using os.environ['DOCUMENTS_DIR'] and os.environ['SELECTED_DOCUMENTS']. Generate the code directly.`;
 
         const messages = [
             { role: 'system', content: systemPrompt },
@@ -1899,7 +1918,8 @@ export async function executePythonPreviewAction(
     inputData: Record<string, any[]> = {},
     dependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[] }[],
     connectorId?: string,
-    _bypassAuth?: boolean
+    _bypassAuth?: boolean,
+    selectedDocuments?: string[]
 ): Promise<{ success: boolean; data?: any[]; columns?: string[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; html?: string; rechartsConfig?: any; rechartsData?: any[]; rechartsStyle?: any; plotlyJson?: any; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
     const debugLogs: string[] = [];
     const tStart = performance.now();
@@ -2015,6 +2035,16 @@ export async function executePythonPreviewAction(
             } catch (spErr: any) {
                 console.warn(`[Python] SharePoint company-wide fallback exception: ${spErr.message}`);
             }
+        }
+
+        // Inject uploaded document paths if selected
+        if (selectedDocuments && selectedDocuments.length > 0) {
+            const { join } = await import('path');
+            const docsDir = join(process.cwd(), 'public', 'documents');
+            envVars['DOCUMENTS_DIR'] = docsDir;
+            envVars['SELECTED_DOCUMENTS'] = selectedDocuments.join(',');
+            console.log(`[Python] Injected DOCUMENTS_DIR=${docsDir}, SELECTED_DOCUMENTS=${selectedDocuments.join(',')}`);
+            debugLogs.push(`[${new Date().toLocaleTimeString()}] Documenti selezionati: ${selectedDocuments.join(', ')}`);
         }
 
         // If there are dependencies (SQL queries from parent nodes), fetch them first

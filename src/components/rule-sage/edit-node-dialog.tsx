@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Play, Database, FileCode, FileCode2, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info, Settings2 } from 'lucide-react';
+import { Play, Database, FileCode, FileCode2, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info, Settings2, ChevronsUpDown } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig } from '@/lib/types';
 import { Input } from '../ui/input';
@@ -63,6 +63,7 @@ import { useChartTheme } from '@/hooks/use-chart-theme';
 import { AgentChat } from '@/components/agents/agent-chat';
 import { NodeSchedulePopover } from '@/components/scheduler/node-schedule-popover';
 import { getAllNodeSchedulesAction } from '@/app/actions/scheduler';
+import { listAllDocumentsAction } from '@/actions/xbrl';
 
 // Memoized input component to prevent re-renders when typing
 const MemoizedChatInput = memo(function MemoizedChatInput({
@@ -259,6 +260,18 @@ const getInputTables = (selectedPipelines: string[], availableInputTables: any[]
   return tables;
 };
 
+const getNodeQueries = (availableInputTables: any[]): Record<string, { query: string; isPython: boolean; connectorId?: string }> => {
+  const queries: Record<string, { query: string; isPython: boolean; connectorId?: string }> = {};
+  availableInputTables.forEach(table => {
+    if (table.isPython && table.pythonCode) {
+      queries[table.name] = { query: table.pythonCode, isPython: true, connectorId: table.connectorId };
+    } else if (table.sqlQuery) {
+      queries[table.name] = { query: table.sqlQuery, isPython: false, connectorId: table.connectorId };
+    }
+  });
+  return queries;
+};
+
 const extractColumnsFromQuery = (query: string): string[] => {
   // Simple regex to extract column names from SELECT clause
   const selectMatch = query.match(/SELECT\s+(.+?)\s+FROM/i);
@@ -420,6 +433,9 @@ export default function EditNodeDialog({
     timestamp?: number;
   } | null>(null);
   const [pythonConnectorId, setPythonConnectorId] = useState<string>('');
+  const [uploadedDocuments, setUploadedDocuments] = useState<{ name: string; url: string }[]>([]);
+  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
+  const [docsPopoverOpen, setDocsPopoverOpen] = useState(false);
   const [pythonSelectedPipelines, setPythonSelectedPipelines] = useState<string[]>([]);
   const [pythonDebugLogs, setPythonDebugLogs] = useState<string[]>([]);
   const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart' | 'html', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string, html?: string, rechartsConfig?: any, rechartsData?: any[], plotlyJson?: any } }[]>([]);
@@ -522,6 +538,14 @@ export default function EditNodeDialog({
   useEffect(() => {
     if (isOpen) loadNodeSchedules();
   }, [isOpen, loadNodeSchedules]);
+
+  useEffect(() => {
+    if (isOpen) {
+      listAllDocumentsAction().then(res => {
+        if (res.files) setUploadedDocuments(res.files);
+      });
+    }
+  }, [isOpen]);
 
   const isExecutingRef = useRef(false);
 
@@ -679,6 +703,7 @@ export default function EditNodeDialog({
       setPythonOutputType((node as any).pythonOutputType || 'table');
       setPythonResultName((node as any).pythonResultName || '');
       setPythonConnectorId((node as any).pythonConnectorId || '');
+      setSelectedDocuments((node as any).selectedDocuments || []);
       setPythonSelectedPipelines((node as any).pythonSelectedPipelines || []);
       setPythonChatHistory((node as any).pythonChatHistory || []);
       // Load saved preview data if available, otherwise set to null
@@ -922,13 +947,17 @@ export default function EditNodeDialog({
     setPipelineAgentStatus("Analisi contesto...");
 
     // 1. GATHER CONTEXT
+    console.log('[PYTHON CHAT] selectedDocuments:', selectedDocuments);
     const context: {
       availableTables: { name: string; columns?: string[]; isDataFrame?: boolean }[];
       currentCode?: string;
+      selectedDocuments?: string[];
     } = {
       availableTables: [],
-      currentCode: pythonCode
+      currentCode: pythonCode,
+      selectedDocuments: selectedDocuments.length > 0 ? selectedDocuments : undefined
     };
+    console.log('[PYTHON CHAT] context.selectedDocuments:', context.selectedDocuments);
 
     const tablesToFetchByConnector: Record<string, string[]> = {};
 
@@ -1029,7 +1058,9 @@ export default function EditNodeDialog({
                 pipelineDependencies: dep?.pipelineDependencies
               };
             }),
-            pythonConnectorId
+            pythonConnectorId,
+            undefined,
+            selectedDocuments.length > 0 ? selectedDocuments : undefined
           );
 
           if (previewRes.success) {
@@ -1061,11 +1092,13 @@ export default function EditNodeDialog({
                 variables: previewRes.variables,
                 chartBase64: previewRes.chartBase64,
                 chartHtml: previewRes.chartHtml,
+                html: previewRes.html,
                 rechartsConfig: previewRes.rechartsConfig,
                 rechartsData: previewRes.rechartsData,
                 rechartsStyle: previewRes.rechartsStyle,
                 plotlyJson: previewRes.plotlyJson,
                 plotlyStyleOverrides: Object.keys(currentOverrides).length > 0 ? currentOverrides : undefined,
+                htmlStyleOverrides: Object.keys(htmlStyleOverrides).length > 0 ? htmlStyleOverrides : undefined,
                 debugLogs: previewRes.debugLogs,
                 timestamp: Date.now()
               });
@@ -1126,7 +1159,7 @@ export default function EditNodeDialog({
     };
 
     performGeneration(newHistory, 0).finally(() => setPipelineAgentStatus(null));
-  }, [openRouterApiKey, openRouterModel, pythonChatHistory, pythonOutputType, pythonSelectedPipelines, pythonConnectorId, availableInputTables, toast, pythonCode, sqlResultName, sqlPreviewData]);
+  }, [openRouterApiKey, openRouterModel, pythonChatHistory, pythonOutputType, pythonSelectedPipelines, pythonConnectorId, selectedDocuments, availableInputTables, toast, pythonCode, sqlResultName, sqlPreviewData]);
 
   // --- REUSABLE PIPELINE EXECUTION LOGIC ---
   const executeFullPipeline = async (
@@ -1630,6 +1663,13 @@ export default function EditNodeDialog({
         delete newNodeData.sqlConnectorId;
         delete newNodeData.sqlResultName;
         delete newNodeData.selectedPipelines;
+      }
+
+      // Selected Documents (independent of Python code)
+      if (selectedDocuments.length > 0) {
+        newNodeData.selectedDocuments = selectedDocuments;
+      } else {
+        delete newNodeData.selectedDocuments;
       }
 
       // Python Data
@@ -2383,6 +2423,7 @@ export default function EditNodeDialog({
                         script={sqlQuery}
                         tableSchema={getTableSchema(selectedPipelines, availableInputTables)}
                         inputTables={getInputTables(selectedPipelines, availableInputTables)}
+                        nodeQueries={getNodeQueries(availableInputTables)}
                         connectorId={sqlConnectorId || undefined}
                         onScriptUpdate={(newScript) => {
                           setSqlQuery(newScript);
@@ -2591,6 +2632,88 @@ export default function EditNodeDialog({
                     <p className="text-[10px] text-muted-foreground">Opzionale: seleziona un database per usare i dati nel tuo script.</p>
                   </div>
 
+                  {/* Uploaded Documents Multi-Select */}
+                  {uploadedDocuments.length > 0 && (
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-1.5">
+                        <Archive className="h-3.5 w-3.5" />
+                        Documenti (Impostazioni)
+                      </Label>
+                      <Button
+                        variant="outline"
+                        type="button"
+                        className="w-full justify-between font-normal h-auto min-h-10"
+                        onClick={() => setDocsPopoverOpen(prev => !prev)}
+                      >
+                        {selectedDocuments.length === 0 ? (
+                          <span className="text-muted-foreground">Seleziona documenti...</span>
+                        ) : (
+                          <span className="text-sm">{selectedDocuments.length} documento/i selezionato/i</span>
+                        )}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                      {docsPopoverOpen && (
+                        <div className="border rounded-md overflow-hidden">
+                          <div className="flex items-center border-b px-3">
+                            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+                            <input
+                              className="flex h-9 w-full bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+                              placeholder="Cerca documento..."
+                              onChange={e => {
+                                const q = e.target.value.toLowerCase();
+                                const el = e.target.closest('.grid')?.querySelector('[data-docs-list]');
+                                if (!el) return;
+                                Array.from(el.children).forEach((child) => {
+                                  const name = (child as HTMLElement).dataset.docName || '';
+                                  (child as HTMLElement).style.display = name.toLowerCase().includes(q) ? '' : 'none';
+                                });
+                              }}
+                            />
+                          </div>
+                          <div className="max-h-[200px] overflow-y-auto p-1" data-docs-list>
+                            {uploadedDocuments.map(doc => {
+                              const isSelected = selectedDocuments.includes(doc.name);
+                              return (
+                                <div
+                                  key={doc.name}
+                                  data-doc-name={doc.name}
+                                  className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent"
+                                  onClick={() => {
+                                    setSelectedDocuments(prev =>
+                                      isSelected
+                                        ? prev.filter(d => d !== doc.name)
+                                        : [...prev, doc.name]
+                                    );
+                                  }}
+                                >
+                                  <Check className={`h-4 w-4 shrink-0 ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
+                                  {doc.name}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {selectedDocuments.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedDocuments.map(name => (
+                            <span
+                              key={name}
+                              className="flex items-center gap-1 text-xs bg-white dark:bg-zinc-800 px-2 py-1 rounded-full border shadow-sm"
+                            >
+                              {name}
+                              <X
+                                className="h-3 w-3 cursor-pointer text-muted-foreground hover:text-destructive"
+                                onClick={() => setSelectedDocuments(prev => prev.filter(d => d !== name))}
+                              />
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-[10px] text-muted-foreground">Seleziona i documenti da usare come fonte dati nello script.</p>
+                    </div>
+                  )}
+
                   {/* Pipeline Selection */}
                   {availableInputTables && availableInputTables.length > 0 && (
                     <div className="grid gap-2 p-3 bg-muted/20 rounded-lg border border-dashed">
@@ -2721,7 +2844,7 @@ export default function EditNodeDialog({
                                   }
                                 }
 
-                                const res = await executePythonPreviewAction(pythonCode, pythonOutputType, inputData, deps, pythonConnectorId);
+                                const res = await executePythonPreviewAction(pythonCode, pythonOutputType, inputData, deps, pythonConnectorId, undefined, selectedDocuments.length > 0 ? selectedDocuments : undefined);
 
                                 if (res.success) {
                                   setPythonPreviewResult({
@@ -2754,6 +2877,7 @@ export default function EditNodeDialog({
                                       rechartsStyle: res.rechartsStyle,
                                       plotlyJson: res.plotlyJson,
                                       plotlyStyleOverrides: Object.keys(plotlyStyleOverrides).length > 0 ? plotlyStyleOverrides : undefined,
+                                      htmlStyleOverrides: Object.keys(htmlStyleOverrides).length > 0 ? htmlStyleOverrides : undefined,
                                       debugLogs: res.debugLogs,
                                       timestamp: Date.now()
                                     };
@@ -2800,7 +2924,9 @@ export default function EditNodeDialog({
                         script={pythonCode}
                         tableSchema={getTableSchema(pythonSelectedPipelines, availableInputTables)}
                         inputTables={getInputTables(pythonSelectedPipelines, availableInputTables)}
+                        nodeQueries={getNodeQueries(availableInputTables)}
                         connectorId={pythonConnectorId || undefined}
+                        selectedDocuments={selectedDocuments}
                         onScriptUpdate={(newScript) => {
                           setPythonCode(newScript);
                           toast({ title: "Codice Aggiornato", description: "Lo script Python è stato aggiornato." });
@@ -2822,7 +2948,7 @@ export default function EditNodeDialog({
                                 pipelineDependencies: depMeta?.pipelineDependencies,
                               };
                             });
-                            const res = await executePythonPreviewAction(scriptToExecute, pythonOutputType, inputData, deps, pythonConnectorId);
+                            const res = await executePythonPreviewAction(scriptToExecute, pythonOutputType, inputData, deps, pythonConnectorId, undefined, selectedDocuments.length > 0 ? selectedDocuments : undefined);
                             if (res.success) {
                               setPythonPreviewResult({
                                 type: pythonOutputType,

@@ -330,11 +330,8 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                         if (node.pythonCode) {
                             const inputData: Record<string, any[]> = {};
                             for (const [key, val] of Object.entries(ancestorResults)) {
-                                if (val) {
-                                    const data = val.data || val.rechartsData;
-                                    if (data && Array.isArray(data)) {
-                                        inputData[key] = data;
-                                    }
+                                if (val && val.data && Array.isArray(val.data)) {
+                                    inputData[key] = val.data;
                                 }
                             }
 

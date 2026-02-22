@@ -1,18 +1,19 @@
 'use client';
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronDown, RotateCcw } from 'lucide-react';
+import { ChevronDown, RotateCcw, Palette } from 'lucide-react';
 
 // Re-export from shared utility so existing imports keep working
 export { applyPlotlyOverrides, plotlyJsonToHtml } from '@/lib/plotly-utils';
 export type { PlotlyStyleOverrides } from '@/lib/plotly-utils';
 import type { PlotlyStyleOverrides } from '@/lib/plotly-utils';
+import { PLOTLY_STYLE_PRESETS } from '@/lib/plotly-utils';
 
 // ── Helper: extract current value from Plotly figure for display ──
 function getFromFig(fig: any, path: string, fallback: any = undefined): any {
@@ -115,6 +116,21 @@ export default function PlotlyStyleEditor({ plotlyJson, overrides, onChange }: P
   ];
   const currentColorway = overrides.colorway || figColorway;
 
+  const [presetDropdownOpen, setPresetDropdownOpen] = useState(false);
+  const presetDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!presetDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (presetDropdownRef.current && !presetDropdownRef.current.contains(e.target as Node)) {
+        setPresetDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [presetDropdownOpen]);
+
   return (
     <div className="space-y-2 text-sm">
       <div className="flex items-center justify-between mb-2">
@@ -125,6 +141,32 @@ export default function PlotlyStyleEditor({ plotlyJson, overrides, onChange }: P
         >
           <RotateCcw className="h-3 w-3" /> Ripristina tutto
         </button>
+      </div>
+
+      {/* Preset dropdown */}
+      <div className="relative" ref={presetDropdownRef}>
+        <button
+          onClick={() => setPresetDropdownOpen(!presetDropdownOpen)}
+          className="h-7 text-xs w-full flex items-center gap-2 border rounded px-2 hover:bg-muted/50 transition-colors"
+        >
+          <Palette className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="flex-1 text-left">Applica un preset...</span>
+          <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${presetDropdownOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {presetDropdownOpen && (
+          <div className="absolute z-50 left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-64 overflow-y-auto py-1">
+            {PLOTLY_STYLE_PRESETS.map(p => (
+              <button
+                key={p.id}
+                onClick={() => { onChange({ ...p.overrides }); setPresetDropdownOpen(false); }}
+                className="w-full text-left px-3 py-1.5 hover:bg-muted text-xs transition-colors"
+              >
+                <div className="font-medium">{p.label}</div>
+                <div className="text-[10px] text-muted-foreground">{p.description}</div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Sfondo */}

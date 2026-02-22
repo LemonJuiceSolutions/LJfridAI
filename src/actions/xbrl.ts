@@ -29,6 +29,18 @@ export async function listXbrlFilesAction(): Promise<{ files: { name: string; ur
   }
 }
 
+export async function listAllDocumentsAction(): Promise<{ files: { name: string; url: string }[]; error?: string }> {
+  try {
+    const entries = await readdir(DOCUMENTS_DIR).catch(() => []);
+    const files = (entries as string[])
+      .filter(f => !f.startsWith('.'))
+      .map(name => ({ name, url: `/documents/${name}` }));
+    return { files };
+  } catch (error) {
+    return { files: [], error: String(error) };
+  }
+}
+
 export async function parseAllXbrlAction(): Promise<{
   data?: MultiYearFinancialData;
   ratios?: FinancialRatios[];

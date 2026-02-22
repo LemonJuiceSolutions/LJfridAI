@@ -65,10 +65,13 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                 if (node) {
                     if (previewType === 'sql') {
                         // Primary: sqlPreviewData. Fallback: pythonPreviewResult with table data
+                        // Skip pythonPreviewResult.data fallback when the Python result is HTML
+                        // (the data is the raw input, not SQL output)
+                        const isHtmlPreview = node.pythonPreviewResult?.type === 'html';
                         const sqlData = node.sqlPreviewData
-                            || (node.pythonPreviewResult?.data && Array.isArray(node.pythonPreviewResult.data)
+                            || (!isHtmlPreview && node.pythonPreviewResult?.data && Array.isArray(node.pythonPreviewResult.data)
                                 ? node.pythonPreviewResult.data : null)
-                            || (node.pythonPreviewResult?.rechartsData && Array.isArray(node.pythonPreviewResult.rechartsData)
+                            || (!isHtmlPreview && node.pythonPreviewResult?.rechartsData && Array.isArray(node.pythonPreviewResult.rechartsData)
                                 ? node.pythonPreviewResult.rechartsData : null);
 
                         // If no tabular data but a Python preview exists (e.g. chart),
