@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1.10 Punti di Attenzione · QUID · 2022–2024</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #e8eef5;
+  font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
+  color: #1a3a5c; min-height: 100vh;
+  padding: 32px 24px 72px;
+}
+
+/* ── Header ─────────────────────────── */
+.report-header {
+  background: linear-gradient(135deg, #071e38 0%, #14406e 100%);
+  border-radius: 14px; padding: 36px 44px; margin-bottom: 40px;
+  color: white; display: flex; align-items: flex-end; justify-content: space-between;
+}
+.report-header h1 { font-size: 26px; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; }
+.subtitle { font-size: 13px; color: #8abfe6; margin-top: 6px; letter-spacing: .5px; text-transform: uppercase; }
+.anni-badge {
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25);
+  border-radius: 8px; padding: 8px 18px; font-size: 14px; font-weight: 600;
+  color: #d0e8fa; white-space: nowrap;
+}
+
+/* ── Sezione ─────────────────────────── */
+.section-header {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 28px; padding-bottom: 12px; border-bottom: 2px solid #c4d8ee;
+}
+.section-num {
+  font-size: 11px; font-weight: 700; color: white; background: #14406e;
+  border-radius: 6px; padding: 3px 9px; letter-spacing: .5px;
+}
+.section-title { font-size: 15px; font-weight: 600; color: #0d2e52; text-transform: uppercase; }
+
+/* ── Group label ─────────────────────── */
+.group-label {
+  grid-column: 1/-1; font-size: 10px; font-weight: 700; color: #7a95b0;
+  text-transform: uppercase; letter-spacing: 1.5px;
+  padding: 14px 0 6px; border-top: 1px solid #dce8f3; margin-top: 6px;
+}
+.group-label:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+
+/* ── Griglia ─────────────────────────── */
+.tiles-wrap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+/* ── Tile ────────────────────────────── */
+.kpi-tile {
+  position: relative;
+  background: #fff; border-radius: 12px; padding: 18px 18px 10px;
+  box-shadow: 0 2px 12px rgba(10,40,80,.08), 0 1px 3px rgba(10,40,80,.05);
+  overflow: visible; transition: box-shadow .2s, transform .2s;
+}
+.kpi-tile:hover {
+  box-shadow: 0 8px 28px rgba(10,40,80,.12); transform: translateY(-2px);
+}
+.t-title {
+  font-size: 10.5px; font-weight: 700; color: #4a6785;
+  text-transform: uppercase; letter-spacing: .6px;
+  margin-bottom: 8px; padding-right: 28px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.t-value { font-size: 28px; font-weight: 800; color: #071e38; letter-spacing: -.6px; line-height: 1.05; }
+.t-value.nd { color: #c0cfe0; font-size: 22px; }
+.t-unit { font-size: 13px; color: #7a95b0; margin-left: 3px; font-weight: 600; }
+.t-chart { margin-top: 8px; }
+.t-chart .js-plotly-plot { width: 100% !important; }
+
+/* ── Pulsante (i) ────────────────────── */
+.ibtn {
+  position: absolute; top: 12px; right: 12px;
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1.5px solid #b8cfe8; background: #f0f6ff;
+  font-size: 13px; font-weight: 700; color: #3a80c0;
+  cursor: pointer; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s; z-index: 10; user-select: none;
+}
+.ibtn:hover { background: #2166a8; color: #fff; border-color: #2166a8; transform: scale(1.1); }
+
+/* ── Popup info ──────────────────────── */
+.info-popup {
+  display: none; position: absolute; top: 0; right: 0;
+  width: 340px; max-height: 80vh; overflow-y: auto;
+  background: #fff; border: 1.5px solid #c4d8ee;
+  border-radius: 12px; box-shadow: 0 12px 40px rgba(10,40,80,.20);
+  z-index: 9999; overflow: hidden;
+}
+.info-popup.open { display: block; }
+
+.ipop-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 10px;
+  background: linear-gradient(135deg, #071e38 0%, #14406e 100%);
+  color: white; position: sticky; top: 0;
+}
+.ipop-title { font-size: 12px; font-weight: 700; letter-spacing: .2px; flex: 1; }
+.ipop-close {
+  background: none; border: none; color: rgba(255,255,255,.7);
+  font-size: 15px; cursor: pointer; padding: 0 4px; transition: color .15s; flex-shrink: 0;
+}
+.ipop-close:hover { color: #fff; }
+
+.info-badge {
+  display: block; margin: 10px 16px 2px;
+  font-size: 10px; font-weight: 700; letter-spacing: .5px;
+  padding: 3px 10px; border-radius: 20px; width: fit-content;
+}
+.badge-ok   { background: rgba(26,122,74,.1);  color: #1a7a4a; border: 1px solid #1a7a4a; }
+.badge-diff { background: rgba(192,92,0,.1);   color: #c05c00; border: 1px solid #c05c00; }
+
+.info-section { padding: 12px 16px; border-bottom: 1px solid #eef2f7; }
+.info-section:last-child { border-bottom: none; padding-bottom: 14px; }
+.isec-title { font-size: 10px; font-weight: 700; color: #7a95b0; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.info-formula {
+  display: block; background: #f0f4f8; border-radius: 6px; padding: 8px 10px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px; color: #0d2e52; line-height: 1.5;
+  white-space: normal; word-break: break-word;
+}
+.info-formula.conf { background: #fff3e0; color: #6b3a00; }
+.info-note { margin-top: 6px; font-size: 11px; color: #5c7a99; line-height: 1.5; }
+.info-conf { background: #fffbf4; }
+
+/* ── Backdrop ────────────────────────── */
+#backdrop { display: none; position: fixed; inset: 0; z-index: 9998; }
+#backdrop.on { display: block; }
+</style>
+</head>
+<body>
+<div id="backdrop" onclick="closeAll()"></div>
+
+
+<div class="section-header">
+  <span class="section-num">1.10</span>
+  <span class="section-title">Punti di Attenzione — Indici di Bilancio</span>
+</div>
+
+<div class="tiles-wrap">
+  <div class="group-label">Solidità patrimoniale</div>
+  <div class="kpi-tile" id="t1">
+  <button class="ibtn" onclick="toggleInfo('t1')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Margine di Struttura</div>
+  <div class="t-value">-101.558<span class='t-unit'>€</span></div>
+  <div class="t-chart"><div>                            <div id="eccae7e2-fc64-4ec6-a677-8975fe5a7513" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("eccae7e2-fc64-4ec6-a677-8975fe5a7513")) {                    Plotly.newPlot(                        "eccae7e2-fc64-4ec6-a677-8975fe5a7513",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[-937880.0,-976801.0,-101558.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[-1221869.04,143510.04000000004]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t1">
+    <div class="ipop-head">
+      <span class="ipop-title">Margine di Struttura</span>
+      <button class="ipop-close" onclick="closeInfo('t1')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>PN – Immobilizzazioni Totali</code><p class='info-note'>Positivo = il PN finanzia le immob. Negativo = si ricorre al passivo.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t2">
+  <button class="ibtn" onclick="toggleInfo('t2')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Margine di Tesoreria</div>
+  <div class="t-value">2.223.943<span class='t-unit'>€</span></div>
+  <div class="t-chart"><div>                            <div id="e5511581-ea09-43b7-81bc-8cbf176f7305" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("e5511581-ea09-43b7-81bc-8cbf176f7305")) {                    Plotly.newPlot(                        "e5511581-ea09-43b7-81bc-8cbf176f7305",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[3764136.0,2067179.0,2223943.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[1592031.04,4239283.96]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t2">
+    <div class="ipop-head">
+      <span class="ipop-title">Margine di Tesoreria</span>
+      <button class="ipop-close" onclick="closeInfo('t2')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>(Liquidità + Crediti Totali + Ratei Attivi) – Passivo Corrente esteso</code><p class='info-note'>Passivo Corrente esteso = Debiti BT + Ratei/Risconti Passivi.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t3">
+  <button class="ibtn" onclick="toggleInfo('t3')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Capitale Circolante Netto</div>
+  <div class="t-value">2.797.318<span class='t-unit'>€</span></div>
+  <div class="t-chart"><div>                            <div id="f30178e0-e339-4205-839c-c5ab0c943a6e" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("f30178e0-e339-4205-839c-c5ab0c943a6e")) {                    Plotly.newPlot(                        "f30178e0-e339-4205-839c-c5ab0c943a6e",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[4443281.0,2635308.0,2797318.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[2129075.56,4949513.44]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t3">
+    <div class="ipop-head">
+      <span class="ipop-title">Capitale Circolante Netto</span>
+      <button class="ipop-close" onclick="closeInfo('t3')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>(Attivo Corrente + Ratei Attivi) – (Debiti BT + Ratei Passivi)</code><p class='info-note'>Include i ratei per allinearsi alla metodologia Confindustria.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t4">
+  <button class="ibtn" onclick="toggleInfo('t4')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">CCN Operativo</div>
+  <div class="t-value">1.623.154<span class='t-unit'>€</span></div>
+  <div class="t-chart"><div>                            <div id="aa7ca45a-37e4-4760-bf23-e964f742050b" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("aa7ca45a-37e4-4760-bf23-e964f742050b")) {                    Plotly.newPlot(                        "aa7ca45a-37e4-4760-bf23-e964f742050b",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[437207.0,824402.0,1623154.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[105141.83999999997,1955219.1600000001]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t4">
+    <div class="ipop-head">
+      <span class="ipop-title">CCN Operativo</span>
+      <button class="ipop-close" onclick="closeInfo('t4')">✕</button>
+    </div>
+    <span class="info-badge badge-diff">⚠&nbsp;esiste un'alternativa</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>(Cred.Clienti + Cred.Tributari + Cred.Altri + Rimanenze) – (Deb.Fornitori + Altri Deb. + Deb.Tributari)</code><p class='info-note'>Fabbisogno del ciclo commerciale/operativo.</p>
+    </div>
+    <div class="info-section info-conf">
+          <div class="isec-title">💡 Possibile alternativa di calcolo</div>
+          <code class='info-formula conf'>Alternativa: (Attivo Corrente – Liquidità) – Debiti commerciali BT</code><p class='info-note'>I valori possono differire per la perimetrazione delle voci 'altri debiti'.</p>
+        </div>
+  </div>
+</div>
+  <div class="kpi-tile" id="t5">
+  <button class="ibtn" onclick="toggleInfo('t5')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Indice di Capitalizzazione</div>
+  <div class="t-value">26,8<span class='t-unit'>%</span></div>
+  <div class="t-chart"><div>                            <div id="6b1f6575-2fd4-471c-85df-c7d747013540" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("6b1f6575-2fd4-471c-85df-c7d747013540")) {                    Plotly.newPlot(                        "6b1f6575-2fd4-471c-85df-c7d747013540",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[14.45,17.79,26.8],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[10.991999999999999,30.258000000000003]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t5">
+    <div class="ipop-head">
+      <span class="ipop-title">Indice di Capitalizzazione</span>
+      <button class="ipop-close" onclick="closeInfo('t5')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>Patrimonio Netto / Totale Attivo × 100</code><p class='info-note'>Misura il peso del PN sul totale delle fonti di finanziamento.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t6">
+  <button class="ibtn" onclick="toggleInfo('t6')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Patr. Netto Tang. / Cap. Invest.</div>
+  <div class="t-value">25,74<span class='t-unit'>%</span></div>
+  <div class="t-chart"><div>                            <div id="2e093db5-3e0c-4130-b2d8-bfadd266377d" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("2e093db5-3e0c-4130-b2d8-bfadd266377d")) {                    Plotly.newPlot(                        "2e093db5-3e0c-4130-b2d8-bfadd266377d",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[13.8,17.11,25.74],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[10.456800000000001,29.083199999999998]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t6">
+    <div class="ipop-head">
+      <span class="ipop-title">Patr. Netto Tang. / Cap. Invest.</span>
+      <button class="ipop-close" onclick="closeInfo('t6')">✕</button>
+    </div>
+    <span class="info-badge badge-diff">⚠&nbsp;esiste un'alternativa</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>(PN – Immob. Immateriali) / Totale Attivo × 100</code><p class='info-note'>Solidità patrimoniale depurata dagli intangibili.</p>
+    </div>
+    <div class="info-section info-conf">
+          <div class="isec-title">💡 Possibile alternativa di calcolo</div>
+          <code class='info-formula conf'>Alternativa: (PN – Immob. Immateriali) / Capitale Investito Netto (TA – Passivo Corrente)</code><p class='info-note'>Il denominatore usato cambia il risultato: Totale Attivo vs Capitale Investito Netto.</p>
+        </div>
+  </div>
+</div><div class="kpi-tile" id="t7">
+  <button class="ibtn" onclick="toggleInfo('t7')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Copertura Immobilizzazioni</div>
+  <div class="t-value">2,25<span class='t-unit'>×</span></div>
+  <div class="t-chart"><div>                            <div id="37036449-a037-4ca5-9df6-3d2de6f3c751" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("37036449-a037-4ca5-9df6-3d2de6f3c751")) {                    Plotly.newPlot(                        "37036449-a037-4ca5-9df6-3d2de6f3c751",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[2.95,2.17,2.25],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[1.9515999999999998,3.1684]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t7">
+    <div class="ipop-head">
+      <span class="ipop-title">Copertura Immobilizzazioni</span>
+      <button class="ipop-close" onclick="closeInfo('t7')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>(PN + Passivo Consolidato) / Immobilizzazioni Totali</code><p class='info-note'>Passivo Consolidato = Debiti MLT + Fondi Rischi + TFR. Target: > 1.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t8">
+  <button class="ibtn" onclick="toggleInfo('t8')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Autocopertura Immobilizzazioni</div>
+  <div class="t-value">0,95<span class='t-unit'>×</span></div>
+  <div class="t-chart"><div>                            <div id="dabc3c04-408c-4c66-ae32-b1efc010b6d8" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("dabc3c04-408c-4c66-ae32-b1efc010b6d8")) {                    Plotly.newPlot(                        "dabc3c04-408c-4c66-ae32-b1efc010b6d8",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[0.59,0.57,0.95],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[0.46359999999999996,1.0564]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t8">
+    <div class="ipop-head">
+      <span class="ipop-title">Autocopertura Immobilizzazioni</span>
+      <button class="ipop-close" onclick="closeInfo('t8')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>Patrimonio Netto / Immobilizzazioni Totali</code><p class='info-note'>Solo il PN (senza MLT) a copertura delle immobilizzazioni.</p>
+    </div>
+    
+  </div>
+</div>
+  <div class="group-label">Liquidità e autofinanziamento</div>
+  <div class="kpi-tile" id="t9">
+  <button class="ibtn" onclick="toggleInfo('t9')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Liquidità Corrente</div>
+  <div class="t-value">1,96<span class='t-unit'>×</span></div>
+  <div class="t-chart"><div>                            <div id="eaefc0e9-a62c-48e8-9cee-95a3d9b43ec4" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("eaefc0e9-a62c-48e8-9cee-95a3d9b43ec4")) {                    Plotly.newPlot(                        "eaefc0e9-a62c-48e8-9cee-95a3d9b43ec4",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[2.75,2.15,1.96],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[1.7388,2.9712]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t9">
+    <div class="ipop-head">
+      <span class="ipop-title">Liquidità Corrente</span>
+      <button class="ipop-close" onclick="closeInfo('t9')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>(Attivo Corrente + Ratei Attivi) / (Debiti BT + Ratei Passivi)</code><p class='info-note'>Include i ratei. Soglia minima: 1. Target: ≥ 1.5.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t10">
+  <button class="ibtn" onclick="toggleInfo('t10')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Liquidità Secca</div>
+  <div class="t-value">1,76<span class='t-unit'>×</span></div>
+  <div class="t-chart"><div>                            <div id="2f7aa647-0f86-4d97-8f70-b1eaa0ee751f" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("2f7aa647-0f86-4d97-8f70-b1eaa0ee751f")) {                    Plotly.newPlot(                        "2f7aa647-0f86-4d97-8f70-b1eaa0ee751f",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[2.48,1.9,1.76],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[1.5584,2.6816]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t10">
+    <div class="ipop-head">
+      <span class="ipop-title">Liquidità Secca</span>
+      <button class="ipop-close" onclick="closeInfo('t10')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>(Attivo Corrente + Ratei Attivi – Rimanenze) / Passivo Corrente esteso</code><p class='info-note'>Esclude le rimanenze, meno liquidabili a breve. Target: ≥ 1.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t11">
+  <button class="ibtn" onclick="toggleInfo('t11')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Indice di Autofinanziamento</div>
+  <div class="t-value">13,57<span class='t-unit'>%</span></div>
+  <div class="t-chart"><div>                            <div id="7588f83b-e4b0-4e79-8a3a-efc1eccdd3c7" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("7588f83b-e4b0-4e79-8a3a-efc1eccdd3c7")) {                    Plotly.newPlot(                        "7588f83b-e4b0-4e79-8a3a-efc1eccdd3c7",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[3.61,2.8,13.57],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[-0.21560000000000024,16.5856]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t11">
+    <div class="ipop-head">
+      <span class="ipop-title">Indice di Autofinanziamento</span>
+      <button class="ipop-close" onclick="closeInfo('t11')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>(Utile Esercizio + Ammortamenti) / Totale Valore della Produzione × 100</code><p class='info-note'>Usa il Totale Valore della Produzione come denominatore (non soli Ricavi Vendite).</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t12">
+  <button class="ibtn" onclick="toggleInfo('t12')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">EBITDA</div>
+  <div class="t-value">1.018.646<span class='t-unit'>€</span></div>
+  <div class="t-chart"><div>                            <div id="e7b9e7fd-a25d-4b81-8def-bdcc752cca2c" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("e7b9e7fd-a25d-4b81-8def-bdcc752cca2c")) {                    Plotly.newPlot(                        "e7b9e7fd-a25d-4b81-8def-bdcc752cca2c",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[330804.0,159125.0,1018646.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[-81540.88000000003,1259311.8800000001]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t12">
+    <div class="ipop-head">
+      <span class="ipop-title">EBITDA</span>
+      <button class="ipop-close" onclick="closeInfo('t12')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>EBIT + Ammortamenti e Svalutazioni</code><p class='info-note'>Margine operativo lordo. Proxy del flusso di cassa operativo potenziale.</p>
+    </div>
+    
+  </div>
+</div>
+  <div class="group-label">Redditività</div>
+  <div class="kpi-tile" id="t13">
+  <button class="ibtn" onclick="toggleInfo('t13')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">ROI — Redd. Cap. Investito</div>
+  <div class="t-value">11,27<span class='t-unit'>%</span></div>
+  <div class="t-chart"><div>                            <div id="8d44684e-786b-4cdf-869e-f79ff8dc88fe" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("8d44684e-786b-4cdf-869e-f79ff8dc88fe")) {                    Plotly.newPlot(                        "8d44684e-786b-4cdf-869e-f79ff8dc88fe",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[0.9,-0.22,11.27],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[-3.4372000000000007,14.4872]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t13">
+    <div class="ipop-head">
+      <span class="ipop-title">ROI — Redd. Cap. Investito</span>
+      <button class="ipop-close" onclick="closeInfo('t13')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>EBIT / Totale Attivo × 100</code><p class='info-note'>Misura l'efficienza operativa del capitale complessivamente investito.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t14">
+  <button class="ibtn" onclick="toggleInfo('t14')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">ROE — Redd. Cap. Proprio</div>
+  <div class="t-value">44,14<span class='t-unit'>%</span></div>
+  <div class="t-chart"><div>                            <div id="5a906992-3694-4740-8716-fefc4a3a9c34" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("5a906992-3694-4740-8716-fefc4a3a9c34")) {                    Plotly.newPlot(                        "5a906992-3694-4740-8716-fefc4a3a9c34",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[5.11,4.18,44.14],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[-7.008800000000001,55.3288]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t14">
+    <div class="ipop-head">
+      <span class="ipop-title">ROE — Redd. Cap. Proprio</span>
+      <button class="ipop-close" onclick="closeInfo('t14')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>Utile Esercizio / Patrimonio Netto × 100</code><p class='info-note'>Rendimento per i soci/cooperatori sul capitale conferito.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t15">
+  <button class="ibtn" onclick="toggleInfo('t15')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Posizione Finanziaria Netta</div>
+  <div class="t-value">-81.960<span class='t-unit'>€</span></div>
+  <div class="t-chart"><div>                            <div id="c1fae3e0-c064-4dac-9928-196c97d93918" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("c1fae3e0-c064-4dac-9928-196c97d93918")) {                    Plotly.newPlot(                        "c1fae3e0-c064-4dac-9928-196c97d93918",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[1459500.0,-44636.0,-81960.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[-513568.80000000005,1891108.8]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t15">
+    <div class="ipop-head">
+      <span class="ipop-title">Posizione Finanziaria Netta</span>
+      <button class="ipop-close" onclick="closeInfo('t15')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>Liquidità – (Debiti verso Banche + Debiti verso Altri Finanziatori)</code><p class='info-note'>Negativo = più debiti finanziari che liquidità. Positivo = eccesso di cassa.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t16">
+  <button class="ibtn" onclick="toggleInfo('t16')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Leverage</div>
+  <div class="t-value">3,73<span class='t-unit'>×</span></div>
+  <div class="t-chart"><div>                            <div id="8f69229c-8600-4eb4-a086-2d39ac3c5d97" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("8f69229c-8600-4eb4-a086-2d39ac3c5d97")) {                    Plotly.newPlot(                        "8f69229c-8600-4eb4-a086-2d39ac3c5d97",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[6.92,5.62,3.73],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[2.8367999999999998,7.8132]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t16">
+    <div class="ipop-head">
+      <span class="ipop-title">Leverage</span>
+      <button class="ipop-close" onclick="closeInfo('t16')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>Totale Attivo / Patrimonio Netto</code><p class='info-note'>Grado di dipendenza da capitali di terzi. Valori > 3 indicano alta leva.</p>
+    </div>
+    
+  </div>
+</div>
+  <div class="group-label">Struttura dell'indebitamento</div>
+  <div class="kpi-tile" id="t17">
+  <button class="ibtn" onclick="toggleInfo('t17')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Debiti Totali / EBITDA</div>
+  <div class="t-value">4,2<span class='t-unit'>×</span></div>
+  <div class="t-chart"><div>                            <div id="fdf857d4-5f9c-40e2-a4e9-d728535fc773" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("fdf857d4-5f9c-40e2-a4e9-d728535fc773")) {                    Plotly.newPlot(                        "fdf857d4-5f9c-40e2-a4e9-d728535fc773",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[15.65,26.66,4.2],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[-2.088800000000001,32.9488]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t17">
+    <div class="ipop-head">
+      <span class="ipop-title">Debiti Totali / EBITDA</span>
+      <button class="ipop-close" onclick="closeInfo('t17')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>Debiti Totali / EBITDA</code><p class='info-note'>Anni di EBITDA per ripagare tutti i debiti. Soglia indicativa: ≤ 5.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t18">
+  <button class="ibtn" onclick="toggleInfo('t18')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">Oneri Fin. Netti / Ris. Op. Lordo</div>
+  <div class="t-value">4,35<span class='t-unit'>%</span></div>
+  <div class="t-chart"><div>                            <div id="c3a62320-fc11-4940-b740-22840f8f95b1" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("c3a62320-fc11-4940-b740-22840f8f95b1")) {                    Plotly.newPlot(                        "c3a62320-fc11-4940-b740-22840f8f95b1",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[-4.31,43.38,4.35],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[-17.663200000000003,56.733200000000004]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t18">
+    <div class="ipop-head">
+      <span class="ipop-title">Oneri Fin. Netti / Ris. Op. Lordo</span>
+      <button class="ipop-close" onclick="closeInfo('t18')">✕</button>
+    </div>
+    <span class="info-badge badge-diff">⚠&nbsp;esiste un'alternativa</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>Proventi/Oneri Finanziari Netti (XBRL) / EBITDA × 100</code><p class='info-note'>Valore netto XBRL = Proventi Fin. – Oneri Fin. Negativo = oneri > proventi.</p>
+    </div>
+    <div class="info-section info-conf">
+          <div class="isec-title">💡 Possibile alternativa di calcolo</div>
+          <code class='info-formula conf'>Alternativa: – Oneri Finanziari Lordi / EBITDA × 100</code><p class='info-note'>Il segno e il numeratore (lordo vs netto) differiscono tra le due impostazioni.</p>
+        </div>
+  </div>
+</div><div class="kpi-tile" id="t19">
+  <button class="ibtn" onclick="toggleInfo('t19')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">PFN / Patrimonio Netto</div>
+  <div class="t-value">-0,04<span class='t-unit'>×</span></div>
+  <div class="t-chart"><div>                            <div id="9e7b1dc9-2417-40ef-9f25-2f2905be14c6" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("9e7b1dc9-2417-40ef-9f25-2f2905be14c6")) {                    Plotly.newPlot(                        "9e7b1dc9-2417-40ef-9f25-2f2905be14c6",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[1.09,-0.03,-0.04],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[-0.35640000000000005,1.4064]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t19">
+    <div class="ipop-head">
+      <span class="ipop-title">PFN / Patrimonio Netto</span>
+      <button class="ipop-close" onclick="closeInfo('t19')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>PFN / Patrimonio Netto</code><p class='info-note'>PFN = Liq. – Deb. Finanziari. Negativo = azienda netta debitrice.</p>
+    </div>
+    
+  </div>
+</div><div class="kpi-tile" id="t20">
+  <button class="ibtn" onclick="toggleInfo('t20')" title="Mostra formula">ⓘ</button>
+  <div class="t-title">PFN / EBITDA</div>
+  <div class="t-value">-0,08<span class='t-unit'>×</span></div>
+  <div class="t-chart"><div>                            <div id="960f970b-df6a-4161-9355-52fd2eca60bc" class="plotly-graph-div" style="height:110px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("960f970b-df6a-4161-9355-52fd2eca60bc")) {                    Plotly.newPlot(                        "960f970b-df6a-4161-9355-52fd2eca60bc",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[4.41,-0.28,-0.08],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":6,"r":6,"t":4,"b":4},"xaxis":{"visible":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"range":[-1.5932000000000002,5.7232]},"height":110,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  <div class="info-popup" id="pop-t20">
+    <div class="ipop-head">
+      <span class="ipop-title">PFN / EBITDA</span>
+      <button class="ipop-close" onclick="closeInfo('t20')">✕</button>
+    </div>
+    <span class="info-badge badge-ok">✓&nbsp;formula standard</span>
+    <div class="info-section">
+      <div class="isec-title">🧮 Formula in questo report</div>
+      <code class='info-formula'>PFN / EBITDA</code><p class='info-note'>Anni di EBITDA per azzerare la PFN. Soglia EBA IFRS9 STAGE 2: valore assoluto ≤ 6.</p>
+    </div>
+    
+  </div>
+</div>
+</div>
+
+<script>
+function toggleInfo(tid) {
+  const popup = document.getElementById('pop-' + tid);
+  const tile  = document.getElementById(tid);
+  if (!popup) return;
+  const wasOpen = popup.classList.contains('open');
+  closeAll();
+  if (!wasOpen) {
+    popup.classList.add('open');
+    document.getElementById('backdrop').classList.add('on');
+    // Smart positioning: evita uscita fuori viewport
+    requestAnimationFrame(() => {
+      const tR = tile.getBoundingClientRect();
+      const pW = popup.offsetWidth;
+      const pH = popup.offsetHeight;
+      // orizzontale
+      if (tR.right + pW > window.innerWidth - 20) {
+        popup.style.right = '0'; popup.style.left = 'auto';
+      } else {
+        popup.style.left = '0'; popup.style.right = 'auto';
+      }
+      // verticale
+      if (tR.top + pH > window.innerHeight - 20) {
+        popup.style.bottom = '0'; popup.style.top = 'auto';
+      } else {
+        popup.style.top = '0'; popup.style.bottom = 'auto';
+      }
+    });
+  }
+}
+function closeInfo(tid) {
+  const popup = document.getElementById('pop-' + tid);
+  if (popup) popup.classList.remove('open');
+  document.getElementById('backdrop').classList.remove('on');
+}
+function closeAll() {
+  document.querySelectorAll('.info-popup.open').forEach(p => p.classList.remove('open'));
+  document.getElementById('backdrop').classList.remove('on');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+</script>
+</body>
+</html>

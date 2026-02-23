@@ -1384,7 +1384,142 @@ export async function executeSqlPreviewAction(
             }
         }
 
-        console.log(`[PIPELINE] Executing main query...`);
+        // SERVER-SIDE CROSS-TREE DEPENDENCY RESOLUTION
+        // After all known deps are materialized, check if the query still references
+        // table names that aren't resolved. Search ALL trees in the DB for matching nodes.
+        if (user) {
+            // Extract potential table names from the query that aren't in nameMap
+            const knownNames = new Set([...nameMap.keys(), ...nameMap.values()].map(n => n.toUpperCase()));
+            // Match FROM/JOIN/UNION table references (simple heuristic)
+            const tableRefRegex = /(?:FROM|JOIN)\s+(?:\[?(\w+)\]?\.)?(?:\[?(\w+)\]?)/gi;
+            let match;
+            const unresolvedNames: string[] = [];
+            while ((match = tableRefRegex.exec(finalQuery)) !== null) {
+                const tableName = match[2] || match[1];
+                if (tableName && !knownNames.has(tableName.toUpperCase()) && !tableName.startsWith('##') && !tableName.startsWith('tempdb')) {
+                    unresolvedNames.push(tableName);
+                }
+            }
+
+            if (unresolvedNames.length > 0) {
+                console.log(`[PIPELINE] Found unresolved table references in query: ${unresolvedNames.join(', ')}. Searching all trees...`);
+                try {
+                    const companyId = user.companyId !== 'system-override' ? user.companyId : undefined;
+                    const allTreeRecords = await db.tree.findMany({
+                        where: companyId ? { companyId } : undefined,
+                        select: { jsonDecisionTree: true }
+                    });
+
+                    // Flatten all tree nodes to find matching result names
+                    const flattenTreeNodes = (node: any, results: any[] = []): any[] => {
+                        if (!node || typeof node !== 'object') return results;
+                        if (node.sqlResultName || node.pythonResultName || node.sqlQuery || node.pythonCode) {
+                            results.push(node);
+                        }
+                        if (node.options) {
+                            Object.values(node.options).forEach((child: any) => {
+                                if (Array.isArray(child)) {
+                                    child.forEach(c => flattenTreeNodes(c, results));
+                                } else {
+                                    flattenTreeNodes(child, results);
+                                }
+                            });
+                        }
+                        return results;
+                    };
+
+                    const allNodes: any[] = [];
+                    for (const treeRecord of allTreeRecords) {
+                        try {
+                            const treeJson = typeof treeRecord.jsonDecisionTree === 'string'
+                                ? JSON.parse(treeRecord.jsonDecisionTree) : treeRecord.jsonDecisionTree;
+                            flattenTreeNodes(treeJson, allNodes);
+                        } catch { /* skip malformed trees */ }
+                    }
+
+                    for (const unresolvedName of unresolvedNames) {
+                        const matchingNode = allNodes.find(n =>
+                            n.sqlResultName === unresolvedName || n.pythonResultName === unresolvedName
+                        );
+
+                        if (matchingNode) {
+                            console.log(`[PIPELINE] Found cross-tree node for "${unresolvedName}" (sqlQuery: ${!!matchingNode.sqlQuery}, pythonCode: ${!!matchingNode.pythonCode})`);
+
+                            const uniqueId = Date.now().toString().slice(-6) + Math.floor(Math.random() * 1000);
+                            const sanitizedName = unresolvedName.replace(/[^a-zA-Z0-9_]/g, '_');
+                            const tempTableName = `##${sanitizedName}_${uniqueId}`;
+
+                            let rowsToInsert: any[] = [];
+                            let columns: string[] = [];
+
+                            if (matchingNode.pythonCode) {
+                                const pyRes = await executePythonPreviewAction(
+                                    matchingNode.pythonCode, 'table', {},
+                                    matchingNode.pipelineDependencies || [],
+                                    matchingNode.connectorId || matchingNode.pythonConnectorId
+                                );
+                                if (pyRes.success && pyRes.data && Array.isArray(pyRes.data) && pyRes.data.length > 0) {
+                                    rowsToInsert = pyRes.data;
+                                    columns = Object.keys(rowsToInsert[0]);
+                                }
+                            } else if (matchingNode.sqlQuery) {
+                                // Execute with a separate request on the same transaction
+                                let sourceQuery = matchingNode.sqlQuery.trim();
+                                for (const [orig, temp] of nameMap.entries()) {
+                                    sourceQuery = replaceTableRef(sourceQuery, orig, temp);
+                                }
+                                const srcResult = await request.query(sourceQuery);
+                                if (srcResult.recordset && srcResult.recordset.length > 0) {
+                                    rowsToInsert = srcResult.recordset;
+                                    columns = Object.keys(rowsToInsert[0]);
+                                }
+                            }
+
+                            if (rowsToInsert.length > 0) {
+                                const colDefs = columns.map(col => `[${col}] NVARCHAR(MAX)`).join(', ');
+                                await request.query(`CREATE TABLE ${tempTableName} (${colDefs});`);
+                                createdTempTables.push(tempTableName);
+
+                                const batchSize = 100;
+                                for (let i = 0; i < rowsToInsert.length; i += batchSize) {
+                                    const batch = rowsToInsert.slice(i, i + batchSize);
+                                    const values = batch.map(row => {
+                                        const vals = columns.map(col => {
+                                            const v = row[col];
+                                            if (v === null || v === undefined) return 'NULL';
+                                            if (typeof v === 'number') return v.toString();
+                                            if (typeof v === 'boolean') return v ? '1' : '0';
+                                            if (v instanceof Date) return `'${v.toISOString()}'`;
+                                            return `N'${String(v).replace(/'/g, "''")}'`;
+                                        }).join(', ');
+                                        return `(${vals})`;
+                                    }).join(', ');
+                                    if (values.length > 0) {
+                                        await request.query(`INSERT INTO ${tempTableName} VALUES ${values};`);
+                                    }
+                                }
+                                console.log(`[PIPELINE] Cross-tree resolved: ${unresolvedName} -> ${tempTableName} (${rowsToInsert.length} rows)`);
+                                nameMap.set(unresolvedName, tempTableName);
+                                finalQuery = replaceTableRef(finalQuery, unresolvedName, tempTableName);
+                            } else {
+                                console.log(`[PIPELINE] Cross-tree node "${unresolvedName}" found but returned no data, creating empty table`);
+                                await request.query(`CREATE TABLE ${tempTableName} ([_empty] NVARCHAR(1));`);
+                                createdTempTables.push(tempTableName);
+                                nameMap.set(unresolvedName, tempTableName);
+                                finalQuery = replaceTableRef(finalQuery, unresolvedName, tempTableName);
+                            }
+                        } else {
+                            console.warn(`[PIPELINE] No node found for unresolved table "${unresolvedName}" in any tree`);
+                        }
+                    }
+                } catch (crossTreeError) {
+                    console.error(`[PIPELINE] Cross-tree resolution error:`, crossTreeError);
+                    // Continue with original query - will fail with the original error
+                }
+            }
+        }
+
+        console.log(`[PIPELINE] Executing main query (nameMap: ${JSON.stringify(Object.fromEntries(nameMap))}):\n${finalQuery.substring(0, 500)}`);
         // Use the Transaction Request for the Main Query too!
         const result = await request.query(finalQuery);
 
@@ -1916,7 +2051,7 @@ export async function executePythonPreviewAction(
     code: string,
     outputType: 'table' | 'variable' | 'chart' | 'html',
     inputData: Record<string, any[]> = {},
-    dependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[] }[],
+    dependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[]; selectedDocuments?: string[] }[],
     connectorId?: string,
     _bypassAuth?: boolean,
     selectedDocuments?: string[]
@@ -2138,7 +2273,8 @@ export async function executePythonPreviewAction(
                             {},
                             dep.pipelineDependencies, // Pass its own dependencies!
                             dep.connectorId,
-                            _bypassAuth // Pass through bypass flag
+                            _bypassAuth, // Pass through bypass flag
+                            dep.selectedDocuments?.length > 0 ? dep.selectedDocuments : undefined
                         );
 
                         if (recursiveRes.success && recursiveRes.data) {
@@ -2162,124 +2298,144 @@ export async function executePythonPreviewAction(
         }
 
 
-        // Call Flask backend with proper timeout handling
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
-
-
+        // Load full company chart theme for Python rendering (Plotly + matplotlib)
+        let chartThemeData: Record<string, any> | undefined;
         try {
-            console.log(`[executePythonPreviewAction] Calling Python backend at 5005...`);
-            debugLogs.push(`[${new Date().toLocaleTimeString()}] Sending data to Python backend...`);
-
-            // Load full company chart theme for Python rendering (Plotly + matplotlib)
-            let chartThemeData: Record<string, any> | undefined;
-            try {
-                const companyId = user?.companyId;
-                console.log(`[ChartTheme] companyId=${companyId}`);
-                if (companyId) {
-                    const company = await db.company.findUnique({
-                        where: { id: companyId },
-                        select: { chartTheme: true },
-                    });
-                    console.log(`[ChartTheme] DB chartTheme:`, company?.chartTheme ? 'present' : 'null');
-                    chartThemeData = resolveTheme(company?.chartTheme as any);
-                    console.log(`[ChartTheme] Resolved colors:`, (chartThemeData as any)?.colors?.slice(0, 3));
-                }
-            } catch (e) {
-                console.error(`[ChartTheme] Error loading theme:`, e);
+            const companyId = user?.companyId;
+            console.log(`[ChartTheme] companyId=${companyId}`);
+            if (companyId) {
+                const company = await db.company.findUnique({
+                    where: { id: companyId },
+                    select: { chartTheme: true },
+                });
+                console.log(`[ChartTheme] DB chartTheme:`, company?.chartTheme ? 'present' : 'null');
+                chartThemeData = resolveTheme(company?.chartTheme as any);
+                console.log(`[ChartTheme] Resolved colors:`, (chartThemeData as any)?.colors?.slice(0, 3));
             }
-
-            const response = await fetch('http://localhost:5005/execute', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    code,
-                    outputType,
-                    inputData,
-                    env: envVars,
-                    chartTheme: chartThemeData, // Pass full company theme to Python
-                }),
-                signal: controller.signal
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                const errText = await response.text();
-                debugLogs.push(`[ERROR] Python backend HTTP ${response.status}: ${errText}`);
-                throw new Error(`Python backend error (${response.status}): ${errText}`);
-            }
-
-            const result = await response.json();
-
-            if (!result.success) {
-                return {
-                    success: false,
-                    error: result.error || 'Unknown error from Python backend',
-                    stdout: result.stdout
-                };
-            }
-
-            // Return the appropriate result based on output type
-            if (outputType === 'table') {
-                return {
-                    success: true,
-                    data: result.data,
-                    columns: result.columns,
-                    rowCount: result.rowCount,
-                    stdout: result.stdout
-                };
-            } else if (outputType === 'variable') {
-                return {
-                    success: true,
-                    variables: result.variables,
-                    stdout: result.stdout
-                };
-            } else if (outputType === 'chart') {
-                // NEW: Support Recharts config from backend
-                return {
-                    success: true,
-                    chartBase64: result.chartBase64,
-                    chartHtml: result.chartHtml,
-                    rechartsConfig: result.rechartsConfig,
-                    rechartsData: result.rechartsData,
-                    rechartsStyle: result.rechartsStyle,
-                    plotlyJson: result.plotlyJson,
-                    stdout: result.stdout
-                };
-            } else if (outputType === 'html') {
-                return {
-                    success: true,
-                    html: result.html,
-                    stdout: result.stdout
-                };
-            }
-
-            return { success: false, error: 'Unknown output type' };
-
-        } catch (fetchError: any) {
-            clearTimeout(timeoutId);
-
-            // Check if it's a timeout/abort error
-            if (fetchError.name === 'AbortError') {
-                return {
-                    success: false,
-                    error: 'Timeout: Il calcolo Python ha impiegato troppo tempo (>5 minuti). Verifica il codice per eventuali loop infiniti.'
-                };
-            }
-
-            const error = fetchError instanceof Error ? fetchError.message : "Error calling Python backend.";
-
-            // Check if it's a connection error
-            if (error.includes('ECONNREFUSED') || error.includes('fetch failed')) {
-                return {
-                    success: false,
-                    error: 'Python backend non raggiungibile. Assicurati che sia in esecuzione su porta 5005.'
-                };
-            }
-
-            return { success: false, error };
+        } catch (e) {
+            console.error(`[ChartTheme] Error loading theme:`, e);
         }
+
+        // Call Flask backend with retry logic for transient connection errors
+        const MAX_RETRIES = 3;
+        const RETRY_DELAYS = [1000, 2000, 4000]; // ms between retries
+
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+
+            try {
+                console.log(`[executePythonPreviewAction] Calling Python backend at 5005... (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+                debugLogs.push(`[${new Date().toLocaleTimeString()}] Sending data to Python backend${attempt > 0 ? ` (retry ${attempt})` : ''}...`);
+
+                const response = await fetch('http://localhost:5005/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code,
+                        outputType,
+                        inputData,
+                        env: envVars,
+                        chartTheme: chartThemeData, // Pass full company theme to Python
+                    }),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    debugLogs.push(`[ERROR] Python backend HTTP ${response.status}: ${errText}`);
+                    throw new Error(`Python backend error (${response.status}): ${errText}`);
+                }
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    return {
+                        success: false,
+                        error: result.error || 'Unknown error from Python backend',
+                        stdout: result.stdout
+                    };
+                }
+
+                // Return the appropriate result based on output type
+                if (outputType === 'table') {
+                    return {
+                        success: true,
+                        data: result.data,
+                        columns: result.columns,
+                        rowCount: result.rowCount,
+                        stdout: result.stdout
+                    };
+                } else if (outputType === 'variable') {
+                    return {
+                        success: true,
+                        variables: result.variables,
+                        stdout: result.stdout
+                    };
+                } else if (outputType === 'chart') {
+                    // NEW: Support Recharts config from backend
+                    return {
+                        success: true,
+                        chartBase64: result.chartBase64,
+                        chartHtml: result.chartHtml,
+                        rechartsConfig: result.rechartsConfig,
+                        rechartsData: result.rechartsData,
+                        rechartsStyle: result.rechartsStyle,
+                        plotlyJson: result.plotlyJson,
+                        stdout: result.stdout
+                    };
+                } else if (outputType === 'html') {
+                    return {
+                        success: true,
+                        html: result.html,
+                        stdout: result.stdout
+                    };
+                }
+
+                return { success: false, error: 'Unknown output type' };
+
+            } catch (fetchError: any) {
+                clearTimeout(timeoutId);
+
+                // Check if it's a timeout/abort error - don't retry
+                if (fetchError.name === 'AbortError') {
+                    return {
+                        success: false,
+                        error: 'Timeout: Il calcolo Python ha impiegato troppo tempo (>5 minuti). Verifica il codice per eventuali loop infiniti.'
+                    };
+                }
+
+                const error = fetchError instanceof Error ? fetchError.message : "Error calling Python backend.";
+                const errorCause = fetchError?.cause ? ` cause: ${fetchError.cause?.message || fetchError.cause?.code || JSON.stringify(fetchError.cause)}` : '';
+                const isConnectionError = error.includes('ECONNREFUSED') || error.includes('fetch failed');
+
+                console.error(`[executePythonPreviewAction] Fetch error: "${error}"${errorCause} (name: ${fetchError?.name}, code: ${fetchError?.cause?.code})`);
+
+                // Retry on connection errors (backend might be restarting)
+                if (isConnectionError && attempt < MAX_RETRIES) {
+                    const delay = RETRY_DELAYS[attempt] || 4000;
+                    console.log(`[executePythonPreviewAction] Connection failed, retrying in ${delay}ms... (attempt ${attempt + 1}/${MAX_RETRIES})`);
+                    debugLogs.push(`[${new Date().toLocaleTimeString()}] Backend non raggiungibile, retry tra ${delay / 1000}s...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+
+                // Final failure
+                if (isConnectionError) {
+                    return {
+                        success: false,
+                        error: 'Python backend non raggiungibile. Assicurati che sia in esecuzione su porta 5005.'
+                    };
+                }
+
+                return { success: false, error };
+            }
+        }
+
+        // Fallback (should never reach here)
+        return { success: false, error: 'Python backend non raggiungibile. Assicurati che sia in esecuzione su porta 5005.' };
 
     } catch (e) {
         const error = e instanceof Error ? e.message : "Error executing Python code.";

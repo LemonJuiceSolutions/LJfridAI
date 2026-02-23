@@ -7,7 +7,7 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
-import { type AgentInput, type AgentOutput } from '@/ai/schemas/agent-schema';
+import { type AgentInput, type AgentOutput, type ConsultedNodeType } from '@/ai/schemas/agent-schema';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
 import { resolveModel, runOpenRouterAgentLoop, type OpenRouterTool, type OpenRouterUsage } from '@/ai/openrouter-utils';
 
@@ -178,7 +178,7 @@ async function doPyBrowseOtherScripts(input: { companyId: string; connectorId?: 
                 scripts.push({
                     source: `Albero: ${tree.name}`,
                     name: node.resultName || node.nodeId || 'script',
-                    code: ((node.sqlQuery || node.pythonCode) || '').substring(0, 500),
+                    code: ((node.sqlQuery || node.pythonCode) || '').substring(0, 1500),
                     type: node.type,
                     connectorId: node.connectorId,
                     sameConnector: !!(input.connectorId && node.connectorId === input.connectorId),
@@ -205,7 +205,7 @@ async function doPyBrowseOtherScripts(input: { companyId: string; connectorId?: 
                 scripts.push({
                     source: `Pipeline: ${pipeline.name}`,
                     name: node.sqlResultName || node.pythonResultName || node.name || node.id || 'script',
-                    code: script.substring(0, 500),
+                    code: script.substring(0, 1500),
                     type: isPython ? 'python' : 'sql',
                     connectorId: nodeConnId,
                     sameConnector: !!(input.connectorId && nodeConnId === input.connectorId),
@@ -495,6 +495,9 @@ function parseAgentJson(text: string): any | null {
 }
 
 export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
+    // Track consulted nodes for visibility
+    const consultedNodes: ConsultedNodeType[] = [];
+
     try {
         // 1. Get User/Model Settings
         let apiKey = input.openRouterConfig?.apiKey;
@@ -804,9 +807,14 @@ Quando il codice fallisce, segui questa scala:
 {
   "message": "spiegazione breve in italiano",
   "needsClarification": false,
-  "clarificationQuestions": []
+  "clarificationQuestions": [],
+  "solutionSourceNode": "nome del nodo che ha ispirato la soluzione, oppure null se nessuno"
 }
-\`\`\``;
+\`\`\`
+
+## SOLUTIONSOURCENODE:
+- Se la tua soluzione e' stata ispirata o basata su uno script trovato in un altro nodo (tramite pyBrowseOtherScripts), indica il NOME di quel nodo in solutionSourceNode.
+- Se hai risolto senza ispirazione da altri nodi, metti null.`;
 
         const userPrompt = `=== RICHIESTA ===
 ${input.userMessage}
@@ -859,17 +867,41 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
             ].filter(Boolean) as OpenRouterTool[];
 
             const dispatcher = async (name: string, args: any) => {
+                let result: string;
                 switch (name) {
-                    case 'pyExploreDbSchema': return doPyExploreDbSchema(args);
-                    case 'pyExploreTableColumns': return doPyExploreTableColumns(args);
-                    case 'pyTestSqlQuery': return doPyTestSqlQuery(args);
-                    case 'pyTestCode': return doPyTestCode(args);
-                    case 'pySearchKnowledgeBase': return doPySearchKB(args);
-                    case 'pyListSqlConnectors': return doPyListConnectors(args);
-                    case 'pySaveToKnowledgeBase': return doPySaveToKB(args);
-                    case 'pyBrowseOtherScripts': return doPyBrowseOtherScripts(args);
-                    default: return JSON.stringify({ error: `Tool sconosciuto: ${name}` });
+                    case 'pyExploreDbSchema': result = await doPyExploreDbSchema(args); break;
+                    case 'pyExploreTableColumns': result = await doPyExploreTableColumns(args); break;
+                    case 'pyTestSqlQuery': result = await doPyTestSqlQuery(args); break;
+                    case 'pyTestCode': result = await doPyTestCode(args); break;
+                    case 'pySearchKnowledgeBase': result = await doPySearchKB(args); break;
+                    case 'pyListSqlConnectors': result = await doPyListConnectors(args); break;
+                    case 'pySaveToKnowledgeBase': result = await doPySaveToKB(args); break;
+                    case 'pyBrowseOtherScripts': result = await doPyBrowseOtherScripts(args); break;
+                    default: result = JSON.stringify({ error: `Tool sconosciuto: ${name}` });
                 }
+
+                // Track consulted nodes from pyBrowseOtherScripts
+                if (name === 'pyBrowseOtherScripts') {
+                    try {
+                        const parsed = JSON.parse(result);
+                        if (parsed.scripts && Array.isArray(parsed.scripts)) {
+                            for (const s of parsed.scripts) {
+                                const exists = consultedNodes.some(n => n.source === s.source && n.name === s.name);
+                                if (!exists) {
+                                    consultedNodes.push({
+                                        source: s.source,
+                                        name: s.name,
+                                        type: s.type === 'python' ? 'python' : 'sql',
+                                        sameConnector: s.sameConnector || false,
+                                        wasSolutionSource: false,
+                                    });
+                                }
+                            }
+                        }
+                    } catch { /* ignore parse errors */ }
+                }
+
+                return result;
             };
 
             const result = await runOpenRouterAgentLoop(
@@ -931,19 +963,29 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
             // Prefer extracted script from markdown, fallback to JSON script if provided (legacy/fallback)
             const finalScript = extractedScript || parsedMetadata.updatedScript;
 
-            // Lo script viene gia' mostrato nell'editor dalla UI tramite updatedScript.
-            // NON aggiungerlo anche al messaggio per evitare duplicazione.
+            // Mark the solution source node based on LLM's indication
+            if (parsedMetadata.solutionSourceNode && typeof parsedMetadata.solutionSourceNode === 'string') {
+                const srcLower = parsedMetadata.solutionSourceNode.toLowerCase();
+                const sourceNode = consultedNodes.find(n =>
+                    n.name.toLowerCase().includes(srcLower) ||
+                    srcLower.includes(n.name.toLowerCase())
+                );
+                if (sourceNode) {
+                    sourceNode.wasSolutionSource = true;
+                }
+            }
 
             return {
                 message: displayMessage,
-                updatedScript: finalScript, // Return the clean script!
+                updatedScript: finalScript,
                 needsClarification: parsedMetadata.needsClarification || false,
                 clarificationQuestions: parsedMetadata.clarificationQuestions || [],
+                consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined,
                 usage,
             };
         }
 
-        return { message: resultText, needsClarification: false, usage };
+        return { message: resultText, needsClarification: false, consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined, usage };
     } catch (e: any) {
         console.error('Error in Python agent flow:', e);
         return { message: `Errore: ${e.message}. Riprova o dammi piu' dettagli.`, needsClarification: false };

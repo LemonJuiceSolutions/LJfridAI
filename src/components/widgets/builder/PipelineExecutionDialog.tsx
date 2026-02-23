@@ -11,8 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Check, X, GitBranch, Database, Upload, AlertCircle } from 'lucide-react';
-import { executeSqlPreviewAction, executePythonPreviewAction, exportTableToSqlAction, getTreeAction } from '@/app/actions';
-import { getPipelines } from '@/actions/pipelines';
+import { executeSqlPreviewAction, executePythonPreviewAction, exportTableToSqlAction, getTreeAction, getTreesAction } from '@/app/actions';
 import { saveAncestorPreviewsBatchAction } from '@/app/actions/scheduler';
 import { useToast } from '@/hooks/use-toast';
 
@@ -67,15 +66,15 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
         setProgressStep(1);
 
         try {
-            // 1. Fetch Tree and all other trees for sub-tree resolution
+            // 1. Fetch Tree and ALL other trees for sub-tree resolution
             const [treeResult, allTreesResult] = await Promise.all([
                 getTreeAction(treeId),
-                getPipelines()
+                getTreesAction()
             ]);
 
             if (!treeResult.data) throw new Error("Tree not found");
 
-            const allTrees = (allTreesResult || []).map((p: any) => ({
+            const allTrees = (allTreesResult.data || []).map((p: any) => ({
                 ...p,
                 jsonDecisionTree: typeof p.jsonDecisionTree === 'string' ? JSON.parse(p.jsonDecisionTree) : p.jsonDecisionTree
             }));
@@ -127,7 +126,6 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
             const currentPath = targetItem.path;
 
             // 3. Resolve Dependencies (Ancestor Input Tables)
-            // 3. Resolve Dependencies (Ancestor Input Tables)
             // Replicate visual-tree.tsx logic
             const getNodeType = (node: any): 'sql' | 'python' | 'sharepoint' | 'email' | 'hubspot' | 'export' => {
                 const isPython = node.isPython === true || (node.isPython === undefined && !!node.pythonCode && !node.sqlQuery);
@@ -151,6 +149,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                     ...(node.selectedPipelines || []),
                     ...(node.sqlSelectedPipelines || [])
                 ];
+
                 const uniquePipelines = Array.from(new Set(pipelines));
 
                 uniquePipelines.forEach(pName => {
@@ -158,7 +157,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                     const sourceItem = flatTree.find(item => {
                         const n = item.node;
                         return n && typeof n === 'object' &&
-                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName) || (n.name === pName));
+                            (n.pythonResultName === pName || n.sqlResultName === pName || n.name === pName);
                     });
 
                     if (sourceItem) {
@@ -188,6 +187,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                             pythonCode: sn.pythonCode,
                             pythonOutputType: sn.pythonOutputType,
                             pipelineDependencies: resolveDependencies(sn, newVisited),
+                            selectedDocuments: sn.selectedDocuments,
                             sharepointPath: sn.sharepointPath,
                             sharepointAction: sn.sharepointAction,
                             emailAction: sn.emailAction,
@@ -235,6 +235,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                         writesToDatabase: node.writesToDatabase || !!node.sqlExportAction,
                         sqlExportTargetTableName: node.sqlExportAction?.targetTableName || node.sqlExportTargetTableName,
                         sqlExportTargetConnectorId: node.sqlExportAction?.targetConnectorId || node.sqlExportTargetConnectorId,
+                        selectedDocuments: node.selectedDocuments,
                         sharepointPath: node.sharepointPath,
                         sharepointAction: node.sharepointAction,
                         emailAction: node.emailAction,
@@ -349,9 +350,12 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                                     isPython: d.isPython,
                                     pythonCode: d.pythonCode,
                                     connectorId: d.connectorId,
-                                    pipelineDependencies: d.pipelineDependencies
+                                    pipelineDependencies: d.pipelineDependencies,
+                                    selectedDocuments: d.selectedDocuments
                                 })),
-                                node.connectorId || node.pythonConnectorId
+                                node.connectorId || node.pythonConnectorId,
+                                undefined,
+                                node.selectedDocuments?.length > 0 ? node.selectedDocuments : undefined
                             );
                             if (res.success) {
                                 success = true;

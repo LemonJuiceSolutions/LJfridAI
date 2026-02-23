@@ -43,6 +43,7 @@ import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent, TooltipProvider }
 import { useToast } from '@/hooks/use-toast';
 import { AgentChatMessage, AgentResponse } from '@/lib/types';
 import { createKnowledgeBaseEntryAction } from '@/app/actions/knowledge-base';
+import { ConsultedNodesSection } from '@/components/agents/consulted-nodes-section';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
@@ -667,6 +668,7 @@ export function AgentChat({
               timestamp: Date.now(),
               scriptSnapshot: data.updatedScript || scriptToExecute,
               clarificationQuestions: data.needsClarification ? data.clarificationQuestions : undefined,
+              consultedNodes: data.consultedNodes,
             }]);
 
             if (data.usage) {
@@ -721,6 +723,7 @@ export function AgentChat({
                   content: retryData.message,
                   timestamp: Date.now(),
                   scriptSnapshot: retryData.updatedScript || scriptToExecute,
+                  consultedNodes: retryData.consultedNodes,
                 }]);
 
                 if (retryData.updatedScript && onScriptUpdate) {
@@ -816,6 +819,7 @@ export function AgentChat({
             timestamp: Date.now(),
             scriptSnapshot: data.updatedScript || script,
             clarificationQuestions: data.needsClarification ? data.clarificationQuestions : undefined,
+            consultedNodes: data.consultedNodes,
           },
         ]);
 
@@ -1296,6 +1300,10 @@ export function AgentChat({
                             ))}
                           </ul>
                         </div>
+                      )}
+                      {/* Consulted nodes - collapsible */}
+                      {m.role === 'assistant' && m.consultedNodes && m.consultedNodes.length > 0 && (
+                        <ConsultedNodesSection nodes={m.consultedNodes} />
                       )}
                       {m.role === 'assistant' ? (
                         <RichContent content={text} charts={charts} onApplyCode={onScriptUpdate} />

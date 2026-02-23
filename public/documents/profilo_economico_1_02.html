@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profilo Economico 1.02 · 2022–2024</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #f0f4f8;
+  font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
+  color: #1a3a5c;
+  min-height: 100vh;
+  padding: 36px 28px 80px;
+}
+
+/* ── Sezione header ─────────────────────────────────── */
+.section-header {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 28px; padding-bottom: 14px;
+  border-bottom: 2px solid #c4d8ee;
+}
+.section-num {
+  font-size: 11px; font-weight: 700; color: white; background: #14406e;
+  border-radius: 6px; padding: 3px 10px; letter-spacing: .5px;
+}
+.section-title {
+  font-size: 15px; font-weight: 700; color: #0d2e52;
+  text-transform: uppercase; letter-spacing: .3px;
+}
+
+/* ── BOX classificazione globale ────────────────────── */
+.classif-wrap {
+  background: #fff; border-radius: 16px;
+  box-shadow: 0 2px 16px rgba(10,40,80,.08);
+  padding: 0; overflow: hidden; margin-bottom: 32px;
+  display: grid; grid-template-columns: 1fr auto;
+}
+.classif-left {
+  padding: 32px 36px;
+}
+.classif-eyebrow {
+  font-size: 10.5px; font-weight: 700; color: #7a95b0;
+  text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 10px;
+}
+.classif-title {
+  font-size: 22px; font-weight: 800; color: #071e38;
+  letter-spacing: -.4px; margin-bottom: 18px;
+}
+.score-pill {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px; position: relative; overflow: hidden;
+  background: #f8fafc; border-radius: 8px; padding: 8px 14px;
+}
+.score-pill-bar {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  opacity: .12; border-radius: 8px;
+}
+.score-pill-lbl {
+  font-size: 12px; color: #3a5a7c; flex: 1; font-weight: 500;
+  position: relative;
+}
+.score-pill-val {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .5px; position: relative;
+}
+.score-pill-num {
+  font-size: 10px; font-weight: 800; color: #fff;
+  padding: 2px 8px; border-radius: 20px; position: relative;
+}
+.classif-note {
+  margin-top: 16px; font-size: 11.5px; color: #5c7a99; line-height: 1.55;
+  border-left: 3px solid #c4d8ee; padding-left: 12px;
+}
+
+/* ── Categorie colonna destra ────────────────────────── */
+.classif-right {
+  width: 220px; display: flex; flex-direction: column;
+}
+.cat-item {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: flex-end; justify-content: center;
+  padding: 0 24px;
+  border-left: 1px solid #eef2f7;
+  transition: background .15s;
+}
+.cat-item.cat-active {
+  background: #27a065!important;
+}
+.cat-item:not(.cat-active) {
+  background: #fff;
+}
+.cat-item-num {
+  font-size: 14px; font-weight: 800; color: #071e38; letter-spacing: -.3px;
+}
+.cat-item.cat-active .cat-item-num { color: #fff; }
+.cat-item-range {
+  font-size: 10px; color: #7a95b0; margin-top: 2px; text-align: right;
+}
+.cat-item.cat-active .cat-item-range { color: rgba(255,255,255,.8); }
+
+/* ── Sezione 1.02 ────────────────────────────────────── */
+.section-102 {
+  background: #fff; border-radius: 16px;
+  box-shadow: 0 2px 16px rgba(10,40,80,.08);
+  overflow: hidden; margin-bottom: 32px;
+}
+
+/* ── Riga indicatore ─────────────────────────────────── */
+.row-102 {
+  display: grid;
+  grid-template-columns: 240px 200px 48px 1fr 44px;
+  align-items: center; gap: 0;
+  padding: 22px 28px;
+  border-bottom: 1px solid #f0f4f8;
+  transition: background .15s;
+  position: relative;
+}
+.row-102:last-child { border-bottom: none; }
+.row-102:hover { background: #f8fafd; }
+
+.row-label {
+  font-size: 16px; font-weight: 500; color: #1a3a5c;
+  letter-spacing: -.1px;
+}
+
+.row-status {
+  display: flex; flex-direction: column; gap: 3px; align-items: flex-end;
+  padding-right: 16px;
+}
+.cat-label {
+  font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .8px;
+}
+.trend-txt {
+  font-size: 10px; color: #7a95b0;
+}
+.trend-txt strong { font-weight: 600; color: #5c7a99; }
+
+.trend-icon {
+  font-size: 20px; font-weight: 800; text-align: center;
+  line-height: 1;
+}
+
+/* ── Barra 5 segmenti ────────────────────────────────── */
+.bar-wrap {
+  display: flex; gap: 5px; align-items: center;
+  padding: 0 18px 0 10px;
+}
+.bar-seg {
+  flex: 1; height: 24px; border-radius: 5px;
+  transition: opacity .2s, transform .2s;
+}
+.bar-seg.active {
+  transform: scaleY(1.25);
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+}
+
+/* ── Pulsante (i) e popup ────────────────────────────── */
+.row-info-wrap { position: relative; display: flex; justify-content: center; }
+.ibtn {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 1.5px solid #b8cfe8; background: #f0f6ff;
+  font-size: 14px; font-weight: 700; color: #3a80c0;
+  cursor: pointer; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s; z-index: 10; user-select: none;
+}
+.ibtn:hover { background: #2166a8; color: #fff; border-color: #2166a8; transform: scale(1.1); }
+
+.info-popup {
+  display: none; position: absolute;
+  top: 0; right: 36px;
+  width: 380px; max-height: 80vh; overflow-y: auto;
+  background: #fff; border: 1.5px solid #c4d8ee;
+  border-radius: 12px; box-shadow: 0 12px 40px rgba(10,40,80,.20);
+  z-index: 9999;
+}
+.info-popup.open { display: block; }
+
+.ipop-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 10px;
+  background: linear-gradient(135deg, #071e38 0%, #14406e 100%);
+  color: white; position: sticky; top: 0; border-radius: 10px 10px 0 0;
+}
+.ipop-title { font-size: 12px; font-weight: 700; letter-spacing: .2px; flex: 1; }
+.ipop-close {
+  background: none; border: none; color: rgba(255,255,255,.7);
+  font-size: 15px; cursor: pointer; padding: 0 4px; flex-shrink: 0;
+}
+.ipop-close:hover { color: #fff; }
+
+.info-section { padding: 14px 16px; border-bottom: 1px solid #eef2f7; }
+.info-section:last-child { border-bottom: none; padding-bottom: 16px; }
+.isec-title {
+  font-size: 10px; font-weight: 700; color: #7a95b0;
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;
+}
+.info-formula {
+  display: block; background: #f0f4f8; border-radius: 6px; padding: 10px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px; color: #0d2e52; line-height: 1.55; word-break: break-word;
+}
+.info-note { margin-top: 8px; font-size: 11.5px; color: #5c7a99; line-height: 1.5; }
+
+.kv-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11.5px; padding: 5px 0; border-bottom: 1px solid #f4f7fb;
+}
+.kv-row:last-child { border-bottom: none; }
+.kv-lbl { color: #5c7a99; flex: 1; }
+.kv-val { font-weight: 700; color: #0d2e52; margin-left: 10px; font-size: 12px; }
+
+.thresh-table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 4px; }
+.thresh-table th { text-align: left; padding: 4px 6px; color: #7a95b0; font-size: 10px;
+                    text-transform: uppercase; letter-spacing: .5px; }
+.thresh-table td { padding: 5px 6px; border-top: 1px solid #f0f4f8; }
+
+/* ── Legenda ─────────────────────────────────────────── */
+.legenda {
+  display: flex; align-items: center; gap: 18px;
+  padding: 14px 28px; background: #f8fafd;
+  border-top: 1px solid #eef2f7;
+  flex-wrap: wrap;
+}
+.leg-item { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: #5c7a99; }
+.leg-dot { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+.legenda-title { font-size: 10px; font-weight: 700; color: #9ab0c5; text-transform: uppercase;
+                  letter-spacing: 1px; margin-right: 4px; }
+
+/* ── Backdrop ────────────────────────────────────────── */
+#backdrop { display: none; position: fixed; inset: 0; z-index: 9998; }
+#backdrop.on { display: block; }
+</style>
+</head>
+<body>
+<div id="backdrop" onclick="closeAll()"></div>
+
+<!-- ════════════════════════════════════ -->
+<!-- CLASSIFICAZIONE GLOBALE             -->
+<!-- ════════════════════════════════════ -->
+<div class="section-header">
+  <span class="section-num">1.01</span>
+  <span class="section-title">Classificazione dell'Impresa — 2024</span>
+</div>
+
+<div class="classif-wrap">
+  <div class="classif-left">
+    <div class="classif-eyebrow">Valutazione sintetica basata su 5 dimensioni analitiche</div>
+    <div class="classif-title">L'IMPRESA SI È CLASSIFICATA IN <strong style="color:#1d7a4d">2° CATEGORIA</strong></div>
+    
+<div class="score-pill">
+  <div class="score-pill-bar" style="background:#27a065;width:80%"></div>
+  <span class="score-pill-lbl">Equilibrio Patrimoniale</span>
+  <span class="score-pill-val" style="color:#1d7a4d">POSITIVA</span>
+  <span class="score-pill-num" style="background:#27a065">4/5</span>
+</div>
+<div class="score-pill">
+  <div class="score-pill-bar" style="background:#27a065;width:80%"></div>
+  <span class="score-pill-lbl">Equilibrio Finanziario</span>
+  <span class="score-pill-val" style="color:#1d7a4d">POSITIVA</span>
+  <span class="score-pill-num" style="background:#27a065">4/5</span>
+</div>
+<div class="score-pill">
+  <div class="score-pill-bar" style="background:#158a45;width:100%"></div>
+  <span class="score-pill-lbl">Equilibrio Economico</span>
+  <span class="score-pill-val" style="color:#0e6334">OTTIMA</span>
+  <span class="score-pill-num" style="background:#158a45">5/5</span>
+</div>
+<div class="score-pill">
+  <div class="score-pill-bar" style="background:#27a065;width:80%"></div>
+  <span class="score-pill-lbl">Sostenibilità Debito</span>
+  <span class="score-pill-val" style="color:#1d7a4d">POSITIVA</span>
+  <span class="score-pill-num" style="background:#27a065">4/5</span>
+</div>
+<div class="score-pill">
+  <div class="score-pill-bar" style="background:#27a065;width:80%"></div>
+  <span class="score-pill-lbl">Sviluppo — Trend</span>
+  <span class="score-pill-val" style="color:#1d7a4d">POSITIVA</span>
+  <span class="score-pill-num" style="background:#27a065">4/5</span>
+</div>
+    <p class="classif-note">
+      Il punteggio è calcolato automaticamente su indicatori di bilancio estratti dai file XBRL
+      (anni 2022–2024). Ogni dimensione è misurata con una scala da 1 (peggiore) a 5 (ottima)
+      utilizzando soglie tecniche di riferimento. Il punteggio globale è la media delle 5 dimensioni.
+    </p>
+  </div>
+  <div class="classif-right">
+    <div class="cat-item" style="background:#c0ecd5"><div class="cat-item-num">1° CATEGORIA</div><div class="cat-item-range">OTTIMA</div></div>
+<div class="cat-item  cat-active" style="background:#27a065"><div class="cat-item-num">2° CATEGORIA</div><div class="cat-item-range">POSITIVA</div></div>
+<div class="cat-item" style="background:#fdf2cc"><div class="cat-item-num">3° CATEGORIA</div><div class="cat-item-range">NELLA MEDIA</div></div>
+<div class="cat-item" style="background:#fce0cc"><div class="cat-item-num">4° CATEGORIA</div><div class="cat-item-range">ASPETTI DI CRITICITÀ</div></div>
+<div class="cat-item" style="background:#f5d0cc"><div class="cat-item-num">5° CATEGORIA</div><div class="cat-item-range">NEGATIVA</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- 1.02 PROFILO ECONOMICO              -->
+<!-- ════════════════════════════════════ -->
+<div class="section-header">
+  <span class="section-num">1.02</span>
+  <span class="section-title">Profilo Economico, Patrimoniale e Finanziario</span>
+</div>
+
+<div class="section-102">
+  
+<div class="row-102">
+  <div class="row-label">Equilibrio Patrimoniale</div>
+
+  <div class="row-status">
+    <div class="cat-label" style="color:#1d7a4d">POSITIVA</div>
+    <div class="trend-txt">trend <strong>in miglioramento</strong></div>
+  </div>
+
+  <div class="trend-icon" style="color:#27a065">↑</div>
+
+  <div class="row-bar-area">
+    <div class="bar-wrap"><div class="bar-seg" style="background:#f5d0cc;" title="NEGATIVA"></div><div class="bar-seg" style="background:#fce0cc;" title="ASPETTI DI CRITICITÀ"></div><div class="bar-seg" style="background:#fdf2cc;" title="NELLA MEDIA"></div><div class="bar-seg active" style="background:#27a065;" title="POSITIVA"></div><div class="bar-seg" style="background:#c0ecd5;" title="OTTIMA"></div></div>
+  </div>
+
+  <!-- pulsante (i) -->
+  <div class="row-info-wrap">
+    <button class="ibtn" onclick="toggleInfo('pop_patrimoniale')" title="Come si calcola">ⓘ</button>
+    <div class="info-popup" id="pop_patrimoniale">
+      <div class="ipop-head">
+        <span class="ipop-title">Equilibrio Patrimoniale</span>
+        <button class="ipop-close" onclick="closeInfo('pop_patrimoniale')">✕</button>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">🧮 Come si calcola</div>
+        <code class="info-formula">Score = media(score_Capitalizzazione, score_CoperImm, score_AutocopImm)</code>
+        <p class="info-note">Misura la solidità strutturale del patrimonio rispetto alle fonti di finanziamento e alle immobilizzazioni.</p>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">📊 Indicatori dell'ultimo anno (2024)</div>
+        <div class="kv-row"><span class="kv-lbl">Indice Capitalizzazione (PN/TA)</span><span class="kv-val">+26,8%</span></div><div class="kv-row"><span class="kv-lbl">Copertura Immobilizzazioni ((PN+MLT)/Imm)</span><span class="kv-val">2,25×</span></div><div class="kv-row"><span class="kv-lbl">Autocopertura Immobilizzazioni (PN/Imm)</span><span class="kv-val">0,95×</span></div><div class="kv-row"><span class="kv-lbl">Patrimonio Netto</span><span class="kv-val">€ 2.130.367</span></div><div class="kv-row"><span class="kv-lbl">Totale Attivo</span><span class="kv-val">€ 7.948.930</span></div><div class="kv-row"><span class="kv-lbl">Immobilizzazioni Totali</span><span class="kv-val">€ 2.231.925</span></div>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">🎯 Soglie di punteggio (1–5)</div>
+        <table class="thresh-table">
+          <tr><th>Punteggio</th><th>Categoria</th></tr>
+          <tr><td>1</td><td style="color:#922b21">NEGATIVA</td></tr><tr><td>2</td><td style="color:#a04000">ASPETTI DI CRITICITÀ</td></tr><tr><td>3</td><td style="color:#9a7d0a">NELLA MEDIA</td></tr><tr><td>4</td><td style="color:#1d7a4d">POSITIVA</td></tr><tr><td>5</td><td style="color:#0e6334">OTTIMA</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+  
+<div class="row-102">
+  <div class="row-label">Equilibrio Finanziario</div>
+
+  <div class="row-status">
+    <div class="cat-label" style="color:#1d7a4d">POSITIVA</div>
+    <div class="trend-txt">trend <strong>in peggioramento</strong></div>
+  </div>
+
+  <div class="trend-icon" style="color:#d35400">↓</div>
+
+  <div class="row-bar-area">
+    <div class="bar-wrap"><div class="bar-seg" style="background:#f5d0cc;" title="NEGATIVA"></div><div class="bar-seg" style="background:#fce0cc;" title="ASPETTI DI CRITICITÀ"></div><div class="bar-seg" style="background:#fdf2cc;" title="NELLA MEDIA"></div><div class="bar-seg active" style="background:#27a065;" title="POSITIVA"></div><div class="bar-seg" style="background:#c0ecd5;" title="OTTIMA"></div></div>
+  </div>
+
+  <!-- pulsante (i) -->
+  <div class="row-info-wrap">
+    <button class="ibtn" onclick="toggleInfo('pop_finanziario')" title="Come si calcola">ⓘ</button>
+    <div class="info-popup" id="pop_finanziario">
+      <div class="ipop-head">
+        <span class="ipop-title">Equilibrio Finanziario</span>
+        <button class="ipop-close" onclick="closeInfo('pop_finanziario')">✕</button>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">🧮 Come si calcola</div>
+        <code class="info-formula">Score = media(score_LiquiditàCorrente, score_LiquiditàSecca)</code>
+        <p class="info-note">Misura la capacità dell'azienda di far fronte alle obbligazioni a breve con le risorse correnti disponibili.</p>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">📊 Indicatori dell'ultimo anno (2024)</div>
+        <div class="kv-row"><span class="kv-lbl">Liquidità Corrente (AttCorr/PassCorr)</span><span class="kv-val">1,96×</span></div><div class="kv-row"><span class="kv-lbl">Liquidità Secca ((AttCorr–Rim)/PassCorr)</span><span class="kv-val">1,76×</span></div><div class="kv-row"><span class="kv-lbl">Attivo Corrente (+ ratei)</span><span class="kv-val">€ 5.716.755</span></div><div class="kv-row"><span class="kv-lbl">Passivo Corrente (+ ratei)</span><span class="kv-val">€ 2.919.437</span></div><div class="kv-row"><span class="kv-lbl">Rimanenze</span><span class="kv-val">€ 573.375</span></div>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">🎯 Soglie di punteggio (1–5)</div>
+        <table class="thresh-table">
+          <tr><th>Punteggio</th><th>Categoria</th></tr>
+          <tr><td>1</td><td style="color:#922b21">NEGATIVA</td></tr><tr><td>2</td><td style="color:#a04000">ASPETTI DI CRITICITÀ</td></tr><tr><td>3</td><td style="color:#9a7d0a">NELLA MEDIA</td></tr><tr><td>4</td><td style="color:#1d7a4d">POSITIVA</td></tr><tr><td>5</td><td style="color:#0e6334">OTTIMA</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+  
+<div class="row-102">
+  <div class="row-label">Equilibrio Economico</div>
+
+  <div class="row-status">
+    <div class="cat-label" style="color:#0e6334">OTTIMA</div>
+    <div class="trend-txt">trend <strong>in forte miglioramento</strong></div>
+  </div>
+
+  <div class="trend-icon" style="color:#158a45">↑↑</div>
+
+  <div class="row-bar-area">
+    <div class="bar-wrap"><div class="bar-seg" style="background:#f5d0cc;" title="NEGATIVA"></div><div class="bar-seg" style="background:#fce0cc;" title="ASPETTI DI CRITICITÀ"></div><div class="bar-seg" style="background:#fdf2cc;" title="NELLA MEDIA"></div><div class="bar-seg" style="background:#d0f0e4;" title="POSITIVA"></div><div class="bar-seg active" style="background:#158a45;" title="OTTIMA"></div></div>
+  </div>
+
+  <!-- pulsante (i) -->
+  <div class="row-info-wrap">
+    <button class="ibtn" onclick="toggleInfo('pop_economico')" title="Come si calcola">ⓘ</button>
+    <div class="info-popup" id="pop_economico">
+      <div class="ipop-head">
+        <span class="ipop-title">Equilibrio Economico</span>
+        <button class="ipop-close" onclick="closeInfo('pop_economico')">✕</button>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">🧮 Come si calcola</div>
+        <code class="info-formula">Score = media(score_ROI, score_ROE, score_MargineEBITDA)</code>
+        <p class="info-note">Misura la capacità reddituale dell'impresa in relazione al capitale investito e al fatturato.</p>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">📊 Indicatori dell'ultimo anno (2024)</div>
+        <div class="kv-row"><span class="kv-lbl">ROI (EBIT/TotaleAttivo)</span><span class="kv-val">+11,3%</span></div><div class="kv-row"><span class="kv-lbl">ROE (Utile/PN)</span><span class="kv-val">+44,1%</span></div><div class="kv-row"><span class="kv-lbl">Margine EBITDA (EBITDA/TotProduzione)</span><span class="kv-val">+13,0%</span></div><div class="kv-row"><span class="kv-lbl">EBIT</span><span class="kv-val">€ 896.202</span></div><div class="kv-row"><span class="kv-lbl">EBITDA</span><span class="kv-val">€ 1.018.646</span></div><div class="kv-row"><span class="kv-lbl">Risultato Esercizio</span><span class="kv-val">€ 940.316</span></div>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">🎯 Soglie di punteggio (1–5)</div>
+        <table class="thresh-table">
+          <tr><th>Punteggio</th><th>Categoria</th></tr>
+          <tr><td>1</td><td style="color:#922b21">NEGATIVA</td></tr><tr><td>2</td><td style="color:#a04000">ASPETTI DI CRITICITÀ</td></tr><tr><td>3</td><td style="color:#9a7d0a">NELLA MEDIA</td></tr><tr><td>4</td><td style="color:#1d7a4d">POSITIVA</td></tr><tr><td>5</td><td style="color:#0e6334">OTTIMA</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+  
+<div class="row-102">
+  <div class="row-label">Sostenibilità del Debito</div>
+
+  <div class="row-status">
+    <div class="cat-label" style="color:#1d7a4d">POSITIVA</div>
+    <div class="trend-txt">trend <strong>in miglioramento</strong></div>
+  </div>
+
+  <div class="trend-icon" style="color:#27a065">↑</div>
+
+  <div class="row-bar-area">
+    <div class="bar-wrap"><div class="bar-seg" style="background:#f5d0cc;" title="NEGATIVA"></div><div class="bar-seg" style="background:#fce0cc;" title="ASPETTI DI CRITICITÀ"></div><div class="bar-seg" style="background:#fdf2cc;" title="NELLA MEDIA"></div><div class="bar-seg active" style="background:#27a065;" title="POSITIVA"></div><div class="bar-seg" style="background:#c0ecd5;" title="OTTIMA"></div></div>
+  </div>
+
+  <!-- pulsante (i) -->
+  <div class="row-info-wrap">
+    <button class="ibtn" onclick="toggleInfo('pop_debito')" title="Come si calcola">ⓘ</button>
+    <div class="info-popup" id="pop_debito">
+      <div class="ipop-head">
+        <span class="ipop-title">Sostenibilità del Debito</span>
+        <button class="ipop-close" onclick="closeInfo('pop_debito')">✕</button>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">🧮 Come si calcola</div>
+        <code class="info-formula">Score = media(score_PFN/EBITDA, score_Leverage, score_Debiti/EBITDA)</code>
+        <p class="info-note">Misura la sostenibilità dell'indebitamento in relazione alla capacità di generare flussi operativi.</p>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">📊 Indicatori dell'ultimo anno (2024)</div>
+        <div class="kv-row"><span class="kv-lbl">PFN / EBITDA (soglia EBA: 6)</span><span class="kv-val">-0,08</span></div><div class="kv-row"><span class="kv-lbl">Leverage (TotAttivo/PN)</span><span class="kv-val">3,73×</span></div><div class="kv-row"><span class="kv-lbl">Debiti Totali / EBITDA</span><span class="kv-val">4,20</span></div><div class="kv-row"><span class="kv-lbl">PFN (Liq – DebBanche – DebAltriFinanz)</span><span class="kv-val">€ -81.960</span></div><div class="kv-row"><span class="kv-lbl">Debiti Totali</span><span class="kv-val">€ 4.278.842</span></div>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">🎯 Soglie di punteggio (1–5)</div>
+        <table class="thresh-table">
+          <tr><th>Punteggio</th><th>Categoria</th></tr>
+          <tr><td>1</td><td style="color:#922b21">NEGATIVA</td></tr><tr><td>2</td><td style="color:#a04000">ASPETTI DI CRITICITÀ</td></tr><tr><td>3</td><td style="color:#9a7d0a">NELLA MEDIA</td></tr><tr><td>4</td><td style="color:#1d7a4d">POSITIVA</td></tr><tr><td>5</td><td style="color:#0e6334">OTTIMA</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+  
+<div class="row-102">
+  <div class="row-label">Sviluppo — Trend</div>
+
+  <div class="row-status">
+    <div class="cat-label" style="color:#1d7a4d">POSITIVA</div>
+    <div class="trend-txt">trend <strong>in forte miglioramento</strong></div>
+  </div>
+
+  <div class="trend-icon" style="color:#158a45">↑↑</div>
+
+  <div class="row-bar-area">
+    <div class="bar-wrap"><div class="bar-seg" style="background:#f5d0cc;" title="NEGATIVA"></div><div class="bar-seg" style="background:#fce0cc;" title="ASPETTI DI CRITICITÀ"></div><div class="bar-seg" style="background:#fdf2cc;" title="NELLA MEDIA"></div><div class="bar-seg active" style="background:#27a065;" title="POSITIVA"></div><div class="bar-seg" style="background:#c0ecd5;" title="OTTIMA"></div></div>
+  </div>
+
+  <!-- pulsante (i) -->
+  <div class="row-info-wrap">
+    <button class="ibtn" onclick="toggleInfo('pop_sviluppo')" title="Come si calcola">ⓘ</button>
+    <div class="info-popup" id="pop_sviluppo">
+      <div class="ipop-head">
+        <span class="ipop-title">Sviluppo — Trend</span>
+        <button class="ipop-close" onclick="closeInfo('pop_sviluppo')">✕</button>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">🧮 Come si calcola</div>
+        <code class="info-formula">Score = media(score_CrescitaRicavi, score_CrescitaEBITDA)</code>
+        <p class="info-note">Misura la dinamica di crescita dell'azienda rispetto all'anno precedente.</p>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">📊 Indicatori dell'ultimo anno (2024)</div>
+        <div class="kv-row"><span class="kv-lbl">Crescita Ricavi (vs anno prec.)</span><span class="kv-val">-3,8%</span></div><div class="kv-row"><span class="kv-lbl">Crescita EBITDA (vs anno prec.)</span><span class="kv-val">+540,2%</span></div><div class="kv-row"><span class="kv-lbl">Tot Valore Produzione</span><span class="kv-val">€ 7.831.559</span></div><div class="kv-row"><span class="kv-lbl">Tot Valore Produzione 2023</span><span class="kv-val">€ 8.140.811</span></div>
+      </div>
+      <div class="info-section">
+        <div class="isec-title">🎯 Soglie di punteggio (1–5)</div>
+        <table class="thresh-table">
+          <tr><th>Punteggio</th><th>Categoria</th></tr>
+          <tr><td>1</td><td style="color:#922b21">NEGATIVA</td></tr><tr><td>2</td><td style="color:#a04000">ASPETTI DI CRITICITÀ</td></tr><tr><td>3</td><td style="color:#9a7d0a">NELLA MEDIA</td></tr><tr><td>4</td><td style="color:#1d7a4d">POSITIVA</td></tr><tr><td>5</td><td style="color:#0e6334">OTTIMA</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+  <div class="legenda">
+    <span class="legenda-title">LEGENDA</span>
+    <div class="leg-item"><div class="leg-dot" style="background:#c0392b"></div>negativa</div><div class="leg-item"><div class="leg-dot" style="background:#d35400"></div>aspetti di criticità</div><div class="leg-item"><div class="leg-dot" style="background:#d4a017"></div>nella media</div><div class="leg-item"><div class="leg-dot" style="background:#27a065"></div>positiva</div><div class="leg-item"><div class="leg-dot" style="background:#158a45"></div>ottima</div>
+  </div>
+</div>
+
+<script>
+function toggleInfo(popId) {
+  const popup = document.getElementById(popId);
+  if (!popup) return;
+  const wasOpen = popup.classList.contains('open');
+  closeAll();
+  if (!wasOpen) {
+    popup.classList.add('open');
+    document.getElementById('backdrop').classList.add('on');
+    requestAnimationFrame(() => {
+      const tR = popup.getBoundingClientRect();
+      if (tR.right > window.innerWidth - 20) {
+        popup.style.right  = '36px';
+        popup.style.left   = 'auto';
+      }
+      if (tR.bottom > window.innerHeight - 20) {
+        popup.style.bottom = '0';
+        popup.style.top    = 'auto';
+      }
+    });
+  }
+}
+function closeInfo(popId) {
+  const p = document.getElementById(popId);
+  if (p) p.classList.remove('open');
+  document.getElementById('backdrop').classList.remove('on');
+}
+function closeAll() {
+  document.querySelectorAll('.info-popup.open').forEach(p => p.classList.remove('open'));
+  document.getElementById('backdrop').classList.remove('on');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+</script>
+</body>
+</html>

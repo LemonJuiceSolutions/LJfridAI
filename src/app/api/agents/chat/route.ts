@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
         timestamp: Date.now(),
         scriptSnapshot: agentResponse.updatedScript || script,
         clarificationQuestions: agentResponse.needsClarification ? agentResponse.clarificationQuestions : undefined,
+        consultedNodes: agentResponse.consultedNodes,
       },
     ];
 
@@ -142,6 +143,7 @@ export async function POST(request: NextRequest) {
       clarificationQuestions: agentResponse.clarificationQuestions,
       conversationId: conversation.id,
       usage: agentResponse.usage,
+      consultedNodes: agentResponse.consultedNodes,
     });
   } catch (error: any) {
     console.error('Error in agent chat API:', error);

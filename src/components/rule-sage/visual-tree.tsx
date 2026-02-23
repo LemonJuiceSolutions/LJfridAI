@@ -137,17 +137,7 @@ const calculateLayout = (root: DecisionNode, nodeMap: Map<string, DecisionNode>)
         const isLink = typeof node === 'object' && 'ref' in node;
         const isSubTreeLink = typeof node === 'object' && 'subTreeRef' in node;
 
-        // CHECK FOR VALID EXPANDABLE LINK
-        let expandedTargetNode: DecisionNode | null = null;
-        if (isLink && node.ref && nodeMap) {
-            const target = nodeMap.get(node.ref);
-            // Check if valid target exists AND we haven't visited this ref ID in this branch yet (cycle detection)
-            if (target && target.options && !visitedRefs.has(node.ref)) {
-                expandedTargetNode = target;
-            }
-        }
-
-        if ((typeof node !== 'object' || ('decision' in node) || isLink || isSubTreeLink || !node.options) && !expandedTargetNode) {
+        if (typeof node !== 'object' || ('decision' in node) || isLink || isSubTreeLink || !node.options) {
             let type: LayoutNodeType = 'decision';
             if (isLink) type = 'link';
             if (isSubTreeLink) type = 'sub-tree-link';
@@ -167,46 +157,21 @@ const calculateLayout = (root: DecisionNode, nodeMap: Map<string, DecisionNode>)
             return { width: effectiveWidth, height: effectiveHeight, layoutNode: nodeWithLayout };
         }
 
-        // --- EXPANDED LINK HANDLING ---
-        // If it's an expanded link, we effectively render it as a QUESTION node (with children)
-        // verifying we use the *target's* structure but keep the *link's* position/identity for the root of this subtree.
-        const effectiveNode = expandedTargetNode || node;
-        const isExpandedLink = !!expandedTargetNode;
-
         const questionNodeLayout: TreeNodeWithLayout = {
-            node: isExpandedLink ? { ...node, ...expandedTargetNode, id: node.id } : node, // Merge to show target props but keep link ID
+            node,
             path, id, x, y,
             width: NODE_WIDTH, height: NODE_HEIGHT,
-            type: 'question', // Treat as question to render children
+            type: 'question',
             parent: parentNode
         };
 
-        // Mark as link for styling if needed (optional, logic might need adjustment in renderer)
-        if (isExpandedLink) {
-            (questionNodeLayout as any).isVirtualLink = true;
-            (questionNodeLayout as any).originalRefId = node.ref;
-        }
+        const children = Object.entries(node.options || {});
 
-        const children = Object.entries(effectiveNode.options || {});
-
-        // Update visited refs for children
         const nextVisitedRefs = new Set(visitedRefs);
-        if (isExpandedLink && node.ref) {
-            nextVisitedRefs.add(node.ref);
-        }
 
         // First pass: calculate dimensions
         const childrenDims = children.map(([option, childNode]) => {
-            // For virtual nodes, we append a suffix to the path to indicate it's a "ghost" path
-            // Normal path: root.options['A']
-            // Link path: root.options['A']#linked:REF_ID.options['B'] 
-            // Better: just append as if it was normal, but we know it won't match a real path for editing.
-            // To make unique keys, we must rely on the path being unique.
-
             let optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
-            if (isExpandedLink) {
-                optionPath += `#virtual:${node.ref}`;
-            }
 
             const startY = y + NODE_HEIGHT + V_SPACING + OPTION_NODE_HEIGHT;
 
@@ -253,13 +218,10 @@ const calculateLayout = (root: DecisionNode, nodeMap: Map<string, DecisionNode>)
             const branchInfo = childrenDims[i];
             const branchWidth = branchInfo.width;
             let optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
-            if (isExpandedLink) {
-                optionPath += `#virtual:${node.ref}`;
-            }
 
             const optionId = `${id}-${option}`;
-            const variableId = effectiveNode.variableId;
-            const optionData = variableId && effectiveNode.possibleValues ? effectiveNode.possibleValues.find((v: VariableOption) => v.name === option) : null;
+            const variableId = node.variableId;
+            const optionData = variableId && node.possibleValues ? node.possibleValues.find((v: VariableOption) => v.name === option) : null;
 
             const optionNodeLayout: TreeNodeWithLayout = {
                 node: { option: option, id: optionId, variableId: variableId, optionId: optionData?.id },
@@ -1142,24 +1104,36 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 const parentArrayPath = path.substring(0, path.lastIndexOf('['));
                 const parentArray = getNodeFromPath(tree, parentArrayPath);
 
-                if (!Array.isArray(parentArray)) {
-                    throw new Error("Struttura dati imprevista: atteso array.");
+                if (Array.isArray(parentArray)) {
+                    const newArray = [...parentArray];
+                    newArray.splice(index, 1);
+
+                    const result = await updateTreeNodeAction({
+                        treeId: treeData.id,
+                        nodePath: parentArrayPath,
+                        nodeData: JSON.stringify(newArray)
+                    });
+
+                    if (!result.success) {
+                        throw new Error(result.error || "Eliminazione del nodo fallita");
+                    }
+                    updatedTreeData = result.data;
+                    toast({ title: "Successo!", description: "Il nodo è stato eliminato." });
+                } else {
+                    // Fallback: parent is not an array (stale state or virtual path).
+                    // Delete using null (_.unset on server).
+                    const result = await updateTreeNodeAction({
+                        treeId: treeData.id,
+                        nodePath: path,
+                        nodeData: JSON.stringify(null)
+                    });
+
+                    if (!result.success) {
+                        throw new Error(result.error || "Eliminazione del nodo fallita");
+                    }
+                    updatedTreeData = result.data;
+                    toast({ title: "Successo!", description: "Il nodo è stato eliminato." });
                 }
-
-                const newArray = [...parentArray];
-                newArray.splice(index, 1);
-
-                const result = await updateTreeNodeAction({
-                    treeId: treeData.id,
-                    nodePath: parentArrayPath,
-                    nodeData: JSON.stringify(newArray)
-                });
-
-                if (!result.success) {
-                    throw new Error(result.error || "Eliminazione del nodo fallita");
-                }
-                updatedTreeData = result.data;
-                toast({ title: "Successo!", description: "Il nodo è stato eliminato." });
 
             } else {
                 // Standard single node deletion logic
@@ -1363,7 +1337,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                             isPython: !!(sn.pythonResultName === pName),
                             pythonCode: sn.pythonResultName === pName ? sn.pythonCode : undefined,
                             pythonOutputType: sn.pythonOutputType,
-                            pipelineDependencies: resolveDependencies(sn, newVisited)
+                            pipelineDependencies: resolveDependencies(sn, newVisited),
+                            selectedDocuments: sn.selectedDocuments
                         });
                     }
                 });
@@ -1442,6 +1417,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 pythonCode: actualNode.pythonCode,
                                 pythonOutputType: actualNode.pythonOutputType,
                                 pipelineDependencies: resolveDependencies(actualNode),
+                                selectedDocuments: actualNode.selectedDocuments,
                                 sqlExportTargetTableName: actualNode.sqlExportAction?.targetTableName || actualNode.sqlExportTargetTableName,
                                 sqlExportTargetConnectorId: actualNode.sqlExportAction?.targetConnectorId || actualNode.sqlExportTargetConnectorId,
                                 sqlExportSourceTables: actualNode.sqlExportAction?.sourceTables || actualNode.sqlExportSourceTables,
@@ -1479,6 +1455,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                         pythonCode: t.pythonCode,
                         connectorId: t.connectorId,
                         pipelineDependencies: t.pipelineDependencies,
+                        selectedDocuments: (t as any).selectedDocuments,
                         writesToDatabase: (t as any).writesToDatabase // Preserve write flag
                     }));
 
@@ -1493,6 +1470,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     pythonCode: item.pythonCode,
                     pythonOutputType: item.pythonOutputType as any,
                     pipelineDependencies: pipelineDeps.length > 0 ? pipelineDeps : undefined,
+                    selectedDocuments: (item as any).selectedDocuments,
                     // Map Export Config
                     sqlExportTargetTableName: item.sqlExportTargetTableName,
                     sqlExportTargetConnectorId: item.sqlExportTargetConnectorId,
@@ -1501,7 +1479,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     data: item.data,
                     plotlyStyleOverrides: item.plotlyStyleOverrides,
                     htmlStyleOverrides: item.htmlStyleOverrides
-                });
+                } as any);
 
                 // console.log(`[ANCESTOR] "${item.name}" (${item.isPython ? 'Python' : 'SQL'}) has ${pipelineDeps.length} pipeline dependencies:`, pipelineDeps.map(d => d.tableName));
             }
@@ -1606,7 +1584,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                             isPython: !!(sn.pythonResultName === pName),
                             pythonCode: sn.pythonResultName === pName ? sn.pythonCode : undefined,
                             pythonOutputType: sn.pythonOutputType,
-                            pipelineDependencies: resolveDependencies(sn, newVisited)
+                            pipelineDependencies: resolveDependencies(sn, newVisited),
+                            selectedDocuments: sn.selectedDocuments
                         });
                     }
                 });
@@ -1683,12 +1662,13 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                         pythonCode: parentNode.pythonCode,
                                         pythonOutputType: parentNode.pythonOutputType,
                                         pipelineDependencies: resolveDependencies(parentNode),
+                                        selectedDocuments: parentNode.selectedDocuments,
                                         writesToDatabase: parentNode.writesToDatabase,
                                         sqlExportTargetTableName: parentNode.sqlExportAction?.targetTableName || parentNode.sqlExportTargetTableName,
                                         sqlExportTargetConnectorId: parentNode.sqlExportAction?.targetConnectorId || parentNode.sqlExportTargetConnectorId,
                                         sqlExportSourceTables: parentNode.sqlExportAction?.sourceTables || parentNode.sqlExportSourceTables,
                                         data: nodeData
-                                    });
+                                    } as any);
                                 }
                             } else {
                                 // console.log(`[LINKED NODES DEBUG] Parent node not found at path "${parentQuestionPath}"`);

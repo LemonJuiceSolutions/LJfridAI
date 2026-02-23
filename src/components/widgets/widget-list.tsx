@@ -192,6 +192,7 @@ export const useAvailableWidgets = () => {
                                 ? JSON.parse(tree.jsonDecisionTree)
                                 : tree.jsonDecisionTree;
 
+                            const visitedSubTrees = new Set<string>();
                             const scanNode = (node: any, path: string[] = []) => {
                                 if (!node) return;
                                 const nodeId = node.id || path.join('-');
@@ -254,6 +255,20 @@ export const useAvailableWidgets = () => {
                                             });
                                         }
                                     });
+                                }
+
+                                // Also scan sub-trees (linked trees embedded via subTreeRef)
+                                if (node.subTreeRef && !visitedSubTrees.has(node.subTreeRef)) {
+                                    visitedSubTrees.add(node.subTreeRef);
+                                    const linkedTree = treesResult.data?.find((t: any) => t.id === node.subTreeRef);
+                                    if (linkedTree) {
+                                        const subJson = typeof linkedTree.jsonDecisionTree === 'string'
+                                            ? JSON.parse(linkedTree.jsonDecisionTree)
+                                            : linkedTree.jsonDecisionTree;
+                                        if (subJson) {
+                                            scanNode(subJson, [...path, 'sub']);
+                                        }
+                                    }
                                 }
                             };
 

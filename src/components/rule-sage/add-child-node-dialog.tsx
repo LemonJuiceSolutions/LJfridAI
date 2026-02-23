@@ -11,20 +11,27 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Loader2 } from 'lucide-react';
+import { Check, ChevronsUpDown, Loader2 } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf } from '@/lib/types';
 import { nanoid } from 'nanoid';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { ScrollArea } from '../ui/scroll-area';
 import { Input } from '../ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
 
 interface AddChildNodeDialogProps {
   isOpen: boolean;
@@ -51,6 +58,7 @@ export default function AddChildNodeDialog({
   const [questionText, setQuestionText] = useState('');
   const [decisionText, setDecisionText] = useState('');
   const [selectedLinkId, setSelectedLinkId] = useState<string>('');
+  const [linkComboOpen, setLinkComboOpen] = useState(false);
 
 
   const resetForm = () => {
@@ -58,6 +66,7 @@ export default function AddChildNodeDialog({
     setDecisionText('');
     setQuestionText('');
     setSelectedLinkId('');
+    setLinkComboOpen(false);
   }
 
   useEffect(() => {
@@ -156,18 +165,45 @@ export default function AddChildNodeDialog({
                   <div className="grid gap-4 border p-4 rounded-md">
                       <div className="grid gap-2">
                           <Label>Seleziona Nodo di Destinazione</Label>
-                          <Select value={selectedLinkId} onValueChange={setSelectedLinkId} disabled={isSaving}>
-                              <SelectTrigger>
-                                  <SelectValue placeholder="Seleziona un nodo..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                  {availableNodes.map((node) => (
-                                      <SelectItem key={node.id} value={node.id}>
-                                          {node.text.length > 50 ? node.text.substring(0, 50) + '...' : node.text}
-                                      </SelectItem>
-                                  ))}
-                              </SelectContent>
-                          </Select>
+                          <Popover open={linkComboOpen} onOpenChange={setLinkComboOpen} modal={true}>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={linkComboOpen}
+                                className="w-full justify-between font-normal h-auto min-h-10 whitespace-normal text-left"
+                                disabled={isSaving}
+                              >
+                                {selectedLinkId
+                                  ? availableNodes.find(n => n.id === selectedLinkId)?.text || "Seleziona un nodo..."
+                                  : "Cerca un nodo..."}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                              <Command>
+                                <CommandInput placeholder="Cerca nodo..." />
+                                <CommandList className="max-h-[200px]">
+                                  <CommandEmpty>Nessun nodo trovato.</CommandEmpty>
+                                  <CommandGroup>
+                                    {availableNodes.map((node) => (
+                                      <CommandItem
+                                        key={node.id}
+                                        value={node.text}
+                                        onSelect={() => {
+                                          setSelectedLinkId(node.id);
+                                          setLinkComboOpen(false);
+                                        }}
+                                      >
+                                        <Check className={cn("mr-2 h-4 w-4", selectedLinkId === node.id ? "opacity-100" : "opacity-0")} />
+                                        {node.text}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
                           <p className="text-sm text-muted-foreground mt-1">
                               Il flusso salterà direttamente al nodo selezionato.
                           </p>

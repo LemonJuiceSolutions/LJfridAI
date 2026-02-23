@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
         const updatedHistory = [
             ...conversationHistory,
             { role: 'user', content: [{ text: userMessage }] },
-            { role: 'model', content: [{ text: response }] },
+            { role: 'model', content: [{ text: response.message }], consultedNodes: response.consultedNodes },
         ];
 
         // Save conversation
@@ -93,8 +93,9 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: response,
+            message: response.message,
             conversationId: savedConversation.id,
+            consultedNodes: response.consultedNodes,
         });
     } catch (error: any) {
         console.error('Error in super agent API:', error);
@@ -145,6 +146,7 @@ export async function GET(request: NextRequest) {
                 role: m.role === 'model' ? 'assistant' : 'user',
                 content: m.content?.[0]?.text || '',
                 timestamp: Date.now(),
+                consultedNodes: m.consultedNodes,
             }));
 
         return NextResponse.json({

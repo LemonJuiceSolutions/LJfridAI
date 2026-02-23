@@ -1,7 +1,6 @@
 import { LayoutGrid, ShoppingCart, Calendar, Truck, Scissors, Brush, Shirt, PencilRuler, Wind, Droplets, Sparkles, Package, Boxes, Settings, Plug, GitCommitHorizontal, RefreshCw, Compass } from 'lucide-react';
 
 export const navItems = [
-    { href: '/xbrl-analysis', icon: 'FileSpreadsheet', label: 'Analisi XBRL' },
 ];
 
 export const settingsNavItems = [

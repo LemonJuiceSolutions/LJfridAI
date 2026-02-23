@@ -124,7 +124,22 @@ if [ -d "python-backend" ]; then
         python app.py 2>&1 | sed 's/^/[Python] /'
     ) &
     PYTHON_PID=$!
-    echo -e "${GREEN}✅ Python Backend avviato${NC}"
+
+    # Attendi che il Python backend sia pronto
+    echo -e "${BLUE}⏳ Attesa che Python Backend sia pronto...${NC}"
+    COUNTER=0
+    while ! curl -s http://localhost:5005/health >/dev/null 2>&1 && [ $COUNTER -lt 30 ]; do
+        sleep 1
+        COUNTER=$((COUNTER + 1))
+        echo -ne "${YELLOW}.${NC}"
+    done
+    echo ""
+
+    if curl -s http://localhost:5005/health >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ Python Backend pronto su porta 5005${NC}"
+    else
+        echo -e "${YELLOW}⚠️ Python Backend non ancora pronto, Next.js partira' comunque${NC}"
+    fi
 fi
 
 # 5. Apri browser dopo un delay

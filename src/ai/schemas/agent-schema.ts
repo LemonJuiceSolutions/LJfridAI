@@ -34,6 +34,16 @@ export const AgentInputSchema = z.object({
 
 export type AgentInput = z.infer<typeof AgentInputSchema>;
 
+export const ConsultedNodeSchema = z.object({
+  source: z.string().describe('Source of the node, e.g. "Albero: Vendite" or "Nodo fratello"'),
+  name: z.string().describe('Node name or result name'),
+  type: z.enum(['sql', 'python', 'mixed']).describe('Type of script'),
+  sameConnector: z.boolean().describe('Whether it uses the same DB connector'),
+  wasSolutionSource: z.boolean().describe('Whether this node provided the solution'),
+});
+
+export type ConsultedNodeType = z.infer<typeof ConsultedNodeSchema>;
+
 export const AgentOutputSchema = z.object({
   message: z.string().describe('The agent response message'),
   updatedScript: z.string().optional().describe('The updated SQL query or Python code'),
@@ -46,6 +56,8 @@ export const AgentOutputSchema = z.object({
     total_tokens: z.number(),
     total_cost: z.number().optional(),
   }).optional().describe('Token usage and cost for this request'),
+  consultedNodes: z.array(ConsultedNodeSchema).optional().describe('List of nodes consulted during this response'),
+  solutionSourceNode: z.string().optional().describe('Name of the node that provided the solution, if any'),
 });
 
 export type AgentOutput = z.infer<typeof AgentOutputSchema>;

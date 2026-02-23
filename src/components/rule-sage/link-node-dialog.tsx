@@ -12,9 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertCircle, Loader2, Trash2 } from 'lucide-react';
+import { Check, ChevronsUpDown, Loader2, Trash2 } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -25,8 +24,20 @@ import {
 import { ScrollArea } from '../ui/scroll-area';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import type { StoredTree } from '@/lib/types';
-import { nanoid } from 'nanoid';
-import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
 
 type LinkType = 'internal' | 'sub-tree';
 
@@ -60,6 +71,8 @@ export default function LinkNodeDialog({
   const [linkType, setLinkType] = useState<LinkType>('internal');
   const [targetNodeId, setTargetNodeId] = useState('');
   const [targetTreeId, setTargetTreeId] = useState('');
+  const [nodeComboOpen, setNodeComboOpen] = useState(false);
+  const [treeComboOpen, setTreeComboOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -73,17 +86,17 @@ export default function LinkNodeDialog({
           setTargetNodeId(currentNode.ref);
           setTargetTreeId('');
         } else {
-          // It's a new link, reset to default
           setLinkType('internal');
           setTargetNodeId('');
           setTargetTreeId('');
         }
       } else {
-        // Default state for creating a new link
         setLinkType('internal');
         setTargetNodeId('');
         setTargetTreeId('');
       }
+      setNodeComboOpen(false);
+      setTreeComboOpen(false);
     }
   }, [isOpen, currentNode]);
 
@@ -102,6 +115,9 @@ export default function LinkNodeDialog({
 
   const isExistingLink = (currentNode && (('ref' in currentNode && currentNode.ref) || ('subTreeRef' in currentNode && currentNode.subTreeRef)));
   const canSave = (linkType === 'internal' ? targetNodeId : targetTreeId) && !isSaving;
+
+  const selectedNodeText = nodeList.find(n => n.id === targetNodeId)?.text;
+  const selectedTreeName = allTrees.find(t => t.id === targetTreeId)?.name;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -140,34 +156,88 @@ export default function LinkNodeDialog({
               {linkType === 'internal' ? (
                 <>
                   <Label>Nodo di Destinazione (in questo albero)</Label>
-                  <Select onValueChange={setTargetNodeId} value={targetNodeId} disabled={isSaving}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleziona un nodo a cui collegarti..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {nodeList.map(node => (
-                        <SelectItem key={node.id} value={node.id}>
-                          {node.text}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={nodeComboOpen} onOpenChange={setNodeComboOpen} modal={true}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={nodeComboOpen}
+                        className="w-full justify-between font-normal h-auto min-h-10 whitespace-normal text-left"
+                        disabled={isSaving}
+                      >
+                        {targetNodeId && selectedNodeText
+                          ? selectedNodeText
+                          : "Cerca un nodo a cui collegarti..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Cerca nodo..." />
+                        <CommandList className="max-h-[200px]">
+                          <CommandEmpty>Nessun nodo trovato.</CommandEmpty>
+                          <CommandGroup>
+                            {nodeList.map(node => (
+                              <CommandItem
+                                key={node.id}
+                                value={node.text}
+                                onSelect={() => {
+                                  setTargetNodeId(node.id);
+                                  setNodeComboOpen(false);
+                                }}
+                              >
+                                <Check className={cn("mr-2 h-4 w-4", targetNodeId === node.id ? "opacity-100" : "opacity-0")} />
+                                {node.text}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </>
               ) : (
                 <>
                   <Label>Sotto-Albero di Destinazione</Label>
-                  <Select onValueChange={setTargetTreeId} value={targetTreeId} disabled={isSaving}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleziona un albero da lanciare..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {allTrees.map(tree => (
-                        <SelectItem key={tree.id} value={tree.id}>
-                          {tree.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={treeComboOpen} onOpenChange={setTreeComboOpen} modal={true}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={treeComboOpen}
+                        className="w-full justify-between font-normal h-auto min-h-10 whitespace-normal text-left"
+                        disabled={isSaving}
+                      >
+                        {targetTreeId && selectedTreeName
+                          ? selectedTreeName
+                          : "Cerca un albero da lanciare..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Cerca albero..." />
+                        <CommandList className="max-h-[200px]">
+                          <CommandEmpty>Nessun albero trovato.</CommandEmpty>
+                          <CommandGroup>
+                            {allTrees.map(tree => (
+                              <CommandItem
+                                key={tree.id}
+                                value={tree.name}
+                                onSelect={() => {
+                                  setTargetTreeId(tree.id);
+                                  setTreeComboOpen(false);
+                                }}
+                              >
+                                <Check className={cn("mr-2 h-4 w-4", targetTreeId === tree.id ? "opacity-100" : "opacity-0")} />
+                                {tree.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </>
               )}
             </div>

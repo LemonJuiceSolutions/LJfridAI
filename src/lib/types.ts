@@ -212,12 +212,21 @@ export type ConsolidationProposal = {
 // AI AGENT TYPES
 // ============================================
 
+export interface ConsultedNode {
+  source: string;       // "Albero: Vendite", "Pipeline: Report", "Nodo fratello"
+  name: string;         // nome nodo o risultato
+  type: 'sql' | 'python' | 'mixed';
+  sameConnector: boolean;
+  wasSolutionSource: boolean;
+}
+
 export interface AgentChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: number;
   scriptSnapshot?: string;
   clarificationQuestions?: string[];
+  consultedNodes?: ConsultedNode[];
 }
 
 export interface AgentConversation {
@@ -255,4 +264,5 @@ export interface AgentResponse {
     total_tokens: number;
     total_cost?: number;
   };
+  consultedNodes?: ConsultedNode[];
 }

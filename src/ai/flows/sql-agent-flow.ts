@@ -7,7 +7,7 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction } from '@/app/actions';
-import { type AgentInput, type AgentOutput } from '@/ai/schemas/agent-schema';
+import { type AgentInput, type AgentOutput, type ConsultedNodeType } from '@/ai/schemas/agent-schema';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
 import { resolveModel, runOpenRouterAgentLoop, type OpenRouterTool, type OpenRouterUsage } from '@/ai/openrouter-utils';
 
@@ -151,7 +151,7 @@ async function doBrowseOtherQueries(input: { companyId: string; connectorId?: st
                 queries.push({
                     source: `Albero: ${tree.name}`,
                     name: node.sqlResultName || node.nodeId || 'query',
-                    query: (node.sqlQuery || '').substring(0, 500),
+                    query: (node.sqlQuery || '').substring(0, 1500),
                     connectorId: node.sqlConnectorId,
                     sameConnector: !!(input.connectorId && node.sqlConnectorId === input.connectorId),
                 });
@@ -177,7 +177,7 @@ async function doBrowseOtherQueries(input: { companyId: string; connectorId?: st
                 queries.push({
                     source: `Pipeline: ${pipeline.name}`,
                     name: node.sqlResultName || node.name || node.id || 'query',
-                    query: script.substring(0, 500),
+                    query: script.substring(0, 1500),
                     connectorId: nodeConnId,
                     sameConnector: !!(input.connectorId && nodeConnId === input.connectorId),
                 });
@@ -424,6 +424,9 @@ function parseAgentJson(text: string): any | null {
 }
 
 export async function sqlAgentChat(input: AgentInput): Promise<AgentOutput> {
+    // Track consulted nodes for visibility
+    const consultedNodes: ConsultedNodeType[] = [];
+
     try {
         // 1. Get User/Model Settings
         let apiKey = input.openRouterConfig?.apiKey;
@@ -462,10 +465,84 @@ export async function sqlAgentChat(input: AgentInput): Promise<AgentOutput> {
             context += '\nQUERY SQL DA ALTRI NODI NELLO STESSO ALBERO:\n';
             for (const [nodeName, info] of Object.entries(input.nodeQueries as Record<string, { query: string; isPython: boolean; connectorId?: string }>)) {
                 const type = info.isPython ? 'Python' : 'SQL';
-                const sameConn = input.connectorId && info.connectorId === input.connectorId;
+                const sameConn = !!(input.connectorId && info.connectorId === input.connectorId);
                 const connNote = sameConn ? ' [STESSO CONNETTORE]' : (info.connectorId ? ' [altro connettore]' : '');
-                const truncatedQuery = info.query.length > 600 ? info.query.substring(0, 600) + '...' : info.query;
+                const truncatedQuery = info.query.length > 1500 ? info.query.substring(0, 1500) + '...' : info.query;
                 context += `- ${nodeName} (${type}${connNote}):\n  ${truncatedQuery}\n`;
+
+                // Track sibling nodes as consulted
+                consultedNodes.push({
+                    source: 'Nodo fratello',
+                    name: nodeName,
+                    type: info.isPython ? 'python' : 'sql',
+                    sameConnector: sameConn,
+                    wasSolutionSource: false,
+                });
+            }
+        }
+
+        // --- PRE-FLIGHT TABLE DISCOVERY ---
+        // When the user message contains "Invalid object name", automatically search INFORMATION_SCHEMA
+        // and inject the results so the LLM doesn't have to guess or call tools for this
+        let discoveryContext = '';
+        const invalidObjMatch = input.userMessage.match(/Invalid object name '([^']+)'/i);
+        if (invalidObjMatch && input.connectorId) {
+            const badTableName = invalidObjMatch[1];
+            // Extract the bare table name (strip schema prefixes like dbo. or [DB].[dbo].)
+            const bareTableName = badTableName.replace(/^(\[?[^\]]*\]?\.)*/g, '').replace(/[\[\]]/g, '');
+            // Try multiple search patterns
+            const searchTerms = new Set<string>();
+            searchTerms.add(bareTableName);
+            // Also try substrings (e.g. "MA_CustSupplier" -> "Cust", "Supplier")
+            const parts = bareTableName.replace(/^MA_/, '').split(/(?=[A-Z])/);
+            for (const part of parts) {
+                if (part.length >= 3) searchTerms.add(part);
+            }
+
+            const discoveryResults: string[] = [];
+            for (const term of searchTerms) {
+                try {
+                    const searchResult = await doTestSqlQuery({
+                        query: `SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%${term.replace(/'/g, "''")}%' ORDER BY TABLE_NAME`,
+                        connectorId: input.connectorId,
+                    });
+                    const parsed = JSON.parse(searchResult);
+                    if (parsed.success && parsed.sampleData && parsed.sampleData.length > 0) {
+                        for (const row of parsed.sampleData) {
+                            const fullName = row.TABLE_SCHEMA ? `[${row.TABLE_SCHEMA}].[${row.TABLE_NAME}]` : row.TABLE_NAME;
+                            if (!discoveryResults.includes(fullName)) {
+                                discoveryResults.push(fullName);
+                            }
+                        }
+                    }
+                } catch { /* ignore discovery errors */ }
+            }
+
+            if (discoveryResults.length > 0) {
+                discoveryContext = `\n\n🔍 DISCOVERY AUTOMATICA: La tabella '${badTableName}' NON ESISTE. Tabelle trovate cercando "${bareTableName}":\n`;
+                for (const name of discoveryResults.slice(0, 20)) {
+                    discoveryContext += `  - ${name}\n`;
+                }
+                discoveryContext += `ISTRUZIONE: Usa UNO di questi nomi ESATTI (con schema). NON inventare nomi. Se nessuna corrisponde, CERCA con un termine diverso usando testSqlQuery.\n`;
+            } else {
+                discoveryContext += `\n\n🔍 DISCOVERY AUTOMATICA: La tabella '${badTableName}' NON ESISTE e nessuna tabella simile trovata cercando "${bareTableName}". Usa testSqlQuery con INFORMATION_SCHEMA.TABLES e parole chiave diverse per trovare il nome corretto.\n`;
+            }
+        }
+
+        // Also extract table names from sibling queries for quick reference
+        let siblingTableHints = '';
+        if (input.nodeQueries && typeof input.nodeQueries === 'object') {
+            const tableNames = new Set<string>();
+            for (const [, info] of Object.entries(input.nodeQueries as Record<string, { query: string; isPython: boolean; connectorId?: string }>)) {
+                if (info.isPython) continue;
+                // Extract table names from FROM and JOIN clauses
+                const fromJoinMatches = info.query.matchAll(/(?:FROM|JOIN)\s+(\[?[^\s,\(\)]+\]?(?:\.\[?[^\s,\(\)]+\]?)*)/gi);
+                for (const m of fromJoinMatches) {
+                    tableNames.add(m[1]);
+                }
+            }
+            if (tableNames.size > 0) {
+                siblingTableHints = `\nTABELLE USATE DAI NODI FRATELLI (nomi VERIFICATI funzionanti):\n${[...tableNames].map(t => `  - ${t}`).join('\n')}\n`;
             }
         }
 
@@ -636,7 +713,11 @@ Devi imparare dai tuoi errori AUTOMATICAMENTE:
 
 ## FORMATO RISPOSTA (OBBLIGATORIO):
 Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo:
-{"message": "spiegazione breve in italiano", "updatedScript": "query SQL aggiornata", "needsClarification": false, "clarificationQuestions": []}
+{"message": "spiegazione breve in italiano", "updatedScript": "query SQL aggiornata", "needsClarification": false, "clarificationQuestions": [], "solutionSourceNode": "nome del nodo che ha ispirato la soluzione, oppure null se nessuno"}
+
+## SOLUTIONSOURCENODE:
+- Se la tua soluzione e' stata ispirata o basata su una query trovata in un altro nodo (tramite browseOtherQueries o dai nodi fratelli), indica il NOME di quel nodo in solutionSourceNode.
+- Se hai risolto senza ispirazione da altri nodi, metti null.
 
 ## !!!! DIVIETO SU updatedScript !!!!
 updatedScript DEVE SEMPRE essere la query SQL FINALE che l'utente vuole eseguire nel suo nodo.
@@ -662,7 +743,7 @@ ESEMPIO:
 
         const userPrompt = `=== RICHIESTA ===
 ${input.userMessage}
-
+${discoveryContext}${siblingTableHints}
 === QUERY SQL CORRENTE ===
 ${input.script || '(nessuna query definita)'}
 ${context}${historyContext}
@@ -671,6 +752,59 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
 
         let resultText = '';
         let usage: OpenRouterUsage | undefined;
+
+        // Hoist OpenRouter tools and dispatcher so they're accessible for safety-net retries
+        const activeTools = [
+            ...(input.connectorId ? [
+                openRouterTools.find(t => t.function.name === 'exploreDbSchema'),
+                openRouterTools.find(t => t.function.name === 'exploreTableColumns'),
+                openRouterTools.find(t => t.function.name === 'testSqlQuery')
+            ] : []),
+            ...(input.companyId ? [
+                openRouterTools.find(t => t.function.name === 'searchKnowledgeBase'),
+                openRouterTools.find(t => t.function.name === 'listSqlConnectors'),
+                openRouterTools.find(t => t.function.name === 'sqlSaveToKnowledgeBase'),
+                openRouterTools.find(t => t.function.name === 'browseOtherQueries')
+            ] : [])
+        ].filter(Boolean) as OpenRouterTool[];
+
+        // Dispatcher for OpenRouter tool calls (with consulted node tracking)
+        const dispatcher = async (name: string, args: any) => {
+            let result: string;
+            switch (name) {
+                case 'exploreDbSchema': result = await doExploreDbSchema(args); break;
+                case 'exploreTableColumns': result = await doExploreTableColumns(args); break;
+                case 'testSqlQuery': result = await doTestSqlQuery(args); break;
+                case 'searchKnowledgeBase': result = await doSearchKB(args); break;
+                case 'listSqlConnectors': result = await doListConnectors(args); break;
+                case 'sqlSaveToKnowledgeBase': result = await doSaveToKB(args); break;
+                case 'browseOtherQueries': result = await doBrowseOtherQueries(args); break;
+                default: result = JSON.stringify({ error: `Tool sconosciuto: ${name}` });
+            }
+
+            // Track consulted nodes from browseOtherQueries
+            if (name === 'browseOtherQueries') {
+                try {
+                    const parsed = JSON.parse(result);
+                    if (parsed.queries && Array.isArray(parsed.queries)) {
+                        for (const q of parsed.queries) {
+                            const exists = consultedNodes.some(n => n.source === q.source && n.name === q.name);
+                            if (!exists) {
+                                consultedNodes.push({
+                                    source: q.source,
+                                    name: q.name,
+                                    type: 'sql',
+                                    sameConnector: q.sameConnector || false,
+                                    wasSolutionSource: false,
+                                });
+                            }
+                        }
+                    }
+                } catch { /* ignore parse errors */ }
+            }
+
+            return result;
+        };
 
         if (provider === 'google') {
             // --- Legacy Generation (Genkit) ---
@@ -691,45 +825,10 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
                 return { message: "Errore: Chiave API OpenRouter mancante. Configura la chiave nelle impostazioni.", needsClarification: false };
             }
 
-            // Prepare messages in OpenAI format (since we are doing single-turn agent logic here normally, 
-            // but we might want to respect conversationHistory passed in input?
-            // Actually input.conversationHistory is just strings for context. 
-            // The AI Agent treats each turn as a fresh prompt with context.
-            // So we just send [system, user] messages.
-
             const messages = [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
             ];
-
-            // Filter tools based on context similar to Genkit logic
-            const activeTools = [
-                ...(input.connectorId ? [
-                    openRouterTools.find(t => t.function.name === 'exploreDbSchema'),
-                    openRouterTools.find(t => t.function.name === 'exploreTableColumns'),
-                    openRouterTools.find(t => t.function.name === 'testSqlQuery')
-                ] : []),
-                ...(input.companyId ? [
-                    openRouterTools.find(t => t.function.name === 'searchKnowledgeBase'),
-                    openRouterTools.find(t => t.function.name === 'listSqlConnectors'),
-                    openRouterTools.find(t => t.function.name === 'sqlSaveToKnowledgeBase'),
-                    openRouterTools.find(t => t.function.name === 'browseOtherQueries')
-                ] : [])
-            ].filter(Boolean) as OpenRouterTool[];
-
-            // Dispatcher for OpenRouter tool calls
-            const dispatcher = async (name: string, args: any) => {
-                switch (name) {
-                    case 'exploreDbSchema': return doExploreDbSchema(args);
-                    case 'exploreTableColumns': return doExploreTableColumns(args);
-                    case 'testSqlQuery': return doTestSqlQuery(args);
-                    case 'searchKnowledgeBase': return doSearchKB(args);
-                    case 'listSqlConnectors': return doListConnectors(args);
-                    case 'sqlSaveToKnowledgeBase': return doSaveToKB(args);
-                    case 'browseOtherQueries': return doBrowseOtherQueries(args);
-                    default: return JSON.stringify({ error: `Tool sconosciuto: ${name}` });
-                }
-            };
 
             const result = await runOpenRouterAgentLoop(
                 apiKey,
@@ -751,25 +850,99 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
                 const upper = parsed.updatedScript.toUpperCase();
                 if (upper.includes('INFORMATION_SCHEMA.TABLES') || upper.includes('INFORMATION_SCHEMA.COLUMNS') ||
                     upper.includes('FROM SYS.TABLES') || upper.includes('FROM SYS.COLUMNS')) {
-                    console.warn('[SQL AGENT] Blocked discovery query from updatedScript:', parsed.updatedScript.substring(0, 200));
+                    console.warn('[SQL AGENT] Blocked discovery query from updatedScript. Running discovery and retrying...');
+
+                    // Instead of returning without updatedScript, run the discovery query ourselves
+                    // and re-prompt the LLM with the results
+                    let retryDiscoveryContext = '';
+                    if (input.connectorId) {
+                        try {
+                            const discoveryResult = await doTestSqlQuery({
+                                query: parsed.updatedScript,
+                                connectorId: input.connectorId,
+                            });
+                            const discoveryParsed = JSON.parse(discoveryResult);
+                            if (discoveryParsed.success && discoveryParsed.sampleData) {
+                                retryDiscoveryContext = `\n\nRISULTATI DISCOVERY (eseguita automaticamente):\n${JSON.stringify(discoveryParsed.sampleData, null, 2)}\n\nOra RISCRIVI la query dell'utente usando i nomi tabella ESATTI trovati sopra. Metti la query FINALE (NON di discovery) in updatedScript.`;
+                            }
+                        } catch { /* ignore */ }
+                    }
+
+                    if (retryDiscoveryContext && provider === 'openrouter' && apiKey) {
+                        // Re-prompt with discovery results
+                        const retryMessages = [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: `${userPrompt}${retryDiscoveryContext}` }
+                        ];
+                        try {
+                            const retryResult = await runOpenRouterAgentLoop(
+                                apiKey, modelName, retryMessages, activeTools, dispatcher, true
+                            );
+                            const retryParsed = parseAgentJson(retryResult.text);
+                            if (retryParsed?.updatedScript) {
+                                const retryUpper = retryParsed.updatedScript.toUpperCase();
+                                if (!retryUpper.includes('INFORMATION_SCHEMA') && !retryUpper.includes('SYS.TABLES')) {
+                                    // Success! Return the corrected query
+                                    if (retryParsed.solutionSourceNode && typeof retryParsed.solutionSourceNode === 'string') {
+                                        const srcLower = retryParsed.solutionSourceNode.toLowerCase();
+                                        const sourceNode = consultedNodes.find(n =>
+                                            n.name.toLowerCase().includes(srcLower) || srcLower.includes(n.name.toLowerCase())
+                                        );
+                                        if (sourceNode) sourceNode.wasSolutionSource = true;
+                                    }
+                                    return {
+                                        message: retryParsed.message || 'Query corretta con i nomi tabella trovati.',
+                                        updatedScript: retryParsed.updatedScript,
+                                        needsClarification: false,
+                                        consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined,
+                                        usage: {
+                                            prompt_tokens: (usage?.prompt_tokens || 0) + (retryResult.usage?.prompt_tokens || 0),
+                                            completion_tokens: (usage?.completion_tokens || 0) + (retryResult.usage?.completion_tokens || 0),
+                                            total_tokens: (usage?.total_tokens || 0) + (retryResult.usage?.total_tokens || 0),
+                                            total_cost: ((usage?.total_cost || 0) + (retryResult.usage?.total_cost || 0)) || undefined,
+                                        },
+                                    };
+                                }
+                            }
+                        } catch (retryErr) {
+                            console.warn('[SQL AGENT] Retry after discovery failed:', retryErr);
+                        }
+                    }
+
+                    // Fallback: return the original response with the discovery info but use the ORIGINAL script
                     return {
                         message: (parsed.message || '') + '\n\n**Nota:** Ho trovato informazioni sulle tabelle ma devo ancora riscrivere la query corretta. Riformulo la query con i nomi tabella corretti.',
-                        updatedScript: undefined,
+                        updatedScript: input.script || undefined,
                         needsClarification: false,
+                        consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined,
                         usage,
                     };
                 }
             }
+
+            // Mark the solution source node based on LLM's indication
+            if (parsed.solutionSourceNode && typeof parsed.solutionSourceNode === 'string') {
+                const srcLower = parsed.solutionSourceNode.toLowerCase();
+                const sourceNode = consultedNodes.find(n =>
+                    n.name.toLowerCase().includes(srcLower) ||
+                    srcLower.includes(n.name.toLowerCase())
+                );
+                if (sourceNode) {
+                    sourceNode.wasSolutionSource = true;
+                }
+            }
+
             return {
                 message: parsed.message || resultText,
                 updatedScript: parsed.updatedScript,
                 needsClarification: parsed.needsClarification || false,
                 clarificationQuestions: parsed.clarificationQuestions || [],
+                consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined,
                 usage,
             };
         }
 
-        return { message: resultText, needsClarification: false, usage };
+        return { message: resultText, needsClarification: false, consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined, usage };
     } catch (e: any) {
         console.error('Error in SQL agent flow:', e);
         return { message: `Errore: ${e.message}. Riprova o dammi piu' dettagli.`, needsClarification: false };

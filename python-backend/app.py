@@ -370,7 +370,7 @@ def execute_python():
         # NOTE: In a pipeline A→B→C, inputData arrives as {A: ..., B: ...}.
         # The LAST table is the direct parent (B), so we map 'df' to the last table.
         # If a table is explicitly named 'df', that always wins.
-        print(f"🐍 [v{VERSION}] Received {len(input_data)} tables.")
+        print(f"🐍 [v{VERSION}] Received {len(input_data)} tables.", flush=True)
         last_table_name = None
         last_df_table = None
         explicit_df = False
@@ -398,6 +398,24 @@ def execute_python():
             print(f"   - 'df' & 'data' mapped to '{last_table_name}' (last table = direct parent)")
 
         
+        # --- Prevent exit/quit calls from killing the Flask process ---
+        def no_op_exit(*args, **kwargs):
+            print("⚠️ [EXECUTE] exit()/quit() call ignored to prevent killing the server.")
+
+        ns['exit'] = no_op_exit
+        ns['quit'] = no_op_exit
+
+        # Also patch sys.exit inside the namespace
+        class SysWrapper:
+            def __init__(self, original_sys):
+                self._original_sys = original_sys
+            def __getattr__(self, name):
+                if name == 'exit':
+                    return no_op_exit
+                return getattr(self._original_sys, name)
+
+        ns['sys'] = SysWrapper(sys)
+
         # --- Prevent blocking calls ---
         def no_op_show(*args, **kwargs):
             print("⚠️ [EXECUTE] 'show()' call ignored to prevent blocking. The figure is captured automatically.")
@@ -419,11 +437,14 @@ def execute_python():
         # Disable Plotly browser renderer
         pio.renderers.default = "json" # or None, but json is safe
 
-        print(f"🐍 [v{VERSION}] Executing script...")
+        print(f"🐍 [v{VERSION}] Executing script...", flush=True)
         
         raw_stdout = io.StringIO()
         raw_stderr = io.StringIO()
         safe_code = code.replace('plt.show()', '# plt.show() removed')
+        safe_code = safe_code.replace('sys.exit()', '# sys.exit() removed')
+        safe_code = safe_code.replace('exit()', '# exit() removed')
+        safe_code = safe_code.replace('quit()', '# quit() removed')
         
         env_vars = data.get('env', {}) # Receive env vars
         from unittest.mock import patch
@@ -531,10 +552,15 @@ def execute_python():
                 tb.print_exc(file=sys.stderr)
 
         try:
+            print(f"🐍 [v{VERSION}] Starting exec()...", file=sys.stderr, flush=True)
             with redirect_stdout(raw_stdout), redirect_stderr(raw_stderr):
                 # Patch os.environ for the duration of execution
                 with patch.dict(os.environ, env_vars):
                     exec(safe_code, ns, ns) # Use ns for both globals and locals
+            print(f"🐍 [v{VERSION}] exec() completed OK", file=sys.stderr, flush=True)
+        except SystemExit:
+            # Catch exit()/sys.exit() calls that bypass the SysWrapper (e.g. via direct import)
+            print(f"⚠️ [EXECUTE] SystemExit caught (exit()/sys.exit() in script) - ignoring", file=sys.stderr, flush=True)
         except Exception as e:
             import traceback as _tb
             error_details = _tb.format_exc()
@@ -1070,13 +1096,24 @@ def execute_python():
     except Exception as e:
         import traceback as _tb
         error_trace = _tb.format_exc()
+        print(f"❌ [EXECUTE] Outer exception: {e}", file=sys.stderr, flush=True)
+        _tb.print_exc(file=sys.stderr)
         return jsonify({
             'success': False,
             'error': str(e),
             'traceback': error_trace
         }), 500
+    except BaseException as e:
+        # Catch SystemExit, KeyboardInterrupt, etc. that bypass Exception
+        import traceback as _tb
+        print(f"🔴 [EXECUTE] FATAL BaseException: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        _tb.print_exc(file=sys.stderr)
+        return jsonify({
+            'success': False,
+            'error': f'Fatal error: {type(e).__name__}: {str(e)}'
+        }), 500
 
 
 if __name__ == '__main__':
     print("🐍 Starting Python Execution Backend on port 5005...")
-    app.run(host='0.0.0.0', port=5005, debug=True)
+    app.run(host='0.0.0.0', port=5005, debug=True, use_reloader=False, threaded=True)

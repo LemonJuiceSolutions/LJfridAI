@@ -490,7 +490,8 @@ export class SchedulerService {
             inputData, // PASS DATA HERE
             deps,
             tableDef.connectorId,
-            _bypassAuth
+            _bypassAuth,
+            tableDef.selectedDocuments?.length > 0 ? tableDef.selectedDocuments : undefined
           );
 
           if (res.success) {
@@ -605,7 +606,8 @@ export class SchedulerService {
                 pythonInputData,
                 [], // No deps needed - data already provided
                 tableDef.connectorId,
-                _bypassAuth
+                _bypassAuth,
+                tableDef.selectedDocuments?.length > 0 ? tableDef.selectedDocuments : undefined
               );
 
               if (pyRes.success) {
@@ -1262,6 +1264,7 @@ export class SchedulerService {
       pythonConnectorId,
       contextTables,
       pythonSelectedPipelines,
+      selectedDocuments,
       treeId, nodeId, nodePath,
       sqlExportConfig
     } = config;
@@ -1279,7 +1282,8 @@ export class SchedulerService {
         query: def.sqlQuery,
         isPython: def.isPython,
         pythonCode: def.pythonCode,
-        pipelineDependencies: def.pipelineDependencies
+        pipelineDependencies: def.pipelineDependencies,
+        selectedDocuments: def.selectedDocuments
       };
     }).filter(Boolean) as any[] || []; // Cast to any[]
 
@@ -1297,7 +1301,9 @@ export class SchedulerService {
       runType,
       {}, // variables
       dependencies,
-      pythonConnectorId
+      pythonConnectorId,
+      true, // _bypassAuth (scheduler runs without session)
+      selectedDocuments?.length > 0 ? selectedDocuments : undefined
     );
 
     if (!result.success) throw new Error(result.error);

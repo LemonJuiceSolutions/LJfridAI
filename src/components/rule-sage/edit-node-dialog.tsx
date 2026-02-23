@@ -1055,7 +1055,8 @@ export default function EditNodeDialog({
                 isPython: dep?.isPython,
                 pythonCode: dep?.pythonCode,
                 connectorId: dep?.connectorId,
-                pipelineDependencies: dep?.pipelineDependencies
+                pipelineDependencies: dep?.pipelineDependencies,
+                selectedDocuments: dep?.selectedDocuments
               };
             }),
             pythonConnectorId,
@@ -1200,6 +1201,7 @@ export default function EditNodeDialog({
               sqlQuery: (node as any).sqlQuery || (node as any).query,
               connectorId: node.connectorId,
               pipelineDependencies: node.pipelineDependencies,
+              selectedDocuments: (node as any).selectedDocuments,
               nodeName: node.nodeName,
               writesToDatabase: node.writesToDatabase,
               sqlExportTargetTableName: node.sqlExportTargetTableName,
@@ -1377,9 +1379,12 @@ export default function EditNodeDialog({
                   isPython: d.isPython,
                   pythonCode: d.pythonCode,
                   connectorId: d.connectorId,
-                  pipelineDependencies: (d as any).pipelineDependencies
+                  pipelineDependencies: (d as any).pipelineDependencies,
+                  selectedDocuments: (d as any).selectedDocuments
                 })),
-                ancestor.connectorId
+                ancestor.connectorId,
+                undefined,
+                ancestor.selectedDocuments?.length > 0 ? ancestor.selectedDocuments : undefined
               );
               console.log(`[BUTTON DEBUG] Result for ${ancestor.name}: success=${res.success}, hasData=${!!res.data}, dataIsArray=${Array.isArray(res.data)}, dataLength=${res.data?.length || 'N/A'}, hasVariables=${!!res.variables}`);
               if (res.success) {
@@ -2906,6 +2911,7 @@ export default function EditNodeDialog({
                               pythonResultName,
                               pythonConnectorId,
                               pythonSelectedPipelines,
+                              selectedDocuments: selectedDocuments.length > 0 ? selectedDocuments : undefined,
                               contextTables: availableInputTables,
                             })}
                             onScheduleChanged={loadNodeSchedules}
@@ -3507,9 +3513,10 @@ export default function EditNodeDialog({
                                       isPython: table.isPython,
                                       pythonCode: table.pythonCode,
                                       connectorId: table.connectorId,
-                                      pipelineDependencies: table.pipelineDependencies
+                                      pipelineDependencies: table.pipelineDependencies,
+                                      selectedDocuments: table.selectedDocuments
                                     })) || [];
-                                  const res = await executePythonPreviewAction(pythonCode, 'table', {}, pipelineDeps, pythonConnectorId);
+                                  const res = await executePythonPreviewAction(pythonCode, 'table', {}, pipelineDeps, pythonConnectorId, undefined, selectedDocuments.length > 0 ? selectedDocuments : undefined);
                                   if (res.success && Array.isArray(res.data)) {
                                     sourceData = res.data;
                                     break;
@@ -3535,9 +3542,12 @@ export default function EditNodeDialog({
                                         isPython: d.isPython,
                                         pythonCode: d.pythonCode,
                                         connectorId: d.connectorId,
-                                        pipelineDependencies: (d as any).pipelineDependencies
+                                        pipelineDependencies: (d as any).pipelineDependencies,
+                                        selectedDocuments: (d as any).selectedDocuments
                                       })),
-                                      ancestorTable.connectorId
+                                      ancestorTable.connectorId,
+                                      undefined,
+                                      ancestorTable.selectedDocuments?.length > 0 ? ancestorTable.selectedDocuments : undefined
                                     );
                                     if (res.success && Array.isArray(res.data)) {
                                       sourceData = res.data;

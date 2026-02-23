@@ -412,10 +412,24 @@ const SuperAgentInputSchema = z.object({
 });
 export type SuperAgentInput = z.infer<typeof SuperAgentInputSchema>;
 
-const SuperAgentOutputSchema = z.string().describe("La risposta dell'agente.");
+const ConsultedNodeSchema = z.object({
+    source: z.string(),
+    name: z.string(),
+    type: z.enum(['sql', 'python', 'mixed']),
+    sameConnector: z.boolean(),
+    wasSolutionSource: z.boolean(),
+});
+
+const SuperAgentOutputSchema = z.object({
+    message: z.string().describe("La risposta dell'agente."),
+    consultedNodes: z.array(ConsultedNodeSchema).optional().describe('Nodi consultati durante la risposta'),
+});
 export type SuperAgentOutput = z.infer<typeof SuperAgentOutputSchema>;
 
 export async function superAgentFlow(input: SuperAgentInput): Promise<SuperAgentOutput> {
+    // Track consulted nodes for visibility
+    const consultedNodes: z.infer<typeof ConsultedNodeSchema>[] = [];
+
     // Pre-load LIGHTWEIGHT tree summary (names only, no content - use tools for details)
     let treeSummary = '';
     try {
@@ -588,11 +602,12 @@ Se l'utente chiede qualcosa di complesso (es: "confronta le vendite di quest'ann
                 saveToKnowledgeBase,
             ],
         });
-        return text;
+        return { message: text, consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined };
     }
 
     // For non-Google models, use OpenRouter API with function calling
-    return await callOpenRouterWithTools(input, fullHistory);
+    const responseText = await callOpenRouterWithTools(input, fullHistory, consultedNodes);
+    return { message: responseText, consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined };
 }
 
 // OpenRouter tool definitions (OpenAI function calling format)
@@ -804,7 +819,7 @@ async function executeToolCall(name: string, args: any): Promise<string> {
 }
 
 // Call OpenRouter API with function calling (OpenAI-compatible)
-async function callOpenRouterWithTools(input: SuperAgentInput, fullHistory: any[]): Promise<string> {
+async function callOpenRouterWithTools(input: SuperAgentInput, fullHistory: any[], consultedNodes: z.infer<typeof ConsultedNodeSchema>[]): Promise<string> {
     if (!input.apiKey) {
         throw new Error('API key OpenRouter mancante. Configura la chiave nelle Impostazioni.');
     }
@@ -870,6 +885,50 @@ async function callOpenRouterWithTools(input: SuperAgentInput, fullHistory: any[
                         result = await executeToolCall(fnName, fnArgs);
                     } catch (e: any) {
                         result = JSON.stringify({ error: e.message, suggestion: 'Prova un approccio diverso o usa listSqlConnectors per verificare i connettori disponibili.' });
+                    }
+
+                    // Track consulted nodes from search/content tools
+                    if (fnName === 'searchNodesForQuery') {
+                        try {
+                            const parsed = JSON.parse(result);
+                            if (parsed.results && Array.isArray(parsed.results)) {
+                                for (const r of parsed.results) {
+                                    const nodeName = r.sqlResultName || r.pythonResultName || r.nodeId || 'nodo';
+                                    const exists = consultedNodes.some(n => n.name === nodeName && n.source === `Albero: ${r.treeName}`);
+                                    if (!exists) {
+                                        consultedNodes.push({
+                                            source: `Albero: ${r.treeName}`,
+                                            name: nodeName,
+                                            type: r.pythonCode ? (r.sqlQuery ? 'mixed' : 'python') : 'sql',
+                                            sameConnector: false,
+                                            wasSolutionSource: false,
+                                        });
+                                    }
+                                }
+                            }
+                        } catch { /* ignore */ }
+                    }
+                    if (fnName === 'getTreeContent') {
+                        try {
+                            const parsed = JSON.parse(result);
+                            if (parsed.nodes && Array.isArray(parsed.nodes)) {
+                                for (const n of parsed.nodes) {
+                                    if (n.sqlQuery || n.pythonCode) {
+                                        const nodeName = n.sqlResultName || n.pythonResultName || n.nodeId || 'nodo';
+                                        const exists = consultedNodes.some(cn => cn.name === nodeName && cn.source === `Albero: ${parsed.treeName}`);
+                                        if (!exists) {
+                                            consultedNodes.push({
+                                                source: `Albero: ${parsed.treeName}`,
+                                                name: nodeName,
+                                                type: n.pythonCode ? (n.sqlQuery ? 'mixed' : 'python') : 'sql',
+                                                sameConnector: false,
+                                                wasSolutionSource: false,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        } catch { /* ignore */ }
                     }
 
                     openaiMessages.push({

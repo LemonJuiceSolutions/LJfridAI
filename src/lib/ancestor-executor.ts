@@ -186,7 +186,9 @@ async function executePythonNode(node: Node, context: ExecutionContext): Promise
     outputType,
     {},
     dependencies,
-    node.pythonConnectorId
+    node.pythonConnectorId,
+    undefined,
+    node.selectedDocuments?.length ? node.selectedDocuments : undefined
   );
 
   if (!result.success) {

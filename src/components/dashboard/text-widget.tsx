@@ -4,16 +4,10 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
-import { Bold, Italic, Underline, List, Palette, Variable, Loader2, BarChart2, Table, Sigma, ArrowUpDown, MoreHorizontal, Check, Search, RefreshCw, Zap } from 'lucide-react';
+import { Bold, Italic, Underline, List, Palette, Variable, Loader2, BarChart2, Table, Sigma, ArrowUpDown, MoreHorizontal, Check, Search, RefreshCw, Zap, ChevronDown, Type, ALargeSmall } from 'lucide-react';
 import { Button } from '../ui/button';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
 import { Input } from '../ui/input';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import {
     Table as UiTable,
@@ -239,10 +233,37 @@ export default function TextWidget({
 }: TextWidgetProps) {
     const editorRef = useRef<HTMLDivElement>(null);
     const [liveContent, setLiveContent] = useState(content);
+    const savedSelectionRef = useRef<Range | null>(null);
 
     useEffect(() => {
         setLiveContent(content);
     }, [content]);
+
+    // Save the current selection whenever it changes inside the editor
+    useEffect(() => {
+        if (!isEditing) return;
+        const handleSelectionChange = () => {
+            const sel = document.getSelection();
+            if (sel && sel.rangeCount > 0 && editorRef.current) {
+                const range = sel.getRangeAt(0);
+                if (editorRef.current.contains(range.startContainer)) {
+                    savedSelectionRef.current = range.cloneRange();
+                }
+            }
+        };
+        document.addEventListener('selectionchange', handleSelectionChange);
+        return () => document.removeEventListener('selectionchange', handleSelectionChange);
+    }, [isEditing]);
+
+    const restoreSelection = useCallback(() => {
+        const sel = document.getSelection();
+        if (sel && savedSelectionRef.current) {
+            sel.removeAllRanges();
+            sel.addRange(savedSelectionRef.current);
+            return true;
+        }
+        return false;
+    }, []);
 
     const handleBlur = () => {
         if (editorRef.current) {
@@ -250,14 +271,51 @@ export default function TextWidget({
         }
     };
 
-    const applyStyle = (command: string, value: string | undefined = undefined) => {
+    const applyStyle = useCallback((command: string, value: string | undefined = undefined) => {
         if (!isEditing) return;
         editorRef.current?.focus();
+        restoreSelection();
         document.execCommand(command, false, value);
         if (editorRef.current) {
             onContentChange(editorRef.current.innerHTML);
         }
-    };
+    }, [isEditing, onContentChange, restoreSelection]);
+
+    // Apply font-size using a marker approach: execCommand creates a <font> tag, then we replace it with a styled span
+    const applyFontSize = useCallback((sizePx: string) => {
+        if (!isEditing) return;
+        editorRef.current?.focus();
+        restoreSelection();
+        document.execCommand('fontSize', false, '1');
+        if (editorRef.current) {
+            const fontElements = editorRef.current.querySelectorAll('font[size="1"]');
+            fontElements.forEach(el => {
+                const span = document.createElement('span');
+                span.style.fontSize = sizePx;
+                span.innerHTML = el.innerHTML;
+                el.replaceWith(span);
+            });
+            onContentChange(editorRef.current.innerHTML);
+        }
+    }, [isEditing, onContentChange, restoreSelection]);
+
+    // Apply font-family using the same marker approach for reliability
+    const applyFontFamily = useCallback((fontFamily: string) => {
+        if (!isEditing) return;
+        editorRef.current?.focus();
+        restoreSelection();
+        document.execCommand('fontName', false, '__marker_font__');
+        if (editorRef.current) {
+            const fontElements = editorRef.current.querySelectorAll('font[face="__marker_font__"]');
+            fontElements.forEach(el => {
+                const span = document.createElement('span');
+                span.style.fontFamily = fontFamily;
+                span.innerHTML = el.innerHTML;
+                el.replaceWith(span);
+            });
+            onContentChange(editorRef.current.innerHTML);
+        }
+    }, [isEditing, onContentChange, restoreSelection]);
 
     const insertVariable = (variable: string) => {
         applyStyle('insertHTML', `{{${variable}}}`);
@@ -363,44 +421,98 @@ export default function TextWidget({
                     <ToolbarButton onClick={() => applyStyle('underline')}><Underline className="h-4 w-4" /></ToolbarButton>
                     <ToolbarButton onClick={() => applyStyle('insertUnorderedList')}><List className="h-4 w-4" /></ToolbarButton>
 
-                    <Select onValueChange={(value) => applyStyle('fontName', value)}>
-                        <SelectTrigger
-                            className="h-7 w-28 text-xs"
-                            onMouseDown={(e) => e.preventDefault()}
+                    {/* Font Family Popover */}
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1 px-2" onMouseDown={(e) => e.preventDefault()}>
+                                <Type className="h-3.5 w-3.5" /> Font <ChevronDown className="h-3 w-3" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                            className="w-48 p-1"
+                            onOpenAutoFocus={(e) => e.preventDefault()}
+                            onCloseAutoFocus={(e) => e.preventDefault()}
                         >
-                            <SelectValue placeholder="Font" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="Inter, sans-serif">Inter</SelectItem>
-                            <SelectItem value="'Source Code Pro', monospace">Source Code</SelectItem>
-                            <SelectItem value="serif">Serif</SelectItem>
-                            <SelectItem value="monospace">Monospace</SelectItem>
-                        </SelectContent>
-                    </Select>
+                            {[
+                                { label: 'Inter', value: 'Inter, sans-serif' },
+                                { label: 'Arial', value: 'Arial, sans-serif' },
+                                { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
+                                { label: 'Georgia', value: 'Georgia, serif' },
+                                { label: 'Times New Roman', value: "'Times New Roman', serif" },
+                                { label: 'Verdana', value: 'Verdana, sans-serif' },
+                                { label: 'Trebuchet MS', value: "'Trebuchet MS', sans-serif" },
+                                { label: 'Courier New', value: "'Courier New', monospace" },
+                                { label: 'Source Code Pro', value: "'Source Code Pro', monospace" },
+                                { label: 'Garamond', value: 'Garamond, serif' },
+                            ].map(font => (
+                                <button
+                                    key={font.value}
+                                    className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent cursor-pointer"
+                                    style={{ fontFamily: font.value }}
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        applyFontFamily(font.value);
+                                    }}
+                                >
+                                    {font.label}
+                                </button>
+                            ))}
+                        </PopoverContent>
+                    </Popover>
 
-                    <Select onValueChange={(value) => applyStyle('fontSize', value)}>
-                        <SelectTrigger
-                            className="h-7 w-20 text-xs"
-                            onMouseDown={(e) => e.preventDefault()}
+                    {/* Font Size Popover */}
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1 px-2" onMouseDown={(e) => e.preventDefault()}>
+                                <ALargeSmall className="h-3.5 w-3.5" /> Size <ChevronDown className="h-3 w-3" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                            className="w-44 p-2"
+                            onOpenAutoFocus={(e) => e.preventDefault()}
+                            onCloseAutoFocus={(e) => e.preventDefault()}
                         >
-                            <SelectValue placeholder="Size" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="1">12px</SelectItem>
-                            <SelectItem value="2">14px</SelectItem>
-                            <SelectItem value="3">16px</SelectItem>
-                            <SelectItem value="4">20px</SelectItem>
-                            <SelectItem value="5">24px</SelectItem>
-                            <SelectItem value="6">32px</SelectItem>
-                            <SelectItem value="7">48px</SelectItem>
-                        </SelectContent>
-                    </Select>
+                            <div className="flex items-center gap-1 mb-2">
+                                <Input
+                                    type="number"
+                                    min={8}
+                                    max={120}
+                                    placeholder="px"
+                                    className="h-7 text-xs"
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const val = (e.target as HTMLInputElement).value;
+                                            if (val) {
+                                                applyFontSize(val + 'px');
+                                                (e.target as HTMLInputElement).value = '';
+                                            }
+                                        }
+                                    }}
+                                />
+                                <span className="text-xs text-muted-foreground">px</span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-1">
+                                {[10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 96].map(size => (
+                                    <button
+                                        key={size}
+                                        className="px-1 py-1 text-xs rounded hover:bg-accent text-center cursor-pointer"
+                                        onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            applyFontSize(size + 'px');
+                                        }}
+                                    >
+                                        {size}
+                                    </button>
+                                ))}
+                            </div>
+                        </PopoverContent>
+                    </Popover>
 
                     <div className="relative h-7 w-7">
                         <Input
                             type="color"
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            onMouseDown={(e) => e.preventDefault()}
                             onInput={(e) => {
                                 applyStyle('foreColor', (e.target as HTMLInputElement).value);
                             }}
@@ -409,7 +521,7 @@ export default function TextWidget({
                             <Palette className="h-4 w-4" />
                         </div>
                     </div>
-                    <Button onClick={() => insertVariable('result')} size="sm" variant="outline" className="h-7 text-xs">
+                    <Button onMouseDown={(e) => { e.preventDefault(); insertVariable('result'); }} size="sm" variant="outline" className="h-7 text-xs">
                         <Variable className="h-4 w-4 mr-2" /> Inserisci Risultato
                     </Button>
                 </div>

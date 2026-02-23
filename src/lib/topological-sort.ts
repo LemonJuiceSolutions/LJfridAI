@@ -31,6 +31,8 @@ export interface Node {
   // HubSpot specific
   hubspotAction?: 'read' | 'write' | 'update';
   hubspotObjectType?: string;
+  // Document files (XBRL, CSV, etc.)
+  selectedDocuments?: string[];
   // Dependencies
   dependencies?: string[]; // Names of dependent results (e.g., pythonResultName, sqlResultName)
   writesToDatabase?: boolean; // Flag indicating if the node writes to DB

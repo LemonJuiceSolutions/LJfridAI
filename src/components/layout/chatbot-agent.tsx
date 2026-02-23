@@ -54,11 +54,14 @@ import {
 } from 'recharts';
 import { createKnowledgeBaseEntryAction } from '@/app/actions/knowledge-base';
 import { useChartTheme } from '@/hooks/use-chart-theme';
+import { ConsultedNodesSection } from '@/components/agents/consulted-nodes-section';
+import type { ConsultedNode } from '@/lib/types';
 
 type Message = {
     role: 'user' | 'assistant';
     content: string;
     timestamp: number;
+    consultedNodes?: ConsultedNode[];
 };
 
 // Parse recharts config from markdown code blocks
@@ -342,6 +345,7 @@ export function ChatBotAgent() {
                     role: 'assistant',
                     content: data.message,
                     timestamp: Date.now(),
+                    consultedNodes: data.consultedNodes,
                 }]);
             } else {
                 throw new Error(data.error || 'Errore sconosciuto');
@@ -547,6 +551,10 @@ export function ChatBotAgent() {
                                                 : "bg-muted/50 border rounded-tl-none"
                                         )}>
                                             <div className="min-w-0">
+                                                {/* Consulted nodes - collapsible */}
+                                                {m.role === 'assistant' && m.consultedNodes && m.consultedNodes.length > 0 && (
+                                                    <ConsultedNodesSection nodes={m.consultedNodes} />
+                                                )}
                                                 {m.role === 'assistant' ? (
                                                     <RichContent content={text} charts={charts} />
                                                 ) : (

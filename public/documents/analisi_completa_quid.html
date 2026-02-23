@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analisi Bilancio · Cooperativa Sociale QUID · 2022–2024</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #e8eef5;
+    font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
+    color: #1a3a5c;
+    min-height: 100vh;
+    padding: 32px 24px 64px;
+  }
+
+  /* ── Sezioni ────────────────────────────────────── */
+  .section { margin-bottom: 44px; }
+  .section-header {
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #c4d8ee;
+  }
+  .section-num {
+    font-size: 11px; font-weight: 700; color: white; background: #14406e;
+    border-radius: 6px; padding: 3px 9px; letter-spacing: 0.5px;
+  }
+  .section-title {
+    font-size: 15px; font-weight: 600; color: #0d2e52;
+    letter-spacing: 0.2px; text-transform: uppercase;
+  }
+
+  /* ── Griglia grafici ────────────────────────────── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: stretch; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+
+  /* ── Card grafico ───────────────────────────────── */
+  .card {
+    background: #ffffff; border-radius: 12px; padding: 4px 4px 0;
+    box-shadow: 0 2px 12px rgba(10,40,80,0.08), 0 1px 3px rgba(10,40,80,0.05);
+    overflow: hidden; transition: box-shadow 0.2s;
+  }
+  .card:hover {
+    box-shadow: 0 6px 24px rgba(10,40,80,0.13), 0 2px 6px rgba(10,40,80,0.07);
+  }
+  .card .js-plotly-plot { width: 100% !important; }
+
+  /* ── KPI card uniforme (usata per 1.08 e 1.09) ─── */
+  .kpi-card {
+    position: relative;
+    background: #ffffff; border-radius: 12px; padding: 28px 28px 20px;
+    box-shadow: 0 2px 12px rgba(10,40,80,0.08), 0 1px 3px rgba(10,40,80,0.05);
+    display: flex; flex-direction: column; gap: 0;
+    transition: box-shadow 0.2s;
+  }
+  .kpi-card:hover {
+    box-shadow: 0 6px 24px rgba(10,40,80,0.13), 0 2px 6px rgba(10,40,80,0.07);
+  }
+  .kpi-card--green  { border-top: 4px solid #1a7a4a; }
+  .kpi-card--navy   { border-top: 4px solid #2166a8; }
+
+  .kpi-card-label {
+    font-size: 10.5px; font-weight: 700; color: #4a6785;
+    text-transform: uppercase; letter-spacing: 0.8px;
+    margin-bottom: 12px; padding-right: 32px;
+  }
+  .kpi-card-number {
+    font-size: 64px; font-weight: 800; color: #071e38;
+    letter-spacing: -2px; line-height: 1; margin-bottom: 4px;
+  }
+  .kpi-card-number .kpi-unit {
+    font-size: 22px; font-weight: 400; color: #5c7a99; margin-left: 4px;
+  }
+  .kpi-card-sublabel {
+    font-size: 11px; color: #7a95b0; margin-bottom: 14px;
+  }
+  .kpi-card-badge {
+    display: inline-block;
+    background: rgba(26,122,74,0.08);
+    border: 1px solid #1a7a4a;
+    border-radius: 20px; padding: 4px 14px;
+    font-size: 11px; font-weight: 600; color: #1a7a4a;
+    letter-spacing: 0.3px; margin-bottom: 18px;
+  }
+  .kpi-card-note {
+    background: #f4f7fb; border-radius: 8px; padding: 12px 14px;
+    font-size: 11.5px; color: #3a5a7c; line-height: 1.55;
+    margin-top: auto;
+  }
+  .kpi-card-spark { margin-top: 14px; }
+  .kpi-card-spark .js-plotly-plot { width: 100% !important; }
+
+  /* ── Box crediti ────────────────────────────────── */
+  .crediti-box {
+    background: #ffffff; border-radius: 12px; padding: 24px 28px;
+    box-shadow: 0 2px 12px rgba(10,40,80,0.08);
+    display: flex; flex-direction: column; justify-content: center; gap: 16px;
+  }
+  .crediti-box h4 {
+    font-size: 11px; font-weight: 700; color: #7a95b0;
+    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;
+  }
+  .cred-item { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .cred-label { font-size: 12px; color: #5c7a99; flex: 1; }
+  .cred-val { font-size: 14px; font-weight: 600; color: #0d2e52; }
+
+  /* ═══════════════════════════════════════════════════
+     PULSANTE (i) e POPUP — stesso stile di 1.10
+  ═══════════════════════════════════════════════════ */
+  .ibtn {
+    position: absolute; top: 14px; right: 14px;
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 1.5px solid #b8cfe8; background: #f0f6ff;
+    font-size: 13px; font-weight: 700; color: #3a80c0;
+    cursor: pointer; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s; z-index: 10; user-select: none;
+  }
+  .ibtn:hover { background: #2166a8; color: #fff; border-color: #2166a8; transform: scale(1.1); }
+
+  .info-popup {
+    display: none; position: absolute; top: 0; right: 0;
+    width: 340px; max-height: 80vh; overflow-y: auto;
+    background: #fff; border: 1.5px solid #c4d8ee;
+    border-radius: 12px; box-shadow: 0 12px 40px rgba(10,40,80,.20);
+    z-index: 9999;
+  }
+  .info-popup.open { display: block; }
+
+  .ipop-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px 10px;
+    background: linear-gradient(135deg, #071e38 0%, #14406e 100%);
+    color: white; position: sticky; top: 0; border-radius: 10px 10px 0 0;
+  }
+  .ipop-title { font-size: 12px; font-weight: 700; letter-spacing: .2px; flex: 1; }
+  .ipop-close {
+    background: none; border: none; color: rgba(255,255,255,.7);
+    font-size: 15px; cursor: pointer; padding: 0 4px; transition: color .15s; flex-shrink: 0;
+  }
+  .ipop-close:hover { color: #fff; }
+
+  .info-section { padding: 14px 16px; border-bottom: 1px solid #eef2f7; }
+  .info-section:last-child { border-bottom: none; padding-bottom: 16px; }
+  .isec-title {
+    font-size: 10px; font-weight: 700; color: #7a95b0;
+    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;
+  }
+  .info-formula {
+    display: block; background: #f0f4f8; border-radius: 6px; padding: 10px 12px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 11.5px; color: #0d2e52; line-height: 1.55;
+    white-space: normal; word-break: break-word;
+  }
+  .info-note {
+    margin-top: 8px; font-size: 11px; color: #5c7a99; line-height: 1.5;
+  }
+  .info-badge {
+    display: inline-block; margin: 10px 16px 2px;
+    font-size: 10px; font-weight: 700; letter-spacing: .5px;
+    padding: 3px 10px; border-radius: 20px;
+  }
+  .badge-ok   { background: rgba(26,122,74,.1);  color: #1a7a4a; border: 1px solid #1a7a4a; }
+
+  /* ── Backdrop ────────────────────────────────────── */
+  #backdrop { display: none; position: fixed; inset: 0; z-index: 9998; }
+  #backdrop.on { display: block; }
+</style>
+</head>
+<body>
+<div id="backdrop" onclick="closeAll()"></div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- 1.03  L'IMPRESA IN SINTESI                  -->
+<!-- ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">1.03</span>
+    <span class="section-title">L'Impresa in Sintesi</span>
+  </div>
+  <div class="grid-2">
+    <div class="card"><div>                            <div id="d66f668b-8f01-4ce7-8717-e183be38064c" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("d66f668b-8f01-4ce7-8717-e183be38064c")) {                    Plotly.newPlot(                        "d66f668b-8f01-4ce7-8717-e183be38064c",                        [{"fill":"tozeroy","fillcolor":"rgba(7,30,56,0.09)","line":{"color":"#071e38","shape":"spline","width":2.5},"marker":{"color":"#071e38","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Ricavi Totali","x":[2022,2023,2024],"y":[8748360.0,8140811.0,7831559.0],"yaxis":"y","type":"scatter"},{"line":{"color":"#87939f","dash":"dot","shape":"spline","width":1.5},"marker":{"color":"#87939f","size":5,"symbol":"diamond"},"mode":"lines+markers","name":"% su ricavi","x":[2022,2023,2024],"y":[100.0,100.0,100.0],"yaxis":"y2","type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Ricavi Totali","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,10672999.2]},"yaxis2":{"overlaying":"y","side":"right","ticksuffix":"%","showgrid":false,"zeroline":false,"showline":false,"tickfont":{"size":9,"color":"#87939f"}},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="card"><div>                            <div id="edda64e2-8d9c-484f-8071-4ac8b59ef8c0" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("edda64e2-8d9c-484f-8071-4ac8b59ef8c0")) {                    Plotly.newPlot(                        "edda64e2-8d9c-484f-8071-4ac8b59ef8c0",                        [{"fill":"tozeroy","fillcolor":"rgba(20,64,110,0.09)","line":{"color":"#14406e","shape":"spline","width":2.5},"marker":{"color":"#14406e","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Costi Materie Prime","x":[2022,2023,2024],"y":[1342847.0,919143.0,711930.0],"yaxis":"y","type":"scatter"},{"line":{"color":"#8ea3b9","dash":"dot","shape":"spline","width":1.5},"marker":{"color":"#8ea3b9","size":5,"symbol":"diamond"},"mode":"lines+markers","name":"% su ricavi","x":[2022,2023,2024],"y":[15.3,11.3,9.1],"yaxis":"y2","type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Costi Materie Prime","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,1638273.3399999999]},"yaxis2":{"overlaying":"y","side":"right","ticksuffix":"%","showgrid":false,"zeroline":false,"showline":false,"tickfont":{"size":9,"color":"#8ea3b9"}},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="card"><div>                            <div id="4d9e09ca-a4a8-4270-94b9-aeb7b709c940" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("4d9e09ca-a4a8-4270-94b9-aeb7b709c940")) {                    Plotly.newPlot(                        "4d9e09ca-a4a8-4270-94b9-aeb7b709c940",                        [{"fill":"tozeroy","fillcolor":"rgba(26,82,137,0.09)","line":{"color":"#1a5289","shape":"spline","width":2.5},"marker":{"color":"#1a5289","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Costi Servizi","x":[2022,2023,2024],"y":[2260107.0,2697025.0,2072365.0],"yaxis":"y","type":"scatter"},{"line":{"color":"#91abc6","dash":"dot","shape":"spline","width":1.5},"marker":{"color":"#91abc6","size":5,"symbol":"diamond"},"mode":"lines+markers","name":"% su ricavi","x":[2022,2023,2024],"y":[25.8,33.1,26.5],"yaxis":"y2","type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Costi Servizi","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,3290370.5]},"yaxis2":{"overlaying":"y","side":"right","ticksuffix":"%","showgrid":false,"zeroline":false,"showline":false,"tickfont":{"size":9,"color":"#91abc6"}},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="card"><div>                            <div id="8a7cb840-15f4-46e7-a6be-d875e2f4e68e" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("8a7cb840-15f4-46e7-a6be-d875e2f4e68e")) {                    Plotly.newPlot(                        "8a7cb840-15f4-46e7-a6be-d875e2f4e68e",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Costi Personale","x":[2022,2023,2024],"y":[3146610.0,3487789.0,3559720.0],"yaxis":"y","type":"scatter"},{"line":{"color":"#94b5d5","dash":"dot","shape":"spline","width":1.5},"marker":{"color":"#94b5d5","size":5,"symbol":"diamond"},"mode":"lines+markers","name":"% su ricavi","x":[2022,2023,2024],"y":[36.0,42.8,45.5],"yaxis":"y2","type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Costi Personale","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,4342858.399999999]},"yaxis2":{"overlaying":"y","side":"right","ticksuffix":"%","showgrid":false,"zeroline":false,"showline":false,"tickfont":{"size":9,"color":"#94b5d5"}},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="card"><div>                            <div id="425984e9-bdac-4692-abf1-e14d82338748" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("425984e9-bdac-4692-abf1-e14d82338748")) {                    Plotly.newPlot(                        "425984e9-bdac-4692-abf1-e14d82338748",                        [{"fill":"tozeroy","fillcolor":"rgba(58,128,192,0.09)","line":{"color":"#3a80c0","shape":"spline","width":2.5},"marker":{"color":"#3a80c0","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Oneri Finanziari","x":[2022,2023,2024],"y":[73329.0,139910.0,107251.0],"yaxis":"y","type":"scatter"},{"line":{"color":"#a0c2e0","dash":"dot","shape":"spline","width":1.5},"marker":{"color":"#a0c2e0","size":5,"symbol":"diamond"},"mode":"lines+markers","name":"% su ricavi","x":[2022,2023,2024],"y":[0.8,1.7,1.4],"yaxis":"y2","type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Oneri Finanziari","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,170690.19999999998]},"yaxis2":{"overlaying":"y","side":"right","ticksuffix":"%","showgrid":false,"zeroline":false,"showline":false,"tickfont":{"size":9,"color":"#a0c2e0"}},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="card"><div>                            <div id="84d9d182-0465-4027-bba5-0ef792a3c3bd" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("84d9d182-0465-4027-bba5-0ef792a3c3bd")) {                    Plotly.newPlot(                        "84d9d182-0465-4027-bba5-0ef792a3c3bd",                        [{"fill":"tozeroy","fillcolor":"rgba(92,159,212,0.09)","line":{"color":"#5c9fd4","shape":"spline","width":2.5},"marker":{"color":"#5c9fd4","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Imposte sul Reddito","x":[2022,2023,2024],"y":[948.0,0.0,223.0],"yaxis":"y","type":"scatter"},{"line":{"color":"#b0d0ea","dash":"dot","shape":"spline","width":1.5},"marker":{"color":"#b0d0ea","size":5,"symbol":"diamond"},"mode":"lines+markers","name":"% su ricavi","x":[2022,2023,2024],"y":[0.0,null,0.0],"yaxis":"y2","type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Imposte sul Reddito","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,1156.56]},"yaxis2":{"overlaying":"y","side":"right","ticksuffix":"%","showgrid":false,"zeroline":false,"showline":false,"tickfont":{"size":9,"color":"#b0d0ea"}},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="card"><div>                            <div id="3e3bd71c-a040-4a77-9339-aca49d1646ed" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("3e3bd71c-a040-4a77-9339-aca49d1646ed")) {                    Plotly.newPlot(                        "3e3bd71c-a040-4a77-9339-aca49d1646ed",                        [{"fill":"tozeroy","fillcolor":"rgba(13,46,82,0.09)","line":{"color":"#0d2e52","shape":"spline","width":2.5},"marker":{"color":"#0d2e52","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Risultato d'Esercizio","x":[2022,2023,2024],"y":[68372.0,53454.0,940316.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Risultato d'Esercizio","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,1147185.52]},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="card"><div>                            <div id="d7df454d-3617-4704-880f-8c3c275d31eb" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("d7df454d-3617-4704-880f-8c3c275d31eb")) {                    Plotly.newPlot(                        "d7df454d-3617-4704-880f-8c3c275d31eb",                        [{"fill":"tozeroy","fillcolor":"rgba(26,122,74,0.09)","line":{"color":"#1a7a4a","shape":"spline","width":2.5},"marker":{"color":"#1a7a4a","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"EBITDA","x":[2022,2023,2024],"y":[330804.0,159125.0,1018646.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"EBITDA","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,1242748.1199999999]},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- 1.04  INCASSI E PAGAMENTI                   -->
+<!-- ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">1.04</span>
+    <span class="section-title">Incassi e Pagamenti</span>
+  </div>
+  <div class="grid-2">
+    <div class="card"><div>                            <div id="5044560c-f2fe-409b-a340-e9060efb6981" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("5044560c-f2fe-409b-a340-e9060efb6981")) {                    Plotly.newPlot(                        "5044560c-f2fe-409b-a340-e9060efb6981",                        [{"marker":{"color":"#14406e","line":{"width":0},"opacity":0.85},"name":"Giorni incasso","x":[2022,2023,2024],"y":[46,63,105],"type":"bar"},{"marker":{"color":"#5c9fd4","line":{"width":0},"opacity":0.85},"name":"Giorni pagamento","x":[2022,2023,2024],"y":[242,235,403],"type":"bar"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Incassi vs Pagamenti  (giorni medi)","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"","tickformat":",.0f"},"legend":{"font":{"size":10},"orientation":"h","y":-0.22,"x":0.1,"bgcolor":"rgba(0,0,0,0)"},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":true,"hovermode":"x unified","barmode":"group","bargap":0.28},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="card"><div>                            <div id="660926b7-328e-480e-98ad-f892199386cd" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("660926b7-328e-480e-98ad-f892199386cd")) {                    Plotly.newPlot(                        "660926b7-328e-480e-98ad-f892199386cd",                        [{"fill":"tozeroy","fillcolor":"rgba(58,128,192,0.09)","line":{"color":"#3a80c0","shape":"spline","width":2.5},"marker":{"color":"#3a80c0","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Scorte di Magazzino  (giorni)","x":[2022,2023,2024],"y":[185,226,294],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Scorte di Magazzino  (giorni)","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"","tickformat":",.0f","ticksuffix":" gg","range":[0,358.68]},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- 1.06  DISPONIBILITÀ A BREVE                 -->
+<!-- ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">1.06</span>
+    <span class="section-title">Disponibilità a Breve</span>
+  </div>
+  <div class="grid-2">
+    <div class="card"><div>                            <div id="d650bba1-64b3-4e86-83c2-323eda180a58" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("d650bba1-64b3-4e86-83c2-323eda180a58")) {                    Plotly.newPlot(                        "d650bba1-64b3-4e86-83c2-323eda180a58",                        [{"fill":"tozeroy","fillcolor":"rgba(7,30,56,0.09)","line":{"color":"#071e38","shape":"spline","width":2.5},"marker":{"color":"#071e38","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Liquidità disponibile","x":[2022,2023,2024],"y":[5094617.0,2884722.0,2755661.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Liquidità disponibile","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,6215432.74]},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="card"><div>                            <div id="6e724208-420b-403d-82a6-719be568ee0c" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("6e724208-420b-403d-82a6-719be568ee0c")) {                    Plotly.newPlot(                        "6e724208-420b-403d-82a6-719be568ee0c",                        [{"fill":"tozeroy","fillcolor":"rgba(26,82,137,0.09)","line":{"color":"#1a5289","shape":"spline","width":2.5},"marker":{"color":"#1a5289","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Crediti Totali","x":[2022,2023,2024],"y":[1185055.0,1444880.0,2368044.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Crediti Totali","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,2889013.68]},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  </div>
+  <div style="margin-top:20px;" class="grid-2">
+    <div class="card"><div>                            <div id="5f60026d-07a0-4cde-9bfe-d4795a287ee3" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("5f60026d-07a0-4cde-9bfe-d4795a287ee3")) {                    Plotly.newPlot(                        "5f60026d-07a0-4cde-9bfe-d4795a287ee3",                        [{"marker":{"color":"#0d2e52","opacity":0.9},"name":"Verso clienti","x":[2022,2023,2024],"y":[814474.0,996872.0,1965616.0],"type":"bar"},{"marker":{"color":"#2166a8","opacity":0.9},"name":"Tributari","x":[2022,2023,2024],"y":[209460.0,215814.0,129634.0],"type":"bar"},{"marker":{"color":"#8abfe6","opacity":0.9},"name":"Altri","x":[2022,2023,2024],"y":[161121.0,232194.0,272794.0],"type":"bar"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Composizione Crediti","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f"},"legend":{"font":{"size":10},"orientation":"h","y":-0.25,"x":0.0,"bgcolor":"rgba(0,0,0,0)"},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":true,"hovermode":"x unified","barmode":"stack","bargap":0.35},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="crediti-box">
+      <h4>Composizione crediti — 2024</h4>
+      <div class="cred-item">
+          <span class="dot" style="background:#0d2e52"></span>
+          <span class="cred-label">Verso clienti</span>
+          <span class="cred-val">€ 1.965.616</span>
+        </div><div class="cred-item">
+          <span class="dot" style="background:#2166a8"></span>
+          <span class="cred-label">Tributari</span>
+          <span class="cred-val">€ 129.634</span>
+        </div><div class="cred-item">
+          <span class="dot" style="background:#8abfe6"></span>
+          <span class="cred-label">Altri</span>
+          <span class="cred-val">€ 272.794</span>
+        </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- 1.07  DEBITI VERSO BANCHE                   -->
+<!-- ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">1.07</span>
+    <span class="section-title">Andamento Debiti verso Banche</span>
+  </div>
+  <div class="grid-2">
+    <div class="card"><div>                            <div id="ad440f0d-b373-4da3-b630-5b05c11791bb" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("ad440f0d-b373-4da3-b630-5b05c11791bb")) {                    Plotly.newPlot(                        "ad440f0d-b373-4da3-b630-5b05c11791bb",                        [{"fill":"tozeroy","fillcolor":"rgba(13,46,82,0.09)","line":{"color":"#0d2e52","shape":"spline","width":2.5},"marker":{"color":"#0d2e52","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Debiti Banche — Breve Termine","x":[2022,2023,2024],"y":[623262.0,575347.0,1098063.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Debiti Banche — Breve Termine","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,1339636.8599999999]},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+    <div class="card"><div>                            <div id="36df63df-146d-42a3-afa4-18777767abc0" class="plotly-graph-div" style="height:300px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("36df63df-146d-42a3-afa4-18777767abc0")) {                    Plotly.newPlot(                        "36df63df-146d-42a3-afa4-18777767abc0",                        [{"fill":"tozeroy","fillcolor":"rgba(26,82,137,0.09)","line":{"color":"#1a5289","shape":"spline","width":2.5},"marker":{"color":"#1a5289","line":{"color":"#ffffff","width":1.5},"size":7},"mode":"lines+markers","name":"Debiti Banche — Medio Lungo Termine","x":[2022,2023,2024],"y":[2879423.0,2290723.0,1707914.0],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"title":{"font":{"size":12,"color":"#3a5a7c","family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"pad":{"l":0,"b":8},"text":"Debiti Banche — Medio Lungo Termine","x":0,"xanchor":"left"},"margin":{"l":80,"r":70,"t":48,"b":40},"font":{"family":"Inter, 'Helvetica Neue', Arial, sans-serif","size":10,"color":"#1a3a5c"},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":10,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"tickprefix":"€ ","tickformat":",.0f","range":[0,3512896.06]},"plot_bgcolor":"#ffffff","paper_bgcolor":"#ffffff","height":300,"showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- 1.08 + 1.09  KPI FINANZIARI AFFIANCATI      -->
+<!-- ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">1.08 – 1.09</span>
+    <span class="section-title">Accesso al Credito &amp; Costo del Denaro</span>
+  </div>
+
+  <div class="grid-2">
+
+    <!-- ── 1.08  PFN / EBITDA ── -->
+    <div class="kpi-card kpi-card--green" id="card108">
+      <button class="ibtn" onclick="toggleInfo('pop108')" title="Come si calcola">ⓘ</button>
+
+      <div class="kpi-card-label">1.08 — Accesso al Credito · PFN / EBITDA</div>
+      <div class="kpi-card-number">
+        0,05<span class="kpi-unit">anni</span>
+      </div>
+      <div class="kpi-card-sublabel">Anno di riferimento: 2024</div>
+      <div class="kpi-card-badge">✓&nbsp; sotto soglia EBA&nbsp;(soglia: 6 anni)</div>
+
+      <div class="kpi-card-spark"><div>                            <div id="882e138d-8317-4708-82ae-7f91e364fae3" class="plotly-graph-div" style="height:130px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("882e138d-8317-4708-82ae-7f91e364fae3")) {                    Plotly.newPlot(                        "882e138d-8317-4708-82ae-7f91e364fae3",                        [{"fill":"tozeroy","fillcolor":"rgba(26,122,74,0.09)","line":{"color":"#1a7a4a","shape":"spline","width":2.5},"marker":{"color":"#1a7a4a","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[-4.81,-0.12,0.05],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":8,"r":8,"t":4,"b":4},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"range":[0,0.061]},"height":130,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+
+      <div class="kpi-card-note">
+        Esprime in quanti anni l'azienda riuscirebbe a ripagare i debiti finanziari
+        usando unicamente i flussi operativi potenziali (EBITDA).
+        La normativa <strong>EBA</strong> raccomanda un valore ≤ 6 anni (STAGE 2 — IFRS9).
+      </div>
+
+      <!-- Popup (i) -->
+      <div class="info-popup" id="pop108">
+        <div class="ipop-head">
+          <span class="ipop-title">1.08 · PFN / EBITDA</span>
+          <button class="ipop-close" onclick="closeInfo('pop108')">✕</button>
+        </div>
+        <span class="info-badge badge-ok">✓&nbsp; formula standard</span>
+        <div class="info-section">
+          <div class="isec-title">🧮 Come si calcola</div>
+          <code class="info-formula">PFN / EBITDA</code>
+          <p class="info-note">
+            <strong>PFN</strong> = Debiti verso Banche (Totale) – Liquidità disponibile<br>
+            <strong>EBITDA</strong> = EBIT + Ammortamenti e Svalutazioni
+          </p>
+        </div>
+        <div class="info-section">
+          <div class="isec-title">📌 Soglia di riferimento</div>
+          <p class="info-note">
+            La normativa <strong>EBA / IFRS 9</strong> colloca le esposizioni in
+            <em>STAGE 2</em> (watchlist) quando il rapporto supera <strong>6 anni</strong>.
+            Un valore negativo indica che la liquidità eccede i debiti finanziari (posizione
+            netta creditrice).
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 1.09  COSTO DEL DENARO ── -->
+    <div class="kpi-card kpi-card--navy" id="card109">
+      <button class="ibtn" onclick="toggleInfo('pop109')" title="Come si calcola">ⓘ</button>
+
+      <div class="kpi-card-label">1.09 — Costo del denaro a prestito</div>
+      <div class="kpi-card-number">
+        3,82<span class="kpi-unit">%</span>
+      </div>
+      <div class="kpi-card-sublabel">Anno di riferimento: 2024</div>
+
+      <div class="kpi-card-spark"><div>                            <div id="d48689f2-dcfa-406b-bad8-f2060542516c" class="plotly-graph-div" style="height:130px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("d48689f2-dcfa-406b-bad8-f2060542516c")) {                    Plotly.newPlot(                        "d48689f2-dcfa-406b-bad8-f2060542516c",                        [{"fill":"tozeroy","fillcolor":"rgba(33,102,168,0.09)","line":{"color":"#2166a8","shape":"spline","width":2.5},"marker":{"color":"#2166a8","line":{"color":"#ffffff","width":1.5},"size":6},"mode":"lines+markers","x":[2022,2023,2024],"y":[2.09,4.88,3.82],"type":"scatter"}],                        {"template":{"layout":{"colorway":["#059669","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899"],"font":{"color":"#475569","family":"Inter, -apple-system, sans-serif","size":12},"hoverlabel":{"bgcolor":"white","font":{"family":"Inter","size":12}},"legend":{"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#e2e8f0","borderwidth":1},"margin":{"b":50,"l":50,"r":40,"t":80},"paper_bgcolor":"white","plot_bgcolor":"rgba(248, 250, 252, 0.5)","title":{"font":{"color":"#1e293b","size":18,"weight":"bold"},"x":0.05,"y":0.95},"xaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"},"yaxis":{"gridcolor":"#e2e8f0","tickfont":{"size":10},"title":{"font":{"color":"#64748b","size":12}},"zerolinecolor":"#cbd5e1"}}},"margin":{"l":8,"r":8,"t":4,"b":4},"hoverlabel":{"font":{"color":"white","size":10,"family":"Inter, 'Helvetica Neue', Arial, sans-serif"},"bgcolor":"#0d2e52","bordercolor":"#0d2e52"},"xaxis":{"tickfont":{"size":9,"color":"#7a95b0"},"tickmode":"array","tickvals":[2022,2023,2024],"ticktext":["2022","2023","2024"],"showgrid":false,"zeroline":false,"showline":false},"yaxis":{"tickfont":{"size":8,"color":"#7a95b0"},"showgrid":true,"gridcolor":"#e2eaf3","zeroline":false,"showline":false,"range":[0,5.9536]},"height":130,"paper_bgcolor":"#ffffff","plot_bgcolor":"#ffffff","showlegend":false,"hovermode":"x unified"},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+
+      <div class="kpi-card-note">
+        Rappresenta il costo effettivo percentuale del denaro corrisposto
+        agli istituti di credito a fronte degli affidamenti bancari in essere.
+        Un valore più alto indica condizioni di finanziamento più onerose.
+      </div>
+
+      <!-- Popup (i) -->
+      <div class="info-popup" id="pop109">
+        <div class="ipop-head">
+          <span class="ipop-title">1.09 · Costo del denaro a prestito</span>
+          <button class="ipop-close" onclick="closeInfo('pop109')">✕</button>
+        </div>
+        <span class="info-badge badge-ok">✓&nbsp; formula standard</span>
+        <div class="info-section">
+          <div class="isec-title">🧮 Come si calcola</div>
+          <code class="info-formula">|Oneri Finanziari| / |Debiti verso Banche Totale| × 100</code>
+          <p class="info-note">
+            Gli oneri finanziari vengono considerati in valore assoluto perché
+            nel file XBRL possono essere riportati con segno negativo.
+          </p>
+        </div>
+        <div class="info-section">
+          <div class="isec-title">📌 Come interpretarlo</div>
+          <p class="info-note">
+            Varia in funzione di tassi di mercato, linee di credito utilizzate,
+            condizioni bancarie negoziate e struttura complessiva del debito.
+            Confrontato con i tassi di riferimento BCE permette di valutare
+            l'efficacia delle condizioni bancarie ottenute.
+          </p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function toggleInfo(popId) {
+  const popup = document.getElementById(popId);
+  if (!popup) return;
+  const wasOpen = popup.classList.contains('open');
+  closeAll();
+  if (!wasOpen) {
+    popup.classList.add('open');
+    document.getElementById('backdrop').classList.add('on');
+    requestAnimationFrame(() => {
+      const card = popup.closest('.kpi-card');
+      const tR   = card.getBoundingClientRect();
+      const pW   = popup.offsetWidth;
+      const pH   = popup.offsetHeight;
+      popup.style.left   = (tR.right + pW > window.innerWidth  - 20) ? 'auto' : '0';
+      popup.style.right  = (tR.right + pW > window.innerWidth  - 20) ? '0'    : 'auto';
+      popup.style.top    = (tR.top  + pH > window.innerHeight  - 20) ? 'auto' : '0';
+      popup.style.bottom = (tR.top  + pH > window.innerHeight  - 20) ? '0'    : 'auto';
+    });
+  }
+}
+function closeInfo(popId) {
+  const p = document.getElementById(popId);
+  if (p) p.classList.remove('open');
+  document.getElementById('backdrop').classList.remove('on');
+}
+function closeAll() {
+  document.querySelectorAll('.info-popup.open').forEach(p => p.classList.remove('open'));
+  document.getElementById('backdrop').classList.remove('on');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+</script>
+</body>
+</html>
