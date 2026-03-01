@@ -7,7 +7,12 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const folder = searchParams.get('folder') || 'uploads';
 
-        const uploadDir = join(process.cwd(), 'public', folder);
+        // Allow 'python-backend/EEXXCC' as a special folder outside public/
+        const ALLOWED_EXTRA_DIRS: Record<string, string> = {
+            'excel-etl': join(process.cwd(), 'python-backend', 'EEXXCC'),
+        };
+
+        const uploadDir = ALLOWED_EXTRA_DIRS[folder] || join(process.cwd(), 'public', folder);
 
         try {
             const files = await readdir(uploadDir);

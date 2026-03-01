@@ -1,15 +1,17 @@
 
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { BotMessageSquare, BrainCircuit, Loader2, ArrowLeft, Sparkles, Mic, MicOff, AlertCircle, RefreshCw } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { BotMessageSquare, Loader2, Sparkles, Mic, MicOff, AlertCircle, RefreshCw, FileSpreadsheet, Upload, Database } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { processDescriptionAction, getTreeAction, regenerateNaturalLanguageAction } from '../actions';
+import { processDescriptionAction, getTreeAction, regenerateNaturalLanguageAction, processExcelToPipelineAction } from '../actions';
+import { getConnectorsAction } from '../actions/connectors';
+import { ExcelAnalysisSummary } from '@/components/excel-analysis-summary';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import type { StoredTree } from '@/lib/types';
 import ResultsDisplay from '@/components/rule-sage/results-display';
@@ -47,11 +49,48 @@ export default function CreatePage() {
   const [isSpeechSupported, setIsSpeechSupported] = useState(true);
   const recognitionRef = useRef<any>(null);
 
+  const [excelFiles, setExcelFiles] = useState<Array<{ name: string }>>([]);
+  const [selectedExcelFile, setSelectedExcelFile] = useState<string>('');
+  const [excelAnalysis, setExcelAnalysis] = useState<any>(null);
+  const [isAnalyzingExcel, setIsAnalyzingExcel] = useState(false);
+  const [connectors, setConnectors] = useState<Array<{ id: string; name: string; type: string }>>([]);
+  const [selectedConnectorId, setSelectedConnectorId] = useState<string>('');
+
   useEffect(() => {
     if (!isSettingsLoading && dbModel) {
       setCurrentModel(dbModel);
     }
   }, [dbModel, isSettingsLoading]);
+
+  useEffect(() => {
+    // Fetch Excel files from both public/documents and python-backend/EEXXCC
+    Promise.all([
+      fetch('/api/files?folder=documents').then(r => r.json()).catch(() => ({ files: [] })),
+      fetch('/api/files?folder=excel-etl').then(r => r.json()).catch(() => ({ files: [] })),
+    ]).then(([docs, eexxcc]) => {
+      const allFiles = [
+        ...((docs.success && docs.files) || []),
+        ...((eexxcc.success && eexxcc.files) || []),
+      ].filter((f: any) => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'));
+      // Deduplicate by name
+      const seen = new Set<string>();
+      const unique = allFiles.filter((f: any) => {
+        if (seen.has(f.name)) return false;
+        seen.add(f.name);
+        return true;
+      });
+      setExcelFiles(unique);
+    });
+
+    getConnectorsAction().then(res => {
+      if (res.data) {
+        const dbConnectors = res.data
+          .filter((c: any) => c.type === 'MSSQL')
+          .map((c: any) => ({ id: c.id, name: c.name, type: c.type }));
+        setConnectors(dbConnectors);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -182,6 +221,77 @@ export default function CreatePage() {
     }
   };
 
+  const handleExcelAnalyze = async (filename: string) => {
+    setSelectedExcelFile(filename);
+    setIsAnalyzingExcel(true);
+    setExcelAnalysis(null);
+    try {
+      const response = await fetch('/api/analyze-excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename }),
+      });
+      const result = await response.json();
+
+      if (!result.success) throw new Error(result.error);
+
+      setExcelAnalysis(result.analysis);
+      toast({
+        title: 'Analisi Excel completata',
+        description: `Trovati ${result.analysis.sheets.length} fogli con ${result.analysis.sheets.reduce((s: number, sh: any) => s + sh.formulas.length, 0)} formule.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Errore analisi Excel',
+        description: error.message || 'Analisi fallita',
+      });
+    } finally {
+      setIsAnalyzingExcel(false);
+    }
+  };
+
+  const handleExcelToPipeline = async () => {
+    if (!excelAnalysis) return;
+    setIsLoading(true);
+    setAnalysisResult(null);
+    try {
+      const openRouterConfig = dbApiKey ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
+      // Optimize: strip the huge formulas array, keep only summaries for the AI prompt
+      const trimmedAnalysis = {
+        ...excelAnalysis,
+        sheets: excelAnalysis.sheets.map((s: any) => ({
+          ...s,
+          formulas: s.formulas?.slice(0, 5) || [], // Keep just a few + the count is preserved by formulaSamples
+          formulaCount: s.formulas?.length || 0,
+          sampleData: s.sampleData?.slice(0, 3) || [],
+        })),
+        crossSheetReferences: excelAnalysis.crossSheetReferences?.slice(0, 50) || [],
+      };
+      const result = await processExcelToPipelineAction(trimmedAnalysis, openRouterConfig, selectedConnectorId || undefined);
+      if (result.error || !result.data) throw new Error(result.error || 'Generazione fallita');
+
+      setAnalysisResult(result.data);
+      toast({
+        title: 'Pipeline generata!',
+        description: 'La pipeline dal file Excel e\' stata creata.',
+        action: (
+          <Button asChild variant="secondary" size="sm">
+            <Link href={`/view/${result.data.id}`}>Visualizza</Link>
+          </Button>
+        )
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Generazione Pipeline fallita',
+        description: error.message || 'Errore sconosciuto',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSetExample = () => {
     const randomIndex = Math.floor(Math.random() * processExamples.length);
     setTextDescription(processExamples[randomIndex]);
@@ -291,6 +401,96 @@ export default function CreatePage() {
                   </div>
                 </div>
               </form>
+
+              {/* Excel to Pipeline Section */}
+              {excelFiles.length > 0 && (
+                <div className="border-t pt-4 mt-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                    <span className="text-sm font-medium">Oppure seleziona un file Excel per generare una Pipeline</span>
+                  </div>
+                  <Select
+                    value={selectedExcelFile}
+                    onValueChange={(value) => handleExcelAnalyze(value)}
+                    disabled={isLoading || isAnalyzingExcel}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleziona un file Excel dalla repository..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {excelFiles.map((file) => (
+                        <SelectItem key={file.name} value={file.name}>
+                          <span className="flex items-center gap-2">
+                            <FileSpreadsheet className="h-3 w-3 text-emerald-600" />
+                            {file.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {isAnalyzingExcel && (
+                    <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Analizzando il file Excel...
+                    </div>
+                  )}
+                  {excelAnalysis && (
+                    <>
+                      <ExcelAnalysisSummary analysis={excelAnalysis} />
+                      {connectors.length > 0 && (
+                        <div className="mt-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Database className="h-4 w-4 text-blue-600" />
+                            <span className="text-sm font-medium">Connettore DB (per query SQL reali)</span>
+                          </div>
+                          <Select
+                            value={selectedConnectorId}
+                            onValueChange={setSelectedConnectorId}
+                            disabled={isLoading}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Seleziona connettore database..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {connectors.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  <span className="flex items-center gap-2">
+                                    <Database className="h-3 w-3 text-blue-600" />
+                                    {c.name}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {!selectedConnectorId && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Senza connettore, le query SQL saranno generate con nomi colonne approssimativi.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      <Button
+                        onClick={handleExcelToPipeline}
+                        disabled={isLoading}
+                        className="mt-3 w-full"
+                        variant="default"
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generando Pipeline...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="mr-2 h-4 w-4" />
+                            Genera Pipeline da Excel
+                          </>
+                        )}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

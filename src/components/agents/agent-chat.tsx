@@ -1,6 +1,10 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
+import type { UIMessage } from 'ai';
+import { ToolCallsDisplay, type ToolCallInfo } from '@/components/agents/tool-call-display';
 import {
   Send,
   MessageSquare,
@@ -400,6 +404,44 @@ function RichContent({ content, charts, onApplyCode }: { content: string; charts
   );
 }
 
+// Parse agent JSON from streamed response (may have markdown wrapping)
+function parseAgentJsonFromStream(text: string): { message: string; updatedScript?: string; needsClarification?: boolean; clarificationQuestions?: string[]; usage?: any; solutionSourceNode?: string } | null {
+  // Try direct parse
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.message === 'string') return parsed;
+  } catch { /* try extraction */ }
+
+  // Try extracting JSON from text (same logic as extractFromRawJson)
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '{') continue;
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let j = i; j < text.length; j++) {
+      const ch = text[j];
+      if (escape) { escape = false; continue; }
+      if (ch === '\\' && inString) { escape = true; continue; }
+      if (ch === '"' && !escape) { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          try {
+            const candidate = text.substring(i, j + 1);
+            const parsed = JSON.parse(candidate);
+            if (parsed && typeof parsed.message === 'string') return parsed;
+          } catch { /* try next */ }
+          break;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 interface AgentChatProps {
   nodeId: string;
   agentType: 'sql' | 'python';
@@ -444,6 +486,91 @@ export function AgentChat({
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
   const [autoRetryCount, setAutoRetryCount] = useState(0);
   const MAX_AUTO_RETRIES = 3;
+
+  // --- Streaming Mode (Vercel AI SDK v6) ---
+  const [streamingEnabled, setStreamingEnabled] = useState(true);
+
+  // Create transport with dynamic body (memoized to avoid re-creating on every render)
+  const streamTransport = useMemo(() => new DefaultChatTransport({
+    api: '/api/agents/chat-stream',
+    body: { nodeId, agentType, script, tableSchema, inputTables, nodeQueries, connectorId, selectedDocuments },
+  }), [nodeId, agentType, script, tableSchema, inputTables, nodeQueries, connectorId, selectedDocuments]);
+
+  // useChat hook for streaming mode (v6 API)
+  const {
+    messages: streamMessages,
+    sendMessage: streamSendMessage,
+    status: streamStatus,
+    stop: streamStop,
+    setMessages: setStreamMessages,
+  } = useChat({
+    transport: streamTransport,
+    onFinish: ({ message }: { message: UIMessage }) => {
+      // Extract text from message parts
+      const textContent = message.parts
+        .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+        .map(p => p.text)
+        .join('');
+
+      console.log('[stream] onFinish - textContent length:', textContent.length, 'parts:', message.parts.length);
+
+      // Try to extract SQL or Python code from code blocks in the response
+      let extractedScript: string | undefined;
+      const sqlBlockMatch = textContent.match(/```sql\s*\n([\s\S]*?)```/i);
+      const pythonBlockMatch = textContent.match(/```python\s*\n([\s\S]*?)```/i);
+      if (sqlBlockMatch) {
+        extractedScript = sqlBlockMatch[1].trim();
+      } else if (pythonBlockMatch) {
+        extractedScript = pythonBlockMatch[1].trim();
+      }
+
+      // Also try to parse JSON format (backward compat)
+      const parsed = parseAgentJsonFromStream(textContent);
+
+      const finalMessage = parsed?.message || textContent;
+      const finalScript = parsed?.updatedScript || extractedScript;
+
+      // Add to our local messages state
+      setMessages(prev => [...prev, {
+        role: 'assistant' as const,
+        content: finalMessage,
+        timestamp: Date.now(),
+        scriptSnapshot: finalScript || script,
+      }]);
+
+      // Trigger script update + auto-execute
+      if (finalScript && onScriptUpdate) {
+        onScriptUpdate(finalScript);
+        if (onAutoExecutePreview) {
+          setTimeout(() => {
+            triggerAutoExecute(finalScript, 0);
+          }, 300);
+        }
+      }
+
+      // Track usage if available
+      if (parsed?.usage) {
+        setTotalUsage(prev => ({
+          tokens: prev.tokens + (parsed.usage.total_tokens || 0),
+          cost: prev.cost + (parsed.usage.total_cost || 0),
+        }));
+      }
+
+      // Clear stream messages (they've been transferred to local state)
+      setStreamMessages([]);
+    },
+    onError: (error: Error) => {
+      console.error('[stream] Error:', error);
+      // Show error as assistant message
+      setMessages(prev => [...prev, {
+        role: 'assistant' as const,
+        content: `⚠️ **Errore streaming**\n\n${error.message || 'Si è verificato un errore durante la comunicazione con il server. Riprova o disattiva lo streaming.'}`,
+        timestamp: Date.now(),
+      }]);
+    },
+  });
+
+  const isStreamLoading = streamStatus === 'streaming' || streamStatus === 'submitted';
 
   // Ref to auto-scroll version timeline to active version
   const versionTimelineRef = useRef<HTMLDivElement>(null);
@@ -582,7 +709,7 @@ export function AgentChat({
   // Auto-scroll to bottom when messages change or loading state changes
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading, isAutoExecuting]);
+  }, [messages, isLoading, isAutoExecuting, isStreamLoading, streamMessages]);
 
   // Auto-execute preview and retry on errors (up to MAX_AUTO_RETRIES)
   const triggerAutoExecute = useCallback(async (scriptToExecute: string, retryAttempt: number = 0) => {
@@ -772,13 +899,63 @@ export function AgentChat({
   }, [onAutoExecutePreview, nodeId, agentType, tableSchema, inputTables, connectorId, onScriptUpdate]);
 
   const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || isStreamLoading) return;
 
     const userMessage = input.trim();
     setInput('');
+    setActiveVersionIndex(-1); // Re-enter auto-follow on new message
+
+    // --- Streaming Mode ---
+    if (streamingEnabled) {
+      // Check for missing connectorId on SQL agent only if no input tables are available
+      const hasInputTables = tableSchema && Object.keys(tableSchema).length > 0;
+      if (agentType === 'sql' && !connectorId && !hasInputTables) {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'user', content: userMessage, timestamp: Date.now(), scriptSnapshot: script },
+          {
+            role: 'assistant',
+            content: '⚠️ **Connettore database mancante**\n\nPer poter eseguire query SQL, questo nodo deve avere un connettore database configurato.\n\nVai nelle impostazioni del nodo e seleziona un connettore, poi riprova.',
+            timestamp: Date.now(),
+          },
+        ]);
+        return;
+      }
+
+      // Add user message to local messages immediately
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'user',
+          content: userMessage,
+          timestamp: Date.now(),
+          scriptSnapshot: script,
+        },
+      ]);
+
+      // Send via streaming (useChat handles loading state)
+      streamSendMessage({ text: userMessage });
+      return;
+    }
+
+    // --- Legacy Mode (non-streaming) ---
+    // Check for missing connectorId on SQL agent only if no input tables
+    const hasInputTablesLegacy = tableSchema && Object.keys(tableSchema).length > 0;
+    if (agentType === 'sql' && !connectorId && !hasInputTablesLegacy) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'user', content: userMessage, timestamp: Date.now(), scriptSnapshot: script },
+        {
+          role: 'assistant',
+          content: '⚠️ **Connettore database mancante**\n\nPer poter eseguire query SQL, questo nodo deve avere un connettore database configurato.\n\nVai nelle impostazioni del nodo e seleziona un connettore, poi riprova.',
+          timestamp: Date.now(),
+        },
+      ]);
+      return;
+    }
+
     setIsLoading(true);
     setLoadingStatus('Sto analizzando la tua richiesta...');
-    setActiveVersionIndex(-1); // Re-enter auto-follow on new message
 
     // Add user message to UI immediately
     setMessages((prev) => [
@@ -1062,6 +1239,30 @@ export function AgentChat({
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {/* Streaming toggle */}
+            {agentType === 'sql' && (
+              <TooltipProvider delayDuration={200}>
+                <UiTooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setStreamingEnabled(prev => !prev)}
+                      className={cn(
+                        "h-8 px-2 rounded-lg text-[10px] font-medium flex items-center gap-1 transition-colors",
+                        streamingEnabled
+                          ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20"
+                          : "text-muted-foreground hover:bg-muted"
+                      )}
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      Stream
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-[10px]">
+                    {streamingEnabled ? 'Streaming attivo: risposte in tempo reale' : 'Streaming disattivo: modalita\' classica'}
+                  </TooltipContent>
+                </UiTooltip>
+              </TooltipProvider>
+            )}
             <Button variant="ghost" size="icon" onClick={clearConversation} className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive">
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -1415,6 +1616,66 @@ export function AgentChat({
               );
             })}
 
+            {/* Streaming Mode: show real-time tool calls and text */}
+            {isStreamLoading && streamMessages.length > 0 && (() => {
+              const assistantMsg = streamMessages.filter(m => m.role === 'assistant').pop();
+              if (!assistantMsg) return null;
+
+              // Extract tool invocations from parts (v6 API: parts with type 'dynamic-tool')
+              const toolCalls: ToolCallInfo[] = assistantMsg.parts
+                .filter((p): p is Extract<typeof p, { type: string; toolName: string }> =>
+                  p.type === 'dynamic-tool' || p.type.startsWith('tool-')
+                )
+                .map((tc: any) => ({
+                  toolCallId: tc.toolCallId,
+                  toolName: tc.toolName || tc.type.replace('tool-', ''),
+                  args: tc.input || {},
+                  status: tc.state === 'output-available' ? 'completed' as const
+                       : tc.state === 'output-error' ? 'failed' as const
+                       : 'running' as const,
+                  result: tc.state === 'output-available'
+                    ? (typeof tc.output === 'string' ? tc.output : JSON.stringify(tc.output))
+                    : tc.state === 'output-error' ? tc.errorText : undefined,
+                }));
+
+              // Extract text content from parts
+              const streamingText = assistantMsg.parts
+                .filter((p): p is Extract<typeof p, { type: 'text' }> => p.type === 'text')
+                .map((p: any) => p.text)
+                .join('');
+
+              return (
+                <div className="flex items-start gap-2 animate-in fade-in">
+                  <div className={cn("h-5 w-5 rounded-full flex items-center justify-center bg-gradient-to-br shrink-0", agentColor)}>
+                    <Sparkles className="h-3 w-3 text-white animate-pulse" />
+                  </div>
+                  <div className="flex-1 min-w-0 bg-muted/50 border rounded-2xl rounded-tl-none px-3 py-2">
+                    {/* Tool calls */}
+                    {toolCalls.length > 0 && (
+                      <ToolCallsDisplay toolCalls={toolCalls} />
+                    )}
+                    {/* Streaming text */}
+                    {streamingText && (
+                      <div className="text-[13px] leading-relaxed whitespace-pre-wrap break-all mt-1">
+                        {(() => {
+                          const { text, charts } = parseRechartsBlocks(streamingText);
+                          return <RichContent content={text} charts={charts} onApplyCode={onScriptUpdate} />;
+                        })()}
+                      </div>
+                    )}
+                    {/* Still loading indicator */}
+                    {!streamingText && toolCalls.every(tc => tc.status === 'completed') && (
+                      <div className="flex gap-1 mt-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.3s]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.15s]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {isLoading && (
               <div className="flex items-start gap-2">
                 <div className={cn("h-5 w-5 rounded-full flex items-center justify-center bg-gradient-to-br", agentColor)}>
@@ -1457,17 +1718,29 @@ export function AgentChat({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-              disabled={isLoading}
+              disabled={isLoading || isStreamLoading}
               className="pr-12 h-10 rounded-xl border-muted-foreground/20 focus-visible:ring-primary shadow-inner bg-muted/5 group-focus-within:bg-background transition-all text-sm"
             />
-            <Button
-              onClick={sendMessage}
-              disabled={!input.trim() || isLoading}
-              size="icon"
-              className="absolute right-1.5 top-1 h-8 w-8 rounded-lg"
-            >
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
+            {isStreamLoading ? (
+              <Button
+                onClick={streamStop}
+                size="icon"
+                variant="destructive"
+                className="absolute right-1.5 top-1 h-8 w-8 rounded-lg"
+                title="Interrompi streaming"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button
+                onClick={sendMessage}
+                disabled={!input.trim() || isLoading}
+                size="icon"
+                className="absolute right-1.5 top-1 h-8 w-8 rounded-lg"
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
+            )}
           </div>
         </div>
       </div>

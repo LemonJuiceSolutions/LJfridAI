@@ -51,6 +51,13 @@ except ImportError:
 except Exception as e:
     print(f"⚠️ [INIT] Failed to patch requests timeout: {e}")
 
+def _safe_log(msg: str):
+    """Print to stderr, silently ignoring BrokenPipeError."""
+    try:
+        print(msg, file=sys.stderr, flush=True)
+    except (BrokenPipeError, OSError):
+        pass
+
 app = Flask(__name__)
 app.json.sort_keys = False
 CORS(app)  # Allow cross-origin requests from Next.js
@@ -344,8 +351,7 @@ def execute_python():
         output_type = data.get('outputType', 'table')
         input_data = data.get('inputData', {})
         chart_theme = data.get('chartTheme', None)  # Full theme object from frontend
-        import sys
-        print(f"🎨 [THEME] chart_theme received: {type(chart_theme).__name__}, value: {str(chart_theme)[:200] if chart_theme else 'None'}", file=sys.stderr, flush=True)
+        _safe_log(f"🎨 [THEME] chart_theme received: {type(chart_theme).__name__}, value: {str(chart_theme)[:200] if chart_theme else 'None'}")
 
         if not code:
             return jsonify({'success': False, 'error': 'No code provided'}), 400
@@ -473,7 +479,7 @@ def execute_python():
                 # Inject CHART_THEME into execution namespace so scripts can use it
                 ns['CHART_THEME'] = chart_theme
                 ns['THEME_COLORS'] = colors
-                print(f"🎨 [THEME] Injected CHART_THEME with {len(colors)} colors: {colors[:3]}...", file=sys.stderr, flush=True)
+                _safe_log(f"🎨 [THEME] Injected CHART_THEME with {len(colors)} colors: {colors[:3]}...")
 
                 # Set emerald as default template so ALL plotly charts use our modified version
                 pio.templates.default = "emerald"
@@ -545,22 +551,23 @@ def execute_python():
                 plt.rcParams['legend.fontsize'] = legend_font_size
                 plt.rcParams['lines.linewidth'] = line_width
 
-                print(f"✅ [THEME] Applied theme to Plotly template and matplotlib rcParams", file=sys.stderr, flush=True)
+                _safe_log(f"✅ [THEME] Applied theme to Plotly template and matplotlib rcParams")
             except Exception as e:
                 import traceback as tb
-                print(f"⚠️ Failed to apply chart theme: {e}", file=sys.stderr, flush=True)
-                tb.print_exc(file=sys.stderr)
+                _safe_log(f"⚠️ Failed to apply chart theme: {e}")
+                try: tb.print_exc(file=sys.stderr)
+                except (BrokenPipeError, OSError): pass
 
         try:
-            print(f"🐍 [v{VERSION}] Starting exec()...", file=sys.stderr, flush=True)
+            _safe_log(f"🐍 [v{VERSION}] Starting exec()...")
             with redirect_stdout(raw_stdout), redirect_stderr(raw_stderr):
                 # Patch os.environ for the duration of execution
                 with patch.dict(os.environ, env_vars):
                     exec(safe_code, ns, ns) # Use ns for both globals and locals
-            print(f"🐍 [v{VERSION}] exec() completed OK", file=sys.stderr, flush=True)
+            _safe_log(f"🐍 [v{VERSION}] exec() completed OK")
         except SystemExit:
             # Catch exit()/sys.exit() calls that bypass the SysWrapper (e.g. via direct import)
-            print(f"⚠️ [EXECUTE] SystemExit caught (exit()/sys.exit() in script) - ignoring", file=sys.stderr, flush=True)
+            _safe_log(f"⚠️ [EXECUTE] SystemExit caught (exit()/sys.exit() in script) - ignoring")
         except Exception as e:
             import traceback as _tb
             error_details = _tb.format_exc()
@@ -835,11 +842,12 @@ def execute_python():
                     if hasattr(trace, 'textfont') and trace.textfont:
                         trace.textfont.family = ff
 
-                print(f"🎨 [THEME] Force-applied full theme to Plotly figure (font={ff}, axes={afs}px, grid={gc})", file=sys.stderr, flush=True)
+                _safe_log(f"🎨 [THEME] Force-applied full theme to Plotly figure (font={ff}, axes={afs}px, grid={gc})")
             except Exception as e:
                 import traceback as _tb
-                print(f"⚠️ [THEME] Could not force-apply theme to figure: {e}", file=sys.stderr, flush=True)
-                _tb.print_exc(file=sys.stderr)
+                _safe_log(f"⚠️ [THEME] Could not force-apply theme to figure: {e}")
+                try: _tb.print_exc(file=sys.stderr)
+                except (BrokenPipeError, OSError): pass
 
         # Process result based on requested output type
         if output_type == 'table':
@@ -1096,8 +1104,9 @@ def execute_python():
     except Exception as e:
         import traceback as _tb
         error_trace = _tb.format_exc()
-        print(f"❌ [EXECUTE] Outer exception: {e}", file=sys.stderr, flush=True)
-        _tb.print_exc(file=sys.stderr)
+        _safe_log(f"❌ [EXECUTE] Outer exception: {e}")
+        try: _tb.print_exc(file=sys.stderr)
+        except (BrokenPipeError, OSError): pass
         return jsonify({
             'success': False,
             'error': str(e),
@@ -1106,12 +1115,326 @@ def execute_python():
     except BaseException as e:
         # Catch SystemExit, KeyboardInterrupt, etc. that bypass Exception
         import traceback as _tb
-        print(f"🔴 [EXECUTE] FATAL BaseException: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
-        _tb.print_exc(file=sys.stderr)
+        _safe_log(f"🔴 [EXECUTE] FATAL BaseException: {type(e).__name__}: {e}")
+        try: _tb.print_exc(file=sys.stderr)
+        except (BrokenPipeError, OSError): pass
         return jsonify({
             'success': False,
             'error': f'Fatal error: {type(e).__name__}: {str(e)}'
         }), 500
+
+
+@app.route('/analyze-excel', methods=['POST'])
+def analyze_excel():
+    """Analyze an Excel file and extract its structure, formulas, and data flow."""
+    try:
+        from openpyxl import load_workbook
+        from openpyxl.utils import get_column_letter
+        from collections import Counter
+
+        data = request.get_json()
+        filepath = data.get('filepath', '')
+
+        if not filepath or not os.path.exists(filepath):
+            return jsonify({"error": f"File not found: {filepath}"}), 400
+
+        # Try normal load first; if it fails (e.g. Nested.from_tree bug with
+        # complex styles), fall back to read_only mode which skips style parsing.
+        read_only_mode = False
+        try:
+            wb = load_workbook(filepath, data_only=False)
+        except Exception:
+            wb = load_workbook(filepath, data_only=False, read_only=True)
+            read_only_mode = True
+
+        try:
+            wb_data = load_workbook(filepath, data_only=True)
+        except Exception:
+            try:
+                wb_data = load_workbook(filepath, data_only=True, read_only=True)
+            except Exception:
+                wb_data = None
+
+        analysis = {
+            "filename": os.path.basename(filepath),
+            "sheets": [],
+            "crossSheetReferences": [],
+            "namedRanges": [],
+            "dataFlowGraph": {},
+        }
+
+        try:
+            for name, defn in wb.defined_names.items():
+                analysis["namedRanges"].append({
+                    "name": name,
+                    "value": defn.attr_text,
+                })
+        except Exception:
+            pass
+
+        # === PASS 1: Collect column headers from ALL sheets (needed for cross-sheet formula translation) ===
+        all_sheet_headers = {}  # { "SheetName": {"A": "CodConto", "B": "Importo", ...} }
+        for sn in wb.sheetnames:
+            ws_tmp = wb[sn]
+            headers = {}
+            tmp_max_col = ws_tmp.max_column or 50
+            for col in range(1, min(tmp_max_col + 1, 50)):
+                try:
+                    cv = ws_tmp.cell(row=1, column=col).value
+                except Exception:
+                    break
+                if cv is not None:
+                    headers[get_column_letter(col)] = str(cv)[:80]
+            all_sheet_headers[sn] = headers
+
+        def translate_formula(formula, current_sheet_name):
+            """Replace cell/column references with header names.
+            E.g. =SUMIFS(DB_Complessivo!D:D, DB_Complessivo!B:B, $A5)
+              -> =SUMIFS(DB_Complessivo.[Importo], DB_Complessivo.[CodConto], [CodConto])
+            """
+            result = formula
+
+            # 1. Cross-sheet column range with quotes: 'Sheet Name'!D:D -> Sheet Name.[HeaderName]
+            def replace_cross_sheet_col_range_quoted(m):
+                sn = m.group(1)
+                col_letter = m.group(2)
+                hdrs = all_sheet_headers.get(sn, {})
+                hdr = hdrs.get(col_letter)
+                if hdr:
+                    return f"{sn}.[{hdr}]"
+                return m.group(0)
+            result = re.sub(r"'([^']+)'!\$?([A-Z]+):\$?[A-Z]+", replace_cross_sheet_col_range_quoted, result)
+
+            # 2. Cross-sheet column range without quotes: Sheet!D:D -> Sheet.[HeaderName]
+            def replace_cross_sheet_col_range(m):
+                sn = m.group(1)
+                col_letter = m.group(2)
+                hdrs = all_sheet_headers.get(sn, {})
+                hdr = hdrs.get(col_letter)
+                if hdr:
+                    return f"{sn}.[{hdr}]"
+                return m.group(0)
+            result = re.sub(r"([A-Za-z0-9_]+)!\$?([A-Z]+):\$?[A-Z]+", replace_cross_sheet_col_range, result)
+
+            # 3. Cross-sheet single cell with quotes: 'Sheet'!$A$5 -> Sheet.[HeaderName]
+            def replace_cross_sheet_cell_quoted(m):
+                sn = m.group(1)
+                col_letter = m.group(2)
+                hdrs = all_sheet_headers.get(sn, {})
+                hdr = hdrs.get(col_letter)
+                if hdr:
+                    return f"{sn}.[{hdr}]"
+                return m.group(0)
+            result = re.sub(r"'([^']+)'!\$?([A-Z]+)\$?\d+", replace_cross_sheet_cell_quoted, result)
+
+            # 4. Cross-sheet single cell without quotes: Sheet!A5 -> Sheet.[HeaderName]
+            def replace_cross_sheet_cell(m):
+                sn = m.group(1)
+                col_letter = m.group(2)
+                hdrs = all_sheet_headers.get(sn, {})
+                hdr = hdrs.get(col_letter)
+                if hdr:
+                    return f"{sn}.[{hdr}]"
+                return m.group(0)
+            result = re.sub(r"([A-Za-z0-9_]+)!\$?([A-Z]+)\$?\d+", replace_cross_sheet_cell, result)
+
+            # 5. Local column range: D:D -> [HeaderName]
+            def replace_local_col_range(m):
+                col_letter = m.group(1)
+                hdrs = all_sheet_headers.get(current_sheet_name, {})
+                hdr = hdrs.get(col_letter)
+                if hdr:
+                    return f"[{hdr}]"
+                return m.group(0)
+            result = re.sub(r'(?<![A-Za-z!.])\$?([A-Z]{1,2}):\$?[A-Z]{1,2}(?!\w)', replace_local_col_range, result)
+
+            # 6. Local single cell: $A$5, A5, $A5, A$5 -> [HeaderName]
+            def replace_local_cell(m):
+                col_letter = m.group(1)
+                hdrs = all_sheet_headers.get(current_sheet_name, {})
+                hdr = hdrs.get(col_letter)
+                if hdr:
+                    return f"[{hdr}]"
+                return m.group(0)
+            result = re.sub(r'(?<![A-Za-z!.])\$?([A-Z]{1,2})\$?\d+(?!\w)', replace_local_cell, result)
+
+            return result
+
+        # === PASS 2: Process each sheet ===
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            ws_data = wb_data[sheet_name] if wb_data else None
+
+            try:
+                charts_count = len(ws._charts) if hasattr(ws, '_charts') else 0
+            except Exception:
+                charts_count = 0
+            try:
+                merged = [str(mc) for mc in ws.merged_cells.ranges]
+            except Exception:
+                merged = []
+
+            sheet_info = {
+                "name": sheet_name,
+                "dimensions": ws.dimensions if not read_only_mode else "",
+                "maxRow": ws.max_row or 0,
+                "maxCol": ws.max_column or 0,
+                "formulas": [],
+                "formulaSamples": [],    # Representative formulas (deduplicated by pattern)
+                "functionsUsed": [],     # List of Excel functions found
+                "sampleData": [],
+                "columnHeaders": [],
+                "charts": charts_count,
+                "mergedCells": merged,
+                "sheetRole": "unknown",  # data_source | transformation | report | chart | config | separator
+                "referencedSheets": [],  # Sheets this one depends on
+            }
+
+            # Extract headers (row 1 and optionally row 2)
+            # Build column letter -> header name mapping for formula translation
+            col_to_header = {}  # e.g. {"A": "CodConto", "B": "Descrizione", "D": "Importo"}
+            max_col = ws.max_column or 50
+            for col in range(1, min(max_col + 1, 50)):
+                try:
+                    cell = ws.cell(row=1, column=col)
+                except Exception:
+                    break
+                if cell.value is not None:
+                    val = str(cell.value)
+                    col_letter = get_column_letter(col)
+                    col_to_header[col_letter] = val[:80]
+                    sheet_info["columnHeaders"].append({
+                        "column": col_letter,
+                        "value": val[:80]
+                    })
+
+            # Extract ALL formulas and analyze patterns
+            sheet_refs = set()
+            all_formulas = []
+            func_counter = Counter()
+            max_row = ws.max_row or 500
+
+            for row in ws.iter_rows(min_row=1, max_row=min(max_row, 1000)):
+                for cell in row:
+                    if cell.value and isinstance(cell.value, str) and cell.value.startswith('='):
+                        formula_str = cell.value
+                        cell_ref = f"{get_column_letter(cell.column)}{cell.row}"
+                        all_formulas.append({"cell": cell_ref, "formula": formula_str})
+
+                        # Extract function names
+                        funcs = re.findall(r'([A-Z][A-Z0-9_.]+)\(', formula_str)
+                        for fn in funcs:
+                            func_counter[fn] += 1
+
+                        # Extract cross-sheet references
+                        refs = re.findall(r"'?([^'!]+)'?!", formula_str)
+                        for ref in refs:
+                            ref_clean = ref.strip("'")
+                            if ref_clean != sheet_name and ref_clean in wb.sheetnames:
+                                sheet_refs.add(ref_clean)
+                                if len(analysis["crossSheetReferences"]) < 500:
+                                    analysis["crossSheetReferences"].append({
+                                        "fromSheet": sheet_name,
+                                        "toSheet": ref_clean,
+                                        "cell": cell_ref,
+                                        "formula": formula_str[:200],
+                                        "translated": translate_formula(formula_str, sheet_name)[:300],
+                                    })
+
+            sheet_info["formulas"] = all_formulas  # Keep all for count
+            sheet_info["referencedSheets"] = list(sheet_refs)
+            sheet_info["functionsUsed"] = [{"name": fn, "count": cnt} for fn, cnt in func_counter.most_common(20)]
+            sheet_info["columnMapping"] = col_to_header  # {"A": "CodConto", "B": "Importo", ...}
+
+            # Build deduplicated formula samples with TRANSLATED column names
+            seen_patterns = set()
+            for f in all_formulas:
+                # Normalize formula to pattern: replace cell refs with placeholders
+                pattern = re.sub(r'\$?[A-Z]+\$?\d+', 'REF', f["formula"])
+                pattern = re.sub(r'\d+\.?\d*', 'N', pattern)
+                if pattern not in seen_patterns and len(sheet_info["formulaSamples"]) < 15:
+                    seen_patterns.add(pattern)
+                    # Translate cell references to column header names
+                    translated = translate_formula(f["formula"], sheet_name)
+                    sheet_info["formulaSamples"].append({
+                        "cell": f["cell"],
+                        "formula": f["formula"][:200],
+                        "translated": translated[:300],
+                        "pattern": pattern[:100]
+                    })
+
+            analysis["dataFlowGraph"][sheet_name] = list(sheet_refs)
+
+            # Classify sheet role
+            num_formulas = len(all_formulas)
+            has_sumifs = any(fn["name"] in ("SUMIFS", "SUMIF", "COUNTIFS", "COUNTIF") for fn in sheet_info["functionsUsed"])
+            has_index_match = any(fn["name"] in ("INDEX", "MATCH", "VLOOKUP", "CERCA.VERT") for fn in sheet_info["functionsUsed"])
+            has_charts = charts_count > 0
+            row_count = ws.max_row or 0
+
+            if sheet_name.endswith('-->') or row_count <= 1:
+                sheet_info["sheetRole"] = "separator"
+            elif has_charts or 'grafi' in sheet_name.lower():
+                sheet_info["sheetRole"] = "chart"
+            elif has_sumifs and len(sheet_refs) > 0:
+                sheet_info["sheetRole"] = "report"
+            elif has_index_match or (num_formulas > 0 and num_formulas < row_count * 0.8 and len(sheet_refs) > 0):
+                sheet_info["sheetRole"] = "transformation"
+            elif num_formulas > row_count * 0.5 and len(sheet_refs) > 0:
+                sheet_info["sheetRole"] = "report"
+            elif num_formulas == 0 and row_count > 5:
+                sheet_info["sheetRole"] = "data_source"
+            elif 'mapp' in sheet_name.lower() or 'config' in sheet_name.lower():
+                sheet_info["sheetRole"] = "config"
+            elif num_formulas > 0:
+                sheet_info["sheetRole"] = "transformation"
+
+            # Sample data (first 5 data rows)
+            sample_src = ws_data if ws_data else ws
+            sample_max_row = sample_src.max_row or 7
+            sample_max_col = sample_src.max_column or 30
+            for row_idx in range(2, min(sample_max_row + 1, 7)):
+                row_data = {}
+                for col in range(1, min(sample_max_col + 1, 30)):
+                    try:
+                        header = sample_src.cell(row=1, column=col).value
+                        if header:
+                            val = sample_src.cell(row=row_idx, column=col).value
+                            row_data[str(header)[:50]] = str(val)[:100] if val is not None else None
+                    except Exception:
+                        break
+                if row_data:
+                    sheet_info["sampleData"].append(row_data)
+
+            analysis["sheets"].append(sheet_info)
+
+        wb.close()
+        if wb_data:
+            wb_data.close()
+
+        # Build ETL summary
+        roles = {}
+        for s in analysis["sheets"]:
+            role = s.get("sheetRole", "unknown")
+            if role not in roles:
+                roles[role] = []
+            roles[role].append(s["name"])
+
+        analysis["etlSummary"] = {
+            "dataSources": roles.get("data_source", []),
+            "transformations": roles.get("transformation", []),
+            "reports": roles.get("report", []),
+            "charts": roles.get("chart", []),
+            "configs": roles.get("config", []),
+            "separators": roles.get("separator", []),
+            "totalFormulas": sum(len(s["formulas"]) for s in analysis["sheets"]),
+            "totalSheets": len(analysis["sheets"]),
+        }
+
+        return jsonify(analysis)
+
+    except Exception as e:
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 if __name__ == '__main__':
