@@ -23,6 +23,13 @@ const TOOL_META: Record<string, { label: string; icon: React.ElementType }> = {
     pyListSqlConnectors: { label: 'Elencando connettori', icon: Database },
     pySaveToKnowledgeBase: { label: 'Salvando nella Knowledge Base', icon: BookOpen },
     pyBrowseOtherScripts: { label: 'Esplorando script da altri nodi', icon: Search },
+    // Super agent tools
+    listTreesAndPipelines: { label: 'Elencando alberi e pipeline', icon: Search },
+    getTreeContent: { label: 'Esplorando albero', icon: Search },
+    searchNodesForQuery: { label: 'Cercando nei nodi', icon: Search },
+    executeSqlQuery: { label: 'Eseguendo query SQL', icon: Database },
+    executePythonCode: { label: 'Eseguendo codice Python', icon: Code2 },
+    saveToKnowledgeBase: { label: 'Salvando nella Knowledge Base', icon: BookOpen },
 };
 
 export type ToolCallStatus = 'running' | 'completed' | 'failed';

@@ -1,6 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
+import type { UIMessage } from 'ai';
 import {
     X,
     Send,
@@ -55,6 +58,7 @@ import {
 import { createKnowledgeBaseEntryAction } from '@/app/actions/knowledge-base';
 import { useChartTheme } from '@/hooks/use-chart-theme';
 import { ConsultedNodesSection } from '@/components/agents/consulted-nodes-section';
+import { ToolCallsDisplay, type ToolCallInfo } from '@/components/agents/tool-call-display';
 import type { ConsultedNode } from '@/lib/types';
 
 type Message = {
@@ -86,6 +90,8 @@ function RichContent({ content, charts }: { content: string; charts: any[] }) {
     return (
         <div className="space-y-2">
             {parts.map((part, i) => {
+                if (typeof part !== 'string') return null;
+
                 // Chart placeholder
                 const chartMatch = part.match(/\[CHART_(\d+)\]/);
                 if (chartMatch) {
@@ -242,8 +248,6 @@ export function ChatBotAgent() {
     const { isChatbotOpen, toggleChatbot, setChatbotOpen } = useLayout();
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [loadingStatus, setLoadingStatus] = useState('');
     const [conversationId, setConversationId] = useState<string | null>(null);
 
     // Model selector state
@@ -258,6 +262,72 @@ export function ChatBotAgent() {
     const [correctionText, setCorrectionText] = useState('');
     const [correctionTags, setCorrectionTags] = useState('');
     const [isSavingCorrection, setIsSavingCorrection] = useState(false);
+
+    // Refs for dynamic values injected into stream transport
+    const modelRef = useRef(model);
+    modelRef.current = model;
+    const conversationIdRef = useRef(conversationId);
+    conversationIdRef.current = conversationId;
+
+    // Streaming transport (stable reference, reads dynamic values via refs)
+    const streamTransport = useMemo(() => new DefaultChatTransport({
+        api: '/api/super-agent/stream',
+        prepareSendMessagesRequest: ({ body, messages: msgs, ...rest }) => ({
+            ...rest,
+            body: {
+                messages: msgs,
+                ...body,
+                model: modelRef.current,
+                conversationId: conversationIdRef.current,
+            },
+        }),
+    }), []);
+
+    // useChat hook for streaming
+    const {
+        messages: streamMessages,
+        sendMessage: streamSendMessage,
+        status: streamStatus,
+        setMessages: setStreamMessages,
+    } = useChat({
+        transport: streamTransport,
+        onFinish: async ({ message }: { message: UIMessage }) => {
+            // Extract text from message parts
+            const textContent = message.parts
+                .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+                .map(p => p.text)
+                .join('');
+
+            // Add the completed assistant message to our local state
+            setMessages(prev => [...prev, {
+                role: 'assistant' as const,
+                content: textContent,
+                timestamp: Date.now(),
+            }]);
+
+            // Clear stream messages (transferred to local state)
+            setStreamMessages([]);
+
+            // Refresh conversation ID from server (needed after first message creates a new conversation)
+            try {
+                const res = await fetch('/api/super-agent');
+                const data = await res.json();
+                if (data.success && data.conversation) {
+                    setConversationId(data.conversation.id);
+                }
+            } catch { /* ignore */ }
+        },
+        onError: (error: Error) => {
+            setMessages(prev => [...prev, {
+                role: 'assistant' as const,
+                content: `⚠️ **Errore**\n\n${error.message || "Si è verificato un errore durante la comunicazione con l'agente."}`,
+                timestamp: Date.now(),
+            }]);
+            setStreamMessages([]);
+        },
+    });
+
+    const isStreamLoading = streamStatus === 'streaming' || streamStatus === 'submitted';
 
     // Load models and saved agent model on mount
     useEffect(() => {
@@ -307,65 +377,36 @@ export function ChatBotAgent() {
     }, []);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const scrollAreaRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        setTimeout(() => {
+            const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+            if (viewport) {
+                viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+            }
+        }, 100);
     };
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages, isLoading]);
+    }, [messages, isStreamLoading]);
 
-    const handleSend = async () => {
-        if (!input.trim() || isLoading) return;
+    const handleSend = () => {
+        if (!input.trim() || isStreamLoading) return;
 
-        const userMsg: Message = { role: 'user', content: input, timestamp: Date.now() };
-        const newMessages = [...messages, userMsg];
-        setMessages(newMessages);
+        const userText = input.trim();
         setInput('');
-        setIsLoading(true);
-        setLoadingStatus('Sto analizzando la tua richiesta...');
 
-        try {
-            const res = await fetch('/api/super-agent', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userMessage: userMsg.content,
-                    conversationId,
-                    model,
-                }),
-            });
+        // Add user message to local state immediately
+        setMessages(prev => [...prev, {
+            role: 'user',
+            content: userText,
+            timestamp: Date.now(),
+        }]);
 
-            const data = await res.json();
-
-            if (data.success) {
-                setConversationId(data.conversationId);
-                setMessages(prev => [...prev, {
-                    role: 'assistant',
-                    content: data.message,
-                    timestamp: Date.now(),
-                    consultedNodes: data.consultedNodes,
-                }]);
-            } else {
-                throw new Error(data.error || 'Errore sconosciuto');
-            }
-        } catch (error: any) {
-            const errorDetail = error.message || "Impossibile comunicare con l'agente.";
-            toast({
-                title: "Errore",
-                description: errorDetail,
-                variant: "destructive",
-            });
-            setMessages(prev => [...prev, {
-                role: 'assistant',
-                content: `Ho riscontrato un problema: **${errorDetail}**\n\nPuoi riprovare la domanda o darmi piu' dettagli (es. nome tabella, database, connettore) per aiutarmi a cercare meglio.`,
-                timestamp: Date.now(),
-            }]);
-        } finally {
-            setIsLoading(false);
-            setLoadingStatus('');
-        }
+        // Kick off streaming
+        streamSendMessage({ text: userText });
     };
 
     const clearChat = async () => {
@@ -374,6 +415,7 @@ export function ChatBotAgent() {
         } catch { /* ignore */ }
 
         setConversationId(null);
+        setStreamMessages([]);
         setMessages([{
             role: 'assistant',
             content: "Chat ripulita. Come posso aiutarti?",
@@ -524,7 +566,7 @@ export function ChatBotAgent() {
                     </div>
 
                     {/* Messages */}
-                    <ScrollArea className="flex-1 p-4">
+                    <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
                         <div className="space-y-4">
                             {messages.map((m, i) => {
                                 const { text, charts } = m.role === 'assistant'
@@ -576,13 +618,78 @@ export function ChatBotAgent() {
                                     </div>
                                 );
                             })}
-                            {isLoading && (
+
+                            {/* Streaming: show real-time tool calls and text */}
+                            {isStreamLoading && streamMessages.length > 0 && (() => {
+                                const assistantMsg = streamMessages.filter(m => m.role === 'assistant').pop();
+                                if (!assistantMsg) return null;
+
+                                // Extract tool calls from parts
+                                const toolCalls: ToolCallInfo[] = assistantMsg.parts
+                                    .filter((p): p is Extract<typeof p, { type: string; toolName: string }> =>
+                                        p.type === 'dynamic-tool' || p.type.startsWith('tool-')
+                                    )
+                                    .map((tc: any) => ({
+                                        toolCallId: tc.toolCallId,
+                                        toolName: tc.toolName || tc.type.replace('tool-', ''),
+                                        args: tc.input || {},
+                                        status: tc.state === 'output-available' ? 'completed' as const
+                                            : tc.state === 'output-error' ? 'failed' as const
+                                            : 'running' as const,
+                                        result: tc.state === 'output-available'
+                                            ? (typeof tc.output === 'string' ? tc.output : JSON.stringify(tc.output))
+                                            : tc.state === 'output-error' ? tc.errorText : undefined,
+                                    }));
+
+                                // Extract streaming text
+                                const streamingText = assistantMsg.parts
+                                    .filter((p): p is Extract<typeof p, { type: 'text' }> => p.type === 'text')
+                                    .map((p: any) => p.text)
+                                    .join('');
+
+                                return (
+                                    <div className="flex flex-col gap-1 items-start animate-in fade-in">
+                                        <div className="flex items-center gap-2 mb-0.5">
+                                            <div className="h-5 w-5 rounded-full flex items-center justify-center bg-gradient-to-br from-primary/80 to-purple-500/80 text-white">
+                                                <Sparkles className="h-3 w-3 animate-pulse" />
+                                            </div>
+                                            <span className="text-[10px] font-medium text-muted-foreground">FridAI</span>
+                                        </div>
+                                        <div className="max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm bg-muted/50 border rounded-tl-none min-w-0 overflow-hidden">
+                                            {/* Tool calls display */}
+                                            {toolCalls.length > 0 && (
+                                                <ToolCallsDisplay toolCalls={toolCalls} />
+                                            )}
+                                            {/* Streaming text */}
+                                            {streamingText && (
+                                                <div className="mt-1">
+                                                    {(() => {
+                                                        const { text, charts } = parseRechartsBlocks(streamingText);
+                                                        return <RichContent content={text} charts={charts} />;
+                                                    })()}
+                                                </div>
+                                            )}
+                                            {/* Dots while waiting */}
+                                            {!streamingText && toolCalls.every(tc => tc.status === 'completed') && (
+                                                <div className="flex gap-1">
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.3s]" />
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.15s]" />
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce" />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Initial dots while stream is submitted but no messages yet */}
+                            {isStreamLoading && streamMessages.length === 0 && (
                                 <div className="flex items-start gap-2">
                                     <div className="h-5 w-5 rounded-full bg-gradient-to-br from-primary/80 to-purple-500/80 flex items-center justify-center">
                                         <Loader2 className="h-3 w-3 animate-spin text-white" />
                                     </div>
                                     <div className="bg-muted/30 border rounded-2xl rounded-tl-none px-3 py-2">
-                                        <div className="text-[11px] text-muted-foreground mb-1">{loadingStatus}</div>
+                                        <div className="text-[11px] text-muted-foreground mb-1">Sto analizzando la tua richiesta...</div>
                                         <div className="flex gap-1">
                                             <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.3s]" />
                                             <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.15s]" />
@@ -591,6 +698,7 @@ export function ChatBotAgent() {
                                     </div>
                                 </div>
                             )}
+
                             <div ref={messagesEndRef} />
                         </div>
                     </ScrollArea>
@@ -607,11 +715,11 @@ export function ChatBotAgent() {
                             />
                             <Button
                                 onClick={handleSend}
-                                disabled={!input.trim() || isLoading}
+                                disabled={!input.trim() || isStreamLoading}
                                 size="icon"
                                 className="absolute right-1.5 top-1 h-9 w-9 rounded-lg"
                             >
-                                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                {isStreamLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                             </Button>
                         </div>
                         <div className="mt-2 text-[10px] text-center text-muted-foreground flex items-center justify-center gap-1.5 uppercase font-medium tracking-widest">
