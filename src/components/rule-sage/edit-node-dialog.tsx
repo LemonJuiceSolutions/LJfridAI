@@ -395,6 +395,8 @@ export default function EditNodeDialog({
   const [sqlConnectorId, setSqlConnectorId] = useState<string>('');
   const [sqlResultName, setSqlResultName] = useState('');
   const [selectedPipelines, setSelectedPipelines] = useState<string[]>([]);
+  const sqlPreviewRef = useRef<HTMLDivElement>(null);
+  const pythonPreviewRef = useRef<HTMLDivElement>(null);
 
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
   const [sqlPreviewTimestamp, setSqlPreviewTimestamp] = useState<number | null>(null);
@@ -2453,6 +2455,7 @@ export default function EditNodeDialog({
                           setSqlQuery(newScript);
                           toast({ title: "Query Aggiornata", description: "L'editor SQL è stato aggiornato." });
                         }}
+                        onPreviewReady={() => sqlPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                         onAutoExecutePreview={async (scriptToExecute) => {
                           try {
                             const deps = (availableInputTables || []).filter(t => selectedPipelines.includes(t.name)).map(t => ({
@@ -2487,7 +2490,7 @@ export default function EditNodeDialog({
 
                   {/* Preview section BELOW the columns - collapsible like Python */}
                   {sqlPreviewData && (
-                    <div className="border rounded-md overflow-hidden mt-4 bg-white dark:bg-zinc-950">
+                    <div ref={sqlPreviewRef} className="border rounded-md overflow-hidden mt-4 bg-white dark:bg-zinc-950">
                       <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
                         <span className="font-semibold text-xs flex items-center gap-2">
                           <Database className="h-3 w-3" />
@@ -2956,6 +2959,7 @@ export default function EditNodeDialog({
                           setPythonCode(newScript);
                           toast({ title: "Codice Aggiornato", description: "Lo script Python è stato aggiornato." });
                         }}
+                        onPreviewReady={() => pythonPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                         onAutoExecutePreview={async (scriptToExecute) => {
                           try {
                             const inputData: Record<string, any[]> = {};
@@ -3081,7 +3085,7 @@ export default function EditNodeDialog({
                   )}
 
                   {pythonPreviewResult && (
-                    <div className="mt-4 border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[40px]">
+                    <div ref={pythonPreviewRef} className="mt-4 border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[40px]">
                       <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
                         <span className="font-semibold text-xs flex items-center gap-2">
                           <Code className="h-3 w-3" />

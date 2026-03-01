@@ -453,6 +453,7 @@ interface AgentChatProps {
   selectedDocuments?: string[];
   onScriptUpdate?: (newScript: string) => void;
   onAutoExecutePreview?: (script: string) => Promise<{ success: boolean; error?: string }>;
+  onPreviewReady?: () => void;
   onClose?: () => void;
   onGoBack?: (messageIndex: number) => void;
 }
@@ -468,6 +469,7 @@ export function AgentChat({
   selectedDocuments,
   onScriptUpdate,
   onAutoExecutePreview,
+  onPreviewReady,
   onClose,
   onGoBack,
 }: AgentChatProps) {
@@ -680,11 +682,15 @@ export function AgentChat({
 
   /* Load conversation history on mount */
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    // Use a small timeout to ensure DOM is fully rendered (especially code blocks/charts)
+    // Scroll only within the chat ScrollArea viewport, not the outer dialog container
     setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+      if (viewport) {
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+      }
     }, 100);
   };
 
@@ -739,6 +745,8 @@ export function AgentChat({
         }]);
         setIsAutoExecuting(false);
         setAutoRetryCount(0);
+        // After showing success in chat, scroll to the preview section
+        if (onPreviewReady) setTimeout(onPreviewReady, 400);
       } else if (retryAttempt < MAX_AUTO_RETRIES) {
         // Check if this is a non-retryable configuration error (agent can't fix these)
         const nonRetryableErrors = [
@@ -1417,7 +1425,7 @@ export function AgentChat({
         )}
 
         {/* Messages */}
-        <ScrollArea className="flex-1">
+        <ScrollArea ref={scrollAreaRef} className="flex-1">
           <div className="space-y-4 p-4">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
