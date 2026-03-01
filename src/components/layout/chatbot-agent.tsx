@@ -68,10 +68,22 @@ type Message = {
     consultedNodes?: ConsultedNode[];
 };
 
+// Safely extract a display string from a message content field
+// (handles Genkit array format, plain strings, and any other shape)
+function safeContentString(content: unknown): string {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        return content.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join('');
+    }
+    if (content && typeof (content as any).text === 'string') return (content as any).text;
+    return '';
+}
+
 // Parse recharts config from markdown code blocks
-function parseRechartsBlocks(content: string): { text: string; charts: any[] } {
+function parseRechartsBlocks(content: unknown): { text: string; charts: any[] } {
+    const safeContent = safeContentString(content);
     const charts: any[] = [];
-    const text = content.replace(/```recharts\n([\s\S]*?)```/g, (_, json) => {
+    const text = safeContent.replace(/```recharts\n([\s\S]*?)```/g, (_, json) => {
         try {
             const config = JSON.parse(json.trim());
             charts.push(config);
@@ -84,8 +96,9 @@ function parseRechartsBlocks(content: string): { text: string; charts: any[] } {
 }
 
 // Simple markdown renderer for tables, bold, code blocks
-function RichContent({ content, charts }: { content: string; charts: any[] }) {
-    const parts = content.split(/(\[CHART_\d+\]|```(?:sql|python|json)[\s\S]*?```|\|.*\|(?:\n\|.*\|)*)/g);
+function RichContent({ content, charts }: { content: unknown; charts: any[] }) {
+    const safeStr = safeContentString(content);
+    const parts = safeStr.split(/(\[CHART_\d+\]|```(?:sql|python|json)[\s\S]*?```|\|.*\|(?:\n\|.*\|)*)/g);
 
     return (
         <div className="space-y-2">
@@ -357,7 +370,13 @@ export function ChatBotAgent() {
                 const data = await res.json();
                 if (data.success && data.conversation) {
                     setConversationId(data.conversation.id);
-                    setMessages(data.conversation.messages);
+                    // Normalize content to string to handle legacy Genkit array format
+                    setMessages((data.conversation.messages as any[]).map((m: any) => ({
+                        role: m.role as 'user' | 'assistant',
+                        content: safeContentString(m.content),
+                        timestamp: m.timestamp || Date.now(),
+                        consultedNodes: m.consultedNodes,
+                    })));
                 } else {
                     setMessages([{
                         role: 'assistant',
@@ -569,9 +588,11 @@ export function ChatBotAgent() {
                     <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
                         <div className="space-y-4">
                             {messages.map((m, i) => {
+                                // safeContentString guards against any non-string content from DB
+                                const safeContent = safeContentString(m.content);
                                 const { text, charts } = m.role === 'assistant'
-                                    ? parseRechartsBlocks(m.content)
-                                    : { text: m.content, charts: [] };
+                                    ? parseRechartsBlocks(safeContent)
+                                    : { text: safeContent, charts: [] };
 
                                 return (
                                     <div key={m.timestamp + i} className="flex flex-col gap-1 items-start animate-in fade-in slide-in-from-bottom-2">
@@ -600,7 +621,7 @@ export function ChatBotAgent() {
                                                 {m.role === 'assistant' ? (
                                                     <RichContent content={text} charts={charts} />
                                                 ) : (
-                                                    m.content
+                                                    safeContent
                                                 )}
                                             </div>
                                         </div>
