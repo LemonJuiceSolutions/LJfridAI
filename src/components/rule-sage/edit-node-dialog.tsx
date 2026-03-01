@@ -1668,9 +1668,14 @@ export default function EditNodeDialog({
       else delete newNodeData.triggers;
 
       // SQL Data
+      if (sqlConnectorId) {
+        newNodeData.sqlConnectorId = sqlConnectorId;
+      } else {
+        delete newNodeData.sqlConnectorId;
+      }
+
       if (sqlQuery) {
         newNodeData.sqlQuery = sqlQuery.trim();
-        newNodeData.sqlConnectorId = sqlConnectorId || undefined;
         newNodeData.sqlResultName = sqlResultName.trim() || undefined;
 
         if (selectedPipelines.length > 0) {
@@ -1680,7 +1685,6 @@ export default function EditNodeDialog({
         }
       } else {
         delete newNodeData.sqlQuery;
-        delete newNodeData.sqlConnectorId;
         delete newNodeData.sqlResultName;
         delete newNodeData.selectedPipelines;
       }

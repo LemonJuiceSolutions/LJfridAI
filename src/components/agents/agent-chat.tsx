@@ -490,11 +490,19 @@ export function AgentChat({
   // --- Streaming Mode (Vercel AI SDK v6) ---
   const [streamingEnabled, setStreamingEnabled] = useState(true);
 
+  // Ref to always have the latest connectorId at request time (avoids stale closure in useMemo transport)
+  const connectorIdRef = useRef(connectorId);
+  connectorIdRef.current = connectorId;
+
   // Create transport with dynamic body (memoized to avoid re-creating on every render)
   const streamTransport = useMemo(() => new DefaultChatTransport({
     api: '/api/agents/chat-stream',
-    body: { nodeId, agentType, script, tableSchema, inputTables, nodeQueries, connectorId, selectedDocuments },
-  }), [nodeId, agentType, script, tableSchema, inputTables, nodeQueries, connectorId, selectedDocuments]);
+    body: { nodeId, agentType, script, tableSchema, inputTables, nodeQueries, selectedDocuments },
+    prepareSendMessagesRequest: ({ body, messages, ...rest }) => ({
+      ...rest,
+      body: { messages, ...body, connectorId: connectorIdRef.current },
+    }),
+  }), [nodeId, agentType, script, tableSchema, inputTables, nodeQueries, selectedDocuments]);
 
   // useChat hook for streaming mode (v6 API)
   const {
