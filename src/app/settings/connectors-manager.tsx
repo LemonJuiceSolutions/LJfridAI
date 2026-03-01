@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { getConnectorsAction, createConnectorAction, deleteConnectorAction, testConnectorAction, updateConnectorAction } from '../actions/connectors';
 import { generateDeviceCodeAction, pollForTokenAction, listSharePointDrivesAction, listSharePointFilesAction, listExcelSheetsAction } from '../actions/sharepoint';
-import { Loader2, Trash2, Database, Mail, FileSpreadsheet, Layers, Plus, Wifi, CheckCircle2, XCircle, Pencil, ExternalLink, Copy, FolderOpen, Folder, ChevronRight, ArrowLeft, Download, Upload } from 'lucide-react';
+import { Loader2, Trash2, Database, Mail, FileSpreadsheet, Layers, Plus, Wifi, CheckCircle2, XCircle, Pencil, ExternalLink, Copy, FolderOpen, Folder, ChevronRight, ArrowLeft, Download, Upload, Map } from 'lucide-react';
+import { DatabaseMapDialog } from './database-map-dialog';
 import { exportSettingsAction, importSettingsAction } from '../actions/backup-restore';
 import {
     Dialog,
@@ -73,6 +74,10 @@ export function ConnectorsManager() {
 
     // Auth Trigger State to know what to resume after login
     const [authTrigger, setAuthTrigger] = useState<'test' | 'browse'>('test');
+
+    // Database Map State
+    const [mapDialogOpen, setMapDialogOpen] = useState(false);
+    const [selectedMapConnector, setSelectedMapConnector] = useState<any>(null);
 
     // Backup/Restore State
     const [isExporting, setIsExporting] = useState(false);
@@ -965,6 +970,23 @@ export function ConnectorsManager() {
                                     </div>
 
                                     <div className="flex items-center justify-end gap-0.5 px-2 py-1 bg-slate-50/80 dark:bg-black/20 border-t border-slate-100 dark:border-slate-800">
+                                        {c.type === 'SQL' && (
+                                            <TooltipProvider>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-6 w-6 text-muted-foreground hover:text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/20"
+                                                            onClick={() => { setSelectedMapConnector(c); setMapDialogOpen(true); }}
+                                                        >
+                                                            <Map className="h-4 w-4" />
+                                                        </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>Mappa DB</TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                        )}
                                         <TooltipProvider>
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
@@ -1010,6 +1032,16 @@ export function ConnectorsManager() {
                     </div>
                 )}
             </CardContent>
+
+            {/* Database Map Dialog */}
+            {selectedMapConnector && (
+                <DatabaseMapDialog
+                    connectorId={selectedMapConnector.id}
+                    connectorName={selectedMapConnector.name}
+                    open={mapDialogOpen}
+                    onOpenChange={(open) => { setMapDialogOpen(open); if (!open) setSelectedMapConnector(null); }}
+                />
+            )}
         </Card>
     );
 }

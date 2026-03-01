@@ -15,6 +15,27 @@ import { resolveModel, runOpenRouterAgentLoop, type OpenRouterTool, type OpenRou
 
 async function doExploreDbSchema(input: { connectorId: string }) {
     try {
+        // Check for cached database map first (richer info)
+        const connector = await db.connector.findUnique({
+            where: { id: input.connectorId },
+            select: { databaseMap: true },
+        });
+        if (connector?.databaseMap) {
+            try {
+                const map = JSON.parse(connector.databaseMap);
+                const tables = (map.tables || []).map((t: any) => ({
+                    table_name: t.fullName,
+                    row_count: t.rowCount,
+                    description: t.userDescription || t.description || null,
+                    columns_count: t.columns?.length || 0,
+                    primary_keys: t.primaryKeyColumns || [],
+                    foreign_keys: (t.foreignKeysOut || []).map((fk: any) => `${fk.sourceColumn} → ${fk.targetTable}.${fk.targetColumn}`),
+                }));
+                return JSON.stringify({ tables, source: 'cached_map' }, null, 2);
+            } catch { /* fall through to INFORMATION_SCHEMA query */ }
+        }
+
+        // Fallback: direct INFORMATION_SCHEMA query
         const result = await executeSqlPreviewAction(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
             input.connectorId, [], true
@@ -28,6 +49,36 @@ async function doExploreDbSchema(input: { connectorId: string }) {
 
 async function doExploreTableColumns(input: { connectorId: string, tableName: string }) {
     try {
+        // Check for cached database map first
+        const connector = await db.connector.findUnique({
+            where: { id: input.connectorId },
+            select: { databaseMap: true },
+        });
+        if (connector?.databaseMap) {
+            try {
+                const map = JSON.parse(connector.databaseMap);
+                const searchName = input.tableName.toLowerCase();
+                const table = (map.tables || []).find((t: any) =>
+                    t.name.toLowerCase() === searchName ||
+                    t.fullName.toLowerCase() === searchName ||
+                    t.fullName.toLowerCase().endsWith('.' + searchName)
+                );
+                if (table) {
+                    const columns = (table.columns || []).map((c: any) => ({
+                        column_name: c.name,
+                        data_type: c.dataType + (c.maxLength && c.maxLength > 0 ? `(${c.maxLength})` : ''),
+                        is_nullable: c.isNullable ? 'YES' : 'NO',
+                        is_primary_key: c.isPrimaryKey,
+                        is_foreign_key: c.isForeignKey,
+                        fk_target: c.foreignKeyTarget ? `${c.foreignKeyTarget.table}.${c.foreignKeyTarget.column}` : null,
+                        description: c.userDescription || c.description || null,
+                    }));
+                    return JSON.stringify({ table: table.fullName, columns, source: 'cached_map' }, null, 2);
+                }
+            } catch { /* fall through to INFORMATION_SCHEMA query */ }
+        }
+
+        // Fallback: direct INFORMATION_SCHEMA query
         const result = await executeSqlPreviewAction(
             `SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = '${input.tableName.replace(/'/g, "''")}' ORDER BY ordinal_position`,
             input.connectorId, [], true

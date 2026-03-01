@@ -437,6 +437,13 @@ export async function saveAncestorPreviewsBatchAction(
                     }
                 }
             }
+            // Also search in children arrays (alternative tree structure)
+            if (node.children && Array.isArray(node.children)) {
+                for (const child of node.children) {
+                    const found = findNodeById(child, targetId);
+                    if (found) return found;
+                }
+            }
             return null;
         };
 
@@ -454,8 +461,12 @@ export async function saveAncestorPreviewsBatchAction(
             const res = preview.result;
 
             // 1. SQL Preview Data (Check for array data)
-            // Always save tabular data to sqlPreviewData regardless of isPython flag,
-            // because widgets may be registered as SQL preview type even for hybrid nodes.
+            // FIX: Only write to sqlPreviewData when this is NOT a Python result on a hybrid node.
+            // On hybrid nodes (both sqlQuery and pythonCode), the Python result must NOT overwrite
+            // the SQL preview data, otherwise both previews show identical data.
+            const isHybridNode = !!(node.sqlQuery && node.pythonCode);
+            const shouldWriteSqlPreview = !preview.isPython || !isHybridNode;
+
             const sqlData = Array.isArray(res)
                 ? res
                 : (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data))
@@ -464,7 +475,7 @@ export async function saveAncestorPreviewsBatchAction(
                         ? res.rechartsData
                         : null;
 
-            if (sqlData) {
+            if (sqlData && shouldWriteSqlPreview) {
                 node.sqlPreviewData = sqlData;
                 node.sqlPreviewTimestamp = nowMs;
                 nodeUpdated = true;

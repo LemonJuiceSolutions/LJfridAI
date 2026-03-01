@@ -401,6 +401,25 @@ export class SchedulerService {
 
     logger.log(`[AncestorChain] Execution Order: ${sortedNormalized.map(n => nodeNameMap.get(n)).join(' -> ')}`);
 
+    // FIX: Build nodeId -> tableDef map for unambiguous lookup (prevents preview corruption from name collisions)
+    const nodeIdToTableDef = new Map<string, any>();
+    contextTables.forEach(t => {
+      const nId = t.nodeId || t.id;
+      if (nId) nodeIdToTableDef.set(nId, t);
+    });
+
+    // Detect duplicate names (warning for debugging)
+    const nameCount = new Map<string, number>();
+    contextTables.forEach(t => {
+      const n = t.name?.toLowerCase().trim();
+      if (n) nameCount.set(n, (nameCount.get(n) || 0) + 1);
+    });
+    for (const [name, count] of nameCount) {
+      if (count > 1) {
+        logger.log(`[AncestorChain] WARNING: Duplicate node name detected: "${name}" appears ${count} times. This can cause preview corruption.`);
+      }
+    }
+
     // 3. Execute in Order
     for (const normalizedName of sortedNormalized) {
       const originalName = nodeNameMap.get(normalizedName);
@@ -811,7 +830,10 @@ export class SchedulerService {
         const nodeInfo: any = {
           name: allNames[0] || current.name,
           allNames: allNames,
-          isPython: !!current.pythonCode,
+          // FIX: Consistent classification with getAllNodesFromTree - SQL takes priority over Python
+          // This ensures hybrid nodes (both sqlQuery and pythonCode) enter the SQL branch in executeAncestorChain,
+          // which has proper hybrid handling (runs SQL first, then Python chart code)
+          isPython: current.sqlQuery ? false : !!current.pythonCode,
           connectorId: current.pythonConnectorId || current.sqlConnectorId || current.connectorId,
           sqlQuery: current.sqlQuery,
           pythonCode: current.pythonCode,

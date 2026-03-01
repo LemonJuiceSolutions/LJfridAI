@@ -168,6 +168,14 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                         // Filter out email inputs as dependencies for now, unless they produce data (unlikely)
                         if (nType === 'email') return;
 
+                        // FIX: For hybrid nodes, determine type from which result name matched
+                        // to avoid copying pythonCode on SQL-type deps (which would hijack execution)
+                        let depIsPython = nType === 'python';
+                        if (sn.sqlResultName && sn.pythonResultName && sn.sqlQuery && sn.pythonCode) {
+                            // Hybrid node: check which result name the dependency matched
+                            depIsPython = sn.pythonResultName === pName && sn.sqlResultName !== pName;
+                        }
+
                         deps.push({
                             tableName: pName,
                             nodeId: sn.id,
@@ -179,13 +187,13 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                             writesToDatabase: sn.writesToDatabase || !!sn.sqlExportAction,
                             sqlExportTargetTableName: sn.sqlExportAction?.targetTableName || sn.sqlExportTargetTableName,
                             sqlExportTargetConnectorId: sn.sqlExportAction?.targetConnectorId || sn.sqlExportTargetConnectorId,
-                            connectorId: nType === 'python' ? sn.pythonConnectorId : sn.sqlConnectorId,
-                            sqlQuery: nType === 'python' ? undefined : sn.sqlQuery,
-                            query: nType === 'python' ? undefined : sn.sqlQuery, // internal consistency
-                            isPython: nType === 'python',
-                            nodeType: nType,
-                            pythonCode: sn.pythonCode,
-                            pythonOutputType: sn.pythonOutputType,
+                            connectorId: depIsPython ? sn.pythonConnectorId : sn.sqlConnectorId,
+                            sqlQuery: depIsPython ? undefined : sn.sqlQuery,
+                            query: depIsPython ? undefined : sn.sqlQuery,
+                            isPython: depIsPython,
+                            nodeType: depIsPython ? 'python' : nType,
+                            pythonCode: depIsPython ? sn.pythonCode : undefined,
+                            pythonOutputType: depIsPython ? sn.pythonOutputType : undefined,
                             pipelineDependencies: resolveDependencies(sn, newVisited),
                             selectedDocuments: sn.selectedDocuments,
                             sharepointPath: sn.sharepointPath,
@@ -217,30 +225,80 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                     const nType = getNodeType(node);
                     if (nType === 'email') return; // Exclude email nodes from the list
 
-                    physicalAncestors.push({
-                        id: node.id,
-                        path: nodePath,
-                        name: node.sqlResultName || node.pythonResultName,
-                        sqlResultName: node.sqlResultName, // Preserve for key generation
-                        pythonResultName: node.pythonResultName, // Preserve for key generation
-                        sqlQuery: node.sqlQuery,
-                        query: node.sqlQuery,
-                        nodeType: nType,
-                        isPython: nType === 'python',
-                        pythonCode: node.pythonCode,
-                        connectorId: node.connectorId || node.sqlConnectorId || node.pythonConnectorId,
-                        pythonOutputType: node.pythonOutputType,
-                        pipelineDependencies: resolveDependencies(node),
-                        nodeName: node.question || node.decision || node.name,
-                        writesToDatabase: node.writesToDatabase || !!node.sqlExportAction,
-                        sqlExportTargetTableName: node.sqlExportAction?.targetTableName || node.sqlExportTargetTableName,
-                        sqlExportTargetConnectorId: node.sqlExportAction?.targetConnectorId || node.sqlExportTargetConnectorId,
-                        selectedDocuments: node.selectedDocuments,
-                        sharepointPath: node.sharepointPath,
-                        sharepointAction: node.sharepointAction,
-                        emailAction: node.emailAction,
-                        hubspotAction: node.hubspotAction
-                    });
+                    // FIX: Hybrid nodes (both SQL and Python) need TWO separate entries
+                    // to ensure both operations execute independently and save to the correct preview fields.
+                    // Without this, `if (node.pythonCode)` in the execution loop makes Python always win.
+                    const isHybridNode = !!(node.sqlResultName && node.pythonResultName && node.sqlQuery && node.pythonCode);
+                    const resolvedDeps = resolveDependencies(node);
+                    const commonNodeName = node.question || node.decision || node.name;
+                    const commonWritesToDb = node.writesToDatabase || !!node.sqlExportAction;
+                    const commonExportTable = node.sqlExportAction?.targetTableName || node.sqlExportTargetTableName;
+                    const commonExportConnector = node.sqlExportAction?.targetConnectorId || node.sqlExportTargetConnectorId;
+
+                    if (isHybridNode) {
+                        // SQL entry — no pythonCode to prevent Python branch from hijacking
+                        physicalAncestors.push({
+                            id: node.id,
+                            path: nodePath,
+                            name: node.sqlResultName,
+                            sqlResultName: node.sqlResultName,
+                            sqlQuery: node.sqlQuery,
+                            query: node.sqlQuery,
+                            nodeType: 'sql',
+                            isPython: false,
+                            pythonCode: undefined,
+                            pythonOutputType: undefined,
+                            connectorId: node.sqlConnectorId || node.connectorId,
+                            pipelineDependencies: resolvedDeps,
+                            nodeName: commonNodeName,
+                            writesToDatabase: commonWritesToDb,
+                            sqlExportTargetTableName: commonExportTable,
+                            sqlExportTargetConnectorId: commonExportConnector,
+                        });
+                        // Python entry — no sqlQuery to prevent SQL branch
+                        physicalAncestors.push({
+                            id: node.id,
+                            path: nodePath,
+                            name: node.pythonResultName,
+                            pythonResultName: node.pythonResultName,
+                            sqlQuery: undefined,
+                            query: undefined,
+                            nodeType: 'python',
+                            isPython: true,
+                            pythonCode: node.pythonCode,
+                            pythonOutputType: node.pythonOutputType,
+                            connectorId: node.pythonConnectorId || node.connectorId,
+                            pipelineDependencies: resolvedDeps,
+                            nodeName: commonNodeName,
+                            writesToDatabase: false, // Only SQL entry handles DB writes
+                            selectedDocuments: node.selectedDocuments,
+                        });
+                    } else {
+                        physicalAncestors.push({
+                            id: node.id,
+                            path: nodePath,
+                            name: node.sqlResultName || node.pythonResultName,
+                            sqlResultName: node.sqlResultName,
+                            pythonResultName: node.pythonResultName,
+                            sqlQuery: node.sqlQuery,
+                            query: node.sqlQuery,
+                            nodeType: nType,
+                            isPython: nType === 'python',
+                            pythonCode: nType === 'python' ? node.pythonCode : undefined,
+                            connectorId: node.connectorId || node.sqlConnectorId || node.pythonConnectorId,
+                            pythonOutputType: node.pythonOutputType,
+                            pipelineDependencies: resolvedDeps,
+                            nodeName: commonNodeName,
+                            writesToDatabase: commonWritesToDb,
+                            sqlExportTargetTableName: commonExportTable,
+                            sqlExportTargetConnectorId: commonExportConnector,
+                            selectedDocuments: node.selectedDocuments,
+                            sharepointPath: node.sharepointPath,
+                            sharepointAction: node.sharepointAction,
+                            emailAction: node.emailAction,
+                            hubspotAction: node.hubspotAction
+                        });
+                    }
                 }
             });
 
@@ -314,6 +372,9 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
 
             // 5. Execute Sequence
             const ancestorResults: Record<string, any> = {};
+            // FIX: Track results by composite key (nodeId + type) to prevent preview corruption
+            // when nodes share the same name (different nodes) or same nodeId (hybrid SQL+Python nodes)
+            const nodeIdResults: Record<string, any> = {};
             for (const step of steps) {
                 if (!isExecutingRef.current) break;
                 setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'running' } : p));
@@ -327,8 +388,10 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                         const node = step.type === 'final' ? targetNode : step.ancestor;
                         const nType = (step as any).pipelineType;
 
-                        // Priority 1: Python execution if code is present (even for SharePoint/Email nodes)
-                        if (node.pythonCode) {
+                        // Priority 1: Python execution — use nType (pipelineType) to determine execution branch.
+                        // FIX: Previously `if (node.pythonCode)` made Python always win on hybrid nodes.
+                        // Using nType respects: isPython flag for ancestor steps, getNodeType() for final step.
+                        if (nType === 'python' && node.pythonCode) {
                             const inputData: Record<string, any[]> = {};
                             for (const [key, val] of Object.entries(ancestorResults)) {
                                 if (val && val.data && Array.isArray(val.data)) {
@@ -360,6 +423,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                             if (res.success) {
                                 success = true;
                                 ancestorResults[node.sqlResultName || node.pythonResultName || node.name] = res;
+                                if (node.id) nodeIdResults[`${node.id}_py`] = res;
                             } else {
                                 stepError = res.error || "Execution failed";
                             }
@@ -391,6 +455,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                             if (res.data) {
                                 success = true;
                                 ancestorResults[node.sqlResultName || node.name] = { data: res.data };
+                                if (node.id) nodeIdResults[`${node.id}_sql`] = { data: res.data };
                             } else {
                                 stepError = res.error || "Query failed";
                             }
@@ -430,11 +495,16 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
             for (const step of steps) {
                 if (step.type === 'write') continue;
                 const node = step.type === 'final' ? targetNode : step.ancestor;
-                const res = ancestorResults[node.sqlResultName || node.pythonResultName || node.name];
+                // FIX: Use step's pipelineType (not pythonCode presence) for composite key and classification.
+                // For ancestor steps, pipelineType comes from nodeType (correctly set for hybrid entries).
+                // For final step, pipelineType comes from getNodeType(targetNode).
+                const isPy = (step as any).pipelineType === 'python';
+                const compositeKey = node.id ? `${node.id}_${isPy ? 'py' : 'sql'}` : null;
+                const res = (compositeKey && nodeIdResults[compositeKey]) || ancestorResults[node.sqlResultName || node.pythonResultName || node.name];
                 if (res) {
                     previewBatch.push({
                         nodeId: node.id,
-                        isPython: !!node.pythonCode,
+                        isPython: isPy,
                         pythonOutputType: node.pythonOutputType,
                         result: res
                     });

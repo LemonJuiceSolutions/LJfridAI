@@ -1304,6 +1304,9 @@ export default function EditNodeDialog({
 
       // Collect results to pass to final action
       const ancestorResults: Record<string, any> = {};
+      // FIX: Track results by composite key (nodeId + type) to prevent preview corruption
+      // when nodes share the same name (different nodes) or same nodeId (hybrid SQL+Python nodes)
+      const nodeIdResults: Record<string, any> = {};
 
       // 3. Execute Steps Sequentially
       for (const step of steps) {
@@ -1389,7 +1392,7 @@ export default function EditNodeDialog({
               console.log(`[BUTTON DEBUG] Result for ${ancestor.name}: success=${res.success}, hasData=${!!res.data}, dataIsArray=${Array.isArray(res.data)}, dataLength=${res.data?.length || 'N/A'}, hasVariables=${!!res.variables}`);
               if (res.success) {
                 success = true;
-                ancestorResults[ancestor.name] = {
+                const resultObj = {
                   data: res.data,
                   chartBase64: res.chartBase64,
                   chartHtml: res.chartHtml,
@@ -1400,6 +1403,10 @@ export default function EditNodeDialog({
                   variables: res.variables,
                   html: res.html
                 };
+                ancestorResults[ancestor.name] = resultObj;
+                const nId = ancestor.id || ancestor.nodeId;
+                // FIX: Use composite key to handle hybrid nodes (same nodeId for SQL+Python ops)
+                if (nId) nodeIdResults[`${nId}_${ancestor.isPython ? 'py' : 'sql'}`] = resultObj;
               } else {
                 error = res.error || null;
               }
@@ -1441,7 +1448,11 @@ export default function EditNodeDialog({
               );
               if (res.data) {
                 success = true;
-                ancestorResults[ancestor.name] = { data: res.data };
+                const resultObj = { data: res.data };
+                ancestorResults[ancestor.name] = resultObj;
+                const nId = ancestor.id || ancestor.nodeId;
+                // FIX: Use composite key to handle hybrid nodes (same nodeId for SQL+Python ops)
+                if (nId) nodeIdResults[`${nId}_${ancestor.isPython ? 'py' : 'sql'}`] = resultObj;
               } else {
                 error = res.error || null;
               }
@@ -1531,10 +1542,14 @@ export default function EditNodeDialog({
           for (const step of steps) {
             if (step.type !== 'execution' || !step.ancestor) continue;
             const ancestor = step.ancestor;
-            const resultData = ancestorResults[ancestor.name];
-            if (!resultData) continue;
             const nodeId = ancestor.id || ancestor.nodeId;
             if (!nodeId) continue;
+            // FIX: Use composite key (nodeId + type) to prevent preview corruption both when:
+            // - Different nodes share the same name (Scenario A)
+            // - Same node has both SQL and Python ops with same nodeId (Scenario B - hybrid nodes)
+            const compositeKey = `${nodeId}_${ancestor.isPython ? 'py' : 'sql'}`;
+            const resultData = nodeIdResults[compositeKey] || ancestorResults[ancestor.name];
+            if (!resultData) continue;
             ancestorPreviews.push({
               nodeId,
               isPython: !!ancestor.isPython,

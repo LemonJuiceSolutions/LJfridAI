@@ -183,8 +183,10 @@ model Connector {
   id        String   @id @default(cuid())
   name      String
   type      String
-  config    String
-  companyId String
+  config        String
+  databaseMap   String?
+  databaseMapAt DateTime?
+  companyId     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
