@@ -20,6 +20,8 @@ import {
     BookOpen,
     ChevronsUpDown,
     Check,
+    BarChart3,
+    Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,11 +62,14 @@ import { ConsultedNodesSection } from '@/components/agents/consulted-nodes-secti
 import { ToolCallsDisplay, type ToolCallInfo } from '@/components/agents/tool-call-display';
 import type { ConsultedNode } from '@/lib/types';
 
+type ToolCallRecord = { toolName: string; args: Record<string, any>; result: any };
+
 type Message = {
     role: 'user' | 'assistant';
     content: string;
     timestamp: number;
     consultedNodes?: ConsultedNode[];
+    toolCalls?: ToolCallRecord[];
 };
 
 // Safely extract a display string from a message content field
@@ -282,6 +287,16 @@ export function ChatBotAgent() {
     const [correctionTags, setCorrectionTags] = useState('');
     const [isSavingCorrection, setIsSavingCorrection] = useState(false);
 
+    // Save-as-widget dialog state
+    const [saveWidgetDialog, setSaveWidgetDialog] = useState<{
+        open: boolean;
+        message: Message | null;
+        charts: any[];
+        selectedChartIndex: number;
+    }>({ open: false, message: null, charts: [], selectedChartIndex: 0 });
+    const [widgetName, setWidgetName] = useState('');
+    const [isSavingWidget, setIsSavingWidget] = useState(false);
+
     // Refs for dynamic values injected into stream transport
     const modelRef = useRef(model);
     modelRef.current = model;
@@ -317,11 +332,17 @@ export function ChatBotAgent() {
                 .map(p => p.text)
                 .join('');
 
+            // Capture completed tool invocations (for "Save as Widget" feature)
+            const toolCalls: ToolCallRecord[] = (message.parts as any[])
+                .filter(p => p.type === 'tool-invocation' && p.state === 'result')
+                .map(p => ({ toolName: p.toolName, args: p.args ?? {}, result: p.result }));
+
             // Add the completed assistant message to our local state
             setMessages(prev => [...prev, {
                 role: 'assistant' as const,
                 content: textContent,
                 timestamp: Date.now(),
+                toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             }]);
 
             // Clear stream messages (transferred to local state)
@@ -506,6 +527,52 @@ export function ChatBotAgent() {
         }
     };
 
+    const openSaveWidgetDialog = (message: Message, charts: any[]) => {
+        const firstTitle = charts[0]?.title || '';
+        setWidgetName(typeof firstTitle === 'string' ? firstTitle : '');
+        setSaveWidgetDialog({ open: true, message, charts, selectedChartIndex: 0 });
+    };
+
+    const handleSaveWidget = async () => {
+        if (!saveWidgetDialog.message || !widgetName.trim()) return;
+        setIsSavingWidget(true);
+        try {
+            const chart = saveWidgetDialog.charts[saveWidgetDialog.selectedChartIndex];
+            const toolCalls = saveWidgetDialog.message.toolCalls ?? [];
+            const sqlCall = toolCalls.find(t => t.toolName === 'executeSqlQuery');
+            const pythonCall = toolCalls.find(t => t.toolName === 'executePythonCode');
+
+            const res = await fetch('/api/super-agent/save-widget', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    treeName: widgetName.trim(),
+                    chartConfig: chart,
+                    sqlQuery: sqlCall?.args?.query,
+                    connectorId: sqlCall?.args?.connectorId,
+                    pythonCode: pythonCall?.args?.code,
+                }),
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'Errore sconosciuto');
+
+            toast({
+                title: '✅ Widget salvato',
+                description: `"${widgetName.trim()}" è disponibile nel picker della dashboard → Aggiungi Widget`,
+            });
+            setSaveWidgetDialog({ open: false, message: null, charts: [], selectedChartIndex: 0 });
+            setWidgetName('');
+        } catch (error: any) {
+            toast({
+                title: 'Errore',
+                description: error.message || 'Impossibile salvare il widget.',
+                variant: 'destructive',
+            });
+        } finally {
+            setIsSavingWidget(false);
+        }
+    };
+
     if (!isChatbotOpen) {
         return (
             <Button
@@ -638,15 +705,28 @@ export function ChatBotAgent() {
                                             </div>
                                         </div>
                                         {m.role === 'assistant' && i > 0 && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
-                                                onClick={() => openCorrectionDialog(i)}
-                                            >
-                                                <PenLine className="h-3 w-3" />
-                                                Correggi
-                                            </Button>
+                                            <div className="flex items-center gap-1">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
+                                                    onClick={() => openCorrectionDialog(i)}
+                                                >
+                                                    <PenLine className="h-3 w-3" />
+                                                    Correggi
+                                                </Button>
+                                                {charts.length > 0 && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
+                                                        onClick={() => openSaveWidgetDialog(m, charts)}
+                                                    >
+                                                        <BarChart3 className="h-3 w-3" />
+                                                        Salva come Widget
+                                                    </Button>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 );
@@ -803,6 +883,80 @@ export function ChatBotAgent() {
                         >
                             {isSavingCorrection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                             Salva nella KB
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Save Widget Dialog */}
+            <Dialog
+                open={saveWidgetDialog.open}
+                onOpenChange={(open) => setSaveWidgetDialog(prev => ({ ...prev, open }))}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <BarChart3 className="h-4 w-4" />
+                            Salva come Widget
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                        <div>
+                            <label className="text-sm font-medium">Nome widget</label>
+                            <Input
+                                placeholder="es. Vendite mensili, Fatturato per cliente..."
+                                value={widgetName}
+                                onChange={(e) => setWidgetName(e.target.value)}
+                                className="mt-1"
+                                onKeyDown={(e) => e.key === 'Enter' && widgetName.trim() && !isSavingWidget && handleSaveWidget()}
+                                autoFocus
+                            />
+                        </div>
+                        {saveWidgetDialog.charts.length > 1 && (
+                            <div>
+                                <label className="text-sm font-medium">Seleziona grafico da salvare</label>
+                                <div className="mt-1 space-y-1">
+                                    {saveWidgetDialog.charts.map((chart, idx) => {
+                                        const chartTitle = typeof chart.title === 'string' ? chart.title : `Grafico ${idx + 1}`;
+                                        return (
+                                            <button
+                                                key={idx}
+                                                onClick={() => setSaveWidgetDialog(prev => ({ ...prev, selectedChartIndex: idx }))}
+                                                className={cn(
+                                                    "w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors",
+                                                    saveWidgetDialog.selectedChartIndex === idx
+                                                        ? "border-primary bg-primary/5 text-primary"
+                                                        : "border-muted hover:border-muted-foreground/40"
+                                                )}
+                                            >
+                                                <span className="font-medium">{chartTitle}</span>
+                                                <span className="ml-2 text-[11px] text-muted-foreground">({chart.type})</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                        <p className="text-[11px] text-muted-foreground">
+                            Il widget verrà salvato come albero PIPELINE e sarà disponibile nel picker della dashboard sotto &quot;Aggiungi Widget&quot;.
+                        </p>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setSaveWidgetDialog(prev => ({ ...prev, open: false }))}
+                        >
+                            Annulla
+                        </Button>
+                        <Button
+                            onClick={handleSaveWidget}
+                            disabled={!widgetName.trim() || isSavingWidget}
+                        >
+                            {isSavingWidget
+                                ? <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                                : <Save className="h-4 w-4 mr-1" />
+                            }
+                            Salva
                         </Button>
                     </DialogFooter>
                 </DialogContent>
