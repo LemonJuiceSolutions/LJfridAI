@@ -87,7 +87,7 @@ function safeContentString(content: unknown): string {
 function parseRechartsBlocks(content: unknown): { text: string; charts: any[] } {
     const safeContent = safeContentString(content);
     const charts: any[] = [];
-    const text = safeContent.replace(/```recharts\n([\s\S]*?)```/g, (_, json) => {
+    const text = safeContent.replace(/```recharts\s*\n?([\s\S]*?)```/g, (_, json) => {
         try {
             const config = JSON.parse(json.trim());
             charts.push(config);
@@ -297,6 +297,9 @@ export function ChatBotAgent() {
     const [widgetName, setWidgetName] = useState('');
     const [isSavingWidget, setIsSavingWidget] = useState(false);
 
+    // Guard ref to prevent re-entrant onFinish calls (can cause infinite loop)
+    const isProcessingFinishRef = useRef(false);
+
     // Refs for dynamic values injected into stream transport
     const modelRef = useRef(model);
     modelRef.current = model;
@@ -326,63 +329,72 @@ export function ChatBotAgent() {
     } = useChat({
         transport: streamTransport,
         onFinish: async ({ message }: { message: UIMessage }) => {
-            // Extract text from message parts
-            const textContent = message.parts
-                .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-                .map(p => p.text)
-                .join('');
+            // Guard against re-entrant calls that can cause "Maximum update depth exceeded"
+            if (isProcessingFinishRef.current) return;
+            isProcessingFinishRef.current = true;
 
-            // Capture completed tool invocations (for "Save as Widget" feature).
-            // The streaming parts use type 'dynamic-tool' or 'tool-*' with flat fields
-            // (toolName, input, state, output) — NOT the 'tool-invocation' format.
-            const toolCalls: ToolCallRecord[] = (message.parts as any[])
-                .filter(p => {
-                    // Match streaming part shapes: 'dynamic-tool' or 'tool-executeSqlQuery' etc.
-                    if (p.type === 'dynamic-tool' || (typeof p.type === 'string' && p.type.startsWith('tool-'))) {
-                        return p.state === 'output-available';
-                    }
-                    // AI SDK v4+ format (nested toolInvocation) as fallback
-                    if (p.type === 'tool-invocation') {
-                        return p.toolInvocation?.state === 'result';
-                    }
-                    return false;
-                })
-                .map(p => {
-                    // AI SDK v4+ nested format
-                    if (p.toolInvocation) {
-                        return {
-                            toolName: p.toolInvocation.toolName,
-                            args: p.toolInvocation.args ?? {},
-                            result: p.toolInvocation.result,
-                        };
-                    }
-                    // Flat streaming format (dynamic-tool / tool-*)
-                    return {
-                        toolName: p.toolName || (typeof p.type === 'string' ? p.type.replace('tool-', '') : ''),
-                        args: p.input ?? p.args ?? {},
-                        result: p.output ?? p.result,
-                    };
-                });
-
-            // Add the completed assistant message to our local state
-            setMessages(prev => [...prev, {
-                role: 'assistant' as const,
-                content: textContent,
-                timestamp: Date.now(),
-                toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-            }]);
-
-            // Clear stream messages (transferred to local state)
-            setStreamMessages([]);
-
-            // Refresh conversation ID from server (needed after first message creates a new conversation)
             try {
-                const res = await fetch('/api/super-agent');
-                const data = await res.json();
-                if (data.success && data.conversation) {
-                    setConversationId(data.conversation.id);
-                }
-            } catch { /* ignore */ }
+                // Extract text from message parts
+                const textContent = message.parts
+                    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+                    .map(p => p.text)
+                    .join('');
+
+                // Capture completed tool invocations (for "Save as Widget" feature).
+                // The streaming parts use type 'dynamic-tool' or 'tool-*' with flat fields
+                // (toolName, input, state, output) — NOT the 'tool-invocation' format.
+                const toolCalls: ToolCallRecord[] = (message.parts as any[])
+                    .filter(p => {
+                        // Match streaming part shapes: 'dynamic-tool' or 'tool-executeSqlQuery' etc.
+                        if (p.type === 'dynamic-tool' || (typeof p.type === 'string' && p.type.startsWith('tool-'))) {
+                            return p.state === 'output-available';
+                        }
+                        // AI SDK v4+ format (nested toolInvocation) as fallback
+                        if (p.type === 'tool-invocation') {
+                            return p.toolInvocation?.state === 'result';
+                        }
+                        return false;
+                    })
+                    .map(p => {
+                        // AI SDK v4+ nested format
+                        if (p.toolInvocation) {
+                            return {
+                                toolName: p.toolInvocation.toolName,
+                                args: p.toolInvocation.args ?? {},
+                                result: p.toolInvocation.result,
+                            };
+                        }
+                        // Flat streaming format (dynamic-tool / tool-*)
+                        return {
+                            toolName: p.toolName || (typeof p.type === 'string' ? p.type.replace('tool-', '') : ''),
+                            args: p.input ?? p.args ?? {},
+                            result: p.output ?? p.result,
+                        };
+                    });
+
+                // Add the completed assistant message to our local state
+                setMessages(prev => [...prev, {
+                    role: 'assistant' as const,
+                    content: textContent,
+                    timestamp: Date.now(),
+                    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                }]);
+
+                // Defer clearing stream messages to break any synchronous update loop
+                // that could cause "Maximum update depth exceeded"
+                setTimeout(() => setStreamMessages([]), 0);
+
+                // Refresh conversation ID from server (needed after first message creates a new conversation)
+                try {
+                    const res = await fetch('/api/super-agent');
+                    const data = await res.json();
+                    if (data.success && data.conversation) {
+                        setConversationId(data.conversation.id);
+                    }
+                } catch { /* ignore */ }
+            } finally {
+                isProcessingFinishRef.current = false;
+            }
         },
         onError: (error: Error) => {
             setMessages(prev => [...prev, {
