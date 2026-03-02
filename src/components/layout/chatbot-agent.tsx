@@ -187,50 +187,57 @@ function RichContent({ content, charts }: { content: unknown; charts: any[] }) {
 function InlineChart({ config }: { config: any }) {
     const { theme } = useChartTheme();
     const { type, data, xAxisKey, dataKeys, colors, title } = config;
-    const chartColors = colors || theme.colors;
+
+    // Type-guard all values that could be non-primitive (AI may produce objects instead of strings/arrays)
+    const chartColors = Array.isArray(colors) ? colors : theme.colors;
+    const safeTitle = typeof title === 'string' ? title : null;
+    const safeXAxisKey = typeof xAxisKey === 'string' ? xAxisKey : 'name';
+    const safeDataKeys: string[] = Array.isArray(dataKeys)
+        ? dataKeys.filter((k: unknown) => typeof k === 'string')
+        : [];
 
     if (!data || !Array.isArray(data) || data.length === 0) return null;
 
     return (
         <div className="my-2 p-3 rounded-lg border bg-background">
-            {title && <p className="text-xs font-semibold mb-2 text-center">{title}</p>}
+            {safeTitle && <p className="text-xs font-semibold mb-2 text-center">{safeTitle}</p>}
             <ResponsiveContainer width="100%" height={200}>
                 {type === 'bar-chart' ? (
                     <BarChart data={data}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey={xAxisKey} tick={{ fontSize: 10 }} />
+                        <XAxis dataKey={safeXAxisKey} tick={{ fontSize: 10 }} />
                         <YAxis tick={{ fontSize: 10 }} />
                         <Tooltip contentStyle={{ fontSize: 11 }} />
                         <Legend wrapperStyle={{ fontSize: 10 }} />
-                        {(dataKeys || []).map((key: string, i: number) => (
+                        {safeDataKeys.map((key, i) => (
                             <Bar key={key} dataKey={key} fill={chartColors[i % chartColors.length]} />
                         ))}
                     </BarChart>
                 ) : type === 'line-chart' ? (
                     <LineChart data={data}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey={xAxisKey} tick={{ fontSize: 10 }} />
+                        <XAxis dataKey={safeXAxisKey} tick={{ fontSize: 10 }} />
                         <YAxis tick={{ fontSize: 10 }} />
                         <Tooltip contentStyle={{ fontSize: 11 }} />
                         <Legend wrapperStyle={{ fontSize: 10 }} />
-                        {(dataKeys || []).map((key: string, i: number) => (
+                        {safeDataKeys.map((key, i) => (
                             <Line key={key} type="monotone" dataKey={key} stroke={chartColors[i % chartColors.length]} strokeWidth={2} />
                         ))}
                     </LineChart>
                 ) : type === 'area-chart' ? (
                     <AreaChart data={data}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey={xAxisKey} tick={{ fontSize: 10 }} />
+                        <XAxis dataKey={safeXAxisKey} tick={{ fontSize: 10 }} />
                         <YAxis tick={{ fontSize: 10 }} />
                         <Tooltip contentStyle={{ fontSize: 11 }} />
                         <Legend wrapperStyle={{ fontSize: 10 }} />
-                        {(dataKeys || []).map((key: string, i: number) => (
+                        {safeDataKeys.map((key, i) => (
                             <Area key={key} type="monotone" dataKey={key} fill={chartColors[i % chartColors.length]} stroke={chartColors[i % chartColors.length]} fillOpacity={0.3} />
                         ))}
                     </AreaChart>
                 ) : type === 'pie-chart' ? (
                     <PieChart>
-                        <Pie data={data} dataKey={(dataKeys || ['value'])[0]} nameKey={xAxisKey} cx="50%" cy="50%" outerRadius={70} label={{ fontSize: 10 }}>
+                        <Pie data={data} dataKey={(safeDataKeys.length > 0 ? safeDataKeys : ['value'])[0]} nameKey={safeXAxisKey} cx="50%" cy="50%" outerRadius={70} label={{ fontSize: 10 }}>
                             {data.map((_: any, i: number) => (
                                 <Cell key={i} fill={chartColors[i % chartColors.length]} />
                             ))}
@@ -241,10 +248,10 @@ function InlineChart({ config }: { config: any }) {
                 ) : (
                     <BarChart data={data}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey={xAxisKey} tick={{ fontSize: 10 }} />
+                        <XAxis dataKey={safeXAxisKey} tick={{ fontSize: 10 }} />
                         <YAxis tick={{ fontSize: 10 }} />
                         <Tooltip contentStyle={{ fontSize: 11 }} />
-                        {(dataKeys || []).map((key: string, i: number) => (
+                        {safeDataKeys.map((key, i) => (
                             <Bar key={key} dataKey={key} fill={chartColors[i % chartColors.length]} />
                         ))}
                     </BarChart>
