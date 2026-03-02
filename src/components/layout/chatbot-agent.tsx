@@ -300,6 +300,12 @@ export function ChatBotAgent() {
     // Guard ref to prevent re-entrant onFinish calls (can cause infinite loop)
     const isProcessingFinishRef = useRef(false);
 
+    // Ref to capture completed tool calls from the streaming render.
+    // The streaming render already accesses AI SDK proxy properties successfully,
+    // so we piggyback on that to avoid accessing them again in onFinish (which causes
+    // "Maximum update depth exceeded" due to reactive proxy state updates).
+    const lastToolCallsRef = useRef<ToolCallRecord[]>([]);
+
     // Refs for dynamic values injected into stream transport
     const modelRef = useRef(model);
     modelRef.current = model;
@@ -329,51 +335,24 @@ export function ChatBotAgent() {
     } = useChat({
         transport: streamTransport,
         onFinish: async ({ message }: { message: UIMessage }) => {
-            // Guard against re-entrant calls that can cause "Maximum update depth exceeded"
+            // Guard against re-entrant calls
             if (isProcessingFinishRef.current) return;
             isProcessingFinishRef.current = true;
 
             try {
-                // Deep-clone message.parts into plain objects to detach from any
-                // reactive proxies in the AI SDK that can trigger React state updates
-                // when properties are accessed — which causes "Maximum update depth exceeded".
-                let plainParts: any[] = [];
-                try {
-                    plainParts = JSON.parse(JSON.stringify(message.parts));
-                } catch {
-                    // Fallback: extract text-only parts safely
-                    plainParts = message.parts
-                        .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-                        .map(p => ({ type: 'text', text: p.text }));
-                }
-
-                // Extract text from cloned parts
-                const textContent = plainParts
-                    .filter((p: any) => p.type === 'text')
-                    .map((p: any) => p.text ?? '')
+                // ONLY access .type and .text on message.parts — these are safe.
+                // Accessing other properties (.state, .input, .output, .toolName, .toolInvocation)
+                // triggers reactive proxy getters in the AI SDK, which fire React state
+                // updates and cause "Maximum update depth exceeded".
+                const textContent = message.parts
+                    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+                    .map(p => p.text)
                     .join('');
 
-                // Capture completed tool invocations (for "Save as Widget").
-                // Only store toolName and args (NOT result — it can be huge and is unused).
-                const toolCalls: ToolCallRecord[] = [];
-                for (const p of plainParts) {
-                    try {
-                        const t = p.type;
-                        if ((t === 'dynamic-tool' || (typeof t === 'string' && t.startsWith('tool-'))) && p.state === 'output-available') {
-                            toolCalls.push({
-                                toolName: String(p.toolName || t.replace('tool-', '') || ''),
-                                args: p.input ?? p.args ?? {},
-                                result: undefined as any,
-                            });
-                        } else if (t === 'tool-invocation' && p.toolInvocation?.state === 'result') {
-                            toolCalls.push({
-                                toolName: String(p.toolInvocation.toolName),
-                                args: p.toolInvocation.args ?? {},
-                                result: undefined as any,
-                            });
-                        }
-                    } catch { /* skip malformed part */ }
-                }
+                // Tool calls were captured from the streaming render via lastToolCallsRef
+                // (the streaming render already accesses proxy properties successfully).
+                const toolCalls = [...lastToolCallsRef.current];
+                lastToolCallsRef.current = []; // Reset for next message
 
                 // Add the completed assistant message to our local state
                 setMessages(prev => [...prev, {
@@ -383,10 +362,13 @@ export function ChatBotAgent() {
                     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
                 }]);
 
-                // Defer clearing stream messages to break any synchronous update loop
-                setTimeout(() => setStreamMessages([]), 0);
+                // Clear stream messages SYNCHRONOUSLY — React batches this with setMessages
+                // into a single re-render. Using setTimeout here causes a render where both
+                // messages AND streamMessages are populated, and the streaming section's
+                // proxy access triggers infinite state update loops.
+                setStreamMessages([]);
 
-                // Refresh conversation ID from server (needed after first message creates a new conversation)
+                // Refresh conversation ID from server
                 try {
                     const res = await fetch('/api/super-agent');
                     const data = await res.json();
@@ -404,8 +386,8 @@ export function ChatBotAgent() {
                 content: `⚠️ **Errore**\n\n${error.message || "Si è verificato un errore durante la comunicazione con l'agente."}`,
                 timestamp: Date.now(),
             }]);
-            // Defer to avoid "Maximum update depth exceeded"
-            setTimeout(() => setStreamMessages([]), 0);
+            // MUST be synchronous — see comment above about setTimeout causing loops
+            setStreamMessages([]);
         },
     });
 
@@ -795,6 +777,15 @@ export function ChatBotAgent() {
                                             ? (typeof tc.output === 'string' ? tc.output : JSON.stringify(tc.output))
                                             : tc.state === 'output-error' ? tc.errorText : undefined,
                                     }));
+
+                                // Capture completed tool calls into ref for onFinish to pick up
+                                // (onFinish must NOT access reactive proxy properties itself)
+                                const completedForSave = toolCalls
+                                    .filter(tc => tc.status === 'completed')
+                                    .map(tc => ({ toolName: tc.toolName, args: tc.args, result: undefined as any }));
+                                if (completedForSave.length > 0) {
+                                    lastToolCallsRef.current = completedForSave;
+                                }
 
                                 // Extract streaming text
                                 const streamingText = assistantMsg.parts
