@@ -53,7 +53,8 @@ export async function POST(request: NextRequest) {
 
         // Generate unique IDs for each node
         const rootId = crypto.randomUUID();
-        const stepId = crypto.randomUUID();
+        const sqlStepId = crypto.randomUUID();
+        const pythonStepId = crypto.randomUUID();
         const leafId = crypto.randomUUID();
 
         // Build the widgetConfig for the leaf node
@@ -66,79 +67,95 @@ export async function POST(request: NextRequest) {
             dataKeys: Array.isArray(chartConfig.dataKeys) ? chartConfig.dataKeys.filter((k: unknown) => typeof k === 'string') : undefined,
             colors: Array.isArray(chartConfig.colors) ? chartConfig.colors : undefined,
             isPublished: true,
-            ...(sqlQuery && connectorId ? { dataSourceType: 'current-sql', dataSourceId: 'sql' } : {}),
-            ...(pythonCode && !sqlQuery ? { dataSourceType: 'current-python', dataSourceId: 'python' } : {}),
+            ...(pythonCode ? { dataSourceType: 'current-python' as const, dataSourceId: 'python' } :
+               sqlQuery && connectorId ? { dataSourceType: 'current-sql' as const, dataSourceId: 'sql' } : {}),
         };
 
-        // Build the leaf node
+        // Build the leaf node (chart output — no SQL/Python needed here, data is sealed)
         const leafNode = {
             id: leafId,
             decision: treeName,
             widgetConfig: leafWidgetConfig,
-            ...(sqlQuery ? { sqlQuery, sqlConnectorId: connectorId || undefined, sqlResultName: 'dati' } : {}),
-            ...(pythonCode && !sqlQuery ? { pythonCode, pythonOutputType: 'chart', pythonResultName: 'grafico' } : {}),
         };
 
-        // Build the intermediate step node (SQL or Python), or skip if neither
-        let jsonDecisionTree: string;
+        // Build the decision tree JSON.
+        // The jsonDecisionTree field stores the ROOT NODE directly (no { root: ... } wrapper).
+        // Supported shapes:
+        //   SQL + Python  → Root → SQL Step → Python Step → Chart Leaf  (4 nodes)
+        //   SQL only      → Root → SQL Step → Chart Leaf                 (3 nodes)
+        //   Python only   → Root → Python Step → Chart Leaf              (3 nodes)
+        //   Neither       → Root → Chart Leaf                            (2 nodes)
+        let rootNode: object;
 
-        if (sqlQuery) {
-            // 3-node tree: Root → SQL Step → Chart Leaf
+        if (sqlQuery && pythonCode) {
+            // 4-node tree: Root → SQL Step → Python Step → Chart Leaf
+            const pythonStepNode = {
+                id: pythonStepId,
+                question: `Elaborazione Python: ${treeName}`,
+                pythonCode,
+                pythonOutputType: 'chart' as const,
+                pythonResultName: 'grafico',
+                options: { 'Visualizza': leafNode },
+            };
             const sqlStepNode = {
-                id: stepId,
+                id: sqlStepId,
                 question: `Query SQL: ${treeName}`,
                 sqlQuery,
                 sqlConnectorId: connectorId || undefined,
                 sqlResultName: 'dati',
-                options: {
-                    'Visualizza': leafNode,
-                },
+                options: { 'Elabora': pythonStepNode },
             };
-            const rootNode = {
+            rootNode = {
                 id: rootId,
                 question: treeName,
-                options: {
-                    'Calcola': sqlStepNode,
-                },
+                options: { 'Calcola': sqlStepNode },
             };
-            jsonDecisionTree = JSON.stringify({ root: rootNode });
+        } else if (sqlQuery) {
+            // 3-node tree: Root → SQL Step → Chart Leaf
+            const sqlStepNode = {
+                id: sqlStepId,
+                question: `Query SQL: ${treeName}`,
+                sqlQuery,
+                sqlConnectorId: connectorId || undefined,
+                sqlResultName: 'dati',
+                options: { 'Visualizza': leafNode },
+            };
+            rootNode = {
+                id: rootId,
+                question: treeName,
+                options: { 'Calcola': sqlStepNode },
+            };
         } else if (pythonCode) {
             // 3-node tree: Root → Python Step → Chart Leaf
             const pythonStepNode = {
-                id: stepId,
+                id: pythonStepId,
                 question: `Elaborazione Python: ${treeName}`,
                 pythonCode,
-                pythonOutputType: 'chart',
+                pythonOutputType: 'chart' as const,
                 pythonResultName: 'grafico',
-                options: {
-                    'Visualizza': leafNode,
-                },
+                options: { 'Visualizza': leafNode },
             };
-            const rootNode = {
+            rootNode = {
                 id: rootId,
                 question: treeName,
-                options: {
-                    'Genera': pythonStepNode,
-                },
+                options: { 'Genera': pythonStepNode },
             };
-            jsonDecisionTree = JSON.stringify({ root: rootNode });
         } else {
             // 2-node tree: Root → Chart Leaf directly
-            const rootNode = {
+            rootNode = {
                 id: rootId,
                 question: treeName,
-                options: {
-                    'Visualizza': leafNode,
-                },
+                options: { 'Visualizza': leafNode },
             };
-            jsonDecisionTree = JSON.stringify({ root: rootNode });
         }
+
+        const jsonDecisionTree = JSON.stringify(rootNode);
 
         // Create the tree in the database
         const tree = await db.tree.create({
             data: {
                 name: treeName,
-                description: `Widget generato da FridAI Super Agent${sqlQuery ? ' tramite query SQL' : pythonCode ? ' tramite codice Python' : ''}`,
+                description: `Widget generato da FridAI Super Agent${sqlQuery && pythonCode ? ' tramite query SQL + Python' : sqlQuery ? ' tramite query SQL' : pythonCode ? ' tramite codice Python' : ''}`,
                 naturalLanguageDecisionTree: treeName,
                 jsonDecisionTree,
                 questionsScript: '',
