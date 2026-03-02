@@ -333,15 +333,36 @@ export function ChatBotAgent() {
                 .join('');
 
             // Capture completed tool invocations (for "Save as Widget" feature).
-            // In Vercel AI SDK UIMessage, ToolInvocationUIPart nests the data under
-            // p.toolInvocation — state/toolName/args/result are NOT at the top level.
+            // The streaming parts use type 'dynamic-tool' or 'tool-*' with flat fields
+            // (toolName, input, state, output) — NOT the 'tool-invocation' format.
             const toolCalls: ToolCallRecord[] = (message.parts as any[])
-                .filter(p => p.type === 'tool-invocation' && p.toolInvocation?.state === 'result')
-                .map(p => ({
-                    toolName: p.toolInvocation.toolName,
-                    args: p.toolInvocation.args ?? {},
-                    result: p.toolInvocation.result,
-                }));
+                .filter(p => {
+                    // Match streaming part shapes: 'dynamic-tool' or 'tool-executeSqlQuery' etc.
+                    if (p.type === 'dynamic-tool' || (typeof p.type === 'string' && p.type.startsWith('tool-'))) {
+                        return p.state === 'output-available';
+                    }
+                    // AI SDK v4+ format (nested toolInvocation) as fallback
+                    if (p.type === 'tool-invocation') {
+                        return p.toolInvocation?.state === 'result';
+                    }
+                    return false;
+                })
+                .map(p => {
+                    // AI SDK v4+ nested format
+                    if (p.toolInvocation) {
+                        return {
+                            toolName: p.toolInvocation.toolName,
+                            args: p.toolInvocation.args ?? {},
+                            result: p.toolInvocation.result,
+                        };
+                    }
+                    // Flat streaming format (dynamic-tool / tool-*)
+                    return {
+                        toolName: p.toolName || (typeof p.type === 'string' ? p.type.replace('tool-', '') : ''),
+                        args: p.input ?? p.args ?? {},
+                        result: p.output ?? p.result,
+                    };
+                });
 
             // Add the completed assistant message to our local state
             setMessages(prev => [...prev, {
