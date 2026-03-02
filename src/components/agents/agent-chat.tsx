@@ -32,7 +32,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
@@ -690,11 +689,11 @@ export function AgentChat({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    // Scroll only within the chat ScrollArea viewport, not the outer dialog container
+    // Scroll only within the chat messages container, not the outer dialog container
     setTimeout(() => {
-      const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
-      if (viewport) {
-        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+      const el = scrollAreaRef.current;
+      if (el) {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
       }
     }, 100);
   };
@@ -1430,8 +1429,8 @@ export function AgentChat({
         )}
 
         {/* Messages */}
-        <ScrollArea ref={scrollAreaRef} className="flex-1">
-          <div className="w-full min-w-0 overflow-x-hidden space-y-4 p-4">
+        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--border)) transparent' }}>
+          <div className="space-y-4 p-4">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <div className={cn(
@@ -1729,7 +1728,7 @@ export function AgentChat({
 
             <div ref={messagesEndRef} />
           </div>
-        </ScrollArea>
+        </div>
 
         {/* Input */}
         <div className="p-3 border-t bg-background">

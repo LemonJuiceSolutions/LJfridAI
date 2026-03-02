@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { fetchOpenRouterModelsAction } from '@/app/actions';
@@ -118,12 +117,12 @@ function RichContent({ content, charts }: { content: unknown; charts: any[] }) {
                 const codeMatch = part.match(/```(sql|python|json)\n([\s\S]*?)```/);
                 if (codeMatch) {
                     return (
-                        <div key={i} className="relative my-2">
+                        <div key={i} className="relative my-2 max-w-full overflow-hidden">
                             <div className="flex items-center gap-1 px-3 py-1 bg-muted rounded-t-lg border border-b-0">
                                 <Code2 className="h-3 w-3 text-muted-foreground" />
                                 <span className="text-[10px] uppercase font-medium text-muted-foreground">{codeMatch[1]}</span>
                             </div>
-                            <pre className="bg-zinc-950 text-zinc-100 px-3 py-2 rounded-b-lg text-[11px] overflow-x-auto border">
+                            <pre className="bg-zinc-950 text-zinc-100 px-3 py-2 rounded-b-lg text-[11px] overflow-x-auto border max-w-full">
                                 <code>{codeMatch[2].trim()}</code>
                             </pre>
                         </div>
@@ -407,9 +406,9 @@ export function ChatBotAgent() {
 
     const scrollToBottom = () => {
         setTimeout(() => {
-            const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
-            if (viewport) {
-                viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+            const el = scrollAreaRef.current;
+            if (el) {
+                el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
             }
         }, 100);
     };
@@ -592,8 +591,8 @@ export function ChatBotAgent() {
                     </div>
 
                     {/* Messages */}
-                    <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
-                        <div className="w-full min-w-0 overflow-x-hidden space-y-4">
+                    <div className="flex-1 p-4 overflow-y-auto overflow-x-hidden min-h-0" ref={scrollAreaRef} style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--border)) transparent' }}>
+                        <div className="space-y-4">
                             {messages.map((m, i) => {
                                 // safeContentString guards against any non-string content from DB
                                 const safeContent = safeContentString(m.content);
@@ -735,7 +734,7 @@ export function ChatBotAgent() {
 
                             <div ref={messagesEndRef} />
                         </div>
-                    </ScrollArea>
+                    </div>
 
                     {/* Input */}
                     <div className="p-3 border-t bg-background">
