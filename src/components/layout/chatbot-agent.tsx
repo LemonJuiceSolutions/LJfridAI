@@ -199,7 +199,7 @@ function InlineChart({ config }: { config: any }) {
     if (!data || !Array.isArray(data) || data.length === 0) return null;
 
     return (
-        <div className="my-2 p-3 rounded-lg border bg-background">
+        <div className="my-2 p-3 rounded-lg border bg-background w-full overflow-x-hidden">
             {safeTitle && <p className="text-xs font-semibold mb-2 text-center">{safeTitle}</p>}
             <ResponsiveContainer width="100%" height={200}>
                 {type === 'bar-chart' ? (
@@ -593,7 +593,7 @@ export function ChatBotAgent() {
 
                     {/* Messages */}
                     <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
-                        <div className="w-full min-w-0 space-y-4">
+                        <div className="w-full min-w-0 overflow-x-hidden space-y-4">
                             {messages.map((m, i) => {
                                 // safeContentString guards against any non-string content from DB
                                 const safeContent = safeContentString(m.content);

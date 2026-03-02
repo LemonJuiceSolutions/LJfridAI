@@ -139,7 +139,12 @@ function InlineChart({ config }: { config: any }) {
 
   const theme = useMemo(() => resolveChartStyle(globalTheme, chartStyle ?? null), [globalTheme, chartStyle]);
   const { type, data, xAxisKey, dataKeys, colors, title } = config;
-  const chartColors = chartStyle?.colors || colors || theme.colors;
+  const chartColors = chartStyle?.colors || (Array.isArray(colors) ? colors : theme.colors);
+  const safeTitle = typeof title === 'string' ? title : null;
+  const safeXAxisKey = typeof xAxisKey === 'string' ? xAxisKey : 'name';
+  const safeDataKeys: string[] = Array.isArray(dataKeys)
+    ? dataKeys.filter((k: unknown) => typeof k === 'string')
+    : [];
 
   if (!data || !Array.isArray(data) || data.length === 0) return null;
 
@@ -161,11 +166,11 @@ function InlineChart({ config }: { config: any }) {
       return (
         <BarChart data={data} barGap={barS?.barGap} barCategoryGap={barS?.barCategoryGap != null ? `${barS.barCategoryGap}%` : undefined}>
           {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridDash} stroke={theme.gridColor} />}
-          <XAxis dataKey={xAxisKey} tick={tickStyle} />
+          <XAxis dataKey={safeXAxisKey} tick={tickStyle} />
           <YAxis tick={tickStyle} />
           <Tooltip contentStyle={tooltipStyle} />
           <Legend wrapperStyle={legendStyle} />
-          {(dataKeys || []).map((key: string, i: number) => (
+          {safeDataKeys.map((key, i) => (
             <Bar key={key} dataKey={key} fill={chartColors[i % chartColors.length]} radius={[radius, radius, 0, 0]} stackId={stacked ? 'stack' : undefined} />
           ))}
         </BarChart>
@@ -181,11 +186,11 @@ function InlineChart({ config }: { config: any }) {
       return (
         <LineChart data={data}>
           {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridDash} stroke={theme.gridColor} />}
-          <XAxis dataKey={xAxisKey} tick={tickStyle} />
+          <XAxis dataKey={safeXAxisKey} tick={tickStyle} />
           <YAxis tick={tickStyle} />
           <Tooltip contentStyle={tooltipStyle} />
           <Legend wrapperStyle={legendStyle} />
-          {(dataKeys || []).map((key: string, i: number) => (
+          {safeDataKeys.map((key, i) => (
             <Line key={key} type={lt as any} dataKey={key} stroke={chartColors[i % chartColors.length]} strokeWidth={lw} dot={showDots ? { r: dotR } : false} connectNulls strokeDasharray={lineStrokeDasharray(ls)} />
           ))}
         </LineChart>
@@ -199,11 +204,11 @@ function InlineChart({ config }: { config: any }) {
       return (
         <AreaChart data={data}>
           {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridDash} stroke={theme.gridColor} />}
-          <XAxis dataKey={xAxisKey} tick={tickStyle} />
+          <XAxis dataKey={safeXAxisKey} tick={tickStyle} />
           <YAxis tick={tickStyle} />
           <Tooltip contentStyle={tooltipStyle} />
           <Legend wrapperStyle={legendStyle} />
-          {(dataKeys || []).map((key: string, i: number) => (
+          {safeDataKeys.map((key, i) => (
             <Area key={key} type={areaLt as any} dataKey={key} fill={chartColors[i % chartColors.length]} stroke={chartColors[i % chartColors.length]} fillOpacity={areaOp} stackId={stacked ? 'stack' : undefined} />
           ))}
         </AreaChart>
@@ -217,7 +222,7 @@ function InlineChart({ config }: { config: any }) {
       const showLabels = pieS?.showLabels ?? true;
       return (
         <PieChart>
-          <Pie data={data} dataKey={(dataKeys || ['value'])[0]} nameKey={xAxisKey} cx="50%" cy="50%" innerRadius={innerR} outerRadius={outerR} paddingAngle={paddingA} label={showLabels ? { fontSize: 10 } : false}>
+          <Pie data={data} dataKey={(safeDataKeys.length > 0 ? safeDataKeys : ['value'])[0]} nameKey={safeXAxisKey} cx="50%" cy="50%" innerRadius={innerR} outerRadius={outerR} paddingAngle={paddingA} label={showLabels ? { fontSize: 10 } : false}>
             {data.map((_: any, i: number) => (
               <Cell key={i} fill={chartColors[i % chartColors.length]} />
             ))}
@@ -232,10 +237,10 @@ function InlineChart({ config }: { config: any }) {
     return (
       <BarChart data={data}>
         {theme.gridStyle !== 'none' && <CartesianGrid strokeDasharray={gridDash} stroke={theme.gridColor} />}
-        <XAxis dataKey={xAxisKey} tick={tickStyle} />
+        <XAxis dataKey={safeXAxisKey} tick={tickStyle} />
         <YAxis tick={tickStyle} />
         <Tooltip contentStyle={tooltipStyle} />
-        {(dataKeys || []).map((key: string, i: number) => (
+        {safeDataKeys.map((key, i) => (
           <Bar key={key} dataKey={key} fill={chartColors[i % chartColors.length]} />
         ))}
       </BarChart>
@@ -244,8 +249,8 @@ function InlineChart({ config }: { config: any }) {
 
   return (
     <>
-      <div className="my-2 p-3 rounded-lg border bg-background relative group">
-        {title && <p className="text-xs font-semibold mb-2 text-center">{title}</p>}
+      <div className="my-2 p-3 rounded-lg border bg-background relative group w-full overflow-x-hidden">
+        {safeTitle && <p className="text-xs font-semibold mb-2 text-center">{safeTitle}</p>}
         {/* Style editor button - visible on hover */}
         <button
           onClick={() => setIsEditorOpen(true)}
@@ -1426,7 +1431,7 @@ export function AgentChat({
 
         {/* Messages */}
         <ScrollArea ref={scrollAreaRef} className="flex-1">
-          <div className="w-full min-w-0 space-y-4 p-4">
+          <div className="w-full min-w-0 overflow-x-hidden space-y-4 p-4">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <div className={cn(
