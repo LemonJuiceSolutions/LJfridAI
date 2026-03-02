@@ -334,43 +334,46 @@ export function ChatBotAgent() {
             isProcessingFinishRef.current = true;
 
             try {
-                // Extract text from message parts
-                const textContent = message.parts
-                    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-                    .map(p => p.text)
+                // Deep-clone message.parts into plain objects to detach from any
+                // reactive proxies in the AI SDK that can trigger React state updates
+                // when properties are accessed — which causes "Maximum update depth exceeded".
+                let plainParts: any[] = [];
+                try {
+                    plainParts = JSON.parse(JSON.stringify(message.parts));
+                } catch {
+                    // Fallback: extract text-only parts safely
+                    plainParts = message.parts
+                        .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+                        .map(p => ({ type: 'text', text: p.text }));
+                }
+
+                // Extract text from cloned parts
+                const textContent = plainParts
+                    .filter((p: any) => p.type === 'text')
+                    .map((p: any) => p.text ?? '')
                     .join('');
 
-                // Capture completed tool invocations (for "Save as Widget" feature).
-                // The streaming parts use type 'dynamic-tool' or 'tool-*' with flat fields
-                // (toolName, input, state, output) — NOT the 'tool-invocation' format.
-                const toolCalls: ToolCallRecord[] = (message.parts as any[])
-                    .filter(p => {
-                        // Match streaming part shapes: 'dynamic-tool' or 'tool-executeSqlQuery' etc.
-                        if (p.type === 'dynamic-tool' || (typeof p.type === 'string' && p.type.startsWith('tool-'))) {
-                            return p.state === 'output-available';
-                        }
-                        // AI SDK v4+ format (nested toolInvocation) as fallback
-                        if (p.type === 'tool-invocation') {
-                            return p.toolInvocation?.state === 'result';
-                        }
-                        return false;
-                    })
-                    .map(p => {
-                        // AI SDK v4+ nested format
-                        if (p.toolInvocation) {
-                            return {
-                                toolName: p.toolInvocation.toolName,
+                // Capture completed tool invocations (for "Save as Widget").
+                // Only store toolName and args (NOT result — it can be huge and is unused).
+                const toolCalls: ToolCallRecord[] = [];
+                for (const p of plainParts) {
+                    try {
+                        const t = p.type;
+                        if ((t === 'dynamic-tool' || (typeof t === 'string' && t.startsWith('tool-'))) && p.state === 'output-available') {
+                            toolCalls.push({
+                                toolName: String(p.toolName || t.replace('tool-', '') || ''),
+                                args: p.input ?? p.args ?? {},
+                                result: undefined as any,
+                            });
+                        } else if (t === 'tool-invocation' && p.toolInvocation?.state === 'result') {
+                            toolCalls.push({
+                                toolName: String(p.toolInvocation.toolName),
                                 args: p.toolInvocation.args ?? {},
-                                result: p.toolInvocation.result,
-                            };
+                                result: undefined as any,
+                            });
                         }
-                        // Flat streaming format (dynamic-tool / tool-*)
-                        return {
-                            toolName: p.toolName || (typeof p.type === 'string' ? p.type.replace('tool-', '') : ''),
-                            args: p.input ?? p.args ?? {},
-                            result: p.output ?? p.result,
-                        };
-                    });
+                    } catch { /* skip malformed part */ }
+                }
 
                 // Add the completed assistant message to our local state
                 setMessages(prev => [...prev, {
@@ -381,7 +384,6 @@ export function ChatBotAgent() {
                 }]);
 
                 // Defer clearing stream messages to break any synchronous update loop
-                // that could cause "Maximum update depth exceeded"
                 setTimeout(() => setStreamMessages([]), 0);
 
                 // Refresh conversation ID from server (needed after first message creates a new conversation)
@@ -402,7 +404,8 @@ export function ChatBotAgent() {
                 content: `⚠️ **Errore**\n\n${error.message || "Si è verificato un errore durante la comunicazione con l'agente."}`,
                 timestamp: Date.now(),
             }]);
-            setStreamMessages([]);
+            // Defer to avoid "Maximum update depth exceeded"
+            setTimeout(() => setStreamMessages([]), 0);
         },
     });
 
