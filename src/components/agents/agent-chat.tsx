@@ -1426,7 +1426,7 @@ export function AgentChat({
 
         {/* Messages */}
         <ScrollArea ref={scrollAreaRef} className="flex-1">
-          <div className="space-y-4 p-4">
+          <div className="w-full min-w-0 space-y-4 p-4">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <div className={cn(
@@ -1451,7 +1451,7 @@ export function AgentChat({
 
               return (
                 <div key={(m.timestamp || 0) + i} className={cn(
-                  "flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-2 group",
+                  "w-full min-w-0 flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-2 group",
                   m.role === 'user' ? "items-end" : "items-start"
                 )}>
                   <div className={cn(

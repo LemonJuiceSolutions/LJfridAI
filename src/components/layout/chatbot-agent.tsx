@@ -593,7 +593,7 @@ export function ChatBotAgent() {
 
                     {/* Messages */}
                     <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
-                        <div className="space-y-4">
+                        <div className="w-full min-w-0 space-y-4">
                             {messages.map((m, i) => {
                                 // safeContentString guards against any non-string content from DB
                                 const safeContent = safeContentString(m.content);
@@ -602,8 +602,14 @@ export function ChatBotAgent() {
                                     : { text: safeContent, charts: [] };
 
                                 return (
-                                    <div key={m.timestamp + i} className="flex flex-col gap-1 items-start animate-in fade-in slide-in-from-bottom-2">
-                                        <div className="flex items-center gap-2 mb-0.5 flex-row">
+                                    <div key={m.timestamp + i} className={cn(
+                                        "w-full min-w-0 flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-2",
+                                        m.role === 'user' ? "items-end" : "items-start"
+                                    )}>
+                                        <div className={cn(
+                                            "flex items-center gap-2 mb-0.5",
+                                            m.role === 'user' ? "flex-row-reverse" : "flex-row"
+                                        )}>
                                             <div className={cn(
                                                 "h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold",
                                                 m.role === 'user' ? "bg-primary text-primary-foreground" : "bg-gradient-to-br from-primary/80 to-purple-500/80 text-white"
@@ -615,9 +621,9 @@ export function ChatBotAgent() {
                                             </span>
                                         </div>
                                         <div className={cn(
-                                            "max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm break-words overflow-hidden",
+                                            "max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm break-all overflow-hidden",
                                             m.role === 'user'
-                                                ? "bg-primary text-primary-foreground rounded-tl-none"
+                                                ? "bg-primary text-primary-foreground rounded-tr-none"
                                                 : "bg-muted/50 border rounded-tl-none"
                                         )}>
                                             <div className="min-w-0">
@@ -676,7 +682,7 @@ export function ChatBotAgent() {
                                     .join('');
 
                                 return (
-                                    <div className="flex flex-col gap-1 items-start animate-in fade-in">
+                                    <div className="w-full min-w-0 flex flex-col gap-1 items-start animate-in fade-in">
                                         <div className="flex items-center gap-2 mb-0.5">
                                             <div className="h-5 w-5 rounded-full flex items-center justify-center bg-gradient-to-br from-primary/80 to-purple-500/80 text-white">
                                                 <Sparkles className="h-3 w-3 animate-pulse" />
