@@ -332,10 +332,16 @@ export function ChatBotAgent() {
                 .map(p => p.text)
                 .join('');
 
-            // Capture completed tool invocations (for "Save as Widget" feature)
+            // Capture completed tool invocations (for "Save as Widget" feature).
+            // In Vercel AI SDK UIMessage, ToolInvocationUIPart nests the data under
+            // p.toolInvocation — state/toolName/args/result are NOT at the top level.
             const toolCalls: ToolCallRecord[] = (message.parts as any[])
-                .filter(p => p.type === 'tool-invocation' && p.state === 'result')
-                .map(p => ({ toolName: p.toolName, args: p.args ?? {}, result: p.result }));
+                .filter(p => p.type === 'tool-invocation' && p.toolInvocation?.state === 'result')
+                .map(p => ({
+                    toolName: p.toolInvocation.toolName,
+                    args: p.toolInvocation.args ?? {},
+                    result: p.toolInvocation.result,
+                }));
 
             // Add the completed assistant message to our local state
             setMessages(prev => [...prev, {
