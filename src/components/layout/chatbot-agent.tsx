@@ -334,6 +334,11 @@ export function ChatBotAgent() {
         setMessages: setStreamMessages,
     } = useChat({
         transport: streamTransport,
+        // Throttle streaming state updates to prevent "Maximum update depth exceeded".
+        // Without this, rapid stream chunks cause too many React re-renders per cycle,
+        // especially with complex components (Recharts, tool call display).
+        // See: https://ai-sdk.dev/docs/troubleshooting/react-maximum-update-depth-exceeded
+        experimental_throttle: 100,
         onFinish: async ({ message }: { message: UIMessage }) => {
             // Guard against re-entrant calls
             if (isProcessingFinishRef.current) return;
