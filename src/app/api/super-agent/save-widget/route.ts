@@ -120,6 +120,20 @@ export async function POST(request: NextRequest) {
             pythonCode?: string;
         } = body;
 
+        // DEBUG: Log received data
+        console.log('[save-widget] Received:', {
+            treeName,
+            hasSqlQuery: !!sqlQuery,
+            sqlQueryPreview: sqlQuery?.substring(0, 100),
+            hasConnectorId: !!connectorId,
+            connectorId,
+            hasPythonCode: !!_rawPythonCode,
+            chartType: chartConfig?.type,
+            chartDataLength: chartConfig?.data?.length,
+            xAxisKey: chartConfig?.xAxisKey,
+            dataKeys: chartConfig?.dataKeys,
+        });
+
         if (!treeName?.trim()) {
             return NextResponse.json({ error: 'treeName is required' }, { status: 400 });
         }
@@ -138,6 +152,7 @@ export async function POST(request: NextRequest) {
         const widgetType = (chartConfig.type as WidgetType) || 'bar-chart';
         const hasSql = !!(sqlQuery && connectorId);
         const hasPython = !!_rawPythonCode;
+        console.log('[save-widget] hasSql:', hasSql, '| hasPython:', hasPython, '| tree path:', hasSql ? 'SQL+Python(4nodes)' : hasPython ? 'PythonOnly(3nodes)' : 'StaticOnly(2nodes)');
 
         const leafWidgetConfig: WidgetConfig = {
             type: widgetType,

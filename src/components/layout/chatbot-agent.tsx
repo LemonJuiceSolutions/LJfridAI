@@ -571,6 +571,14 @@ export function ChatBotAgent() {
             const sqlCall = toolCalls.find(t => t.toolName === 'executeSqlQuery');
             const pythonCall = toolCalls.find(t => t.toolName === 'executePythonCode');
 
+            // DEBUG: Log what we're sending
+            console.log('[SaveWidget] toolCalls count:', toolCalls.length);
+            console.log('[SaveWidget] toolCalls names:', toolCalls.map(t => t.toolName));
+            console.log('[SaveWidget] sqlCall found:', !!sqlCall, sqlCall?.args?.query?.substring(0, 100));
+            console.log('[SaveWidget] pythonCall found:', !!pythonCall);
+            console.log('[SaveWidget] connectorId:', sqlCall?.args?.connectorId);
+            console.log('[SaveWidget] chartConfig type:', chart?.type, 'xAxisKey:', chart?.xAxisKey, 'dataKeys:', chart?.dataKeys);
+
             const res = await fetch('/api/super-agent/save-widget', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
