@@ -161,12 +161,23 @@ export async function POST(request: NextRequest) {
 
         // Build the decision tree JSON.
         // The jsonDecisionTree field stores the ROOT NODE directly (no { root: ... } wrapper).
+        //
+        // When there is a SQL step, ALWAYS generate a Python step too.
+        // The super agent typically calls executeSqlQuery and then outputs a recharts
+        // block directly (without calling executePythonCode). But the pipeline tree
+        // needs a Python step to transform SQL data → Plotly chart at execution time.
+        //
+        // Supported shapes:
+        //   SQL (±Python) → Root → SQL Step → Python Step (generated) → Chart Leaf  (4 nodes)
+        //   Python only   → Root → Python Step → Chart Leaf                          (3 nodes)
+        //   Neither       → Root → Chart Leaf                                        (2 nodes)
         let rootNode: object;
 
-        if (hasSql && hasPython) {
+        if (hasSql) {
             // 4-node tree: Root → SQL Step → Python Step → Chart Leaf
-            // Generate CLEAN Python code that uses `df` (auto-injected from SQL step)
-            // instead of the original code which has hardcoded data.
+            // ALWAYS generate clean Plotly code from chartConfig, regardless of whether
+            // the agent called executePythonCode. The generated code uses `df` which is
+            // auto-injected by the Python backend from the SQL step output.
             const cleanPythonCode = generatePythonChartCode(chartConfig);
 
             const pythonStepNode = {
@@ -186,22 +197,6 @@ export async function POST(request: NextRequest) {
                 sqlConnectorId: connectorId,
                 sqlResultName: 'dati',
                 options: { 'Elabora': pythonStepNode },
-            };
-            rootNode = {
-                id: rootId,
-                question: treeName,
-                options: { 'Calcola': sqlStepNode },
-            };
-        } else if (hasSql) {
-            // 3-node tree: Root → SQL Step → Chart Leaf
-            // No Python needed — the SQL data feeds the widgetConfig directly
-            const sqlStepNode = {
-                id: sqlStepId,
-                question: `Query SQL: ${treeName}`,
-                sqlQuery,
-                sqlConnectorId: connectorId,
-                sqlResultName: 'dati',
-                options: { 'Visualizza': leafNode },
             };
             rootNode = {
                 id: rootId,
@@ -239,7 +234,7 @@ export async function POST(request: NextRequest) {
         const tree = await db.tree.create({
             data: {
                 name: treeName,
-                description: `Widget generato da FridAI Super Agent${hasSql && hasPython ? ' tramite query SQL + Python' : hasSql ? ' tramite query SQL' : hasPython ? ' tramite codice Python' : ''}`,
+                description: `Widget generato da FridAI Super Agent${hasSql ? ' tramite query SQL + Python (Plotly)' : hasPython ? ' tramite codice Python' : ''}`,
                 naturalLanguageDecisionTree: treeName,
                 jsonDecisionTree,
                 questionsScript: '',
