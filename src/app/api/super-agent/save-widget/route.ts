@@ -4,6 +4,82 @@ import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import type { WidgetConfig, WidgetType } from '@/lib/types';
 
+/**
+ * Map recharts chart type → Plotly Express function name
+ */
+function rechartsTypeToPlotly(type: string): string {
+    switch (type) {
+        case 'line-chart': return 'line';
+        case 'area-chart': return 'area';
+        case 'pie-chart': return 'pie';
+        case 'scatter-chart': return 'scatter';
+        case 'bar-chart':
+        default: return 'bar';
+    }
+}
+
+/**
+ * Generate clean Python code that reads data from the SQL step (via `df`, auto-injected)
+ * and creates a Plotly chart matching the original chartConfig.
+ */
+function generatePythonChartCode(chartConfig: {
+    type: string;
+    xAxisKey?: string;
+    dataKeys?: string[];
+    title?: string;
+}): string {
+    const plotlyType = rechartsTypeToPlotly(chartConfig.type);
+    const title = (chartConfig.title || '').replace(/'/g, "\\'");
+    const xKey = chartConfig.xAxisKey || 'x';
+    const yKeys = chartConfig.dataKeys?.length ? chartConfig.dataKeys : ['y'];
+
+    if (plotlyType === 'pie') {
+        // Pie chart: names = xAxisKey, values = first dataKey
+        const valueKey = yKeys[0];
+        return [
+            `import plotly.express as px`,
+            ``,
+            `# df is auto-injected from the SQL step`,
+            `fig = px.pie(df, names='${xKey}', values='${valueKey}', title='${title}')`,
+            `fig.show()`,
+        ].join('\n');
+    }
+
+    if (plotlyType === 'scatter') {
+        const yKey = yKeys[0];
+        return [
+            `import plotly.express as px`,
+            ``,
+            `# df is auto-injected from the SQL step`,
+            `fig = px.scatter(df, x='${xKey}', y='${yKey}', title='${title}')`,
+            `fig.show()`,
+        ].join('\n');
+    }
+
+    // bar, line, area: support multiple y-axis keys
+    if (yKeys.length === 1) {
+        return [
+            `import plotly.express as px`,
+            ``,
+            `# df is auto-injected from the SQL step`,
+            `fig = px.${plotlyType}(df, x='${xKey}', y='${yKeys[0]}', title='${title}')`,
+            `fig.show()`,
+        ].join('\n');
+    }
+
+    // Multiple y-keys → melt the dataframe for a grouped chart
+    const yKeysStr = yKeys.map(k => `'${k}'`).join(', ');
+    return [
+        `import plotly.express as px`,
+        `import pandas as pd`,
+        ``,
+        `# df is auto-injected from the SQL step`,
+        `df_melted = df.melt(id_vars='${xKey}', value_vars=[${yKeysStr}], var_name='Serie', value_name='Valore')`,
+        `fig = px.${plotlyType}(df_melted, x='${xKey}', y='Valore', color='Serie', title='${title}')`,
+        `fig.show()`,
+    ].join('\n');
+}
+
 export async function POST(request: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
@@ -28,7 +104,7 @@ export async function POST(request: NextRequest) {
             chartConfig,
             sqlQuery,
             connectorId,
-            pythonCode,
+            pythonCode: _rawPythonCode,
         }: {
             treeName: string;
             chartConfig: {
@@ -57,21 +133,26 @@ export async function POST(request: NextRequest) {
         const pythonStepId = crypto.randomUUID();
         const leafId = crypto.randomUUID();
 
-        // Build the widgetConfig for the leaf node
+        // Build the widgetConfig for the leaf node.
+        // When the pipeline has a SQL step, DO NOT seal static data — the data comes from the SQL step at execution time.
         const widgetType = (chartConfig.type as WidgetType) || 'bar-chart';
+        const hasSql = !!(sqlQuery && connectorId);
+        const hasPython = !!_rawPythonCode;
+
         const leafWidgetConfig: WidgetConfig = {
             type: widgetType,
             title: treeName,
-            data: chartConfig.data,
+            // Only store static data when there's NO dynamic source (neither SQL nor Python)
+            data: (!hasSql && !hasPython) ? chartConfig.data : undefined,
             xAxisKey: typeof chartConfig.xAxisKey === 'string' ? chartConfig.xAxisKey : undefined,
             dataKeys: Array.isArray(chartConfig.dataKeys) ? chartConfig.dataKeys.filter((k: unknown) => typeof k === 'string') : undefined,
             colors: Array.isArray(chartConfig.colors) ? chartConfig.colors : undefined,
             isPublished: true,
-            ...(pythonCode ? { dataSourceType: 'current-python' as const, dataSourceId: 'python' } :
-               sqlQuery && connectorId ? { dataSourceType: 'current-sql' as const, dataSourceId: 'sql' } : {}),
+            ...(hasSql ? { dataSourceType: 'current-sql' as const, dataSourceId: 'sql' } :
+               hasPython ? { dataSourceType: 'current-python' as const, dataSourceId: 'python' } : {}),
         };
 
-        // Build the leaf node (chart output — no SQL/Python needed here, data is sealed)
+        // Build the leaf node
         const leafNode = {
             id: leafId,
             decision: treeName,
@@ -80,28 +161,29 @@ export async function POST(request: NextRequest) {
 
         // Build the decision tree JSON.
         // The jsonDecisionTree field stores the ROOT NODE directly (no { root: ... } wrapper).
-        // Supported shapes:
-        //   SQL + Python  → Root → SQL Step → Python Step → Chart Leaf  (4 nodes)
-        //   SQL only      → Root → SQL Step → Chart Leaf                 (3 nodes)
-        //   Python only   → Root → Python Step → Chart Leaf              (3 nodes)
-        //   Neither       → Root → Chart Leaf                            (2 nodes)
         let rootNode: object;
 
-        if (sqlQuery && pythonCode) {
+        if (hasSql && hasPython) {
             // 4-node tree: Root → SQL Step → Python Step → Chart Leaf
+            // Generate CLEAN Python code that uses `df` (auto-injected from SQL step)
+            // instead of the original code which has hardcoded data.
+            const cleanPythonCode = generatePythonChartCode(chartConfig);
+
             const pythonStepNode = {
                 id: pythonStepId,
                 question: `Elaborazione Python: ${treeName}`,
-                pythonCode,
+                pythonCode: cleanPythonCode,
                 pythonOutputType: 'chart' as const,
                 pythonResultName: 'grafico',
+                pythonSelectedPipelines: ['dati'], // ← Link to the SQL step output
+                pythonConnectorId: connectorId,
                 options: { 'Visualizza': leafNode },
             };
             const sqlStepNode = {
                 id: sqlStepId,
                 question: `Query SQL: ${treeName}`,
                 sqlQuery,
-                sqlConnectorId: connectorId || undefined,
+                sqlConnectorId: connectorId,
                 sqlResultName: 'dati',
                 options: { 'Elabora': pythonStepNode },
             };
@@ -110,13 +192,14 @@ export async function POST(request: NextRequest) {
                 question: treeName,
                 options: { 'Calcola': sqlStepNode },
             };
-        } else if (sqlQuery) {
+        } else if (hasSql) {
             // 3-node tree: Root → SQL Step → Chart Leaf
+            // No Python needed — the SQL data feeds the widgetConfig directly
             const sqlStepNode = {
                 id: sqlStepId,
                 question: `Query SQL: ${treeName}`,
                 sqlQuery,
-                sqlConnectorId: connectorId || undefined,
+                sqlConnectorId: connectorId,
                 sqlResultName: 'dati',
                 options: { 'Visualizza': leafNode },
             };
@@ -125,12 +208,13 @@ export async function POST(request: NextRequest) {
                 question: treeName,
                 options: { 'Calcola': sqlStepNode },
             };
-        } else if (pythonCode) {
+        } else if (hasPython) {
             // 3-node tree: Root → Python Step → Chart Leaf
+            // Use the original Python code as-is (Python-only, no SQL to reference)
             const pythonStepNode = {
                 id: pythonStepId,
                 question: `Elaborazione Python: ${treeName}`,
-                pythonCode,
+                pythonCode: _rawPythonCode,
                 pythonOutputType: 'chart' as const,
                 pythonResultName: 'grafico',
                 options: { 'Visualizza': leafNode },
@@ -141,7 +225,7 @@ export async function POST(request: NextRequest) {
                 options: { 'Genera': pythonStepNode },
             };
         } else {
-            // 2-node tree: Root → Chart Leaf directly
+            // 2-node tree: Root → Chart Leaf directly (static data sealed)
             rootNode = {
                 id: rootId,
                 question: treeName,
@@ -155,7 +239,7 @@ export async function POST(request: NextRequest) {
         const tree = await db.tree.create({
             data: {
                 name: treeName,
-                description: `Widget generato da FridAI Super Agent${sqlQuery && pythonCode ? ' tramite query SQL + Python' : sqlQuery ? ' tramite query SQL' : pythonCode ? ' tramite codice Python' : ''}`,
+                description: `Widget generato da FridAI Super Agent${hasSql && hasPython ? ' tramite query SQL + Python' : hasSql ? ' tramite query SQL' : hasPython ? ' tramite codice Python' : ''}`,
                 naturalLanguageDecisionTree: treeName,
                 jsonDecisionTree,
                 questionsScript: '',
