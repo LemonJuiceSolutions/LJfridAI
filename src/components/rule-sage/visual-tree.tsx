@@ -2,7 +2,7 @@
 import type { DecisionNode, StoredTree, DecisionLeaf, Variable, VariableOption, LinkItem, TriggerItem } from '@/lib/types';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Mail, AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code, FileCode, Upload, Clock } from 'lucide-react';
+import { Mail, AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code, FileCode, Upload, Clock, Sparkles } from 'lucide-react';
 import _ from 'lodash';
 import EditNodeDialog from './edit-node-dialog';
 import AddNodeDialog from './add-node-dialog';
@@ -1853,6 +1853,9 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                                     )}
                                                     {actualNode && typeof actualNode === 'object' && 'pythonCode' in actualNode && (actualNode as any).pythonCode && (
                                                         <FileCode className="h-3 w-3 text-emerald-600" />
+                                                    )}
+                                                    {actualNode && typeof actualNode === 'object' && (actualNode as any).aiConfig?.prompt && (
+                                                        <Sparkles className="h-3 w-3 text-violet-600" />
                                                     )}
                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'image') && <ImageIcon className="h-3 w-3 text-muted-foreground" />}
                                                     {mediaItems && mediaItems.some((m: any) => m.type === 'video') && <Video className="h-3 w-3 text-muted-foreground" />}
