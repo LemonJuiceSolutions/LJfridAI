@@ -12,6 +12,45 @@ Like AI Said is a Next.js application that acts as a Business Rules Engine with 
 - A [Google AI API key](https://aistudio.google.com/apikey) (Gemini)
 - [Task](https://taskfile.dev/) (optional, for `task` commands)
 
+## Docker Quickstart (Recommended for development)
+
+For a completely isolated development environment with hot reloading:
+
+```bash
+# 1. Copy environment template
+cp .env.template .env
+# Edit .env and add: NEXTAUTH_SECRET, GOOGLE_GENAI_API_KEY, etc.
+
+# 2. Start all services with Docker Compose
+docker compose up --build
+
+# Or with Task:
+task docker:start
+
+# 3. Services will be available at:
+#    - Next.js:      http://localhost:9002
+#    - Python API:   http://localhost:5005/health
+#    - PostgreSQL:   localhost:5432
+```
+
+**Useful Docker tasks:**
+```bash
+task docker:logs              # View all service logs
+task docker:logs:app          # View Next.js logs
+task docker:logs:python       # View Python backend logs
+task docker:stop              # Stop all services
+task docker:shell:app         # Open shell in Next.js container
+task docker:shell:python      # Open shell in Python container
+task docker:prisma:push       # Apply database migrations
+task docker:db:reset          # Reset database
+```
+
+For full Docker documentation, see [`docs/DOCKER-DEV.md`](docs/DOCKER-DEV.md).
+
+---
+
+## Local Quickstart (with Taskfile)
+
 ### 1. Install dependencies
 
 ```bash
@@ -26,7 +65,7 @@ cp .env.template .env.local
 
 Then fill in the values — at minimum `NEXTAUTH_SECRET` and `GOOGLE_GENAI_API_KEY`.
 
-### 3–6. Start all services
+### 3–7. Start all services
 
 With [Task](https://taskfile.dev/):
 
@@ -36,25 +75,25 @@ task start
 
 Or manually:
 
-**3. Start PostgreSQL**
+**4. Start PostgreSQL**
 ```bash
 task db:start
 # or: docker run -d --name rulesage-db -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=rulesagedb -p 5432:5432 postgres:15
 ```
 
-**4. Apply database schema**
+**5. Apply database schema**
 ```bash
 task db:push
 # or: npx prisma db push
 ```
 
-**5. Start the Python backend**
+**6. Start the Python backend**
 ```bash
 task python:start
 # or: cd python-backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && python app.py
 ```
 
-**6. Start the Next.js dev server**
+**7. Start the Next.js dev server**
 ```bash
 task dev
 # or: npm run dev

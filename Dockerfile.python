@@ -1,0 +1,37 @@
+# Development Dockerfile for Python Flask backend with hot reloading
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY python-backend/requirements.txt ./requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Source code will be mounted as volume for hot reloading
+# The following directory is mounted at runtime:
+# - ./python-backend -> /app
+
+# Expose the Flask port
+EXPOSE 5005
+
+# Environment variables for development
+ENV FLASK_ENV=development
+ENV FLASK_DEBUG=1
+ENV PYTHONUNBUFFERED=1
+# Enable auto-reload
+ENV FLASK_RUN_RELOAD=true
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:5005/health || exit 1
+
+# Start Flask in development mode with auto-reload
+# Using python directly as it handles debug mode better
+CMD ["python", "app.py"]

@@ -1,10 +1,82 @@
-Dockerfile
+# Docker
+Dockerfile*
+docker-compose*.yml
 .dockerignore
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Node.js
 node_modules
 npm-debug.log
-README.md
+yarn-error.log
+.npm
+
+# Next.js
 .next
-.git
-.env.local
-.env
+out
+
+# Python
+python-backend/venv
+python-backend/__pycache__
+python-backend/*.pyc
+python-backend/*.pyo
+python-backend/*.pyd
+python-backend/.pytest_cache
+*.egg-info
+.eggs
+
+# IDE and editors
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Environment files (security - loaded via env_file in compose)
+.env
+.env.local
+.env.*.local
+
+# Documentation (not needed in container)
+README.md
+CLAUDE.md
+docs
+plans
+*.md
+
+# Test files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__
+coverage
+
+# Build artifacts and logs
+*.log
+tmp
+temp
+.cache
+
+# Scripts (development utilities)
+scripts
+start_dev.command
+start_docker.command
+
+# Public documents (large files, mount via volume if needed)
+public/documents
+public/trees
+
+# OpenSpec (config files)
+openspec
+
+# Claude/AI config
+.claude
+.qwen

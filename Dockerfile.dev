@@ -1,0 +1,47 @@
+# Development Dockerfile for Next.js with hot reloading
+FROM node:20-alpine
+
+# Install necessary packages for Prisma and development
+RUN apk add --no-cache libc6-compat openssl
+
+WORKDIR /app
+
+# Copy package files first for better caching
+COPY package.json package-lock.json* ./
+
+# Install ALL dependencies (including devDependencies)
+RUN npm ci
+
+# Copy Prisma schema for client generation
+COPY prisma ./prisma
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Copy configuration files (these rarely change)
+COPY next.config.ts ./
+COPY tsconfig.json ./
+COPY tailwind.config.ts ./
+COPY postcss.config.mjs ./
+COPY components.json ./
+
+# Source code will be mounted as volume for hot reloading
+# The following directories are mounted at runtime:
+# - ./src -> /app/src
+# - ./public -> /app/public
+
+# Expose the development port
+EXPOSE 9002
+
+# Environment variables for development
+ENV NODE_ENV=development
+ENV PORT=9002
+ENV HOSTNAME=0.0.0.0
+# Disable Next.js telemetry in development
+ENV NEXT_TELEMETRY_DISABLED=1
+# Enable polling for hot reload in Docker (some file systems need this)
+ENV WATCHPACK_POLLING=true
+ENV CHOKIDAR_USEPOLLING=true
+
+# Start the development server with Turbopack
+CMD ["npm", "run", "dev"]
