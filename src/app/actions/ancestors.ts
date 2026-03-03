@@ -209,8 +209,10 @@ function extractNodesAndEdges(jsonTree: any): { nodes: Node[], edges: Edge[] } {
     // Create a node object if it has an ID
     if (node.id) {
       // Determine node type: explicit type, or infer from configuration
+      // AI prompt is the strongest signal — if present, classify as AI
+      // regardless of leftover sqlQuery/pythonCode from previous configurations.
       let nodeType = node.type || 'trigger';
-      if (nodeType === 'trigger' && node.aiConfig?.outputName && !node.sqlQuery && !node.pythonCode) {
+      if (nodeType === 'trigger' && node.aiConfig?.prompt) {
         nodeType = 'ai';
       }
 

@@ -131,7 +131,8 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
             const getNodeType = (node: any): 'sql' | 'python' | 'sharepoint' | 'email' | 'hubspot' | 'export' | 'ai' => {
                 // AI node: has an active AI prompt configured — this is the strongest signal.
                 // Prioritize over leftover sqlQuery/pythonCode from previous configurations.
-                if (node.aiConfig?.prompt && (node.aiConfig?.outputName || node.aiConfig?.enabled)) return 'ai';
+                // NOTE: Only check for prompt — outputName and enabled may be empty/false on older nodes.
+                if (node.aiConfig?.prompt) return 'ai';
 
                 const isPython = node.isPython === true || (node.isPython === undefined && !!node.pythonCode && !node.sqlQuery);
                 if (isPython || node.type === 'python') return 'python';
@@ -178,8 +179,12 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                         if (nType === 'email') return;
 
                         // AI node dependency: check if pName matches aiConfig.outputName
-                        // (regardless of getNodeType — a node can have both SQL and AI outputs)
-                        if (sn.aiConfig?.outputName === pName) {
+                        // OR if the node has an AI prompt and pName matches via sqlResultName/pythonResultName fallback
+                        // (handles nodes where outputName is empty but prompt exists — the AI result
+                        //  is stored under sqlResultName/pythonResultName)
+                        const computedAiOutput = sn.aiConfig?.outputName
+                            || (sn.aiConfig?.prompt ? (sn.sqlResultName || sn.pythonResultName) : null);
+                        if (computedAiOutput === pName && sn.aiConfig?.prompt) {
                             deps.push({
                                 tableName: pName,
                                 nodeId: sn.id,
