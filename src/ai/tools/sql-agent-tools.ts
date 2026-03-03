@@ -344,7 +344,13 @@ export function createInMemorySqlTools(opts: {
         if (dbInstance) return dbInstance;
 
         const initSqlJs = (await import('sql.js')).default;
-        const SQL = await initSqlJs();
+        // In Next.js API routes, sql.js can't locate the .wasm file automatically.
+        // Read the WASM binary directly and pass it to avoid ENOENT errors.
+        const path = await import('path');
+        const fs = await import('fs');
+        const wasmPath = path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
+        const wasmBinary = fs.readFileSync(wasmPath);
+        const SQL = await initSqlJs({ wasmBinary });
         dbInstance = new SQL.Database();
 
         // Load each input table into SQLite
