@@ -2699,6 +2699,31 @@ export default function EditNodeDialog({
                                   };
                                 });
 
+                                // FIX: Inject any ancestor results that match SQL table references but weren't found
+                                // in availableInputTables (handles AI nodes, name mismatches, etc.)
+                                const upperQ = sqlQuery.toUpperCase();
+                                const existingDepNames = new Set(deps.map(d => d.tableName.toUpperCase()));
+                                for (const [key, resultObj] of Object.entries(ancestorResults || {})) {
+                                  if (existingDepNames.has(key.toUpperCase())) continue;
+                                  const upperKey = key.toUpperCase();
+                                  if (resultObj?.data && Array.isArray(resultObj.data) && resultObj.data.length > 0) {
+                                    const isReferenced = upperQ.includes(`FROM ${upperKey}`) ||
+                                      upperQ.includes(`JOIN ${upperKey}`) ||
+                                      upperQ.includes(`[${upperKey}]`) ||
+                                      new RegExp(`\\b${upperKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(upperQ);
+                                    if (isReferenced) {
+                                      try {
+                                        const shouldPass = JSON.stringify(resultObj.data).length <= 500 * 1024;
+                                        if (shouldPass) {
+                                          console.log(`[SQL EXEC] Injecting ancestor result "${key}" as dependency (${resultObj.data.length} rows)`);
+                                          deps.push({ tableName: key, data: resultObj.data });
+                                          existingDepNames.add(upperKey);
+                                        }
+                                      } catch { /* skip if too large */ }
+                                    }
+                                  }
+                                }
+
                                 console.log('[SQL EXEC] Executing final query with deps:', deps.length, deps.map(d => `${d.tableName}(hasData=${!!d.data}, dataLen=${d.data?.length}, hasQuery=${!!d.query})`));
                                 const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, deps);
 
@@ -3812,16 +3837,17 @@ export default function EditNodeDialog({
                                 // 1b. Current Node - Fetch on demand if no cache
                                 if (tableName === sqlResultName && sqlQuery && !sqlPreviewData) {
                                   toast({ title: "Esecuzione SQL...", description: `Recupero dati da ${tableName}...` });
-                                  // Build pipelineDeps for current node
+                                  // Build pipelineDeps for current node (include AI nodes)
                                   const pipelineDeps = availableInputTables
-                                    ?.filter(t => t.sqlQuery || (t.isPython && t.pythonCode))
+                                    ?.filter(t => t.sqlQuery || (t.isPython && t.pythonCode) || (t as any).aiConfig?.prompt)
                                     .map(table => ({
                                       tableName: table.name,
                                       query: table.sqlQuery || undefined,
                                       isPython: table.isPython,
                                       pythonCode: table.pythonCode,
                                       connectorId: table.connectorId,
-                                      pipelineDependencies: table.pipelineDependencies
+                                      pipelineDependencies: table.pipelineDependencies,
+                                      data: table.data && Array.isArray(table.data) ? table.data : undefined
                                     })) || [];
                                   const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, pipelineDeps);
                                   if (res.data) {

@@ -1748,7 +1748,7 @@ export async function executeSqlPreviewAction(
                     // Flatten all tree nodes to find matching result names
                     const flattenTreeNodes = (node: any, results: any[] = []): any[] => {
                         if (!node || typeof node !== 'object') return results;
-                        if (node.sqlResultName || node.pythonResultName || node.sqlQuery || node.pythonCode) {
+                        if (node.sqlResultName || node.pythonResultName || node.sqlQuery || node.pythonCode || node.aiConfig?.outputName) {
                             results.push(node);
                         }
                         if (node.options) {
@@ -1774,7 +1774,7 @@ export async function executeSqlPreviewAction(
 
                     for (const unresolvedName of unresolvedNames) {
                         const matchingNode = allNodes.find(n =>
-                            n.sqlResultName === unresolvedName || n.pythonResultName === unresolvedName
+                            n.sqlResultName === unresolvedName || n.pythonResultName === unresolvedName || n.aiConfig?.outputName === unresolvedName
                         );
 
                         if (matchingNode) {
