@@ -132,6 +132,15 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                 // AI node: has an active AI prompt configured — this is the strongest signal.
                 // Prioritize over leftover sqlQuery/pythonCode from previous configurations.
                 // NOTE: Only check for prompt — outputName and enabled may be empty/false on older nodes.
+                console.log('[PIPELINE] getNodeType:', {
+                    name: node.question || node.decision || node.name || node.sqlResultName,
+                    hasAiConfig: !!node.aiConfig,
+                    aiPrompt: !!node.aiConfig?.prompt,
+                    aiOutputName: node.aiConfig?.outputName,
+                    aiEnabled: node.aiConfig?.enabled,
+                    hasSqlQuery: !!node.sqlQuery,
+                    hasPythonCode: !!node.pythonCode,
+                });
                 if (node.aiConfig?.prompt) return 'ai';
 
                 const isPython = node.isPython === true || (node.isPython === undefined && !!node.pythonCode && !node.sqlQuery);
@@ -252,8 +261,18 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                     }
                 }
 
-                if (isAncestor && (node.sqlResultName || node.pythonResultName || (node.aiConfig?.outputName))) {
+                if (isAncestor && (node.sqlResultName || node.pythonResultName || node.aiConfig?.outputName || node.aiConfig?.prompt)) {
                     const nType = getNodeType(node);
+                    console.log('[PIPELINE] Ancestor node:', {
+                        nodeName: node.question || node.decision || node.name,
+                        nType,
+                        sqlResultName: node.sqlResultName,
+                        pythonResultName: node.pythonResultName,
+                        aiOutputName: node.aiConfig?.outputName,
+                        aiPrompt: !!node.aiConfig?.prompt,
+                        aiEnabled: node.aiConfig?.enabled,
+                        hasSqlQuery: !!node.sqlQuery,
+                    });
                     if (nType === 'email') return; // Exclude email nodes from the list
 
                     const resolvedDeps = resolveDependencies(node);
@@ -264,6 +283,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                     const aiOutputName = node.aiConfig?.outputName
                         ? node.aiConfig.outputName
                         : (node.aiConfig?.prompt ? (node.sqlResultName || node.pythonResultName || null) : null);
+                    console.log('[PIPELINE] AI entry check:', { aiOutputName, hasPrompt: !!node.aiConfig?.prompt, willCreateAi: !!(aiOutputName && node.aiConfig?.prompt) });
                     if (aiOutputName && node.aiConfig?.prompt) {
                         physicalAncestors.push({
                             id: node.id,
@@ -399,6 +419,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
             // 5. Build execution steps
             const steps: ExecutionStep[] = [];
             resolvedAncestors.forEach(t => {
+                console.log('[PIPELINE] Building step:', { name: t.name, nodeType: t.nodeType, hasAiConfig: !!t.aiConfig, isPython: t.isPython });
                 steps.push({
                     id: `${t.id}_exec`,
                     type: 'execution',
