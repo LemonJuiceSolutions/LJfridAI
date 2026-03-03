@@ -712,13 +712,17 @@ export async function sendTestEmailWithDataAction(params: {
                                 try {
                                     // Recursively pass nested dependencies if any
                                     const nestedDeps = (dep as any).pipelineDependencies || [];
+                                    // dfTarget = last nested dep with data (the direct parent)
+                                    const nestedDfTarget = nestedDeps.length > 0 ? nestedDeps[nestedDeps.length - 1]?.tableName : undefined;
                                     const pythonResult = await executePythonPreviewAction(
                                         dep.pythonCode,
                                         'table', // Assume table output for dependencies
                                         {},
                                         nestedDeps,
                                         dep.connectorId,
-                                        params._bypassAuth // Pass bypass auth flag
+                                        params._bypassAuth, // Pass bypass auth flag
+                                        undefined, // selectedDocuments
+                                        nestedDfTarget // Explicit df mapping
                                     );
 
                                     if (pythonResult.success && Array.isArray(pythonResult.data) && pythonResult.data.length > 0) {
@@ -861,14 +865,18 @@ export async function sendTestEmailWithDataAction(params: {
                         }
                     }
 
-                    // Execute Python script
+                    // Execute Python script — determine dfTarget from the last dependency
+                    const pyDeps = pyOutput.dependencies || [];
+                    const pyDfTarget = pyDeps.length > 0 ? pyDeps[pyDeps.length - 1]?.tableName : undefined;
                     const result = await executePythonPreviewAction(
                         pyOutput.code,
                         pyOutput.outputType,
                         inputData,
-                        pyOutput.dependencies || [],
+                        pyDeps,
                         pyOutput.connectorId,
-                        params._bypassAuth // Pass bypass auth flag
+                        params._bypassAuth, // Pass bypass auth flag
+                        undefined, // selectedDocuments
+                        pyDfTarget // Explicit df mapping: direct parent
                     );
 
                     if (result.success) {

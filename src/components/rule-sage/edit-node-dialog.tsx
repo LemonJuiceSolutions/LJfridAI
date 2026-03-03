@@ -1381,12 +1381,11 @@ export default function EditNodeDialog({
                 return null;
               };
 
-              // Step 1: Add explicit pipeline dependencies in REVERSE order so that
-              // the most recent / direct parent becomes the FIRST key → 'df' in Python.
-              // pipelineDependencies are ordered earliest-first (root ancestor first),
-              // but for df mapping we need the direct parent (last in the list) first.
+              // Step 1: Add explicit pipeline dependencies in ORDER (earliest first, direct parent LAST).
+              // The Python backend maps 'df' to the LAST table in inputData,
+              // so keeping the original order ensures df = direct parent.
               const explicitDepNames = new Set<string>();
-              const pipeDeps = Array.isArray(ancestor.pipelineDependencies) ? [...ancestor.pipelineDependencies].reverse() : [];
+              const pipeDeps = Array.isArray(ancestor.pipelineDependencies) ? ancestor.pipelineDependencies : [];
               for (const dep of pipeDeps) {
                 const depName = dep.tableName;
                 if (depName && ancestorResults[depName] !== undefined) {
@@ -1411,7 +1410,17 @@ export default function EditNodeDialog({
                 }
               }
               const inputKeys = Object.keys(inputData);
-              console.log(`[BUTTON DEBUG] Final inputData for ${ancestor.name}: [${inputKeys.join(', ')}] (df -> ${inputKeys[0] || 'none'})`);
+              // Determine dfTarget: the direct parent (LAST element of pipelineDependencies)
+              // that has actual data in inputData. This gets passed explicitly to the Python
+              // backend so df mapping is deterministic regardless of key ordering.
+              const dfTarget = (() => {
+                for (let i = pipeDeps.length - 1; i >= 0; i--) {
+                  const name = pipeDeps[i]?.tableName;
+                  if (name && inputData[name]) return name;
+                }
+                return inputKeys[inputKeys.length - 1] || undefined;
+              })();
+              console.log(`[BUTTON DEBUG] Final inputData for ${ancestor.name}: [${inputKeys.join(', ')}] (dfTarget -> ${dfTarget || 'none'}, last key -> ${inputKeys[inputKeys.length - 1] || 'none'})`);
 
               const res = await executePythonPreviewAction(
                 ancestor.pythonCode,
@@ -1430,7 +1439,8 @@ export default function EditNodeDialog({
                 })),
                 ancestor.connectorId,
                 undefined,
-                ancestor.selectedDocuments?.length > 0 ? ancestor.selectedDocuments : undefined
+                ancestor.selectedDocuments?.length > 0 ? ancestor.selectedDocuments : undefined,
+                dfTarget // Explicit df mapping: direct parent
               );
               console.log(`[BUTTON DEBUG] Result for ${ancestor.name}: success=${res.success}, hasData=${!!res.data}, dataIsArray=${Array.isArray(res.data)}, dataLength=${res.data?.length || 'N/A'}, hasVariables=${!!res.variables}`);
               if (res.success) {

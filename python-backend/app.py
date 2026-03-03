@@ -350,6 +350,7 @@ def execute_python():
         code = data.get('code', '')
         output_type = data.get('outputType', 'table')
         input_data = data.get('inputData', {})
+        df_table_target = data.get('dfTable', None)  # Explicit df target from frontend
         chart_theme = data.get('chartTheme', None)  # Full theme object from frontend
         _safe_log(f"🎨 [THEME] chart_theme received: {type(chart_theme).__name__}, value: {str(chart_theme)[:200] if chart_theme else 'None'}")
 
@@ -396,12 +397,17 @@ def execute_python():
                     last_table_name = table_name
                     last_df_table = df_table
 
-        # If no explicit 'df' was provided, map df/data to the LAST table
-        # (the direct parent in a pipeline)
-        if not explicit_df and last_df_table is not None:
-            ns['df'] = last_df_table
-            ns['data'] = last_df_table
-            print(f"   - 'df' & 'data' mapped to '{last_table_name}' (last table = direct parent)")
+        # If no explicit 'df' was provided, map df/data to the correct table.
+        # Priority: 1) Explicit dfTable from frontend, 2) LAST table (legacy fallback)
+        if not explicit_df:
+            if df_table_target and df_table_target in ns and isinstance(ns[df_table_target], pd.DataFrame):
+                ns['df'] = ns[df_table_target]
+                ns['data'] = ns[df_table_target]
+                print(f"   - 'df' & 'data' mapped to '{df_table_target}' (explicit dfTable from frontend)")
+            elif last_df_table is not None:
+                ns['df'] = last_df_table
+                ns['data'] = last_df_table
+                print(f"   - 'df' & 'data' mapped to '{last_table_name}' (last table = fallback)")
 
         
         # --- Prevent exit/quit calls from killing the Flask process ---

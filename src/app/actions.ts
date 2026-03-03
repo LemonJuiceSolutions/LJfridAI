@@ -2427,7 +2427,8 @@ export async function executePythonPreviewAction(
     dependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[]; selectedDocuments?: string[] }[],
     connectorId?: string,
     _bypassAuth?: boolean,
-    selectedDocuments?: string[]
+    selectedDocuments?: string[],
+    dfTarget?: string // Explicit name of the table that should become 'df' in Python
 ): Promise<{ success: boolean; data?: any[]; columns?: string[]; variables?: Record<string, any>; chartBase64?: string; chartHtml?: string; html?: string; rechartsConfig?: any; rechartsData?: any[]; rechartsStyle?: any; plotlyJson?: any; error?: string; rowCount?: number; stdout?: string; debugLogs?: string[] }> {
     const debugLogs: string[] = [];
     const tStart = performance.now();
@@ -2701,6 +2702,9 @@ export async function executePythonPreviewAction(
                 console.log(`[executePythonPreviewAction] Calling Python backend at 5005... (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
                 debugLogs.push(`[${new Date().toLocaleTimeString()}] Sending data to Python backend${attempt > 0 ? ` (retry ${attempt})` : ''}...`);
 
+                if (dfTarget) {
+                    console.log(`[executePythonPreviewAction] dfTarget explicitly set to '${dfTarget}'`);
+                }
                 const response = await fetch('http://localhost:5005/execute', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2710,6 +2714,7 @@ export async function executePythonPreviewAction(
                         inputData,
                         env: envVars,
                         chartTheme: chartThemeData, // Pass full company theme to Python
+                        ...(dfTarget ? { dfTable: dfTarget } : {}), // Explicit df mapping
                     }),
                     signal: controller.signal
                 });
