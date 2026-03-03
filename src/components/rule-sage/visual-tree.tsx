@@ -1297,7 +1297,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     const getAncestorInputTables = useMemo(() => {
         return (currentPath: string): { name: string, nodeName?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[] }[] => {
             // First, collect all ancestors with their paths for ordering
-            const ancestorItems: { path: string, nodeId?: string, nodeName?: string, name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string, pipelineDependencies?: any[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[], plotlyStyleOverrides?: any, htmlStyleOverrides?: any }[] = [];
+            const ancestorItems: { path: string, nodeId?: string, nodeName?: string, name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string, pipelineDependencies?: any[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[], plotlyStyleOverrides?: any, htmlStyleOverrides?: any, aiConfig?: any, selectedDocuments?: any }[] = [];
 
             // Helper to recursively resolve dependencies
             const resolveDependencies = (node: any, visited: Set<string> = new Set()): any[] => {
@@ -1315,7 +1315,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     const sourceItem = flatTree.find((item: any) => {
                         const n = item.node;
                         return n && typeof n === 'object' &&
-                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName) || (n.name === pName));
+                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName) || (n.aiConfig?.outputName === pName && n.aiConfig?.prompt) || (n.name === pName));
                     });
 
                     if (sourceItem) {
@@ -1338,7 +1338,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                             pythonCode: sn.pythonResultName === pName ? sn.pythonCode : undefined,
                             pythonOutputType: sn.pythonOutputType,
                             pipelineDependencies: resolveDependencies(sn, newVisited),
-                            selectedDocuments: sn.selectedDocuments
+                            selectedDocuments: sn.selectedDocuments,
+                            aiConfig: sn.aiConfig
                         });
                     }
                 });
@@ -1394,7 +1395,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 sqlExportTargetConnectorId: actualNode.sqlExportAction?.targetConnectorId || actualNode.sqlExportTargetConnectorId,
                                 sqlExportSourceTables: actualNode.sqlExportAction?.sourceTables || actualNode.sqlExportSourceTables,
                                 writesToDatabase: actualNode.writesToDatabase || !!actualNode.sqlExportAction,
-                                data: actualNode.sqlPreviewData
+                                data: actualNode.sqlPreviewData,
+                                aiConfig: actualNode.aiConfig
                             });
                         }
 
@@ -1424,23 +1426,35 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 writesToDatabase: actualNode.writesToDatabase || !!actualNode.sqlExportAction,
                                 data: nodeData,
                                 plotlyStyleOverrides: actualNode.pythonPreviewResult?.plotlyStyleOverrides,
-                                htmlStyleOverrides: actualNode.pythonPreviewResult?.htmlStyleOverrides
+                                htmlStyleOverrides: actualNode.pythonPreviewResult?.htmlStyleOverrides,
+                                aiConfig: actualNode.aiConfig
                             });
                         }
 
-                        // Check for AI result output
-                        if (actualNode.aiConfig?.enabled && actualNode.aiConfig?.outputName && actualNode.aiConfig?.lastResult !== undefined) {
-                            ancestorItems.push({
-                                path: nodePath,
-                                nodeId: actualNode.id,
-                                nodeName: actualNode.question || actualNode.decision || (actualNode as any).name,
-                                name: actualNode.aiConfig.outputName,
-                                isPython: false,
-                                pythonOutputType: actualNode.aiConfig.outputType === 'table' ? 'table' : 'variable',
-                                data: Array.isArray(actualNode.aiConfig.lastResult)
-                                    ? actualNode.aiConfig.lastResult
-                                    : [actualNode.aiConfig.lastResult],
-                            });
+                        // Check for AI result output (prompt is the key indicator of an AI node)
+                        if (actualNode.aiConfig?.prompt && actualNode.aiConfig?.outputName) {
+                            // Don't add duplicate if already added as SQL with the same name
+                            const aiName = actualNode.aiConfig.outputName;
+                            const alreadyAdded = ancestorItems.some(
+                                a => a.name === aiName && a.nodeId === actualNode.id
+                            );
+                            if (!alreadyAdded) {
+                                ancestorItems.push({
+                                    path: nodePath,
+                                    nodeId: actualNode.id,
+                                    nodeName: actualNode.question || actualNode.decision || (actualNode as any).name,
+                                    name: aiName,
+                                    isPython: false,
+                                    pythonOutputType: actualNode.aiConfig.outputType === 'table' ? 'table' : 'variable',
+                                    pipelineDependencies: resolveDependencies(actualNode),
+                                    data: actualNode.aiConfig.lastResult !== undefined
+                                        ? (Array.isArray(actualNode.aiConfig.lastResult)
+                                            ? actualNode.aiConfig.lastResult
+                                            : [actualNode.aiConfig.lastResult])
+                                        : undefined,
+                                    aiConfig: actualNode.aiConfig
+                                });
+                            }
                         }
                     }
                 }
@@ -1450,7 +1464,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             ancestorItems.sort((a, b) => a.path.length - b.path.length);
 
             // Build result with pipelineDependencies for each table
-            const tables: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[], plotlyStyleOverrides?: any, htmlStyleOverrides?: any }[] = [];
+            const tables: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[], plotlyStyleOverrides?: any, htmlStyleOverrides?: any, aiConfig?: any }[] = [];
 
             for (let i = 0; i < ancestorItems.length; i++) {
                 const item = ancestorItems[i];
@@ -1458,7 +1472,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 // Use the ALREADY PROCESSED 'tables' array to ensure we get the fully populated dependencies (recursive)
                 const pipelineDeps = tables // Use the already built tables array!
                     .filter(t => t.name !== item.name) // Safety check
-                    .filter(t => t.sqlQuery || (t.isPython && t.pythonCode)) // Filter only valid execution nodes
+                    .filter(t => t.sqlQuery || (t.isPython && t.pythonCode) || t.aiConfig?.prompt) // Filter only valid execution nodes
                     .map(t => ({
                         tableName: t.name,
                         nodeName: t.nodeName, // FIX: Pass display name for alias resolution (e.g. "Pipeline Prodotto" vs "PIPELINEUP")
@@ -1493,7 +1507,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     writesToDatabase: (item as any).writesToDatabase,
                     data: item.data,
                     plotlyStyleOverrides: item.plotlyStyleOverrides,
-                    htmlStyleOverrides: item.htmlStyleOverrides
+                    htmlStyleOverrides: item.htmlStyleOverrides,
+                    aiConfig: item.aiConfig
                 } as any);
 
                 // console.log(`[ANCESTOR] "${item.name}" (${item.isPython ? 'Python' : 'SQL'}) has ${pipelineDeps.length} pipeline dependencies:`, pipelineDeps.map(d => d.tableName));

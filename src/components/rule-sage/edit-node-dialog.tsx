@@ -302,7 +302,7 @@ type FileToUpload = {
 
 type PipelineStatus = {
   name: string;
-  type: 'python' | 'sql' | 'export';
+  type: 'python' | 'sql' | 'ai' | 'export';
   status: 'pending' | 'running' | 'success' | 'error' | 'skipped';
   executionTime?: number;
   message?: string;
@@ -1243,6 +1243,7 @@ export default function EditNodeDialog({
               sqlExportTargetTableName: node.sqlExportTargetTableName,
               sqlExportTargetConnectorId: node.sqlExportTargetConnectorId,
               sqlExportSourceTables: node.sqlExportSourceTables,
+              aiConfig: (node as any).aiConfig,
             });
           }
         });
@@ -1260,7 +1261,7 @@ export default function EditNodeDialog({
         type: 'execution' | 'write' | 'final';
         ancestor?: any; // The node being executed or written
         label: string;
-        pipelineType: 'python' | 'sql' | 'export';
+        pipelineType: 'python' | 'sql' | 'ai' | 'export';
         // For 'write' steps, we need to know where to get data from
         sourceAncestorName?: string;
       }
@@ -1272,12 +1273,14 @@ export default function EditNodeDialog({
       ancestors.forEach((t: any) => {
         // Step A: Execution (Preview)
         const execLabel = t.nodeName ? `${t.nodeName} > ${t.name}` : t.name;
+        // Determine pipeline type: AI takes priority, then Python, then SQL
+        const stepPipelineType = t.aiConfig?.prompt ? 'ai' : (t.isPython ? 'python' : 'sql');
         steps.push({
           id: `${t.path || t.name}_exec`,
           type: 'execution',
           ancestor: t,
           label: execLabel,
-          pipelineType: t.isPython ? 'python' : 'sql'
+          pipelineType: stepPipelineType as 'python' | 'sql' | 'ai' | 'export'
         });
 
         // Step B: Write (Export) - Only if configured
@@ -1446,6 +1449,95 @@ export default function EditNodeDialog({
               } else {
                 error = res.error || null;
               }
+            } else if (ancestor.aiConfig?.prompt) {
+              // AI Execution
+              console.log(`[PIPELINE] Executing AI node: ${ancestor.name} with model ${ancestor.aiConfig.model}`);
+              let interpolatedPrompt = ancestor.aiConfig.prompt;
+
+              // Replace {{TABELLA:name}} with JSON-stringified data from pipeline results
+              interpolatedPrompt = interpolatedPrompt.replace(
+                /\{\{TABELLA:([^}]+)\}\}/g,
+                (_: string, name: string) => {
+                  const resultObj = ancestorResults[name];
+                  if (resultObj?.data) {
+                    const rows = Array.isArray(resultObj.data) ? resultObj.data.slice(0, 100) : resultObj.data;
+                    return JSON.stringify(rows);
+                  }
+                  return `[Tabella "${name}" non trovata]`;
+                }
+              );
+
+              // Replace {{VARIABILE:name}} with variable value from pipeline results
+              interpolatedPrompt = interpolatedPrompt.replace(
+                /\{\{VARIABILE:([^}]+)\}\}/g,
+                (_: string, name: string) => {
+                  const resultObj = ancestorResults[name];
+                  if (resultObj?.variables) return JSON.stringify(resultObj.variables);
+                  if (resultObj?.data) return JSON.stringify(resultObj.data);
+                  return `[Variabile "${name}" non trovata]`;
+                }
+              );
+
+              try {
+                const response = await fetch('/api/ai-node/execute', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    prompt: interpolatedPrompt,
+                    model: ancestor.aiConfig.model,
+                    outputType: ancestor.aiConfig.outputType,
+                  }),
+                });
+
+                if (!response.ok) {
+                  let errMsg = `Errore server AI (${response.status})`;
+                  try { const errData = await response.json(); errMsg = errData.error || errMsg; } catch { /* */ }
+                  error = errMsg;
+                } else {
+                  // Read streaming response to get final result
+                  const reader = response.body?.getReader();
+                  if (reader) {
+                    const decoder = new TextDecoder();
+                    let streamBuffer = '';
+                    let aiResult: any = null;
+
+                    while (true) {
+                      const { done, value } = await reader.read();
+                      if (done) break;
+                      streamBuffer += decoder.decode(value, { stream: true });
+                      const lines = streamBuffer.split('\n');
+                      streamBuffer = lines.pop() || '';
+                      for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                          const event = JSON.parse(line);
+                          if (event.type === 'result' && event.success) {
+                            aiResult = event.result;
+                          } else if (event.type === 'result' && !event.success) {
+                            error = event.error || 'Errore AI sconosciuto';
+                          }
+                        } catch { /* skip unparseable lines */ }
+                      }
+                    }
+
+                    if (aiResult !== null && !error) {
+                      success = true;
+                      const resultData = Array.isArray(aiResult) ? aiResult : [aiResult];
+                      const resultObj = { data: resultData };
+                      ancestorResults[ancestor.name] = resultObj;
+                      const nId = ancestor.id || ancestor.nodeId;
+                      if (nId) nodeIdResults[`${nId}_ai`] = resultObj;
+                      console.log(`[PIPELINE] AI node ${ancestor.name} completed successfully, ${resultData.length} items`);
+                    } else if (!error) {
+                      error = 'Nessun risultato AI ricevuto';
+                    }
+                  } else {
+                    error = 'Stream AI non disponibile';
+                  }
+                }
+              } catch (aiErr: any) {
+                error = `Errore AI: ${aiErr.message}`;
+              }
             } else if (ancestor.sqlQuery) {
               // SQL Execution
               const deps = Array.isArray(ancestor.pipelineDependencies) ? ancestor.pipelineDependencies : [];
@@ -1536,7 +1628,7 @@ export default function EditNodeDialog({
           if (success) {
             executionReport.push({
               name: step.label,
-              type: step.type === 'execution' && step.ancestor?.isPython ? 'Python' : 'SQL',
+              type: step.type === 'execution' ? (step.ancestor?.aiConfig?.prompt ? 'AI' : (step.ancestor?.isPython ? 'Python' : 'SQL')) : 'SQL',
               status: 'success',
               timestamp: new Date().toISOString()
             });
@@ -1544,7 +1636,7 @@ export default function EditNodeDialog({
           } else {
             executionReport.push({
               name: step.label,
-              type: step.type === 'execution' && step.ancestor?.isPython ? 'Python' : 'SQL',
+              type: step.type === 'execution' ? (step.ancestor?.aiConfig?.prompt ? 'AI' : (step.ancestor?.isPython ? 'Python' : 'SQL')) : 'SQL',
               status: 'error',
               error: error || 'Errore sconosciuto',
               timestamp: new Date().toISOString()
@@ -1558,7 +1650,7 @@ export default function EditNodeDialog({
         } catch (e: any) {
           executionReport.push({
             name: step.label,
-            type: step.type === 'execution' && step.ancestor?.isPython ? 'Python' : 'SQL',
+            type: step.type === 'execution' ? (step.ancestor?.aiConfig?.prompt ? 'AI' : (step.ancestor?.isPython ? 'Python' : 'SQL')) : 'SQL',
             status: 'error',
             error: e.message,
             timestamp: new Date().toISOString()
@@ -2761,7 +2853,7 @@ export default function EditNodeDialog({
                                 </span>
                                 {step.message && <span className={`text-[10px] ${step.status === 'error' ? 'text-red-500' : step.status === 'skipped' ? 'text-yellow-600' : 'text-muted-foreground'}`}>{step.message}</span>}
                               </div>
-                              <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted uppercase tracking-wider scale-90 origin-left">{step.type}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider scale-90 origin-left ${step.type === 'ai' ? 'text-violet-700 bg-violet-100 dark:text-violet-300 dark:bg-violet-900/40 font-medium' : 'text-muted-foreground bg-muted'}`}>{step.type}</span>
                             </div>
                             {step.executionTime && <span className="text-[10px] text-muted-foreground font-mono">{step.executionTime}ms</span>}
                           </div>
@@ -3241,7 +3333,7 @@ export default function EditNodeDialog({
                                 </span>
                                 {step.message && <span className={`text-[10px] ${step.status === 'error' ? 'text-red-500' : step.status === 'skipped' ? 'text-yellow-600' : 'text-muted-foreground'}`}>{step.message}</span>}
                               </div>
-                              <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted uppercase tracking-wider scale-90 origin-left">{step.type}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider scale-90 origin-left ${step.type === 'ai' ? 'text-violet-700 bg-violet-100 dark:text-violet-300 dark:bg-violet-900/40 font-medium' : 'text-muted-foreground bg-muted'}`}>{step.type}</span>
                             </div>
                             {step.executionTime && <span className="text-[10px] text-muted-foreground font-mono">{step.executionTime}ms</span>}
                           </div>
@@ -3672,7 +3764,7 @@ export default function EditNodeDialog({
                                   </span>
                                   {step.message && <span className={`text-[10px] ${step.status === 'error' ? 'text-red-500' : step.status === 'skipped' ? 'text-yellow-600' : 'text-muted-foreground'}`}>{step.message}</span>}
                                 </div>
-                                <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted uppercase tracking-wider scale-90 origin-left">{step.type}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider scale-90 origin-left ${step.type === 'ai' ? 'text-violet-700 bg-violet-100 dark:text-violet-300 dark:bg-violet-900/40 font-medium' : 'text-muted-foreground bg-muted'}`}>{step.type}</span>
                               </div>
                               {step.executionTime && <span className="text-[10px] text-muted-foreground font-mono">{step.executionTime}ms</span>}
                             </div>
@@ -4382,7 +4474,7 @@ export default function EditNodeDialog({
                                   </span>
                                   {step.message && <span className={`text-[10px] ${step.status === 'error' ? 'text-red-500' : step.status === 'skipped' ? 'text-yellow-600' : 'text-muted-foreground'}`}>{step.message}</span>}
                                 </div>
-                                <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted uppercase tracking-wider scale-90 origin-left">{step.type}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider scale-90 origin-left ${step.type === 'ai' ? 'text-violet-700 bg-violet-100 dark:text-violet-300 dark:bg-violet-900/40 font-medium' : 'text-muted-foreground bg-muted'}`}>{step.type}</span>
                               </div>
                               {step.executionTime && <span className="text-[10px] text-muted-foreground font-mono">{step.executionTime}ms</span>}
                             </div>
