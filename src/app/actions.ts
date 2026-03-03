@@ -1537,7 +1537,15 @@ export async function executeSqlPreviewAction(
         };
 
         if (allDeps.length > 0) {
-            console.log(`[PIPELINE] Executing ${allDeps.length} flattened dependencies: ${allDeps.map(d => d.tableName).join(', ')}`);
+            console.log(`[PIPELINE SERVER] Executing ${allDeps.length} flattened dependencies:`, allDeps.map(d => ({
+                name: d.tableName,
+                hasData: !!d.data,
+                dataIsArray: Array.isArray(d.data),
+                dataLen: Array.isArray(d.data) ? d.data.length : 'N/A',
+                hasQuery: !!d.query,
+                isPython: !!d.isPython,
+                hasPythonCode: !!d.pythonCode
+            })));
 
 
             for (const dep of allDeps) {
@@ -1569,6 +1577,8 @@ export async function executeSqlPreviewAction(
 
                     let rowsToInsert: any[] = [];
                     let columns: string[] = [];
+
+                    console.log(`[PIPELINE SERVER] Processing dep "${dep.tableName}": data=${!!dep.data} (type=${typeof dep.data}, isArray=${Array.isArray(dep.data)}, len=${Array.isArray(dep.data) ? dep.data.length : 'N/A'}), query=${!!dep.query}, isPy=${!!dep.isPython}, pyCode=${!!dep.pythonCode}`);
 
                     if (dep.data && Array.isArray(dep.data)) {
                         // --- PRE-CALCULATED DATA (OPTIMIZATION) ---
@@ -1712,12 +1722,23 @@ export async function executeSqlPreviewAction(
         // Execute main query
         let finalQuery = query.trim();
 
+        console.log(`[PIPELINE SERVER] nameMap entries: ${nameMap.size}`, Array.from(nameMap.entries()).map(([k, v]) => `"${k}" -> "${v}"`));
+        console.log(`[PIPELINE SERVER] Original query: "${finalQuery.substring(0, 200)}"`);
+
         // Replace pipeline table references with global temp table names
         if (nameMap.size > 0) {
             for (const [originalName, tempName] of nameMap.entries()) {
+                const before = finalQuery;
                 finalQuery = replaceTableRef(finalQuery, originalName, tempName);
+                if (before === finalQuery) {
+                    console.error(`[PIPELINE SERVER] ⚠️ replaceTableRef did NOT modify query for "${originalName}" -> "${tempName}"!`);
+                    console.error(`[PIPELINE SERVER] Query chars around table ref:`, Array.from(finalQuery).map((c, i) => `${i}:'${c}'(${c.charCodeAt(0)})`).join(' '));
+                } else {
+                    console.log(`[PIPELINE SERVER] ✅ Replaced "${originalName}" -> "${tempName}" in query`);
+                }
             }
         }
+        console.log(`[PIPELINE SERVER] Final query after replacement: "${finalQuery.substring(0, 200)}"`)
 
         // SERVER-SIDE CROSS-TREE DEPENDENCY RESOLUTION
         // After all known deps are materialized, check if the query still references
