@@ -2650,7 +2650,9 @@ export default function EditNodeDialog({
                               // Execute full pipeline for SQL preview (Ancestors -> Current)
                               // This ensures all parent nodes (SQL/Python) are executed first
                               executeFullPipeline('preview', async (ancestorResults) => {
-                                console.log('[SQL EXEC] Pipeline finished. Results:', Object.keys(ancestorResults || {}));
+                                console.log('[SQL EXEC] Pipeline finished. AncestorResults keys:', Object.keys(ancestorResults || {}));
+                                console.log('[SQL EXEC] AncestorResults detail:', Object.entries(ancestorResults || {}).map(([k, v]) => `${k}: hasData=${!!v?.data}, isArray=${Array.isArray(v?.data)}, len=${Array.isArray(v?.data) ? v.data.length : 'N/A'}`));
+                                console.log('[SQL EXEC] availableInputTables:', (availableInputTables || []).map(t => `${t.name}(sqlQ=${!!t.sqlQuery}, isPy=${t.isPython}, isAi=${!!(t as any).aiConfig?.prompt})`));
 
                                 // Execute the current SQL query with pre-calculated results from ancestors
                                 const deps = (availableInputTables || []).filter(t => {
@@ -2671,20 +2673,31 @@ export default function EditNodeDialog({
                                   const preCalcData = resultObj ? resultObj.data : undefined;
 
                                   // Log usage of pre-calculated data
+                                  let payloadSizeStr = 'N/A';
                                   if (preCalcData) {
-                                    console.log(`[SQL EXEC] Using pre-calculated data for ${t.name} (${Array.isArray(preCalcData) ? preCalcData.length : 'N/A'} rows)`);
+                                    try { payloadSizeStr = `${(JSON.stringify(preCalcData).length / 1024).toFixed(1)}KB`; } catch { payloadSizeStr = 'ERR'; }
+                                    console.log(`[SQL EXEC] Using pre-calculated data for ${t.name} (${Array.isArray(preCalcData) ? preCalcData.length : 'N/A'} rows, ${payloadSizeStr})`);
                                   } else {
-                                    console.warn(`[SQL EXEC] NO pre-calculated data for ${t.name} (isAi=${!!(t as any).aiConfig?.prompt})`);
+                                    console.warn(`[SQL EXEC] NO pre-calculated data for ${t.name} (isAi=${!!(t as any).aiConfig?.prompt}, ancestorKeys=${Object.keys(ancestorResults || {}).join(',')})`);
                                   }
 
                                   // SAFEGUARD: Payload size check for client-server transfer
-                                  const MAX_PAYLOAD_BYTES = 500 * 1024; // Increased limit to 500KB
+                                  // Use 2MB limit for AI results (they can be larger) and 500KB for others
+                                  const isAiDep = !!(t as any).aiConfig?.prompt;
+                                  const MAX_PAYLOAD_BYTES = isAiDep ? 2 * 1024 * 1024 : 500 * 1024;
                                   let shouldPassData = false;
                                   if (preCalcData && Array.isArray(preCalcData)) {
                                     try {
-                                      if (JSON.stringify(preCalcData).length <= MAX_PAYLOAD_BYTES) shouldPassData = true;
+                                      const dataSize = JSON.stringify(preCalcData).length;
+                                      if (dataSize <= MAX_PAYLOAD_BYTES) {
+                                        shouldPassData = true;
+                                      } else {
+                                        console.error(`[SQL EXEC] ⚠️ Data for ${t.name} EXCEEDS limit: ${(dataSize / 1024).toFixed(1)}KB > ${(MAX_PAYLOAD_BYTES / 1024).toFixed(0)}KB — data will be DROPPED!`);
+                                      }
                                     } catch (e) { }
                                   }
+
+                                  console.log(`[SQL EXEC] Dep "${t.name}": shouldPassData=${shouldPassData}, hasQuery=${!!t.sqlQuery}, isPython=${t.isPython}, isAi=${isAiDep}`);
 
                                   return {
                                     tableName: t.name,
@@ -2699,6 +2712,20 @@ export default function EditNodeDialog({
                                   };
                                 });
 
+                                // FIX: Ensure deps that have no data, no query, and no pythonCode
+                                // get their data from ancestorResults (critical for AI deps)
+                                for (const dep of deps) {
+                                  if (!dep.data && !dep.query && !dep.isPython) {
+                                    const resultObj = ancestorResults?.[dep.tableName];
+                                    if (resultObj?.data && Array.isArray(resultObj.data)) {
+                                      console.log(`[SQL EXEC] ⚡ Force-injecting data for orphan dep "${dep.tableName}" from ancestorResults (${resultObj.data.length} rows)`);
+                                      dep.data = resultObj.data;
+                                    } else {
+                                      console.error(`[SQL EXEC] ⚠️ Dep "${dep.tableName}" has NO data, NO query, NOT python — server will create empty table!`);
+                                    }
+                                  }
+                                }
+
                                 // FIX: Inject any ancestor results that match SQL table references but weren't found
                                 // in availableInputTables (handles AI nodes, name mismatches, etc.)
                                 const upperQ = sqlQuery.toUpperCase();
@@ -2712,14 +2739,9 @@ export default function EditNodeDialog({
                                       upperQ.includes(`[${upperKey}]`) ||
                                       new RegExp(`\\b${upperKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(upperQ);
                                     if (isReferenced) {
-                                      try {
-                                        const shouldPass = JSON.stringify(resultObj.data).length <= 500 * 1024;
-                                        if (shouldPass) {
-                                          console.log(`[SQL EXEC] Injecting ancestor result "${key}" as dependency (${resultObj.data.length} rows)`);
-                                          deps.push({ tableName: key, data: resultObj.data });
-                                          existingDepNames.add(upperKey);
-                                        }
-                                      } catch { /* skip if too large */ }
+                                      console.log(`[SQL EXEC] Injecting ancestor result "${key}" as dependency (${resultObj.data.length} rows)`);
+                                      deps.push({ tableName: key, data: resultObj.data });
+                                      existingDepNames.add(upperKey);
                                     }
                                   }
                                 }
@@ -2741,6 +2763,35 @@ export default function EditNodeDialog({
                                     description: `Query eseguita con successo (${res.data.length} righe). Pipeline completata.`
                                   });
                                 } else {
+                                  // DIAGNOSTIC: Dump full state to understand why SQL failed
+                                  console.error('[SQL EXEC ERROR] Full diagnostic:', {
+                                    error: res.error,
+                                    sqlQueryPreview: sqlQuery.substring(0, 300),
+                                    depsCount: deps.length,
+                                    depDetails: deps.map(d => ({
+                                      name: d.tableName,
+                                      hasData: !!d.data,
+                                      dataLen: Array.isArray(d.data) ? d.data.length : 'not-array',
+                                      dataFirstRow: d.data?.[0] ? JSON.stringify(d.data[0]).substring(0, 100) : 'NONE',
+                                      hasQuery: !!d.query,
+                                      isPython: !!d.isPython
+                                    })),
+                                    ancestorResultKeys: Object.keys(ancestorResults || {}),
+                                    ancestorResultSizes: Object.fromEntries(
+                                      Object.entries(ancestorResults || {}).map(([k, v]) => [k, {
+                                        hasData: !!v?.data,
+                                        isArray: Array.isArray(v?.data),
+                                        dataLen: Array.isArray(v?.data) ? v.data.length : 'N/A',
+                                        firstRow: v?.data?.[0] ? JSON.stringify(v.data[0]).substring(0, 100) : 'NONE'
+                                      }])
+                                    ),
+                                    availableTables: (availableInputTables || []).map(t => ({
+                                      name: t.name,
+                                      hasSqlQ: !!t.sqlQuery,
+                                      isPy: !!t.isPython,
+                                      isAi: !!(t as any).aiConfig?.prompt
+                                    }))
+                                  });
                                   throw new Error(res.error || "Errore sconosciuto durante l'esecuzione SQL");
                                 }
                               }, 'sql');
