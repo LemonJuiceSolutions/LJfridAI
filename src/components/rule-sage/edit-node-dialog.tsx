@@ -1337,6 +1337,7 @@ export default function EditNodeDialog({
         type: s.pipelineType,
         status: 'pending'
       }));
+      console.log('[PIPELINE] Steps:', steps.map(s => `${s.label} [${s.pipelineType}] hasAiConfig=${!!(s.ancestor?.aiConfig?.prompt)} hasSqlQuery=${!!s.ancestor?.sqlQuery}`));
 
       setExecutionPipeline(initialPipeline);
       setPipelineProgressStep(1);
@@ -2656,10 +2657,15 @@ export default function EditNodeDialog({
                                   // Filter logic: Include if selected OR referenced in SQL (FROM/JOIN)
                                   const upperQuery = sqlQuery.toUpperCase();
                                   const upperName = t.name.toUpperCase();
-                                  return selectedPipelines.includes(t.name) ||
-                                    upperQuery.includes(`FROM ${upperName}`) ||
+                                  const isSelected = selectedPipelines.includes(t.name);
+                                  const isReferenced = upperQuery.includes(`FROM ${upperName}`) ||
                                     upperQuery.includes(`JOIN ${upperName}`) ||
-                                    upperQuery.includes(`[${upperName}]`); // Handle bracketed names
+                                    upperQuery.includes(`[${upperName}]`) ||
+                                    // Also match with word boundaries for names that appear mid-query
+                                    new RegExp(`\\b${upperName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(upperQuery);
+                                  const hasData = !!(ancestorResults?.[t.name]);
+                                  console.log(`[SQL EXEC] Filter dep "${t.name}": selected=${isSelected}, referenced=${isReferenced}, hasData=${hasData}, isAi=${!!(t as any).aiConfig?.prompt}`);
+                                  return isSelected || isReferenced;
                                 }).map(t => {
                                   const resultObj = ancestorResults?.[t.name];
                                   const preCalcData = resultObj ? resultObj.data : undefined;
@@ -2667,6 +2673,8 @@ export default function EditNodeDialog({
                                   // Log usage of pre-calculated data
                                   if (preCalcData) {
                                     console.log(`[SQL EXEC] Using pre-calculated data for ${t.name} (${Array.isArray(preCalcData) ? preCalcData.length : 'N/A'} rows)`);
+                                  } else {
+                                    console.warn(`[SQL EXEC] NO pre-calculated data for ${t.name} (isAi=${!!(t as any).aiConfig?.prompt})`);
                                   }
 
                                   // SAFEGUARD: Payload size check for client-server transfer
@@ -2691,7 +2699,7 @@ export default function EditNodeDialog({
                                   };
                                 });
 
-                                console.log('[SQL EXEC] Executing final query with deps:', deps.length);
+                                console.log('[SQL EXEC] Executing final query with deps:', deps.length, deps.map(d => `${d.tableName}(hasData=${!!d.data}, dataLen=${d.data?.length}, hasQuery=${!!d.query})`));
                                 const res = await executeSqlPreviewAction(sqlQuery, sqlConnectorId, deps);
 
                                 if (res.data) {
