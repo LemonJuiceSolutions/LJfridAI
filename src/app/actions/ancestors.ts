@@ -208,9 +208,15 @@ function extractNodesAndEdges(jsonTree: any): { nodes: Node[], edges: Edge[] } {
 
     // Create a node object if it has an ID
     if (node.id) {
+      // Determine node type: explicit type, or infer from configuration
+      let nodeType = node.type || 'trigger';
+      if (nodeType === 'trigger' && node.aiConfig?.outputName && !node.sqlQuery && !node.pythonCode) {
+        nodeType = 'ai';
+      }
+
       const newNode: Node = {
         id: node.id,
-        type: node.type || 'trigger',
+        type: nodeType,
         name: node.name || node.text || undefined,
         // SQL specific
         sqlQuery: node.sqlQuery,
@@ -221,6 +227,15 @@ function extractNodesAndEdges(jsonTree: any): { nodes: Node[], edges: Edge[] } {
         pythonResultName: node.pythonResultName,
         pythonOutputType: node.pythonOutputType,
         pythonConnectorId: node.pythonConnectorId,
+        // AI specific
+        aiConfig: node.aiConfig ? {
+          enabled: node.aiConfig.enabled,
+          outputName: node.aiConfig.outputName,
+          outputType: node.aiConfig.outputType,
+          prompt: node.aiConfig.prompt,
+          model: node.aiConfig.model,
+          lastResult: node.aiConfig.lastResult,
+        } : undefined,
         // Email specific
         emailTemplate: node.emailTemplate,
         emailTo: node.emailTo,

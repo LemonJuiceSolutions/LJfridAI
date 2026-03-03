@@ -129,11 +129,12 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
             // 3. Resolve Dependencies (Ancestor Input Tables)
             // Replicate visual-tree.tsx logic
             const getNodeType = (node: any): 'sql' | 'python' | 'sharepoint' | 'email' | 'hubspot' | 'export' | 'ai' => {
+                // AI node: has an active AI prompt configured — this is the strongest signal.
+                // Prioritize over leftover sqlQuery/pythonCode from previous configurations.
+                if (node.aiConfig?.prompt && (node.aiConfig?.outputName || node.aiConfig?.enabled)) return 'ai';
+
                 const isPython = node.isPython === true || (node.isPython === undefined && !!node.pythonCode && !node.sqlQuery);
                 if (isPython || node.type === 'python') return 'python';
-
-                // AI node: has aiConfig with output but no SQL/Python code
-                if (node.aiConfig?.outputName && !node.sqlQuery && !node.pythonCode) return 'ai';
 
                 if (node.type === 'sharepoint' || node.sharepointPath || node.sharepointAction || (node.name && node.name.toLowerCase().includes('sharepoint'))) return 'sharepoint';
                 if (node.type === 'hubspot' || node.hubspotAction || node.hubspotObjectType) return 'hubspot';
@@ -253,10 +254,12 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                     const resolvedDeps = resolveDependencies(node);
                     const commonNodeName = node.question || node.decision || node.name;
 
-                    // AI output: ALWAYS create a separate AI entry if the node has AI output
+                    // AI output: ALWAYS create a separate AI entry if the node has AI prompt
+                    // Use outputName if set, otherwise fallback to sqlResultName/pythonResultName
                     const aiOutputName = node.aiConfig?.outputName
-                        ? node.aiConfig.outputName : null;
-                    if (aiOutputName) {
+                        ? node.aiConfig.outputName
+                        : (node.aiConfig?.prompt ? (node.sqlResultName || node.pythonResultName || null) : null);
+                    if (aiOutputName && node.aiConfig?.prompt) {
                         physicalAncestors.push({
                             id: node.id,
                             path: nodePath,
@@ -273,6 +276,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                     // Skip SQL/Python if:
                     // - node has no SQL/Python result names, OR
                     // - the SQL/Python result name is the SAME as the AI output (avoid duplicate execution)
+                    // - node is a pure AI node (has aiConfig.prompt but no separate SQL/Python output)
                     const sqlName = node.sqlResultName;
                     const pyName = node.pythonResultName;
                     const hasSqlOutput = sqlName && sqlName !== aiOutputName;
@@ -409,25 +413,57 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                 }
             });
 
-            // Add final step for target node
+            // Add final step(s) for target node
+            // Handle hybrid AI+SQL/Python target nodes by creating separate steps (like ancestors)
             const targetNode = targetItem.node;
-            // If target has AI output, determine the correct type based on what result name exists
-            let targetNodeType = getNodeType(targetNode);
-            const targetResultName = targetNode.sqlResultName || targetNode.pythonResultName || targetNode.aiConfig?.outputName;
-            // If the main result name matches AI output, treat as AI
-            if (targetNode.aiConfig?.outputName === targetResultName) {
-                targetNodeType = 'ai';
-            }
+            const targetAiOutputName = targetNode.aiConfig?.prompt
+                ? (targetNode.aiConfig.outputName || targetNode.sqlResultName || targetNode.pythonResultName || null)
+                : null;
 
-            // Allow all node types, including email
-            if (targetNodeType !== 'email') {
+            // Step 1: If target has AI output, create a separate AI step
+            if (targetAiOutputName) {
                 steps.push({
-                    id: 'final_step',
+                    id: 'final_step_ai',
                     type: 'final',
-                    label: targetResultName || "Risultato Finale",
-                    pipelineType: targetNodeType,
+                    label: targetNode.question || targetNode.decision || targetNode.name
+                        ? `${targetNode.question || targetNode.decision || targetNode.name} > ${targetAiOutputName}`
+                        : targetAiOutputName,
+                    pipelineType: 'ai',
                     aiConfig: targetNode.aiConfig
                 });
+            }
+
+            // Step 2: If target also has SQL/Python output (different from AI), create that step too
+            const targetSqlPyName = targetNode.sqlResultName || targetNode.pythonResultName;
+            const targetHasSqlPy = targetSqlPyName && targetSqlPyName !== targetAiOutputName;
+            if (targetHasSqlPy) {
+                let targetNodeType = getNodeType(targetNode);
+                // Don't classify as AI if we already have a separate AI step
+                if (targetNodeType === 'ai') targetNodeType = targetNode.pythonCode ? 'python' : 'sql';
+                if (targetNodeType !== 'email') {
+                    steps.push({
+                        id: 'final_step',
+                        type: 'final',
+                        label: targetNode.question || targetNode.decision || targetNode.name
+                            ? `${targetNode.question || targetNode.decision || targetNode.name} > ${targetSqlPyName}`
+                            : targetSqlPyName,
+                        pipelineType: targetNodeType,
+                    });
+                }
+            }
+
+            // Fallback: if no AI and no SQL/Python result name, still create a final step
+            if (!targetAiOutputName && !targetHasSqlPy) {
+                const targetNodeType = getNodeType(targetNode);
+                if (targetNodeType !== 'email') {
+                    steps.push({
+                        id: 'final_step',
+                        type: 'final',
+                        label: targetNode.sqlResultName || targetNode.pythonResultName || targetNode.aiConfig?.outputName || "Risultato Finale",
+                        pipelineType: targetNodeType,
+                        aiConfig: targetNode.aiConfig
+                    });
+                }
             }
 
             setExecutionPipeline(steps.map(s => ({ name: s.label, type: s.pipelineType, status: 'pending' })));
@@ -440,11 +476,16 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
             const nodeIdResults: Record<string, any> = {};
             for (const step of steps) {
                 if (!isExecutingRef.current) break;
-                // Check at runtime if this step should actually be AI (classification may have been wrong)
+                // Trust the step's pipelineType from construction — it already accounts for hybrid AI+SQL nodes.
+                // Only override to AI as a fallback if the step was misclassified (ancestor nodes without explicit type).
                 const stepNode = step.type === 'final' ? targetNode : step.ancestor;
-                const runtimeIsAi = !!(stepNode?.aiConfig?.outputName && stepNode?.aiConfig?.prompt &&
-                    stepNode.aiConfig.outputName === (stepNode.name || stepNode.aiConfig.outputName));
-                const runtimeType = runtimeIsAi ? 'ai' : step.pipelineType;
+                let runtimeType = step.pipelineType;
+                if (runtimeType !== 'ai' && runtimeType !== 'python' && runtimeType !== 'sql') {
+                    // Only check runtime AI override for ambiguous types
+                    const runtimeIsAi = !!(stepNode?.aiConfig?.outputName && stepNode?.aiConfig?.prompt &&
+                        stepNode.aiConfig.outputName === (stepNode.name || stepNode.aiConfig.outputName));
+                    if (runtimeIsAi) runtimeType = 'ai';
+                }
                 setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'running', type: runtimeType as any } : p));
                 const startTime = Date.now();
                 let success = false;
@@ -454,12 +495,8 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                 try {
                     if (step.type === 'execution' || step.type === 'final') {
                         const node = step.type === 'final' ? targetNode : step.ancestor;
-                        // Determine execution type: if node has aiConfig.outputName matching
-                        // the step name, force AI regardless of pipelineType classification
-                        const stepName = node.name || node.aiConfig?.outputName;
-                        const isActuallyAi = !!(node.aiConfig?.outputName && node.aiConfig?.prompt &&
-                            (node.aiConfig.outputName === stepName || (step as any).pipelineType === 'ai'));
-                        const nType = isActuallyAi ? 'ai' : (step as any).pipelineType;
+                        // Trust the step's pipelineType — hybrid nodes already have separate AI and SQL/Python steps.
+                        const nType = (step as any).pipelineType as string;
 
                         // Priority 1: Python execution — use nType (pipelineType) to determine execution branch.
                         // FIX: Previously `if (node.pythonCode)` made Python always win on hybrid nodes.

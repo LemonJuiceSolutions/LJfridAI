@@ -6,6 +6,7 @@
  */
 
 import { Node, Edge, topologicalSort, calculateDepths } from './topological-sort';
+import { generateText } from 'ai';
 
 /**
  * Python output type definition
@@ -76,6 +77,9 @@ async function executeNode(node: Node, context: ExecutionContext): Promise<NodeE
         break;
       case 'trigger':
         result = await executeTriggerNode(node, context);
+        break;
+      case 'ai':
+        result = await executeAiNode(node, context);
         break;
       default:
         throw new Error(`Unsupported node type: ${node.type}`);
@@ -322,8 +326,149 @@ async function executeTriggerNode(node: Node, context: ExecutionContext): Promis
 }
 
 /**
+ * Execute an AI node
+ *
+ * @param node - AI node to execute
+ * @param context - Execution context
+ * @returns Execution result
+ */
+async function executeAiNode(node: Node, context: ExecutionContext): Promise<any> {
+  const aiConfig = node.aiConfig;
+  if (!aiConfig?.prompt || !aiConfig?.model || !aiConfig?.outputType) {
+    throw new Error('AI node missing configuration (prompt/model/outputType)');
+  }
+
+  // Get OpenRouter API key from the current session
+  const { getOpenRouterSettingsAction } = await import('@/actions/openrouter');
+  const settings = await getOpenRouterSettingsAction();
+  if (!settings.apiKey) {
+    throw new Error('OpenRouter API key not configured. Configure it in Settings.');
+  }
+
+  const { getOpenRouterModel } = await import('@/ai/providers/openrouter-provider');
+
+  // Interpolate placeholders with pipeline data from context
+  let prompt = aiConfig.prompt;
+  prompt = prompt.replace(
+    /\{\{TABELLA:([^}]+)\}\}/g,
+    (_: string, name: string) => {
+      const res = findResultInContext(context, name);
+      if (res) {
+        const rows = Array.isArray(res) ? res.slice(0, 100) : res;
+        return JSON.stringify(rows);
+      }
+      return `[Tabella "${name}" non trovata]`;
+    }
+  );
+  prompt = prompt.replace(
+    /\{\{VARIABILE:([^}]+)\}\}/g,
+    (_: string, name: string) => {
+      const res = findResultInContext(context, name);
+      if (res) return JSON.stringify(res);
+      return `[Variabile "${name}" non trovata]`;
+    }
+  );
+  prompt = prompt.replace(
+    /\{\{GRAFICO:([^}]+)\}\}/g,
+    (_: string, name: string) => `[Grafico "${name}"]`
+  );
+
+  // Call AI model via OpenRouter
+  const model = getOpenRouterModel(settings.apiKey, aiConfig.model);
+  const result = await generateText({
+    model,
+    prompt,
+  });
+
+  // Parse result based on outputType
+  return parseAiResult(result.text, aiConfig.outputType);
+}
+
+/**
+ * Find a result in context by name (checking both node IDs and result names)
+ */
+function findResultInContext(context: ExecutionContext, name: string): any {
+  // Direct lookup by node ID
+  if (context.results.has(name)) {
+    return context.results.get(name);
+  }
+  // Search by result name in stored results
+  for (const [, result] of context.results.entries()) {
+    if (result && typeof result === 'object' && 'name' in result && result.name === name) {
+      return result;
+    }
+    // Check if result contains data with matching key
+    if (result && typeof result === 'object' && 'data' in result) {
+      return result.data;
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse AI text result based on output type
+ */
+function parseAiResult(text: string, outputType: string): any {
+  switch (outputType) {
+    case 'table': {
+      const json = extractJsonFromText(text);
+      if (json) {
+        const parsed = JSON.parse(json);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed.data && Array.isArray(parsed.data)) return parsed.data;
+        return [parsed];
+      }
+      return [{ risultato: text.trim() }];
+    }
+    case 'number': {
+      const cleaned = stripMarkdownFences(text);
+      const match = cleaned.match(/-?\d+([.,]\d+)?/);
+      if (match) return parseFloat(match[0].replace(',', '.'));
+      const fallback = text.match(/-?\d+([.,]\d+)?/);
+      if (fallback) return parseFloat(fallback[0].replace(',', '.'));
+      return 0;
+    }
+    case 'chart': {
+      const json = extractJsonFromText(text);
+      if (json) {
+        const parsed = JSON.parse(json);
+        if (parsed.type && parsed.data) return parsed;
+        if (parsed.data && Array.isArray(parsed.data)) {
+          return {
+            type: 'bar-chart',
+            data: parsed.data,
+            xAxisKey: Object.keys(parsed.data[0] || {})[0],
+            dataKeys: Object.keys(parsed.data[0] || {}).slice(1),
+            title: parsed.title || 'Grafico AI'
+          };
+        }
+      }
+      throw new Error('Invalid chart format from AI');
+    }
+    case 'string':
+    default:
+      return text.trim();
+  }
+}
+
+function stripMarkdownFences(text: string): string {
+  const m = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  return m ? m[1].trim() : text.trim();
+}
+
+function extractJsonFromText(text: string): string | null {
+  const fenced = stripMarkdownFences(text);
+  try { JSON.parse(fenced); return fenced; } catch { /* */ }
+  const a = text.match(/\[[\s\S]*\]/);
+  if (a) { try { JSON.parse(a[0]); return a[0]; } catch { /* */ } }
+  const o = text.match(/\{[\s\S]*\}/);
+  if (o) { try { JSON.parse(o[0]); return o[0]; } catch { /* */ } }
+  return null;
+}
+
+/**
  * Build dependencies array from context for a node
- * 
+ *
  * @param node - Node for which to build dependencies
  * @param context - Execution context
  * @returns Array of dependencies

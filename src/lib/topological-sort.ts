@@ -22,7 +22,7 @@ export interface Node {
   pythonOutputType?: 'table' | 'variable' | 'chart' | 'html';
   pythonConnectorId?: string;
   // AI specific
-  aiConfig?: { enabled?: boolean; outputName?: string; outputType?: string; lastResult?: any };
+  aiConfig?: { enabled?: boolean; outputName?: string; outputType?: string; prompt?: string; model?: string; lastResult?: any };
   // Email specific
   emailTemplate?: string;
   emailTo?: string;
