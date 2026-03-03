@@ -1725,14 +1725,31 @@ export async function executeSqlPreviewAction(
         console.log(`[PIPELINE SERVER] nameMap entries: ${nameMap.size}`, Array.from(nameMap.entries()).map(([k, v]) => `"${k}" -> "${v}"`));
         console.log(`[PIPELINE SERVER] Original query: "${finalQuery.substring(0, 200)}"`);
 
+        // Helper: normalize confusable characters (I/l/1, O/0) for fuzzy matching
+        const normalizeConfusable = (s: string) => s.replace(/[Il1]/g, 'l').replace(/[O0]/g, '0').toLowerCase();
+
         // Replace pipeline table references with global temp table names
         if (nameMap.size > 0) {
             for (const [originalName, tempName] of nameMap.entries()) {
                 const before = finalQuery;
                 finalQuery = replaceTableRef(finalQuery, originalName, tempName);
                 if (before === finalQuery) {
-                    console.error(`[PIPELINE SERVER] ⚠️ replaceTableRef did NOT modify query for "${originalName}" -> "${tempName}"!`);
-                    console.error(`[PIPELINE SERVER] Query chars around table ref:`, Array.from(finalQuery).map((c, i) => `${i}:'${c}'(${c.charCodeAt(0)})`).join(' '));
+                    console.warn(`[PIPELINE SERVER] ⚠️ replaceTableRef did NOT match "${originalName}" in query. Trying fuzzy match...`);
+                    // FUZZY MATCH: Handle confusable characters (I/l/1, O/0)
+                    // Extract table refs from query and find one that matches when normalized
+                    const tableRefPattern = /(?:FROM|JOIN)\s+(?:\[?(\w+)\]?\.)?(?:\[?(\w+)\]?)/gi;
+                    let m;
+                    const normalizedOriginal = normalizeConfusable(originalName);
+                    while ((m = tableRefPattern.exec(finalQuery)) !== null) {
+                        const queryTableName = m[2] || m[1];
+                        if (queryTableName && normalizeConfusable(queryTableName) === normalizedOriginal) {
+                            console.log(`[PIPELINE SERVER] 🔧 Fuzzy match: "${queryTableName}" in query ≈ "${originalName}" (confusable chars I/l/1). Replacing "${queryTableName}" with "${tempName}"`);
+                            finalQuery = replaceTableRef(finalQuery, queryTableName, tempName);
+                            // Also register this variant in nameMap for cross-tree resolution
+                            nameMap.set(queryTableName, tempName);
+                            break;
+                        }
+                    }
                 } else {
                     console.log(`[PIPELINE SERVER] ✅ Replaced "${originalName}" -> "${tempName}" in query`);
                 }
