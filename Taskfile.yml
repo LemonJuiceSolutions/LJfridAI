@@ -95,3 +95,122 @@ tasks:
     cmds:
       - fuser -k 9002/tcp 2>/dev/null || true
       - echo "Next.js stopped."
+
+  # ── Docker Development ───────────────────────────────────────────────────────
+
+  docker:build:
+    desc: Build Docker images for development
+    cmds:
+      - docker compose build
+      - echo "Docker images built successfully."
+
+  docker:start:
+    desc: Start all services using Docker Compose (DB, Python, Next.js)
+    deps: [docker:db:start]
+    cmds:
+      - docker compose up -d
+      - echo "Waiting for services to be healthy..."
+      - |
+        until curl -s http://localhost:5005/health > /dev/null 2>&1; do sleep 1; done
+        echo "Python backend is ready."
+      - |
+        until curl -s -o /dev/null -w "%{http_code}" http://localhost:9002 | grep -q "200\|302\|307"; do sleep 2; done
+        echo "Next.js is ready."
+      - task: docker:prisma:push
+      - |
+        echo "All Docker services started successfully."
+        echo "  - Next.js: http://localhost:9002"
+        echo "  - Python:  http://localhost:5005"
+        echo "  - DB:      localhost:5432"
+
+  docker:stop:
+    desc: Stop all Docker services
+    cmds:
+      - docker compose down
+      - echo "Docker services stopped."
+
+  docker:restart:
+    desc: Restart all Docker services
+    cmds:
+      - task: docker:stop
+      - task: docker:start
+
+  docker:logs:
+    desc: View Docker logs (all services)
+    cmds:
+      - docker compose logs -f
+
+  docker:logs:app:
+    desc: View Next.js Docker logs
+    cmds:
+      - docker compose logs -f app
+
+  docker:logs:python:
+    desc: View Python backend Docker logs
+    cmds:
+      - docker compose logs -f python-backend
+
+  docker:logs:db:
+    desc: View PostgreSQL Docker logs
+    cmds:
+      - docker compose logs -f db
+
+  docker:shell:app:
+    desc: Open shell in Next.js container
+    cmds:
+      - docker compose exec app sh
+
+  docker:shell:python:
+    desc: Open shell in Python container
+    cmds:
+      - docker compose exec python-backend bash
+
+  docker:shell:db:
+    desc: Open PostgreSQL shell
+    cmds:
+      - docker compose exec db psql -U postgres -d rulesagedb
+
+  docker:prisma:push:
+    desc: Push Prisma schema to Docker database
+    cmds:
+      - docker compose exec app npx prisma db push
+      - docker compose exec app npx prisma generate
+
+  docker:prisma:studio:
+    desc: Open Prisma Studio (database GUI)
+    cmds:
+      - docker compose exec app npx prisma studio
+
+  docker:db:start:
+    desc: Start PostgreSQL Docker container
+    cmds:
+      - |
+        if docker ps -a --filter name=^rulesage-db$ --format '.' | grep -q '.'; then
+          docker start rulesage-db
+        else
+          docker compose up -d db
+        fi
+      - echo "PostgreSQL container ready."
+
+  docker:db:stop:
+    desc: Stop PostgreSQL Docker container
+    cmds:
+      - docker compose stop db
+      - echo "PostgreSQL container stopped."
+
+  docker:db:reset:
+    desc: Reset Docker database (drop and recreate)
+    cmds:
+      - docker compose down -v
+      - docker compose up -d db
+      - echo "Waiting for PostgreSQL to be ready..."
+      - sleep 5
+      - task: docker:prisma:push
+      - echo "Database reset complete."
+
+  docker:clean:
+    desc: Clean up Docker resources (containers, volumes, images)
+    cmds:
+      - docker compose down -v
+      - docker rmi likeaisaid-app likeaisaid-python-backend 2>/dev/null || true
+      - echo "Docker resources cleaned."
