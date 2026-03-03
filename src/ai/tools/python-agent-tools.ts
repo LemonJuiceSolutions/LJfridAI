@@ -266,24 +266,28 @@ export function createPythonAgentTools(opts: {
     if (opts.connectorId) {
         tools.pyExploreDbSchema = tool({
             description: 'Esplora lo schema del database: elenca tutte le tabelle disponibili. Utile per capire i dati che arriveranno in input.',
-            inputSchema: z.object({}),
-            execute: async () => doPyExploreDbSchema({ connectorId: cid }),
+            inputSchema: z.object({
+                connectorId: z.string().describe("L'ID del connettore database."),
+            }),
+            execute: async ({ connectorId }) => doPyExploreDbSchema({ connectorId: connectorId || cid }),
         });
 
         tools.pyExploreTableColumns = tool({
             description: 'Esplora le colonne di una tabella specifica con tipo di dato.',
             inputSchema: z.object({
+                connectorId: z.string().describe("L'ID del connettore database."),
                 tableName: z.string().describe('Il nome della tabella da esplorare.'),
             }),
-            execute: async ({ tableName }) => doPyExploreTableColumns({ connectorId: cid, tableName }),
+            execute: async ({ connectorId, tableName }) => doPyExploreTableColumns({ connectorId: connectorId || cid, tableName }),
         });
 
         tools.pyTestSqlQuery = tool({
             description: "Esegue una query SQL di test per capire la struttura dei dati che il codice Python ricevera' in input.",
             inputSchema: z.object({
                 query: z.string().describe('La query SQL da testare.'),
+                connectorId: z.string().describe("L'ID del connettore database."),
             }),
-            execute: async ({ query }) => doPyTestSqlQuery({ query, connectorId: cid }),
+            execute: async ({ query, connectorId }) => doPyTestSqlQuery({ query, connectorId: connectorId || cid }),
         });
     }
 
@@ -292,14 +296,17 @@ export function createPythonAgentTools(opts: {
             description: 'Cerca nella Knowledge Base aziendale script Python simili e correzioni precedenti.',
             inputSchema: z.object({
                 query: z.string().describe('Termine di ricerca.'),
+                companyId: z.string().describe("L'ID della company."),
             }),
-            execute: async ({ query }) => doPySearchKB({ query, companyId: cpid }),
+            execute: async ({ query, companyId }) => doPySearchKB({ query, companyId: companyId || cpid }),
         });
 
         tools.pyListSqlConnectors = tool({
             description: 'Elenca tutti i connettori SQL (database) disponibili.',
-            inputSchema: z.object({}),
-            execute: async () => doPyListConnectors({ companyId: cpid }),
+            inputSchema: z.object({
+                companyId: z.string().describe("L'ID della company."),
+            }),
+            execute: async ({ companyId }) => doPyListConnectors({ companyId: companyId || cpid }),
         });
 
         tools.pySaveToKnowledgeBase = tool({
@@ -315,9 +322,12 @@ export function createPythonAgentTools(opts: {
         });
 
         tools.pyBrowseOtherScripts = tool({
-            description: 'Sfoglia le query SQL e gli script Python scritti in altri alberi e pipeline della company.',
-            inputSchema: z.object({}),
-            execute: async () => doPyBrowseOtherScripts({ companyId: cpid, connectorId: cid || undefined }),
+            description: 'Sfoglia le query SQL e gli script Python scritti in altri alberi e pipeline della company. Passa il connectorId per filtrare gli script dello stesso database.',
+            inputSchema: z.object({
+                companyId: z.string().describe("L'ID della company."),
+                connectorId: z.string().optional().describe("L'ID del connettore attuale per prioritizzare script dello stesso DB."),
+            }),
+            execute: async ({ companyId, connectorId }) => doPyBrowseOtherScripts({ companyId: companyId || cpid, connectorId: connectorId || cid || undefined }),
         });
     }
 
