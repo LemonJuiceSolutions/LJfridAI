@@ -1,0 +1,97 @@
+version: '3'
+
+dotenv: ['.env.local', '.env']
+
+tasks:
+  start:
+    desc: Start all services (DB, schema sync, Python backend, Next.js)
+    deps: [db:start]
+    cmds:
+      - task: db:push
+      - |
+        cd python-backend
+        if [ ! -d "venv" ]; then python3 -m venv venv; fi
+        source venv/bin/activate
+        pip install -r requirements.txt --quiet
+        python app.py &> /tmp/python-backend.log &
+        echo "Waiting for Python backend..."
+        until curl -s http://localhost:5005/health > /dev/null 2>&1; do sleep 1; done
+        echo "Python backend ready. Logs: /tmp/python-backend.log"
+      - task: dev
+
+  stop:
+    desc: Stop all services
+    cmds:
+      - task: db:stop
+      - task: python:stop
+      - task: dev:stop
+
+  # ── Database ──────────────────────────────────────────────────────────────
+
+  db:start:
+    desc: Start the PostgreSQL Docker container (creates it if it doesn't exist)
+    cmds:
+      - |
+        if docker ps -a --filter name=^rulesage-db$ --format '.' | grep -q '.'; then
+          docker start rulesage-db
+        else
+          docker run -d --name rulesage-db \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=rulesagedb \
+            -p 5432:5432 \
+            postgres:15
+        fi
+      - echo "Waiting for PostgreSQL..."
+      - until docker exec rulesage-db pg_isready -U postgres > /dev/null 2>&1; do sleep 1; done
+      - echo "PostgreSQL is ready."
+
+  db:stop:
+    desc: Stop the PostgreSQL Docker container
+    cmds:
+      - docker stop rulesage-db
+      - echo "PostgreSQL stopped."
+
+  db:drop:
+    desc: Drop and recreate the rulesagedb database (destructive!)
+    cmds:
+      - docker exec rulesage-db psql -U postgres -c "DROP DATABASE IF EXISTS rulesagedb;"
+      - docker exec rulesage-db psql -U postgres -c "CREATE DATABASE rulesagedb;"
+      - echo "Database dropped and recreated."
+
+  db:push:
+    desc: Apply Prisma schema to the database
+    cmds:
+      - npx prisma db push
+      - npx prisma generate
+
+  # ── Python backend ────────────────────────────────────────────────────────
+
+  python:start:
+    desc: Start the Python/Flask backend on port 5005
+    dir: python-backend
+    cmds:
+      - |
+        if [ ! -d "venv" ]; then
+          python3 -m venv venv
+        fi
+      - source venv/bin/activate && pip install -r requirements.txt --quiet && python app.py
+
+  python:stop:
+    desc: Stop the Python/Flask backend (kills process on port 5005)
+    cmds:
+      - fuser -k 5005/tcp 2>/dev/null || true
+      - echo "Python backend stopped."
+
+  # ── Next.js ───────────────────────────────────────────────────────────────
+
+  dev:
+    desc: Start the Next.js dev server on port 9002
+    cmds:
+      - npm run dev
+
+  dev:stop:
+    desc: Stop the Next.js dev server (kills process on port 9002)
+    cmds:
+      - fuser -k 9002/tcp 2>/dev/null || true
+      - echo "Next.js stopped."
