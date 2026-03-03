@@ -496,19 +496,38 @@ export function AgentChat({
   // --- Streaming Mode (Vercel AI SDK v6) ---
   const [streamingEnabled, setStreamingEnabled] = useState(true);
 
-  // Ref to always have the latest connectorId at request time (avoids stale closure in useMemo transport)
+  // Refs to always have the latest values at request time (avoids stale closure in useMemo transport)
   const connectorIdRef = useRef(connectorId);
   connectorIdRef.current = connectorId;
+  const tableSchemaRef = useRef(tableSchema);
+  tableSchemaRef.current = tableSchema;
+  const inputTablesRef = useRef(inputTables);
+  inputTablesRef.current = inputTables;
+  const nodeQueriesRef = useRef(nodeQueries);
+  nodeQueriesRef.current = nodeQueries;
+  const selectedDocumentsRef = useRef(selectedDocuments);
+  selectedDocumentsRef.current = selectedDocuments;
+  const scriptRef = useRef(script);
+  scriptRef.current = script;
 
-  // Create transport with dynamic body (memoized to avoid re-creating on every render)
+  // Create transport with stable identity — all dynamic values read from refs at send time
   const streamTransport = useMemo(() => new DefaultChatTransport({
     api: '/api/agents/chat-stream',
-    body: { nodeId, agentType, script, tableSchema, inputTables, nodeQueries, selectedDocuments },
+    body: { nodeId, agentType },
     prepareSendMessagesRequest: ({ body, messages, ...rest }) => ({
       ...rest,
-      body: { messages, ...body, connectorId: connectorIdRef.current },
+      body: {
+        messages,
+        ...body,
+        script: scriptRef.current,
+        tableSchema: tableSchemaRef.current,
+        inputTables: inputTablesRef.current,
+        nodeQueries: nodeQueriesRef.current,
+        selectedDocuments: selectedDocumentsRef.current,
+        connectorId: connectorIdRef.current,
+      },
     }),
-  }), [nodeId, agentType, script, tableSchema, inputTables, nodeQueries, selectedDocuments]);
+  }), [nodeId, agentType]);
 
   // useChat hook for streaming mode (v6 API)
   const {
@@ -928,7 +947,8 @@ export function AgentChat({
     // --- Streaming Mode ---
     if (streamingEnabled) {
       // Check for missing connectorId on SQL agent only if no input tables are available
-      const hasInputTables = tableSchema && Object.keys(tableSchema).length > 0;
+      const hasInputTables = (tableSchema && Object.keys(tableSchema).length > 0) ||
+        (inputTables && typeof inputTables === 'object' && Object.keys(inputTables).length > 0);
       if (agentType === 'sql' && !connectorId && !hasInputTables) {
         setMessages((prev) => [
           ...prev,
@@ -960,7 +980,8 @@ export function AgentChat({
 
     // --- Legacy Mode (non-streaming) ---
     // Check for missing connectorId on SQL agent only if no input tables
-    const hasInputTablesLegacy = tableSchema && Object.keys(tableSchema).length > 0;
+    const hasInputTablesLegacy = (tableSchema && Object.keys(tableSchema).length > 0) ||
+      (inputTables && typeof inputTables === 'object' && Object.keys(inputTables).length > 0);
     if (agentType === 'sql' && !connectorId && !hasInputTablesLegacy) {
       setMessages((prev) => [
         ...prev,

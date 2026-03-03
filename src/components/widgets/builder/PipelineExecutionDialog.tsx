@@ -17,7 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 
 type PipelineStatus = {
     name: string;
-    type: 'python' | 'sql' | 'export' | 'sharepoint' | 'email' | 'hubspot';
+    type: 'python' | 'sql' | 'export' | 'sharepoint' | 'email' | 'hubspot' | 'ai';
     status: 'pending' | 'running' | 'success' | 'error' | 'skipped';
     executionTime?: number;
     message?: string;
@@ -28,8 +28,9 @@ interface ExecutionStep {
     type: 'execution' | 'write' | 'final';
     ancestor?: any;
     label: string;
-    pipelineType: 'python' | 'sql' | 'export' | 'sharepoint' | 'email' | 'hubspot';
+    pipelineType: 'python' | 'sql' | 'export' | 'sharepoint' | 'email' | 'hubspot' | 'ai';
     sourceAncestorName?: string;
+    aiConfig?: any;
 }
 
 interface PipelineExecutionDialogProps {
@@ -127,9 +128,12 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
 
             // 3. Resolve Dependencies (Ancestor Input Tables)
             // Replicate visual-tree.tsx logic
-            const getNodeType = (node: any): 'sql' | 'python' | 'sharepoint' | 'email' | 'hubspot' | 'export' => {
+            const getNodeType = (node: any): 'sql' | 'python' | 'sharepoint' | 'email' | 'hubspot' | 'export' | 'ai' => {
                 const isPython = node.isPython === true || (node.isPython === undefined && !!node.pythonCode && !node.sqlQuery);
                 if (isPython || node.type === 'python') return 'python';
+
+                // AI node: has aiConfig with output but no SQL/Python code
+                if (node.aiConfig?.outputName && !node.sqlQuery && !node.pythonCode) return 'ai';
 
                 if (node.type === 'sharepoint' || node.sharepointPath || node.sharepointAction || (node.name && node.name.toLowerCase().includes('sharepoint'))) return 'sharepoint';
                 if (node.type === 'hubspot' || node.hubspotAction || node.hubspotObjectType) return 'hubspot';
@@ -138,6 +142,9 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                 if (node.sqlQuery) return 'sql';
 
                 if (node.type === 'email' || node.emailAction || node.emailTemplate) return 'email';
+
+                // AI fallback: node has AI output even if it also has SQL/Python
+                if (node.aiConfig?.outputName) return 'ai';
 
                 return 'sql';
             };
@@ -157,7 +164,8 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                     const sourceItem = flatTree.find(item => {
                         const n = item.node;
                         return n && typeof n === 'object' &&
-                            (n.pythonResultName === pName || n.sqlResultName === pName || n.name === pName);
+                            (n.pythonResultName === pName || n.sqlResultName === pName || n.name === pName ||
+                             (n.aiConfig?.outputName === pName));
                     });
 
                     if (sourceItem) {
@@ -167,6 +175,23 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                         const nType = getNodeType(sn);
                         // Filter out email inputs as dependencies for now, unless they produce data (unlikely)
                         if (nType === 'email') return;
+
+                        // AI node dependency: check if pName matches aiConfig.outputName
+                        // (regardless of getNodeType — a node can have both SQL and AI outputs)
+                        if (sn.aiConfig?.outputName === pName) {
+                            deps.push({
+                                tableName: pName,
+                                nodeId: sn.id,
+                                path: sourceItem.path,
+                                name: pName,
+                                nodeName: sn.question || sn.decision || sn.name,
+                                nodeType: 'ai',
+                                isPython: false,
+                                aiConfig: sn.aiConfig,
+                                pipelineDependencies: resolveDependencies(sn, newVisited),
+                            });
+                            return;
+                        }
 
                         // FIX: For hybrid nodes, determine type from which result name matched
                         // to avoid copying pythonCode on SQL-type deps (which would hijack execution)
@@ -221,16 +246,43 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                     }
                 }
 
-                if (isAncestor && (node.sqlResultName || node.pythonResultName)) {
+                if (isAncestor && (node.sqlResultName || node.pythonResultName || (node.aiConfig?.outputName))) {
                     const nType = getNodeType(node);
                     if (nType === 'email') return; // Exclude email nodes from the list
+
+                    const resolvedDeps = resolveDependencies(node);
+                    const commonNodeName = node.question || node.decision || node.name;
+
+                    // AI output: ALWAYS create a separate AI entry if the node has AI output
+                    const aiOutputName = node.aiConfig?.outputName
+                        ? node.aiConfig.outputName : null;
+                    if (aiOutputName) {
+                        physicalAncestors.push({
+                            id: node.id,
+                            path: nodePath,
+                            name: aiOutputName,
+                            nodeType: 'ai',
+                            isPython: false,
+                            aiConfig: node.aiConfig,
+                            pipelineDependencies: resolvedDeps,
+                            nodeName: commonNodeName,
+                            writesToDatabase: false,
+                        });
+                    }
+
+                    // Skip SQL/Python if:
+                    // - node has no SQL/Python result names, OR
+                    // - the SQL/Python result name is the SAME as the AI output (avoid duplicate execution)
+                    const sqlName = node.sqlResultName;
+                    const pyName = node.pythonResultName;
+                    const hasSqlOutput = sqlName && sqlName !== aiOutputName;
+                    const hasPyOutput = pyName && pyName !== aiOutputName;
+                    if (!hasSqlOutput && !hasPyOutput) return;
 
                     // FIX: Hybrid nodes (both SQL and Python) need TWO separate entries
                     // to ensure both operations execute independently and save to the correct preview fields.
                     // Without this, `if (node.pythonCode)` in the execution loop makes Python always win.
                     const isHybridNode = !!(node.sqlResultName && node.pythonResultName && node.sqlQuery && node.pythonCode);
-                    const resolvedDeps = resolveDependencies(node);
-                    const commonNodeName = node.question || node.decision || node.name;
                     const commonWritesToDb = node.writesToDatabase || !!node.sqlExportAction;
                     const commonExportTable = node.sqlExportAction?.targetTableName || node.sqlExportTargetTableName;
                     const commonExportConnector = node.sqlExportAction?.targetConnectorId || node.sqlExportTargetConnectorId;
@@ -320,7 +372,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                         visited.set(key, {
                             ...node,
                             id: node.id || node.nodeId, // normalize ID
-                            nodeType: node.nodeType || (node.isPython ? 'python' : 'sql') // ensure nodeType
+                            nodeType: node.nodeType || (node.isPython ? 'python' : node.aiConfig ? 'ai' : 'sql') // ensure nodeType
                         });
                     }
                 });
@@ -329,7 +381,11 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
 
             const uniqueNodesMap = collectAncestors(physicalAncestors);
             const resolvedAncestors = Array.from(uniqueNodesMap.values());
-            console.log('[PIPELINE] Resolved Execution List:', resolvedAncestors.map(n => n.name));
+            console.log('[PIPELINE] Resolved Execution List:', resolvedAncestors.map(n => ({
+                name: n.name, nodeType: n.nodeType, hasAiConfig: !!n.aiConfig,
+                aiOutputName: n.aiConfig?.outputName, aiPrompt: n.aiConfig?.prompt?.substring(0, 30),
+                sqlQuery: n.sqlQuery?.substring(0, 30), sqlResultName: n.sqlResultName
+            })));
 
             // 5. Build execution steps
             const steps: ExecutionStep[] = [];
@@ -355,15 +411,22 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
 
             // Add final step for target node
             const targetNode = targetItem.node;
-            const targetNodeType = getNodeType(targetNode);
+            // If target has AI output, determine the correct type based on what result name exists
+            let targetNodeType = getNodeType(targetNode);
+            const targetResultName = targetNode.sqlResultName || targetNode.pythonResultName || targetNode.aiConfig?.outputName;
+            // If the main result name matches AI output, treat as AI
+            if (targetNode.aiConfig?.outputName === targetResultName) {
+                targetNodeType = 'ai';
+            }
 
             // Allow all node types, including email
             if (targetNodeType !== 'email') {
                 steps.push({
                     id: 'final_step',
                     type: 'final',
-                    label: targetNode.sqlResultName || targetNode.pythonResultName || "Risultato Finale",
-                    pipelineType: targetNodeType
+                    label: targetResultName || "Risultato Finale",
+                    pipelineType: targetNodeType,
+                    aiConfig: targetNode.aiConfig
                 });
             }
 
@@ -377,7 +440,12 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
             const nodeIdResults: Record<string, any> = {};
             for (const step of steps) {
                 if (!isExecutingRef.current) break;
-                setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'running' } : p));
+                // Check at runtime if this step should actually be AI (classification may have been wrong)
+                const stepNode = step.type === 'final' ? targetNode : step.ancestor;
+                const runtimeIsAi = !!(stepNode?.aiConfig?.outputName && stepNode?.aiConfig?.prompt &&
+                    stepNode.aiConfig.outputName === (stepNode.name || stepNode.aiConfig.outputName));
+                const runtimeType = runtimeIsAi ? 'ai' : step.pipelineType;
+                setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'running', type: runtimeType as any } : p));
                 const startTime = Date.now();
                 let success = false;
                 let stepError: string | null = null;
@@ -386,7 +454,12 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                 try {
                     if (step.type === 'execution' || step.type === 'final') {
                         const node = step.type === 'final' ? targetNode : step.ancestor;
-                        const nType = (step as any).pipelineType;
+                        // Determine execution type: if node has aiConfig.outputName matching
+                        // the step name, force AI regardless of pipelineType classification
+                        const stepName = node.name || node.aiConfig?.outputName;
+                        const isActuallyAi = !!(node.aiConfig?.outputName && node.aiConfig?.prompt &&
+                            (node.aiConfig.outputName === stepName || (step as any).pipelineType === 'ai'));
+                        const nType = isActuallyAi ? 'ai' : (step as any).pipelineType;
 
                         // Priority 1: Python execution — use nType (pipelineType) to determine execution branch.
                         // FIX: Previously `if (node.pythonCode)` made Python always win on hybrid nodes.
@@ -428,7 +501,114 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                                 stepError = res.error || "Execution failed";
                             }
                         }
-                        // Priority 2: Specialized actions
+                        // Priority 2: AI node — re-execute via /api/ai-node/execute
+                        else if (nType === 'ai') {
+                            const aiCfg = node.aiConfig;
+                            if (!aiCfg?.prompt || !aiCfg?.model || !aiCfg?.outputType) {
+                                stepError = "Configurazione AI mancante (prompt/model/outputType). Configura l'agente AI nel nodo.";
+                            } else {
+                                // Interpolate placeholders with pipeline data
+                                let interpolatedPrompt = aiCfg.prompt;
+                                interpolatedPrompt = interpolatedPrompt.replace(
+                                    /\{\{TABELLA:([^}]+)\}\}/g,
+                                    (_: string, name: string) => {
+                                        const res = ancestorResults[name];
+                                        if (res?.data) {
+                                            const rows = Array.isArray(res.data) ? res.data.slice(0, 100) : res.data;
+                                            return JSON.stringify(rows);
+                                        }
+                                        return `[Tabella "${name}" non trovata]`;
+                                    }
+                                );
+                                interpolatedPrompt = interpolatedPrompt.replace(
+                                    /\{\{VARIABILE:([^}]+)\}\}/g,
+                                    (_: string, name: string) => {
+                                        const res = ancestorResults[name];
+                                        if (res?.data) return JSON.stringify(res.data);
+                                        return `[Variabile "${name}" non trovata]`;
+                                    }
+                                );
+                                interpolatedPrompt = interpolatedPrompt.replace(
+                                    /\{\{GRAFICO:([^}]+)\}\}/g,
+                                    (_: string, name: string) => `[Grafico "${name}"]`
+                                );
+
+                                // Call AI execution endpoint (streaming)
+                                setExecutionPipeline(prev => prev.map(p =>
+                                    p.name === step.label ? { ...p, message: 'Esecuzione AI in corso...' } : p
+                                ));
+                                const aiResponse = await fetch('/api/ai-node/execute', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        prompt: interpolatedPrompt,
+                                        model: aiCfg.model,
+                                        outputType: aiCfg.outputType,
+                                    }),
+                                });
+
+                                if (!aiResponse.ok) {
+                                    let errMsg = `Errore AI (${aiResponse.status})`;
+                                    try { const errData = await aiResponse.json(); errMsg = errData.error || errMsg; } catch { /* */ }
+                                    stepError = errMsg;
+                                } else {
+                                    // Read streaming response
+                                    const reader = aiResponse.body?.getReader();
+                                    if (!reader) {
+                                        stepError = 'Stream AI non disponibile';
+                                    } else {
+                                        const decoder = new TextDecoder();
+                                        let buf = '';
+                                        let aiResult: any = null;
+                                        let aiErr: string | null = null;
+
+                                        while (true) {
+                                            const { done, value } = await reader.read();
+                                            if (done) break;
+                                            buf += decoder.decode(value, { stream: true });
+                                            const lines = buf.split('\n');
+                                            buf = lines.pop() || '';
+                                            for (const line of lines) {
+                                                if (!line.trim()) continue;
+                                                try {
+                                                    const evt = JSON.parse(line);
+                                                    if (evt.type === 'step') {
+                                                        setExecutionPipeline(prev => prev.map(p =>
+                                                            p.name === step.label ? { ...p, message: evt.label } : p
+                                                        ));
+                                                    } else if (evt.type === 'result') {
+                                                        if (evt.success) aiResult = evt.result;
+                                                        else aiErr = evt.error || 'Errore AI sconosciuto';
+                                                    }
+                                                } catch { /* skip malformed line */ }
+                                            }
+                                        }
+                                        // Process remaining buffer
+                                        if (buf.trim()) {
+                                            try {
+                                                const evt = JSON.parse(buf);
+                                                if (evt.type === 'result') {
+                                                    if (evt.success) aiResult = evt.result;
+                                                    else aiErr = evt.error;
+                                                }
+                                            } catch { /* ignore */ }
+                                        }
+
+                                        if (aiResult !== null && aiResult !== undefined) {
+                                            success = true;
+                                            const data = Array.isArray(aiResult) ? aiResult : [aiResult];
+                                            const resultName = aiCfg.outputName || node.name;
+                                            ancestorResults[resultName] = { data };
+                                            if (node.id) nodeIdResults[`${node.id}_ai`] = { data };
+                                            stepMessage = `Risultato AI (${data.length} righe)`;
+                                        } else {
+                                            stepError = aiErr || 'Nessun risultato AI prodotto';
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Priority 3: Specialized actions
                         else if (nType === 'sharepoint') {
                             success = true;
                             stepMessage = "Anteprima SharePoint simulata (azione reale saltata)";
@@ -495,9 +675,25 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
             for (const step of steps) {
                 if (step.type === 'write') continue;
                 const node = step.type === 'final' ? targetNode : step.ancestor;
+
+                // AI nodes: save lastResult back to the node's aiConfig
+                if ((step as any).pipelineType === 'ai') {
+                    const aiResultKey = node.aiConfig?.outputName || node.name;
+                    const aiRes = nodeIdResults[`${node.id}_ai`] || ancestorResults[aiResultKey];
+                    if (aiRes && node.id) {
+                        previewBatch.push({
+                            nodeId: node.id,
+                            isPython: false,
+                            isAi: true,
+                            aiResult: aiRes.data,
+                            aiOutputType: node.aiConfig?.outputType,
+                            result: aiRes
+                        });
+                    }
+                    continue;
+                }
+
                 // FIX: Use step's pipelineType (not pythonCode presence) for composite key and classification.
-                // For ancestor steps, pipelineType comes from nodeType (correctly set for hybrid entries).
-                // For final step, pipelineType comes from getNodeType(targetNode).
                 const isPy = (step as any).pipelineType === 'python';
                 const compositeKey = node.id ? `${node.id}_${isPy ? 'py' : 'sql'}` : null;
                 const res = (compositeKey && nodeIdResults[compositeKey]) || ancestorResults[node.sqlResultName || node.pythonResultName || node.name];
@@ -568,16 +764,18 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                                     <div className="flex items-center gap-2">
                                         <Badge variant={
                                             step.type === 'python' ? 'secondary' :
-                                                step.type === 'sql' ? 'outline' :
-                                                    step.type === 'sharepoint' ? 'destructive' :
-                                                        step.type === 'email' ? 'default' :
-                                                            'outline'
+                                                step.type === 'ai' ? 'secondary' :
+                                                    step.type === 'sql' ? 'outline' :
+                                                        step.type === 'sharepoint' ? 'destructive' :
+                                                            step.type === 'email' ? 'default' :
+                                                                'outline'
                                         } className={
                                             step.type === 'python' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                                                step.type === 'sql' ? 'bg-purple-100 text-purple-700 border-purple-200' :
-                                                    step.type === 'sharepoint' ? 'bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100' :
-                                                        step.type === 'email' ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' :
-                                                            ''
+                                                step.type === 'ai' ? 'bg-violet-100 text-violet-700 border-violet-200' :
+                                                    step.type === 'sql' ? 'bg-purple-100 text-purple-700 border-purple-200' :
+                                                        step.type === 'sharepoint' ? 'bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100' :
+                                                            step.type === 'email' ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' :
+                                                                ''
                                         }>
                                             {step.type.toUpperCase()}
                                         </Badge>

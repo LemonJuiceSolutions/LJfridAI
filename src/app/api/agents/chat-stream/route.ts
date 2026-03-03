@@ -5,7 +5,7 @@ import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
 import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
-import { createSqlAgentTools, doTestSqlQuery } from '@/ai/tools/sql-agent-tools';
+import { createSqlAgentTools, createInMemorySqlTools, doTestSqlQuery } from '@/ai/tools/sql-agent-tools';
 import { createPythonAgentTools } from '@/ai/tools/python-agent-tools';
 import type { ConsultedNodeType } from '@/ai/schemas/agent-schema';
 
@@ -110,6 +110,72 @@ DIVIETO ASSOLUTO: MAI oscillare tra varianti dello stesso nome. Se il nome non f
 Usa i tool per esplorare il database e testare le query.
 Alla fine, rispondi con un testo che spiega brevemente cosa hai fatto.
 Se hai una query SQL da proporre all'utente, includi la query SQL finale nel tuo messaggio racchiusa in un blocco di codice:
+\`\`\`sql
+SELECT ...
+\`\`\`
+Indica chiaramente la query come "QUERY FINALE" o "Ecco la query".`;
+}
+
+// ─── In-Memory SQLite System Prompt ─────────────────────────────────────────
+
+function buildInMemorySystemPrompt(opts: {
+    modelName: string;
+    companyId?: string;
+    inputTables: Record<string, any[]>;
+}) {
+    const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const companyInfo = opts.companyId ? `\nCompany ID: ${opts.companyId}` : '';
+
+    // Build table summary
+    const tableSummary = Object.entries(opts.inputTables)
+        .filter(([, rows]) => Array.isArray(rows) && rows.length > 0)
+        .map(([name, rows]) => {
+            const safeName = name.replace(/[^a-zA-Z0-9_]/g, '_');
+            const cols = Object.keys(rows[0]);
+            return `  - "${safeName}" (${rows.length} righe): colonne: ${cols.join(', ')}`;
+        })
+        .join('\n');
+
+    return `Sei un agente AI esperto in SQL. Stai utilizzando il modello: ${opts.modelName}. NON MOLLARE MAI. Sei tenace e persistente.
+DATA DI OGGI: ${today}
+${companyInfo}
+
+## MODALITA' DATABASE IN MEMORIA (SQLite)
+Stai lavorando con un database SQLite IN MEMORIA contenente dati dalla pipeline del nodo.
+NON hai un connettore a un database esterno. Le tabelle disponibili sono state caricate dalla pipeline.
+
+## TABELLE DISPONIBILI:
+${tableSummary}
+
+## SINTASSI SQLite (DIFFERENZE DA SQL Server/MySQL):
+- NON usare TOP N → usa LIMIT N
+- NON usare INFORMATION_SCHEMA → usa exploreDbSchema e exploreTableColumns
+- NON usare CAST(x AS DECIMAL) → usa CAST(x AS REAL)
+- NON usare ISNULL() → usa IFNULL() o COALESCE()
+- NON usare GETDATE() → usa date('now')
+- NON usare DATEPART/DATEDIFF → usa strftime()
+- NON usare + per concatenazione stringhe → usa || oppure printf()
+- I nomi delle tabelle e colonne sono case-sensitive
+
+## RAGIONAMENTO STRUTTURATO (OBBLIGATORIO):
+1. **COMPRENDI**: Cosa vuole esattamente l'utente?
+2. **ESPLORA**: Usa exploreDbSchema e exploreTableColumns per verificare tabelle e colonne
+3. **SCRIVI**: Genera la query SQL (sintassi SQLite!)
+4. **TESTA**: Verifica SEMPRE con testSqlQuery - MAI saltare
+5. **VALIDA**: I risultati rispondono alla domanda?
+6. **RISPONDI**: Restituisci la query finale
+
+## REGOLE:
+- TESTA SEMPRE la query con testSqlQuery prima di proporla
+- Se la query fallisce, correggi e RIPROVA
+- Rispondi SEMPRE in italiano
+- Sii CONCISO
+- ALL'INIZIO, usa exploreDbSchema per vedere le tabelle disponibili
+
+## COME RISPONDERE:
+Usa i tool per esplorare i dati e testare le query.
+Alla fine, rispondi con un testo che spiega brevemente cosa hai fatto.
+Se hai una query SQL da proporre, includi la query SQL finale in un blocco di codice:
 \`\`\`sql
 SELECT ...
 \`\`\`
@@ -408,12 +474,9 @@ function extractSiblingTableHints(nodeQueries?: Record<string, { query: string; 
 
 export async function POST(request: NextRequest) {
     try {
-        console.log('[chat-stream] === REQUEST START ===');
-
         // 1. Auth check
         const session = await getServerSession(authOptions);
         if (!session?.user?.email) {
-            console.log('[chat-stream] Unauthorized');
             return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
         }
 
@@ -429,14 +492,6 @@ export async function POST(request: NextRequest) {
             selectedDocuments,
             messages, // AI SDK v6 sends messages array, not a single userMessage
         } = body;
-
-        console.log('[chat-stream] Body keys:', Object.keys(body));
-        console.log('[chat-stream] nodeId:', nodeId, 'agentType:', agentType, 'connectorId:', connectorId);
-        console.log('[chat-stream] messages count:', Array.isArray(messages) ? messages.length : 'not array');
-        if (Array.isArray(messages) && messages.length > 0) {
-            const lastMsg = messages[messages.length - 1];
-            console.log('[chat-stream] last message role:', lastMsg?.role, 'parts:', JSON.stringify(lastMsg?.parts?.slice(0, 2)));
-        }
 
         // Extract user message: AI SDK sends `messages` array (UIMessage[])
         // The last user message contains the actual text in `parts`
@@ -457,15 +512,13 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        console.log('[chat-stream] Extracted userMessage:', userMessage?.substring(0, 100));
-
         if (!nodeId || !agentType || !userMessage) {
-            console.log('[chat-stream] Missing fields - nodeId:', !!nodeId, 'agentType:', !!agentType, 'userMessage:', !!userMessage);
             return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400 });
         }
 
         // Check for missing connectorId on SQL agent (skip if input tables are available)
-        const hasInputTables = tableSchema && Object.keys(tableSchema).length > 0;
+        const hasInputTables = (tableSchema && Object.keys(tableSchema).length > 0) ||
+            (inputTables && typeof inputTables === 'object' && Object.keys(inputTables).length > 0);
         if (agentType === 'sql' && !connectorId && !hasInputTables) {
             return new Response(JSON.stringify({
                 error: 'Connettore database mancante',
@@ -489,11 +542,8 @@ export async function POST(request: NextRequest) {
         const model = settings.model;
 
         if (!apiKey || !model) {
-            console.log('[chat-stream] No API key or model configured');
             return new Response(JSON.stringify({ error: 'OpenRouter API key or model not configured' }), { status: 400 });
         }
-
-        console.log('[chat-stream] Using model:', model);
 
         // 4. Get conversation history
         const conversation = await db.agentConversation.findUnique({
@@ -506,19 +556,30 @@ export async function POST(request: NextRequest) {
         const siblingTableHints = agentType === 'sql' ? extractSiblingTableHints(nodeQueries) : '';
 
         // 6. Build prompts (branched by agent type)
-        const systemPrompt = agentType === 'python'
-            ? buildPythonSystemPrompt({ modelName: model, connectorId, companyId, selectedDocuments })
-            : buildSystemPrompt({ modelName: model, connectorId, companyId });
+        const isInMemorySql = agentType === 'sql' && !connectorId && inputTables && typeof inputTables === 'object' && Object.keys(inputTables).length > 0;
+
+        let systemPrompt: string;
+        if (agentType === 'python') {
+            systemPrompt = buildPythonSystemPrompt({ modelName: model, connectorId, companyId, selectedDocuments });
+        } else if (isInMemorySql) {
+            systemPrompt = buildInMemorySystemPrompt({ modelName: model, companyId, inputTables });
+        } else {
+            systemPrompt = buildSystemPrompt({ modelName: model, connectorId, companyId });
+        }
 
         const userPrompt = agentType === 'python'
             ? buildPythonUserPrompt({ userMessage, script, tableSchema, inputTables, nodeQueries, connectorId, conversationHistory })
             : buildUserPrompt({ userMessage, script, tableSchema, inputTables, nodeQueries, connectorId, conversationHistory, discoveryContext, siblingTableHints });
 
         // 7. Create tools (branched by agent type)
-        const tools = agentType === 'python'
-            ? createPythonAgentTools({ connectorId, companyId })
-            : createSqlAgentTools({ connectorId, companyId });
-        console.log('[chat-stream] Tools created:', Object.keys(tools), 'agentType:', agentType);
+        let tools: Record<string, any>;
+        if (agentType === 'python') {
+            tools = createPythonAgentTools({ connectorId, companyId });
+        } else if (isInMemorySql) {
+            tools = createInMemorySqlTools({ inputTables, companyId });
+        } else {
+            tools = createSqlAgentTools({ connectorId, companyId });
+        }
 
         // 8. Get model
         const aiModel = getOpenRouterModel(apiKey, model);
@@ -538,8 +599,6 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        console.log('[chat-stream] Starting streamText...');
-
         // 10. Stream with Vercel AI SDK
         const result = streamText({
             model: aiModel,
@@ -550,11 +609,7 @@ export async function POST(request: NextRequest) {
             stopWhen: stepCountIs(15),
             maxRetries: 2,
             temperature: 0.3,
-            onStepFinish: ({ text, toolCalls }) => {
-                console.log('[chat-stream] Step finished - toolCalls:', toolCalls?.length || 0, 'textLen:', text?.length || 0);
-            },
             onFinish: async ({ text, usage }) => {
-                console.log('[chat-stream] === FINISHED === textLen:', text?.length, 'usage:', JSON.stringify(usage));
                 try {
                     const updatedHistory = [
                         ...conversationHistory,
@@ -577,14 +632,12 @@ export async function POST(request: NextRequest) {
                             data: { nodeId, agentType, script, tableSchema, inputTables, messages: updatedHistory, companyId },
                         });
                     }
-                    console.log('[chat-stream] Conversation saved');
                 } catch (e) {
                     console.error('[chat-stream] Failed to save conversation:', e);
                 }
             },
         });
 
-        console.log('[chat-stream] Returning UIMessageStreamResponse');
         return result.toUIMessageStreamResponse();
     } catch (error: any) {
         console.error('[chat-stream] FATAL Error:', error?.message, error?.stack?.substring(0, 500));

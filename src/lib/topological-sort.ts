@@ -10,7 +10,7 @@
  */
 export interface Node {
   id: string;
-  type: 'sql' | 'python' | 'email' | 'sharepoint' | 'hubspot' | 'trigger';
+  type: 'sql' | 'python' | 'email' | 'sharepoint' | 'hubspot' | 'trigger' | 'ai';
   name?: string;
   // SQL specific
   sqlQuery?: string;
@@ -21,6 +21,8 @@ export interface Node {
   pythonResultName?: string;
   pythonOutputType?: 'table' | 'variable' | 'chart' | 'html';
   pythonConnectorId?: string;
+  // AI specific
+  aiConfig?: { enabled?: boolean; outputName?: string; outputType?: string; lastResult?: any };
   // Email specific
   emailTemplate?: string;
   emailTo?: string;

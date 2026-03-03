@@ -460,6 +460,13 @@ export async function saveAncestorPreviewsBatchAction(
             let nodeUpdated = false;
             const res = preview.result;
 
+            // 0. AI Result: update aiConfig.lastResult
+            if ((preview as any).isAi && node.aiConfig) {
+                node.aiConfig.lastResult = (preview as any).aiResult;
+                node.aiConfig.lastRunAt = nowMs;
+                nodeUpdated = true;
+            }
+
             // 1. SQL Preview Data (Check for array data)
             // FIX: Only write to sqlPreviewData when this is NOT a Python result on a hybrid node.
             // On hybrid nodes (both sqlQuery and pythonCode), the Python result must NOT overwrite

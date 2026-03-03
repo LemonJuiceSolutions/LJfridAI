@@ -1427,6 +1427,21 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 htmlStyleOverrides: actualNode.pythonPreviewResult?.htmlStyleOverrides
                             });
                         }
+
+                        // Check for AI result output
+                        if (actualNode.aiConfig?.enabled && actualNode.aiConfig?.outputName && actualNode.aiConfig?.lastResult !== undefined) {
+                            ancestorItems.push({
+                                path: nodePath,
+                                nodeId: actualNode.id,
+                                nodeName: actualNode.question || actualNode.decision || (actualNode as any).name,
+                                name: actualNode.aiConfig.outputName,
+                                isPython: false,
+                                pythonOutputType: actualNode.aiConfig.outputType === 'table' ? 'table' : 'variable',
+                                data: Array.isArray(actualNode.aiConfig.lastResult)
+                                    ? actualNode.aiConfig.lastResult
+                                    : [actualNode.aiConfig.lastResult],
+                            });
+                        }
                     }
                 }
             });

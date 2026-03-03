@@ -324,5 +324,155 @@ export function createSqlAgentTools(opts: {
     return tools;
 }
 
+// ─── In-Memory SQLite Tools (for pipeline tables without DB connector) ────────
+
+/**
+ * Creates SQL tools that work with in-memory SQLite loaded from pipeline tables.
+ * Used when a node has inputTables from the pipeline but no database connector.
+ */
+export function createInMemorySqlTools(opts: {
+    inputTables: Record<string, any[]>;
+    companyId?: string;
+}) {
+    const tools: Record<string, any> = {};
+
+    // Lazy-init the in-memory database
+    let dbInstance: any = null;
+    let tableNames: string[] = [];
+
+    async function getDb() {
+        if (dbInstance) return dbInstance;
+
+        const initSqlJs = (await import('sql.js')).default;
+        const SQL = await initSqlJs();
+        dbInstance = new SQL.Database();
+
+        // Load each input table into SQLite
+        for (const [name, rows] of Object.entries(opts.inputTables)) {
+            if (!Array.isArray(rows) || rows.length === 0) continue;
+
+            // Sanitize table name for SQL
+            const safeName = name.replace(/[^a-zA-Z0-9_]/g, '_');
+            tableNames.push(safeName);
+
+            // Infer column types from first row
+            const columns = Object.keys(rows[0]);
+            const colDefs = columns.map(col => {
+                const sampleVal = rows.find(r => r[col] !== null && r[col] !== undefined)?.[col];
+                const sqlType = typeof sampleVal === 'number' ? 'REAL' : 'TEXT';
+                return `"${col}" ${sqlType}`;
+            });
+
+            // Create table
+            dbInstance.run(`CREATE TABLE "${safeName}" (${colDefs.join(', ')})`);
+
+            // Insert data (batch for performance)
+            const placeholders = columns.map(() => '?').join(', ');
+            const stmt = dbInstance.prepare(`INSERT INTO "${safeName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders})`);
+
+            for (const row of rows) {
+                const values = columns.map(col => {
+                    const v = row[col];
+                    if (v === null || v === undefined) return null;
+                    return typeof v === 'object' ? JSON.stringify(v) : v;
+                });
+                stmt.run(values);
+            }
+            stmt.free();
+        }
+
+        return dbInstance;
+    }
+
+    tools.exploreDbSchema = tool({
+        description: 'Esplora lo schema del database in memoria: elenca tutte le tabelle disponibili dalla pipeline.',
+        inputSchema: z.object({}),
+        execute: async () => {
+            await getDb();
+            const tableInfo = [];
+            for (const [name, rows] of Object.entries(opts.inputTables)) {
+                if (!Array.isArray(rows) || rows.length === 0) continue;
+                const safeName = name.replace(/[^a-zA-Z0-9_]/g, '_');
+                const columns = Object.keys(rows[0]);
+                tableInfo.push({
+                    table_name: safeName,
+                    original_name: name,
+                    row_count: rows.length,
+                    columns: columns,
+                    source: 'pipeline',
+                });
+            }
+            return JSON.stringify({ tables: tableInfo, note: 'Database in memoria con dati dalla pipeline. Usa testSqlQuery per eseguire query SQL.' }, null, 2);
+        },
+    });
+
+    tools.exploreTableColumns = tool({
+        description: 'Esplora le colonne di una tabella specifica con tipo di dato e valori di esempio.',
+        inputSchema: z.object({
+            tableName: z.string().describe('Il nome della tabella da esplorare.'),
+        }),
+        execute: async ({ tableName }) => {
+            const safeName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
+            // Find matching table
+            const entry = Object.entries(opts.inputTables).find(([name]) =>
+                name.replace(/[^a-zA-Z0-9_]/g, '_') === safeName || name === tableName
+            );
+            if (!entry || !Array.isArray(entry[1]) || entry[1].length === 0) {
+                return JSON.stringify({ error: `Tabella "${tableName}" non trovata.` });
+            }
+            const [, rows] = entry;
+            const columns = Object.keys(rows[0]).map(col => {
+                const sampleVals = rows.slice(0, 3).map(r => r[col]);
+                const type = typeof sampleVals.find(v => v !== null && v !== undefined);
+                return { column_name: col, data_type: type === 'number' ? 'REAL' : 'TEXT', sample_values: sampleVals };
+            });
+            return JSON.stringify({ table: safeName, columns, row_count: rows.length }, null, 2);
+        },
+    });
+
+    tools.testSqlQuery = tool({
+        description: "Esegue una query SQL sul database in memoria (SQLite). Supporta SELECT, WHERE, JOIN, GROUP BY, ORDER BY, aggregazioni, ecc. Le tabelle contengono dati reali dalla pipeline.",
+        inputSchema: z.object({
+            query: z.string().describe('La query SQL da eseguire (sintassi SQLite).'),
+        }),
+        execute: async ({ query }) => {
+            try {
+                const sqlDb = await getDb();
+                const results = sqlDb.exec(query);
+                if (!results || results.length === 0) {
+                    return JSON.stringify({ success: true, rowCount: 0, columns: [], data: [], message: 'Query eseguita, nessun risultato.' });
+                }
+                const { columns, values } = results[0];
+                const data = values.map((row: any[]) => {
+                    const obj: Record<string, any> = {};
+                    columns.forEach((col: string, i: number) => { obj[col] = row[i]; });
+                    return obj;
+                });
+                return JSON.stringify({
+                    success: true,
+                    rowCount: data.length,
+                    columns,
+                    sampleData: data.slice(0, 10),
+                    ...(data.length > 10 ? { note: `Mostrate 10 righe su ${data.length}. Usa LIMIT per controllare l'output.` } : {}),
+                }, null, 2);
+            } catch (e: any) {
+                return JSON.stringify({ error: e.message, suggestion: 'Controlla la sintassi SQLite. Usa exploreDbSchema per vedere le tabelle disponibili.' });
+            }
+        },
+    });
+
+    // Also add KB tools if companyId available
+    if (opts.companyId) {
+        const cpid = opts.companyId;
+        tools.searchKnowledgeBase = tool({
+            description: 'Cerca nella Knowledge Base aziendale query SQL simili.',
+            inputSchema: z.object({ query: z.string().describe('Termine di ricerca.'), companyId: z.string().describe("L'ID della company.") }),
+            execute: async ({ query, companyId }) => doSearchKB({ query, companyId: companyId || cpid }),
+        });
+    }
+
+    return tools;
+}
+
 // Re-export doTestSqlQuery for use in pre-flight discovery
 export { doTestSqlQuery };

@@ -826,7 +826,7 @@ export class SchedulerService {
         current = current.options[part];
 
         // Extract relevant node info
-        const allNames = [current.name, current.sqlResultName, current.pythonResultName].filter(Boolean) as string[];
+        const allNames = [current.name, current.sqlResultName, current.pythonResultName, current.aiConfig?.outputName].filter(Boolean) as string[];
         const nodeInfo: any = {
           name: allNames[0] || current.name,
           allNames: allNames,
@@ -834,12 +834,14 @@ export class SchedulerService {
           // This ensures hybrid nodes (both sqlQuery and pythonCode) enter the SQL branch in executeAncestorChain,
           // which has proper hybrid handling (runs SQL first, then Python chart code)
           isPython: current.sqlQuery ? false : !!current.pythonCode,
+          isAi: !!(current.aiConfig?.enabled && current.aiConfig?.outputName && !current.sqlQuery && !current.pythonCode),
           connectorId: current.pythonConnectorId || current.sqlConnectorId || current.connectorId,
           sqlQuery: current.sqlQuery,
           pythonCode: current.pythonCode,
           pythonOutputType: current.pythonOutputType,
           pythonResultName: current.pythonResultName,
           sqlResultName: current.sqlResultName,
+          aiConfig: current.aiConfig,
           pipelineDependencies: current.pipelineDependencies || [],
           writesToDatabase: current.sqlExportTargetTableName ? true : false,
           sqlExportTargetTableName: current.sqlExportTargetTableName,
@@ -874,23 +876,20 @@ export class SchedulerService {
       }
 
       // Extract node info if it has a name
-      const allNames = [node.name, node.sqlResultName, node.pythonResultName].filter(Boolean) as string[];
+      const allNames = [node.name, node.sqlResultName, node.pythonResultName, node.aiConfig?.outputName].filter(Boolean) as string[];
       const nodeInfo: any = allNames.length > 0 ? {
         name: allNames[0], // Primary name
         allNames: allNames, // Used for matching
         // IMPORTANT: Final robust classification
-        // 1. If it's a CHART, it MUST be Python (SQL can't do charts directly)
-        // 2. If it has a SQL query, it MUST be SQL (prioritize SQL over Python table/variable)
-        // 3. Otherwise, check for Python code
-        // CRITICAL: If has sqlQuery, ALWAYS treat as SQL (even if pythonOutputType=chart)
-        // Charts don't produce table data, so children can't use them. SQL provides data.
         isPython: node.sqlQuery ? false : !!(node.pythonCode || node.pythonOutputType),
+        isAi: !!(node.aiConfig?.enabled && node.aiConfig?.outputName && !node.sqlQuery && !node.pythonCode),
         connectorId: node.pythonConnectorId || node.sqlConnectorId || node.connectorId,
         sqlQuery: node.sqlQuery,
         pythonCode: node.pythonCode,
         pythonOutputType: node.pythonOutputType,
         pythonResultName: node.pythonResultName,
         sqlResultName: node.sqlResultName,
+        aiConfig: node.aiConfig,
         pipelineDependencies: node.pipelineDependencies || [],
         writesToDatabase: node.sqlExportTargetTableName ? true : false,
         sqlExportTargetTableName: node.sqlExportTargetTableName,
@@ -935,7 +934,7 @@ export class SchedulerService {
     const collect = (node: any, currentPath: string = 'root') => {
       if (!node || typeof node !== 'object') return;
 
-      const allNames = [node.name, node.sqlResultName, node.pythonResultName].filter(Boolean) as string[];
+      const allNames = [node.name, node.sqlResultName, node.pythonResultName, node.aiConfig?.outputName].filter(Boolean) as string[];
       const nodeName = allNames[0] || node.id || 'unknown';
       const nodePath = currentPath;
 
@@ -950,13 +949,9 @@ export class SchedulerService {
           name: allNames[0],
           allNames,
           nodePath, // Track the path to this node
-          // IMPORTANT: Final robust classification
-          // 1. If it's a CHART, it MUST be Python
-          // 2. If it has a SQL query, it MUST be SQL
-          // 3. Otherwise, check for Python code/result name
-          // CRITICAL: If has sqlQuery, ALWAYS treat as SQL (even if pythonOutputType=chart)
-          // Charts don't produce table data, so children can't use them. SQL provides data.
           isPython: node.sqlQuery ? false : !!(node.pythonCode || node.pythonResultName || node.pythonOutputType),
+          isAi: !!(node.aiConfig?.enabled && node.aiConfig?.outputName && !node.sqlQuery && !node.pythonCode),
+          aiConfig: node.aiConfig,
           connectorId: node.pythonConnectorId || node.sqlConnectorId || node.connectorId,
           // Ensure export fields are always present and correct
           writesToDatabase: hasExportConfig,

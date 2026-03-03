@@ -34,13 +34,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Play, Database, FileCode, FileCode2, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info, Settings2, ChevronsUpDown } from 'lucide-react';
+import { Play, Database, FileCode, FileCode2, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info, Settings2, ChevronsUpDown, Sparkles, Coins } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
-import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig } from '@/lib/types';
+import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig, AIConfig } from '@/lib/types';
 import { Input } from '../ui/input';
 import _ from 'lodash';
 import { useToast } from '@/hooks/use-toast';
-import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction, exportTableToSqlAction, fetchTableDataAction, executeEmailAction, getAuthenticatedUser, processDescriptionAction, rephraseQuestionAction, updateTreeNodeAction } from '@/app/actions';
+import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction, exportTableToSqlAction, fetchTableDataAction, executeEmailAction, getAuthenticatedUser, processDescriptionAction, rephraseQuestionAction, updateTreeNodeAction, fetchOpenRouterModelsAction } from '@/app/actions';
 import { sendEmailWithConnectorAction, sendTestEmailWithDataAction } from '@/app/actions/connectors';
 import { executeAncestorChainAction, findAncestorsAction } from '@/app/actions/ancestors';
 import { uploadFile } from '@/lib/storage-client';
@@ -50,6 +50,7 @@ import { DataTable } from '../ui/data-table';
 import { EmailBodyEditor, EmailBodyEditorRef } from './email-body-editor';
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { cn } from '@/lib/utils';
 
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import SmartWidgetRenderer from '@/components/widgets/builder/SmartWidgetRenderer';
@@ -242,18 +243,8 @@ const getInputTables = (selectedPipelines: string[], availableInputTables: any[]
     const table = availableInputTables.find(t => t.name === pipelineName);
     if (!table) return;
 
-    // 1. Add the main table itself if it has data
     if (table.data && Array.isArray(table.data)) {
       tables[table.name] = table.data;
-    }
-
-    // 2. Add dependencies that might have data (though usually only ancestors do)
-    if (table.pipelineDependencies) {
-      table.pipelineDependencies.forEach((dep: any) => {
-        // Note: dependencies don't usually carry data in this structure, 
-        // but if we had it, we'd add it here.
-        // For now, we mainly rely on the main table result or explicit ancestor data.
-      });
     }
   });
 
@@ -525,6 +516,22 @@ export default function EditNodeDialog({
 
 
 
+  // AI Section State
+  const [aiConfig, setAiConfig] = useState<AIConfig>({ enabled: false, prompt: '', model: 'google/gemini-2.0-flash-001', outputType: 'string', outputName: '' });
+  const [aiResult, setAiResult] = useState<any>(null);
+  const [aiResultTimestamp, setAiResultTimestamp] = useState<number | null>(null);
+  const [isRunningAi, setIsRunningAi] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiModels, setAiModels] = useState<any[]>([]);
+  const [aiModelSelectorOpen, setAiModelSelectorOpen] = useState(false);
+  const [aiModelSearch, setAiModelSearch] = useState('');
+  const [aiUsage, setAiUsage] = useState<{ promptTokens: number; completionTokens: number; totalTokens: number } | null>(null);
+  const [aiPreviewExpanded, setAiPreviewExpanded] = useState(true);
+  const [aiSelectedDocuments, setAiSelectedDocuments] = useState<string[]>([]);
+  const [aiDocsPopoverOpen, setAiDocsPopoverOpen] = useState(false);
+  const [aiAgentSteps, setAiAgentSteps] = useState<{ round: number; step: string; status: string; label: string }[]>([]);
+  const [aiProgressStep, setAiProgressStep] = useState(0); // 0=idle, 1=ricerca, 2=formattazione, 3=verifica
+
   // Node schedules state (loaded on dialog open)
   const [nodeSchedules, setNodeSchedules] = useState<Record<string, any>>({});
   const currentNodeId = (initialNode as any)?.id || nodePath;
@@ -545,6 +552,10 @@ export default function EditNodeDialog({
     if (isOpen) {
       listAllDocumentsAction().then(res => {
         if (res.files) setUploadedDocuments(res.files);
+      });
+      // Fetch AI models for the AI section model selector
+      fetchOpenRouterModelsAction().then(result => {
+        if (result.data) setAiModels(result.data);
       });
     }
   }, [isOpen]);
@@ -770,7 +781,30 @@ export default function EditNodeDialog({
         setSqlExportTargetTableName('');
       }
 
-
+      // Load AI Config
+      if ((node as any).aiConfig) {
+        const loadedAiConfig = (node as any).aiConfig;
+        setAiConfig({
+          enabled: loadedAiConfig.enabled ?? false,
+          prompt: loadedAiConfig.prompt || '',
+          model: loadedAiConfig.model || 'google/gemini-2.0-flash-001',
+          outputType: loadedAiConfig.outputType || 'string',
+          outputName: loadedAiConfig.outputName || '',
+        });
+        if (loadedAiConfig.lastResult !== undefined) {
+          setAiResult(loadedAiConfig.lastResult);
+          setAiResultTimestamp(loadedAiConfig.lastRunAt || null);
+        } else {
+          setAiResult(null);
+          setAiResultTimestamp(null);
+        }
+        setAiSelectedDocuments(loadedAiConfig.documents || []);
+      } else {
+        setAiConfig({ enabled: false, prompt: '', model: 'google/gemini-2.0-flash-001', outputType: 'string', outputName: '' });
+        setAiResult(null);
+        setAiResultTimestamp(null);
+        setAiSelectedDocuments([]);
+      }
 
     }
   }, [isOpen, initialNode, nodeType, availableInputTables]);
@@ -1597,6 +1631,164 @@ export default function EditNodeDialog({
     }
   };
 
+  // AI Execution Handler (streaming)
+  const handleRunAi = async () => {
+    if (!aiConfig.prompt.trim()) {
+      toast({ title: 'Il prompt AI è obbligatorio', variant: 'destructive' });
+      return;
+    }
+
+    setIsRunningAi(true);
+    setAiError(null);
+    setAiAgentSteps([]);
+    setAiProgressStep(0);
+
+    try {
+      // Interpolate placeholders client-side before sending
+      let interpolatedPrompt = aiConfig.prompt;
+
+      // Replace {{TABELLA:name}} with JSON-stringified table data
+      interpolatedPrompt = interpolatedPrompt.replace(
+        /\{\{TABELLA:([^}]+)\}\}/g,
+        (_, name) => {
+          if (name === sqlResultName && sqlPreviewData) {
+            const rows = Array.isArray(sqlPreviewData) ? sqlPreviewData.slice(0, 100) : sqlPreviewData;
+            return JSON.stringify(rows);
+          }
+          if (name === pythonResultName && pythonPreviewResult?.data) {
+            const rows = Array.isArray(pythonPreviewResult.data) ? pythonPreviewResult.data.slice(0, 100) : pythonPreviewResult.data;
+            return JSON.stringify(rows);
+          }
+          const ancestor = availableInputTables?.find(t => t.name === name);
+          if (ancestor) {
+            const data = (ancestor as any).data;
+            if (data) {
+              const rows = Array.isArray(data) ? data.slice(0, 100) : data;
+              return JSON.stringify(rows);
+            }
+          }
+          return `[Tabella "${name}" non trovata]`;
+        }
+      );
+
+      // Replace {{VARIABILE:name}} with variable value
+      interpolatedPrompt = interpolatedPrompt.replace(
+        /\{\{VARIABILE:([^}]+)\}\}/g,
+        (_, name) => {
+          if (name === pythonResultName && pythonPreviewResult?.variables) {
+            return JSON.stringify(pythonPreviewResult.variables);
+          }
+          const ancestor = availableInputTables?.find(t => t.name === name && t.pythonOutputType === 'variable');
+          if (ancestor && (ancestor as any).data) return JSON.stringify((ancestor as any).data);
+          return `[Variabile "${name}" non trovata]`;
+        }
+      );
+
+      // Replace {{GRAFICO:name}} with chart config JSON
+      interpolatedPrompt = interpolatedPrompt.replace(
+        /\{\{GRAFICO:([^}]+)\}\}/g,
+        (_, name) => {
+          if (name === pythonResultName && pythonPreviewResult?.chartHtml) {
+            return pythonPreviewResult.chartHtml;
+          }
+          return `[Grafico "${name}" non trovato]`;
+        }
+      );
+
+      const response = await fetch('/api/ai-node/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: interpolatedPrompt,
+          model: aiConfig.model,
+          outputType: aiConfig.outputType,
+          documents: aiSelectedDocuments.length > 0 ? aiSelectedDocuments : undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        // Non-streaming error (auth, missing fields, etc.)
+        let errMsg = `Errore server (${response.status})`;
+        try { const errData = await response.json(); errMsg = errData.error || errMsg; } catch { /* */ }
+        setAiError(errMsg);
+        toast({ variant: 'destructive', title: 'Errore AI', description: errMsg });
+        return;
+      }
+
+      // Read streaming response line-by-line
+      const reader = response.body?.getReader();
+      if (!reader) { setAiError('Stream non disponibile'); return; }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let event: any;
+          try { event = JSON.parse(line); } catch { continue; }
+
+          if (event.type === 'step') {
+            // Update progress stepper based on step name
+            const stepMap: Record<string, number> = { gather: 1, format: 2, validate: 3 };
+            if (stepMap[event.step]) setAiProgressStep(stepMap[event.step]);
+
+            // Add/update step in the pipeline list
+            setAiAgentSteps(prev => {
+              const key = `${event.round}-${event.step}`;
+              const existing = prev.findIndex(s => `${s.round}-${s.step}` === key);
+              const newStep = { round: event.round, step: event.step, status: event.status, label: event.label };
+              if (existing >= 0) {
+                const updated = [...prev];
+                updated[existing] = newStep;
+                return updated;
+              }
+              return [...prev, newStep];
+            });
+          } else if (event.type === 'result') {
+            if (event.success) {
+              setAiResult(event.result);
+              setAiResultTimestamp(Date.now());
+              if (event.usage) setAiUsage(event.usage);
+              toast({ title: 'AI completato', description: 'Risultato generato con successo.' });
+            } else {
+              setAiError(event.error || 'Errore sconosciuto');
+              toast({ variant: 'destructive', title: 'Errore AI', description: event.error });
+            }
+          }
+        }
+      }
+
+      // Process any remaining buffer
+      if (buffer.trim()) {
+        try {
+          const event = JSON.parse(buffer);
+          if (event.type === 'result') {
+            if (event.success) {
+              setAiResult(event.result);
+              setAiResultTimestamp(Date.now());
+              if (event.usage) setAiUsage(event.usage);
+            } else {
+              setAiError(event.error || 'Errore sconosciuto');
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    } catch (e: any) {
+      setAiError(e.message);
+      toast({ variant: 'destructive', title: 'Errore', description: e.message });
+    } finally {
+      setIsRunningAi(false);
+      setAiProgressStep(0);
+    }
+  };
 
   const handleSaveClick = async () => {
     // Validation based on CURRENT node type, with fallback for type conversion case
@@ -1722,6 +1914,19 @@ export default function EditNodeDialog({
         newNodeData.emailAction = emailConfig;
       } else {
         delete newNodeData.emailAction;
+      }
+
+      // AI Config
+      if (aiConfig.prompt.trim()) {
+        newNodeData.aiConfig = {
+          ...aiConfig,
+          enabled: true,
+          lastResult: aiResult,
+          lastRunAt: aiResultTimestamp,
+          documents: aiSelectedDocuments.length > 0 ? aiSelectedDocuments : undefined,
+        };
+      } else {
+        delete newNodeData.aiConfig;
       }
 
       // SQL Export Action
@@ -4517,6 +4722,474 @@ export default function EditNodeDialog({
                   </div>
                 </CollapsibleSection>
               )}
+
+              {/* AI Section */}
+              <CollapsibleSection
+                title="AI"
+                count={aiConfig.prompt.trim() ? 1 : 0}
+                storageKey={`collapse-ai-${treeId}-${nodePath}`}
+                icon={Sparkles}
+              >
+                <div className="grid gap-3 pt-3">
+                  {/* Row 1: Model Selector */}
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-semibold">Prompt AI</Label>
+                    <Dialog open={aiModelSelectorOpen} onOpenChange={setAiModelSelectorOpen}>
+                      <Button variant="outline" className="justify-between text-xs h-8" disabled={componentIsSaving} type="button" onClick={() => setAiModelSelectorOpen(true)}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                          <span className="truncate">
+                            {aiModels.find(m => m.id === aiConfig.model)?.name || aiConfig.model.split('/').pop()}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {(() => {
+                            const sel = aiModels.find(m => m.id === aiConfig.model);
+                            if (!sel?.pricing) return null;
+                            return (
+                              <span className="text-[9px] font-mono text-muted-foreground">
+                                ${(parseFloat(sel.pricing.prompt) * 1000000).toFixed(2)} / ${(parseFloat(sel.pricing.completion) * 1000000).toFixed(2)} per 1M tok
+                              </span>
+                            );
+                          })()}
+                          <ChevronsUpDown className="h-3 w-3 opacity-50 shrink-0" />
+                        </div>
+                      </Button>
+                      <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+                        <DialogHeader>
+                          <DialogTitle className="text-sm">Seleziona Modello AI</DialogTitle>
+                        </DialogHeader>
+                        <div className="flex items-center border rounded-md px-2 py-1.5 my-1 bg-muted/30">
+                          <Search className="mr-1.5 h-3 w-3 opacity-50" />
+                          <Input
+                            placeholder="Cerca modello..."
+                            value={aiModelSearch}
+                            onChange={e => setAiModelSearch(e.target.value)}
+                            className="border-0 focus-visible:ring-0 bg-transparent h-7 text-xs"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="flex-1 overflow-auto border rounded-md min-h-0">
+                          {aiModels.length === 0 ? (
+                            <div className="flex items-center justify-center h-40">
+                              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                              <span className="ml-2 text-xs text-muted-foreground">Caricamento modelli...</span>
+                            </div>
+                          ) : (
+                            <div className="divide-y">
+                              {aiModels
+                                .filter(m => m.name.toLowerCase().includes(aiModelSearch.toLowerCase()) || m.id.toLowerCase().includes(aiModelSearch.toLowerCase()))
+                                .map(m => {
+                                  const isSelected = aiConfig.model === m.id;
+                                  return (
+                                    <div
+                                      key={m.id}
+                                      className={cn(
+                                        "flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors",
+                                        isSelected && "bg-primary/5 dark:bg-primary/20"
+                                      )}
+                                      onClick={() => {
+                                        setAiConfig(prev => ({ ...prev, model: m.id }));
+                                        setAiModelSelectorOpen(false);
+                                        setAiModelSearch('');
+                                      }}
+                                    >
+                                      <Check className={cn("h-3.5 w-3.5 shrink-0 text-primary", isSelected ? "opacity-100" : "opacity-0")} />
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-medium truncate">{m.name}</p>
+                                        <p className="text-[9px] text-muted-foreground font-mono truncate">{m.id}</p>
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        {m.context_length && (
+                                          <span className="text-[9px] bg-muted px-1.5 py-0.5 rounded">
+                                            {m.context_length >= 1000000 ? `${(m.context_length / 1000000).toFixed(1)}M` : `${Math.round(m.context_length / 1000)}K`} ctx
+                                          </span>
+                                        )}
+                                        {m.pricing && (
+                                          <span className="text-[9px] font-mono bg-muted px-1.5 py-0.5 rounded">
+                                            ${(parseFloat(m.pricing.prompt) * 1000000).toFixed(2)} / ${(parseFloat(m.pricing.completion) * 1000000).toFixed(2)}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              {aiModels.filter(m => m.name.toLowerCase().includes(aiModelSearch.toLowerCase()) || m.id.toLowerCase().includes(aiModelSearch.toLowerCase())).length === 0 && (
+                                <div className="text-center py-8 text-xs text-muted-foreground">
+                                  Nessun modello trovato per &quot;{aiModelSearch}&quot;
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground text-right pt-1">
+                          {aiModels.filter(m => m.name.toLowerCase().includes(aiModelSearch.toLowerCase()) || m.id.toLowerCase().includes(aiModelSearch.toLowerCase())).length} modelli
+                          {' '}&middot; Prezzi in $/1M token (input / output)
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+
+                  {/* Row 2: Prompt + Resources sidebar (like email section) */}
+                  <div className="flex flex-col md:flex-row gap-3">
+                    {/* Prompt textarea */}
+                    <Textarea
+                      value={aiConfig.prompt}
+                      onChange={(e) => setAiConfig(prev => ({ ...prev, prompt: e.target.value, enabled: true }))}
+                      placeholder={"Scrivi il prompt per l'AI...\nUsa {{TABELLA:nome}}, {{VARIABILE:nome}}, {{GRAFICO:nome}} per inserire dati dalla pipeline."}
+                      className="min-h-[200px] font-mono text-sm flex-1"
+                      disabled={componentIsSaving}
+                    />
+
+                    {/* Resources sidebar - same pattern as email "RISORSE DISPONIBILI" */}
+                    <div className="w-full md:w-[240px] bg-muted/10 border rounded-lg flex flex-col overflow-hidden shadow-sm shrink-0">
+                      <div className="p-2 border-b bg-muted/30">
+                        <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">Risorse Disponibili</h4>
+                      </div>
+                      <div className="p-2 overflow-y-auto space-y-3 flex-1">
+
+                        {/* Tables */}
+                        {((availableInputTables && availableInputTables.filter(t => !t.pythonOutputType || t.pythonOutputType === 'table').length > 0) || sqlResultName) && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-semibold flex items-center gap-1.5 text-primary"><Database className="h-3 w-3" /> Tabelle</p>
+                            <div className="space-y-1">
+                              {availableInputTables?.filter(t => !t.pythonOutputType || t.pythonOutputType === 'table').map((table) => (
+                                <div key={table.name} className="bg-background border rounded p-1.5 text-xs hover:border-primary/50 transition-colors">
+                                  <div className="font-medium text-[10px] truncate mb-1" title={table.name}>{table.name}</div>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="h-5 text-[9px] px-1.5"
+                                    type="button"
+                                    onClick={() => setAiConfig(prev => ({ ...prev, prompt: prev.prompt + `{{TABELLA:${table.name}}}` }))}
+                                  >
+                                    <Download className="h-2.5 w-2.5 mr-0.5" /> Inserisci
+                                  </Button>
+                                </div>
+                              ))}
+                              {sqlResultName && (
+                                <div className="bg-background border rounded p-1.5 text-xs hover:border-primary/50 transition-colors border-l-4 border-l-primary/30">
+                                  <div className="font-medium text-[10px] truncate mb-1" title={sqlResultName}>SQL: {sqlResultName}</div>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="h-5 text-[9px] px-1.5"
+                                    type="button"
+                                    onClick={() => setAiConfig(prev => ({ ...prev, prompt: prev.prompt + `{{TABELLA:${sqlResultName}}}` }))}
+                                  >
+                                    <Download className="h-2.5 w-2.5 mr-0.5" /> Inserisci
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Python Outputs */}
+                        {(() => {
+                          const allPythonOutputs = [
+                            ...(pythonResultName && pythonCode ? [{
+                              name: pythonResultName,
+                              type: pythonOutputType,
+                              isCurrent: true
+                            }] : []),
+                            ...(availableInputTables || [])
+                              .filter(t => t.isPython && t.pythonCode && t.name !== pythonResultName)
+                              .map(t => ({
+                                name: t.name,
+                                type: t.pythonOutputType || 'table',
+                                isCurrent: false
+                              }))
+                          ];
+                          if (allPythonOutputs.length === 0) return null;
+                          return (
+                            <div className="space-y-1.5 pt-2 border-t">
+                              <p className="text-xs font-semibold flex items-center gap-1.5 text-purple-600">
+                                <Code className="h-3 w-3" /> Output Python
+                              </p>
+                              {allPythonOutputs.map((output, idx) => (
+                                <div key={`${output.name}-${idx}`} className="bg-background border rounded p-1.5 text-xs hover:border-purple-300 transition-colors border-l-4 border-l-purple-500/30">
+                                  <div className="font-medium text-[10px] truncate mb-1" title={output.name}>
+                                    {output.name} <span className="opacity-70 text-[9px]">({output.type} {output.isCurrent ? '- Corrente' : '- Collegato'})</span>
+                                  </div>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="h-5 text-[9px] px-1.5"
+                                    type="button"
+                                    onClick={() => {
+                                      const placeholder = output.type === 'chart' ? 'GRAFICO' : output.type === 'variable' ? 'VARIABILE' : 'TABELLA';
+                                      setAiConfig(prev => ({ ...prev, prompt: prev.prompt + `{{${placeholder}:${output.name}}}` }));
+                                    }}
+                                  >
+                                    {output.type === 'chart' && <><BarChart3 className="h-2.5 w-2.5 mr-0.5" /> Grafico</>}
+                                    {output.type === 'table' && <><Download className="h-2.5 w-2.5 mr-0.5" /> Tabella</>}
+                                    {output.type === 'variable' && <><Code className="h-2.5 w-2.5 mr-0.5" /> Variabile</>}
+                                    {output.type === 'html' && <><Code className="h-2.5 w-2.5 mr-0.5" /> HTML</>}
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Empty State */}
+                        {(!availableInputTables || availableInputTables.length === 0) && !sqlResultName && !pythonResultName && (
+                          <div className="text-center py-6 text-muted-foreground px-2">
+                            <p className="text-[10px] italic">Nessuna risorsa disponibile.</p>
+                            <p className="text-[9px] opacity-70 mt-1">Configura tabelle o output Python per vederli qui.</p>
+                          </div>
+                        )}
+
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Row 3: Output Type Buttons */}
+                  <div className="flex gap-1.5">
+                    <Button
+                      type="button"
+                      variant={aiConfig.outputType === 'string' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setAiConfig(prev => ({ ...prev, outputType: 'string' }))}
+                      className="flex-1 h-7 text-[11px]"
+                      disabled={componentIsSaving}
+                    >
+                      <AlignJustify className="h-3 w-3 mr-1" />
+                      Testo
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={aiConfig.outputType === 'number' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setAiConfig(prev => ({ ...prev, outputType: 'number' }))}
+                      className="flex-1 h-7 text-[11px]"
+                      disabled={componentIsSaving}
+                    >
+                      <Variable className="h-3 w-3 mr-1" />
+                      Numero
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={aiConfig.outputType === 'table' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setAiConfig(prev => ({ ...prev, outputType: 'table' }))}
+                      className="flex-1 h-7 text-[11px]"
+                      disabled={componentIsSaving}
+                    >
+                      <Table className="h-3 w-3 mr-1" />
+                      Tabella
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={aiConfig.outputType === 'chart' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setAiConfig(prev => ({ ...prev, outputType: 'chart' }))}
+                      className="flex-1 h-7 text-[11px]"
+                      disabled={componentIsSaving}
+                    >
+                      <BarChart3 className="h-3 w-3 mr-1" />
+                      Grafico
+                    </Button>
+                  </div>
+
+                  {/* Row 4: Output Name + Execute Button (same row, like Python section) */}
+                  <div className="flex justify-between items-end gap-4">
+                    <div className="grid gap-1 flex-1">
+                      <Label className="text-[11px]">Nome Output (per pipeline)</Label>
+                      <Input
+                        value={aiConfig.outputName}
+                        onChange={(e) => setAiConfig(prev => ({ ...prev, outputName: e.target.value }))}
+                        placeholder="Es. aiAnalysis (per riutilizzo)"
+                        disabled={componentIsSaving}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleRunAi}
+                      disabled={isRunningAi || !aiConfig.prompt.trim() || componentIsSaving}
+                      className="bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm h-8"
+                    >
+                      {isRunningAi ? (
+                        <><Loader2 className="h-4 w-4 animate-spin mr-2 text-purple-600" /> Esecuzione...</>
+                      ) : (
+                        <><Sparkles className="h-4 w-4 mr-2" /> Esegui AI</>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Agent Pipeline Visualization - shown during and after execution */}
+                  {(isRunningAi || aiAgentSteps.length > 0) && (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                      {/* Visual Stepper: 3 circles - Ricerca → Formattazione → Verifica */}
+                      {isRunningAi && (
+                        <div className="flex items-center justify-center gap-6 py-3 animate-in fade-in zoom-in-95 duration-300">
+                          <div className="flex flex-col items-center gap-1.5">
+                            <div className={`h-7 w-7 rounded-full flex items-center justify-center border-2 transition-all ${aiProgressStep >= 1 ? 'border-purple-500 bg-purple-500 text-white' : 'border-muted text-muted-foreground'}`}>
+                              {aiProgressStep > 1 ? <Check className="h-4 w-4" /> : aiProgressStep === 1 ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                            </div>
+                            <span className={`text-[10px] font-medium ${aiProgressStep >= 1 ? 'text-purple-600 dark:text-purple-400' : 'text-muted-foreground'}`}>Ricerca</span>
+                          </div>
+                          <div className={`h-0.5 w-12 transition-all ${aiProgressStep >= 2 ? 'bg-purple-500' : 'bg-muted'}`} />
+                          <div className="flex flex-col items-center gap-1.5">
+                            <div className={`h-7 w-7 rounded-full flex items-center justify-center border-2 transition-all ${aiProgressStep >= 2 ? 'border-purple-500 bg-purple-500 text-white' : 'border-muted text-muted-foreground'}`}>
+                              {aiProgressStep > 2 ? <Check className="h-4 w-4" /> : aiProgressStep === 2 ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Code className="h-3.5 w-3.5" />}
+                            </div>
+                            <span className={`text-[10px] font-medium ${aiProgressStep >= 2 ? 'text-purple-600 dark:text-purple-400' : 'text-muted-foreground'}`}>Formattazione</span>
+                          </div>
+                          <div className={`h-0.5 w-12 transition-all ${aiProgressStep >= 3 ? 'bg-purple-500' : 'bg-muted'}`} />
+                          <div className="flex flex-col items-center gap-1.5">
+                            <div className={`h-7 w-7 rounded-full flex items-center justify-center border-2 transition-all ${aiProgressStep >= 3 ? 'border-purple-500 bg-purple-500 text-white' : 'border-muted text-muted-foreground'}`}>
+                              {aiProgressStep === 3 ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                            </div>
+                            <span className={`text-[10px] font-medium ${aiProgressStep >= 3 ? 'text-purple-600 dark:text-purple-400' : 'text-muted-foreground'}`}>Verifica</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pipeline Steps List - like SQL/Python execution pipeline */}
+                      {aiAgentSteps.length > 0 && (
+                        <div className="border rounded-md overflow-hidden bg-muted/20 mt-2">
+                          <div className="p-2 px-3 bg-muted/40 border-b flex items-center justify-between">
+                            <h4 className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-2">
+                              <Sparkles className="h-3.5 w-3.5" />
+                              Pipeline Agente AI
+                            </h4>
+                            <div className="flex items-center gap-2">
+                              {isRunningAi && <Loader2 className="h-3 w-3 animate-spin text-purple-500" />}
+                              {!isRunningAi && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-5 w-5"
+                                  onClick={() => setAiAgentSteps([])}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="max-h-[200px] overflow-y-auto">
+                            {aiAgentSteps.map((step, idx) => {
+                              const stepIcon = step.step === 'gather' ? <Search className="h-3 w-3" /> : step.step === 'format' ? <Code className="h-3 w-3" /> : step.step === 'validate' ? <Eye className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />;
+                              return (
+                                <div key={idx} className={`flex items-center justify-between p-2 px-3 border-b last:border-0 text-xs ${step.status === 'running' ? 'bg-background shadow-sm' : ''}`}>
+                                  <div className="flex items-center gap-3">
+                                    <span className="w-4 flex justify-center">
+                                      {step.status === 'pending' && <div className="h-1.5 w-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />}
+                                      {step.status === 'running' && <Loader2 className="h-3.5 w-3.5 animate-spin text-purple-500" />}
+                                      {step.status === 'success' && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                                      {step.status === 'error' && <X className="h-3.5 w-3.5 text-red-600" />}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-muted-foreground">{stepIcon}</span>
+                                      <span className={step.status === 'running' ? 'font-medium text-purple-600 dark:text-purple-400' : step.status === 'error' ? 'text-red-600 dark:text-red-400' : ''}>
+                                        {step.label}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {step.round > 0 && (
+                                    <span className="text-[9px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground font-mono">
+                                      Round {step.round + 1}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Error Display */}
+                  {aiError && (
+                    <div className="p-2 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md text-xs text-red-700 dark:text-red-300">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span>Errore: {aiError}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Result Preview (Python-style with expand/collapse, timestamp, close, cost) */}
+                  {aiResult !== null && aiResult !== undefined && (
+                    <div className="border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[40px]">
+                      <div className="flex justify-between items-center bg-muted/50 p-2 border-b">
+                        <span className="font-semibold text-xs flex items-center gap-2">
+                          <Sparkles className="h-3 w-3" />
+                          Risultato AI ({aiConfig.outputType === 'table' ? 'Tabella' : aiConfig.outputType === 'number' ? 'Numero' : aiConfig.outputType === 'chart' ? 'Grafico' : 'Testo'})
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            title={aiPreviewExpanded ? "Comprimi" : "Espandi"}
+                            onClick={() => setAiPreviewExpanded(!aiPreviewExpanded)}
+                          >
+                            {aiPreviewExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6 ml-1" onClick={() => { setAiResult(null); setAiUsage(null); }}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Timestamp + Cost info bar */}
+                      {(aiResultTimestamp || aiUsage) && (
+                        <div className="bg-blue-50 dark:bg-blue-950/30 px-3 py-1.5 text-xs text-blue-700 dark:text-blue-300 border-b border-blue-200 dark:border-blue-800 flex items-center justify-between gap-3 flex-wrap">
+                          {aiResultTimestamp && (
+                            <span>
+                              <span className="font-medium">Ultimo aggiornamento:</span> {new Date(aiResultTimestamp).toLocaleString('it-IT', { dateStyle: 'full', timeStyle: 'short' })}
+                            </span>
+                          )}
+                          {aiUsage && (() => {
+                            const selectedModel = aiModels.find(m => m.id === aiConfig.model);
+                            const promptRate = selectedModel?.pricing ? parseFloat(selectedModel.pricing.prompt) : 0;
+                            const completionRate = selectedModel?.pricing ? parseFloat(selectedModel.pricing.completion) : 0;
+                            const costUsd = (aiUsage.promptTokens * promptRate) + (aiUsage.completionTokens * completionRate);
+                            const costEur = costUsd * 0.92; // approximate USD to EUR
+                            return (
+                              <span className="flex items-center gap-1.5 font-mono text-[10px]">
+                                <Coins className="h-3 w-3" />
+                                {aiUsage.totalTokens.toLocaleString('it-IT')} token
+                                {' '}&middot;{' '}
+                                {costEur > 0 ? `${costEur.toFixed(4)}` : '~0.0000'}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      {aiPreviewExpanded && (
+                        <div className="transition-all duration-300">
+                          {aiConfig.outputType === 'table' && Array.isArray(aiResult) && aiResult.length > 0 && (
+                            <DataTable data={aiResult} />
+                          )}
+                          {aiConfig.outputType === 'table' && Array.isArray(aiResult) && aiResult.length === 0 && (
+                            <p className="text-xs text-muted-foreground text-center py-4">Nessun dato nella tabella.</p>
+                          )}
+                          {aiConfig.outputType === 'number' && (
+                            <div className="text-3xl font-bold text-center py-4">{typeof aiResult === 'number' ? aiResult.toLocaleString('it-IT') : aiResult}</div>
+                          )}
+                          {aiConfig.outputType === 'string' && (
+                            <div className="text-sm whitespace-pre-wrap p-3">{aiResult}</div>
+                          )}
+                          {aiConfig.outputType === 'chart' && aiResult && (
+                            <div className="h-[300px] p-2">
+                              <SmartWidgetRenderer config={aiResult} data={aiResult.data || []} />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CollapsibleSection>
+
             </div>
 
           </ScrollArea>

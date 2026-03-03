@@ -89,6 +89,16 @@ export interface WidgetConfig {
   chartStyle?: import('./chart-style').ChartStyle;
 }
 
+export interface AIConfig {
+  enabled: boolean;
+  prompt: string;              // Template con {{TABELLA:nome}}, {{VARIABILE:nome}}, {{GRAFICO:nome}}
+  model: string;               // OpenRouter model ID
+  outputType: 'table' | 'number' | 'string' | 'chart';
+  outputName: string;          // Nome per referenziare nella pipeline
+  lastResult?: any;            // Risultato cached
+  lastRunAt?: number;          // Timestamp ultima esecuzione
+}
+
 export interface DecisionLeaf {
   id?: string;
   decision: string;
@@ -106,6 +116,7 @@ export interface DecisionLeaf {
   sqlSelectedPipelines?: string[];
   emailAction?: EmailActionConfig;
   widgetConfig?: WidgetConfig;
+  aiConfig?: AIConfig;
   // SQL Export Config
   sqlExportTargetTableName?: string;
   sqlExportTargetConnectorId?: string;
@@ -162,6 +173,7 @@ export interface DecisionNode {
   pythonChatHistory?: ChatMessage[];
   emailAction?: EmailActionConfig;
   widgetConfig?: WidgetConfig;
+  aiConfig?: AIConfig;
   // SQL Export Config
   sqlExportTargetTableName?: string;
   sqlExportTargetConnectorId?: string;
