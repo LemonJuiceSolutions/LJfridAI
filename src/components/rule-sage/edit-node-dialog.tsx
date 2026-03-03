@@ -1381,9 +1381,12 @@ export default function EditNodeDialog({
                 return null;
               };
 
-              // Step 1: Add explicit pipeline dependencies FIRST (determines 'df' mapping)
+              // Step 1: Add explicit pipeline dependencies in REVERSE order so that
+              // the most recent / direct parent becomes the FIRST key → 'df' in Python.
+              // pipelineDependencies are ordered earliest-first (root ancestor first),
+              // but for df mapping we need the direct parent (last in the list) first.
               const explicitDepNames = new Set<string>();
-              const pipeDeps = Array.isArray(ancestor.pipelineDependencies) ? ancestor.pipelineDependencies : [];
+              const pipeDeps = Array.isArray(ancestor.pipelineDependencies) ? [...ancestor.pipelineDependencies].reverse() : [];
               for (const dep of pipeDeps) {
                 const depName = dep.tableName;
                 if (depName && ancestorResults[depName] !== undefined) {
