@@ -622,68 +622,138 @@ Uso: \`rows = execute_db("UPDATE dbo.Tabella SET col='val' WHERE id=1")\`
   rows = execute_db("DELETE FROM dbo.TempData WHERE Scaduto=1")
   \`\`\`
 
-### SCRITTURA DB da HTML interattivo (CRITICO - LEGGI BENE)
-Quando generi HTML con JavaScript che deve SCRIVERE nel DB (UPDATE/INSERT/DELETE), usa questo pattern:
-- Le variabili Python \`_db_connector_id\` e \`_db_api_token\` contengono le credenziali DB
-- Iniettale nell'HTML via f-string Python
-- Usa \`fetch('/api/update-commessa')\` con method POST — il polyfill converte automaticamente gli URL relativi
-- NON usare MAI \`postMessage\` per salvare dati - NON FUNZIONA
-- NON usare MAI \`window.parent.postMessage({type: 'SAVE_...'})\` - NON SCRIVE NEL DB
+### SCRITTURA DB da HTML interattivo (CRITICO - LEGGI ATTENTAMENTE)
+Quando generi HTML interattivo con tabelle editabili che scrivono nel DB, segui ESATTAMENTE questo pattern.
+Il sistema inietta automaticamente connectorId e token — tu NON devi preoccupartene.
 
-#### Pattern CORRETTO per salvataggio da HTML (OBBLIGATORIO):
+#### COME FUNZIONA:
+1. Usa \`query_db()\` in Python per LEGGERE i dati dal DB
+2. Converti i dati in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
+3. Inietta il JSON nell'HTML con concatenazione di stringhe
+4. Nel JavaScript dell'HTML, usa \`fetch('/api/update-commessa')\` per SCRIVERE — manda i dati della riga direttamente
+5. Il polyfill di sistema aggiunge automaticamente connectorId e URL assoluto
+
+#### REGOLE FONDAMENTALI:
+- Usa \`fetch('/api/update-commessa', {method:'POST', body: JSON.stringify(rowData)})\` per scrivere
+- Manda i campi della riga come body (es. {Job:'J001', Descrizione:'test', Cliente:'ABC'})
+- NON serve connectorId ne' internalToken nel body — il sistema li inietta automaticamente
+- NON usare MAI \`postMessage\` per salvare dati — NON FUNZIONA, NON SCRIVE NEL DB
+- NON usare MAI \`window.parent.postMessage({type: 'SAVE_...'})\` — e' solo un messaggio al parent, non salva niente
+- NON inventare endpoint come \`/api/budget/update\` o \`/api/save-data\` — non esistono
+- NON simulare il salvataggio con setTimeout o messaggi finti
+
+#### ESEMPIO COMPLETO FUNZIONANTE (tabella editabile con salvataggio DB):
 \`\`\`python
-html = f"""<script>
-async function saveToDb(sqlQuery) {{
-    const resp = await fetch('/api/update-commessa', {{
-        method: 'POST',
-        headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{
-            query: sqlQuery,
-            connectorId: '{_db_connector_id}',
-            internalToken: '{_db_api_token}'
-        }})
-    }});
-    const result = await resp.json();
-    return result; // {{success: true/false, rowsAffected: N, message: '...'}}
-}}
+import pandas as pd
+import json
 
-// Esempio: salva una riga modificata
-async function saveRow(anno, mese, peso) {{
-    const sql = "UPDATE dbo.BudgetMensile SET Peso=" + peso + " WHERE Anno=" + anno + " AND Mese=" + mese;
-    const result = await saveToDb(sql);
-    if (result.success) {{
-        alert('Salvato! ' + result.rowsAffected + ' righe aggiornate');
-    }} else {{
-        alert('Errore: ' + result.message);
-    }}
-}}
-</script>"""
+# 1. Leggi i dati dal DB
+df = query_db("SELECT * FROM dbo.CommesseHubSpot")
+
+# 2. Converti in JSON per iniettare nell'HTML
+data_records = df.to_dict('records')
+json_data = json.dumps(data_records, default=str)
+
+# 3. Genera HTML con tabella editabile e salvataggio via fetch
+html = """<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {{ font-family: sans-serif; padding: 20px; }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        th {{ background: #f8f9fa; padding: 12px; text-align: left; border-bottom: 2px solid #667eea; }}
+        td {{ padding: 10px; border-bottom: 1px solid #e9ecef; }}
+        .editable-cell {{ background: #fffbf0; border: 1px solid #ffe0b2; border-radius: 4px; padding: 8px; cursor: text; }}
+        .editable-cell:focus {{ outline: none; border-color: #ffc107; box-shadow: 0 0 0 2px rgba(255,193,7,0.2); }}
+        .editable-cell.modified {{ background: #fff3e0; border-color: #ff9800; }}
+        .btn-save {{ background: #4caf50; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }}
+        .btn-save:disabled {{ background: #ccc; cursor: not-allowed; }}
+        .status-message {{ padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }}
+        .status-message.success {{ background: #d4edda; color: #155724; display: block; }}
+        .status-message.error {{ background: #f8d7da; color: #721c24; display: block; }}
+    </style>
+</head>
+<body>
+    <h2>Commesse HubSpot - Editabile</h2>
+    <div id="statusMessage" class="status-message"></div>
+    <table>
+        <thead><tr>
+            <th>Job</th><th>Descrizione</th><th>Codice</th><th>Cliente</th><th>Inizio</th><th>Fine</th><th>Azione</th>
+        </tr></thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+    <script>
+        const data = """ + json_data + """;
+        const tableBody = document.getElementById('tableBody');
+        const statusMessage = document.getElementById('statusMessage');
+
+        data.forEach((row, index) => {{
+            const tr = document.createElement('tr');
+            tr.dataset.originalData = JSON.stringify(row);
+            tr.innerHTML = \\'
+                <td class="editable-cell" contenteditable="true" data-field="Job">' + (row.Job || '') + '</td>\\' +
+                '<td class="editable-cell" contenteditable="true" data-field="Descrizione">' + (row.Descrizione || '') + '</td>\\' +
+                '<td class="editable-cell" contenteditable="true" data-field="Codice">' + (row.Codice || '') + '</td>\\' +
+                '<td class="editable-cell" contenteditable="true" data-field="Cliente">' + (row.Cliente || '') + '</td>\\' +
+                '<td class="editable-cell" contenteditable="true" data-field="Inizio">' + (row.Inizio || '') + '</td>\\' +
+                '<td class="editable-cell" contenteditable="true" data-field="Fine">' + (row.Fine || '') + '</td>\\' +
+                '<td><button class="btn-save" onclick="saveRow(this)">Salva</button></td>';
+            tr.querySelectorAll('.editable-cell').forEach(cell => {{
+                cell.addEventListener('input', function() {{ this.classList.add('modified'); }});
+            }});
+            tableBody.appendChild(tr);
+        }});
+
+        function saveRow(button) {{
+            const tr = button.closest('tr');
+            const updatedData = {{}};
+            tr.querySelectorAll('.editable-cell').forEach(cell => {{
+                updatedData[cell.dataset.field] = cell.textContent.trim() || null;
+            }});
+            button.disabled = true;
+            button.textContent = 'Salvataggio...';
+
+            fetch('/api/update-commessa', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify(updatedData)
+            }})
+            .then(r => r.json())
+            .then(result => {{
+                if (result.success) {{
+                    statusMessage.textContent = 'Riga salvata con successo!';
+                    statusMessage.className = 'status-message success';
+                    tr.querySelectorAll('.editable-cell').forEach(c => c.classList.remove('modified'));
+                }} else {{
+                    statusMessage.textContent = 'Errore: ' + result.message;
+                    statusMessage.className = 'status-message error';
+                }}
+                setTimeout(() => {{ statusMessage.className = 'status-message'; }}, 5000);
+            }})
+            .catch(err => {{
+                statusMessage.textContent = 'Errore di connessione: ' + err.message;
+                statusMessage.className = 'status-message error';
+            }})
+            .finally(() => {{
+                button.disabled = false;
+                button.textContent = 'Salva';
+            }});
+        }}
+    </script>
+</body>
+</html>"""
+
+result = html
 \`\`\`
 
-#### Pattern CORRETTO per LETTURA DB da HTML JavaScript:
-\`\`\`python
-html = f"""<script>
-async function queryDb(sqlQuery) {{
-    const resp = await fetch('/api/update-commessa', {{
-        method: 'POST',
-        headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{
-            query: sqlQuery,
-            connectorId: '{_db_connector_id}',
-            internalToken: '{_db_api_token}'
-        }})
-    }});
-    const result = await resp.json();
-    return result; // {{success: true, data: [...], rowCount: N}}
-}}
-</script>"""
-\`\`\`
-
-#### ERRORI COMUNI (DA EVITARE):
-- ❌ \`window.parent.postMessage({type: 'SAVE_BUDGET', data: updates}, '*')\` — NON salva, e' un messaggio vuoto
-- ❌ \`fetch('/api/budget/update', ...)\` — endpoint inesistente, causa errore
-- ❌ Simulare il salvataggio con setTimeout e messaggio finto — l'utente vuole salvare nel DB
-- ✅ \`fetch('/api/update-commessa', {method:'POST', body: JSON.stringify({query:'UPDATE...', connectorId:'...', internalToken:'...'})})\` — FUNZIONA
+#### ERRORI COMUNI — DA NON FARE MAI:
+- ❌ \`window.parent.postMessage({type: 'SAVE_BUDGET', data: updates}, '*')\` — NON salva nel DB, e' solo un messaggio al parent iframe
+- ❌ \`fetch('/api/budget/update', ...)\` — endpoint inesistente, errore 404
+- ❌ \`fetch('/api/save-data', ...)\` — endpoint inesistente
+- ❌ Simulare il salvataggio con setTimeout e messaggio finto — l'utente vuole salvare nel DB per davvero
+- ❌ Mettere connectorId o internalToken nel body della fetch — non servono, il sistema li aggiunge da solo
+- ✅ \`fetch('/api/update-commessa', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(rowData)})\` — UNICO modo corretto
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
 Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.
