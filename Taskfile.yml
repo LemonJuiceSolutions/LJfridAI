@@ -18,9 +18,9 @@ tasks:
 
   start:
     desc: Start all services (DB, schema sync, Python backend, Next.js)
-    deps: [docker:db:start, venv]
+    deps: [db:start, venv]
     cmds:
-      - task: db:push
+      - task: db:migrate
       - task: start:services
 
   start:services:
@@ -36,10 +36,10 @@ tasks:
 
   # ── Database ──────────────────────────────────────────────────────────────
 
-  db:push:
+  db:migrate:
     desc: Apply Prisma schema to the database
     cmds:
-      - npx prisma db push
+      - npx prisma migrate deploy
       - npx prisma generate
 
   # ── Python backend ────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ tasks:
 
   docker:start:
     desc: Start all services using Docker Compose (DB, Python, Next.js)
-    deps: [docker:db:start]
+    deps: [db:start]
     cmds:
       - docker compose up -d
       - echo "Waiting for services to be healthy..."
@@ -150,13 +150,14 @@ tasks:
     cmds:
       - docker compose exec app npx prisma migrate deploy
       - docker compose exec app npx prisma generate
+      - docker compose exec app npx tsx scripts/create-admin.ts
 
   docker:prisma:studio:
     desc: Open Prisma Studio (database GUI)
     cmds:
       - docker compose exec app npx prisma studio
 
-  docker:db:start:
+  db:start:
     desc: Start PostgreSQL Docker container
     cmds:
       - |
@@ -167,13 +168,13 @@ tasks:
         fi
       - echo "PostgreSQL container ready."
 
-  docker:db:stop:
+  db:stop:
     desc: Stop PostgreSQL Docker container
     cmds:
       - docker compose stop db
       - echo "PostgreSQL container stopped."
 
-  docker:db:reset:
+  db:reset:
     desc: Reset Docker database (drop and recreate)
     cmds:
       - docker compose down -v

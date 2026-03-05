@@ -26,6 +26,7 @@ services:
     volumes:
       # Mount source code for hot reloading
       - ./src:/app/src:delegated
+      - ./scripts:/app/scripts:delegated
       - ./public:/app/public:delegated
       - ./prisma:/app/prisma:delegated
       # Mount config files that might change

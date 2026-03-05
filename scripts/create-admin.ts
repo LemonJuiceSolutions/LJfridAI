@@ -8,6 +8,13 @@ import bcrypt from 'bcryptjs';
 
 async function createAdmin() {
     try {
+        // Check if admin already exists
+        const existing = await db.user.findUnique({ where: { email: 'admin@demo.com' } });
+        if (existing) {
+            console.log('⚠️  Utente admin@demo.com esiste già. Nessuna modifica effettuata.');
+            return;
+        }
+
         // Crea la prima company
         const company = await db.company.create({
             data: {
@@ -28,7 +35,7 @@ async function createAdmin() {
         console.log('✅ Reparto creato:', department.name);
 
         // Hash della password
-        const hashedPassword = await bcrypt.hash('admin123', 10);
+        const hashedPassword = await bcrypt.hash('admin', 10);
 
         // Crea l'utente admin
         const admin = await db.user.create({
@@ -44,7 +51,7 @@ async function createAdmin() {
 
         console.log('✅ Utente admin creato:');
         console.log('   Email:', admin.email);
-        console.log('   Password: admin123');
+        console.log('   Password: admin');
         console.log('   Azienda:', company.name);
         console.log('   Reparto:', department.name);
         console.log('\n🎉 Setup completato! Ora puoi fare login con le credenziali sopra.');

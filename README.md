@@ -22,7 +22,7 @@ cp .env.template .env
 
 # 2. Build and initialize db
 task docker:build
-task docker:db:reset
+task db:reset
 
 # 3. Start
 task docker:start
@@ -42,7 +42,7 @@ task docker:stop              # Stop all services
 task docker:shell:app         # Open shell in Next.js container
 task docker:shell:python      # Open shell in Python container
 task docker:prisma:push       # Apply database migrations
-task docker:db:reset          # Reset database
+task db:reset          # Reset database
 ```
 
 For full Docker documentation, see [`docs/DOCKER-DEV.md`](docs/DOCKER-DEV.md).
@@ -77,24 +77,12 @@ This automatically:
 - Applies the Prisma schema
 - Starts the Python backend and Next.js dev server in parallel
 
-App is available at **http://localhost:9002**.
+App is available at:
+- **http://localhost:9002**
+- demo.com organization 
+- user: admin
+- pass: admin
 
-### Individual tasks
-
-```bash
-task venv          # bootstrap .venv (auto-skipped if already exists)
-task db:push       # apply Prisma schema
-task python:start  # start Flask backend only
-task dev           # start Next.js only
-```
-
-### Stop services
-
-```bash
-task stop          # stop everything
-task python:stop   # stop Flask backend only
-task dev:stop      # stop Next.js only
-```
 
 ---
 
