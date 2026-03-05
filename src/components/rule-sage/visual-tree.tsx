@@ -638,6 +638,14 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 ...newNodeData,
             };
 
+            console.log('[PYTHON-DEBUG] handleNodeUpdate - final data to save:', {
+                path,
+                hasPythonCode: !!nodeDataToSave.pythonCode,
+                pythonCodeLength: (nodeDataToSave.pythonCode || '').length,
+                pythonConnectorId: nodeDataToSave.pythonConnectorId,
+                pythonOutputType: nodeDataToSave.pythonOutputType,
+                allKeys: Object.keys(nodeDataToSave),
+            });
             const result = await updateTreeNodeAction({
                 treeId: treeData.id,
                 nodePath: path,

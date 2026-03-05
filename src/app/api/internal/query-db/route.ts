@@ -2,11 +2,18 @@
  * Internal API endpoint for Python sandbox to execute SQL queries.
  * Called by the injected `query_db()` function inside the Python runtime.
  * Only accepts requests from localhost (Python backend at port 5005).
+ *
+ * IMPORTANT: This runs the query DIRECTLY on the database, bypassing
+ * cross-tree dependency resolution. The Python code calls query_db()
+ * to talk to the real database, not to pipeline temp tables.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { executeSqlPreviewAction } from '@/app/actions';
+import { db } from '@/lib/db';
+import sql from 'mssql';
 
 export async function POST(req: NextRequest) {
+    let pool: sql.ConnectionPool | null = null;
+
     try {
         const body = await req.json();
         const { query, connectorId, internalToken } = body;
@@ -28,14 +35,51 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Execute SQL using existing infrastructure (bypasses auth for internal calls)
-        const result = await executeSqlPreviewAction(query, connectorId, [], true);
+        console.log(`[internal/query-db] Executing DIRECT query: "${query.substring(0, 200)}" with connectorId: ${connectorId}`);
 
-        if (result.error) {
-            return NextResponse.json({ error: result.error }, { status: 400 });
+        // Find the connector
+        const connector = await db.connector.findUnique({ where: { id: connectorId } });
+        if (!connector || connector.type !== 'SQL') {
+            return NextResponse.json(
+                { error: 'Connettore SQL non trovato o non configurato.' },
+                { status: 400 }
+            );
         }
 
-        const data = result.data || [];
+        // Parse connector config
+        let conf;
+        try {
+            conf = JSON.parse(connector.config);
+        } catch {
+            return NextResponse.json(
+                { error: 'Configurazione connettore non valida.' },
+                { status: 400 }
+            );
+        }
+
+        // Build SQL config
+        const sqlConfig: sql.config = {
+            user: conf.user,
+            password: conf.password,
+            server: conf.host,
+            database: conf.database,
+            options: {
+                encrypt: conf.host?.includes('database.windows.net') ?? false,
+                trustServerCertificate: true,
+                connectTimeout: 60000,
+                requestTimeout: 300000,
+            },
+            ...(conf.port ? { port: parseInt(conf.port) } : {}),
+        };
+
+        // Connect and execute DIRECTLY - no pipeline resolution
+        pool = new sql.ConnectionPool(sqlConfig);
+        await pool.connect();
+
+        const result = await pool.request().query(query);
+        const data = result.recordset || [];
+
+        console.log(`[internal/query-db] DIRECT query returned ${data.length} rows`);
         return NextResponse.json({
             success: true,
             data,
@@ -48,5 +92,9 @@ export async function POST(req: NextRequest) {
             { error: e.message || 'Internal server error' },
             { status: 500 }
         );
+    } finally {
+        if (pool) {
+            try { await pool.close(); } catch { /* ignore */ }
+        }
     }
 }

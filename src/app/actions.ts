@@ -2738,27 +2738,38 @@ export async function executePythonPreviewAction(
                 const result = await response.json();
 
                 if (!result.success) {
+                    if (result.stdout) {
+                        debugLogs.push(`[Python stdout] ${result.stdout}`);
+                    }
                     return {
                         success: false,
                         error: result.error || 'Unknown error from Python backend',
-                        stdout: result.stdout
+                        stdout: result.stdout,
+                        debugLogs,
                     };
                 }
 
                 // Return the appropriate result based on output type
+                // Include stdout from Python in debugLogs so user can see query_db() output
+                if (result.stdout) {
+                    debugLogs.push(`[Python stdout] ${result.stdout}`);
+                }
+
                 if (outputType === 'table') {
                     return {
                         success: true,
                         data: result.data,
                         columns: result.columns,
                         rowCount: result.rowCount,
-                        stdout: result.stdout
+                        stdout: result.stdout,
+                        debugLogs,
                     };
                 } else if (outputType === 'variable') {
                     return {
                         success: true,
                         variables: result.variables,
-                        stdout: result.stdout
+                        stdout: result.stdout,
+                        debugLogs,
                     };
                 } else if (outputType === 'chart') {
                     // NEW: Support Recharts config from backend
@@ -2770,13 +2781,15 @@ export async function executePythonPreviewAction(
                         rechartsData: result.rechartsData,
                         rechartsStyle: result.rechartsStyle,
                         plotlyJson: result.plotlyJson,
-                        stdout: result.stdout
+                        stdout: result.stdout,
+                        debugLogs,
                     };
                 } else if (outputType === 'html') {
                     return {
                         success: true,
                         html: result.html,
-                        stdout: result.stdout
+                        stdout: result.stdout,
+                        debugLogs,
                     };
                 }
 

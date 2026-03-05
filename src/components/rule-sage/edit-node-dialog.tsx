@@ -712,10 +712,23 @@ export default function EditNodeDialog({
 
 
       // Load Python Script Data
+      // Load Python Script Data
+      const loadedPythonConnectorId = (node as any).pythonConnectorId;
+      const effectiveLoadConnectorId = (loadedPythonConnectorId && loadedPythonConnectorId !== 'none') ? loadedPythonConnectorId : '';
+      console.log('[PYTHON-DEBUG] Loading Python data from node:', {
+        hasPythonCode: !!(node as any).pythonCode,
+        pythonCodeLength: ((node as any).pythonCode || '').length,
+        pythonConnectorId: loadedPythonConnectorId,
+        effectiveConnectorId: effectiveLoadConnectorId,
+        pythonOutputType: (node as any).pythonOutputType,
+        pythonResultName: (node as any).pythonResultName,
+        pythonSelectedPipelines: (node as any).pythonSelectedPipelines,
+        nodeKeys: Object.keys(node),
+      });
       setPythonCode((node as any).pythonCode || '');
       setPythonOutputType((node as any).pythonOutputType || 'table');
       setPythonResultName((node as any).pythonResultName || '');
-      setPythonConnectorId((node as any).pythonConnectorId || '');
+      setPythonConnectorId(effectiveLoadConnectorId);
       setSelectedDocuments((node as any).selectedDocuments || []);
       setPythonSelectedPipelines((node as any).pythonSelectedPipelines || []);
       setPythonChatHistory((node as any).pythonChatHistory || []);
@@ -1996,12 +2009,28 @@ export default function EditNodeDialog({
         delete newNodeData.selectedDocuments;
       }
 
+      // Python Connector (saved independently of pythonCode, like sqlConnectorId)
+      const effectivePythonConnectorId = (pythonConnectorId && pythonConnectorId !== 'none') ? pythonConnectorId : '';
+      if (effectivePythonConnectorId) {
+        newNodeData.pythonConnectorId = effectivePythonConnectorId;
+      } else {
+        delete newNodeData.pythonConnectorId;
+      }
+
       // Python Data
+      console.log('[PYTHON-DEBUG] Saving Python data:', {
+        pythonCode: pythonCode ? `${pythonCode.substring(0, 50)}...` : '(empty)',
+        pythonCodeLength: pythonCode.length,
+        pythonConnectorId: effectivePythonConnectorId,
+        pythonOutputType,
+        pythonResultName,
+        pythonSelectedPipelines,
+        willSave: !!pythonCode,
+      });
       if (pythonCode) {
         newNodeData.pythonCode = pythonCode.trim();
         newNodeData.pythonOutputType = pythonOutputType;
         newNodeData.pythonResultName = pythonResultName.trim() || undefined;
-        newNodeData.pythonConnectorId = pythonConnectorId || undefined;
         if (pythonSelectedPipelines.length > 0) {
           newNodeData.pythonSelectedPipelines = pythonSelectedPipelines;
         } else {
@@ -2011,7 +2040,6 @@ export default function EditNodeDialog({
         delete newNodeData.pythonCode;
         delete newNodeData.pythonOutputType;
         delete newNodeData.pythonResultName;
-        delete newNodeData.pythonConnectorId;
         delete newNodeData.pythonSelectedPipelines;
       }
 
@@ -3039,7 +3067,7 @@ export default function EditNodeDialog({
                   {/* Database Connector Selection */}
                   <div className="grid gap-2">
                     <Label>Database (per accesso dati)</Label>
-                    <Select value={pythonConnectorId} onValueChange={setPythonConnectorId}>
+                    <Select value={pythonConnectorId || 'none'} onValueChange={(v) => setPythonConnectorId(v === 'none' ? '' : v)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleziona un Database..." />
                       </SelectTrigger>
@@ -3305,6 +3333,15 @@ export default function EditNodeDialog({
                                     onSavePreview(nodePath, previewData);
                                   }
                                 } else {
+                                  // Still save debugLogs even on failure so user can see query_db output
+                                  if (res.debugLogs && res.debugLogs.length > 0) {
+                                    setPythonPreviewResult({
+                                      type: pythonOutputType,
+                                      debugLogs: res.debugLogs,
+                                      timestamp: Date.now()
+                                    });
+                                    setPythonPreviewExpanded(true);
+                                  }
                                   throw new Error(res.error || "Errore sconosciuto durante l'esecuzione dello script");
                                 }
                               }, 'python');

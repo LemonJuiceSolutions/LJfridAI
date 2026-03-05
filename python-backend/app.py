@@ -421,6 +421,8 @@ def execute_python():
                     """Esegue una query SQL sul database e restituisce un DataFrame pandas.
                     Uso: df = query_db("SELECT * FROM dbo.NomeTabella")
                     """
+                    print(f"🔍 query_db() chiamata con: {sql_query[:200]}...")
+                    print(f"   Endpoint: {endpoint}, ConnectorID: {connector_id[:8]}...")
                     try:
                         resp = _requests.post(endpoint, json={
                             'query': sql_query,
@@ -428,15 +430,35 @@ def execute_python():
                             'internalToken': token,
                         }, timeout=120)
                         if resp.ok:
-                            result_data = resp.json().get('data', [])
+                            resp_json = resp.json()
+                            result_data = resp_json.get('data', [])
+                            row_count = len(result_data) if result_data else 0
+                            print(f"✅ query_db() completata: {row_count} righe ricevute")
+                            if row_count == 0:
+                                print(f"⚠️ query_db() ha restituito 0 righe. Verifica la query o la tabella.")
                             return pd.DataFrame(result_data) if result_data else pd.DataFrame()
                         else:
-                            err = resp.json().get('error', resp.text)
-                            print(f"⚠️ query_db error: {err}")
-                            return pd.DataFrame()
+                            try:
+                                err = resp.json().get('error', resp.text)
+                            except Exception:
+                                err = resp.text
+                            error_msg = f"query_db HTTP {resp.status_code}: {err}"
+                            print(f"❌ {error_msg}")
+                            raise RuntimeError(error_msg)
+                    except _requests.exceptions.ConnectionError as e:
+                        error_msg = f"query_db: impossibile connettersi a {endpoint} - il server Next.js è in esecuzione? Errore: {e}"
+                        print(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
+                    except _requests.exceptions.Timeout as e:
+                        error_msg = f"query_db: timeout dopo 120s per la query: {sql_query[:100]}..."
+                        print(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
+                    except RuntimeError:
+                        raise  # Re-raise our own RuntimeErrors
                     except Exception as e:
-                        print(f"⚠️ query_db exception: {e}")
-                        return pd.DataFrame()
+                        error_msg = f"query_db eccezione inattesa: {type(e).__name__}: {e}"
+                        print(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
                 return query_db
             ns['query_db'] = _make_query_db(query_db_endpoint, query_db_connector, query_db_token)
             print(f"   ✅ query_db() injected (endpoint: {query_db_endpoint})")
