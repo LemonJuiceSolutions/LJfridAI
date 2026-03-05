@@ -622,21 +622,68 @@ Uso: \`rows = execute_db("UPDATE dbo.Tabella SET col='val' WHERE id=1")\`
   rows = execute_db("DELETE FROM dbo.TempData WHERE Scaduto=1")
   \`\`\`
 
-### Variabili per HTML interattivo (_db_api_url, _db_connector_id, _db_api_token)
-Quando generi HTML con JavaScript che deve leggere/scrivere nel DB, usa queste variabili:
+### SCRITTURA DB da HTML interattivo (CRITICO - LEGGI BENE)
+Quando generi HTML con JavaScript che deve SCRIVERE nel DB (UPDATE/INSERT/DELETE), usa questo pattern:
+- Le variabili Python \`_db_connector_id\` e \`_db_api_token\` contengono le credenziali DB
+- Iniettale nell'HTML via f-string Python
+- Usa \`fetch('/api/update-commessa')\` con method POST — il polyfill converte automaticamente gli URL relativi
+- NON usare MAI \`postMessage\` per salvare dati - NON FUNZIONA
+- NON usare MAI \`window.parent.postMessage({type: 'SAVE_...'})\` - NON SCRIVE NEL DB
+
+#### Pattern CORRETTO per salvataggio da HTML (OBBLIGATORIO):
 \`\`\`python
 html = f"""<script>
-async function queryDB(sql) {{
-    const resp = await fetch('{_db_api_url}', {{
+async function saveToDb(sqlQuery) {{
+    const resp = await fetch('/api/update-commessa', {{
         method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{query: sql, connectorId: '{_db_connector_id}', internalToken: '{_db_api_token}'}})
+        body: JSON.stringify({{
+            query: sqlQuery,
+            connectorId: '{_db_connector_id}',
+            internalToken: '{_db_api_token}'
+        }})
     }});
-    return await resp.json();
+    const result = await resp.json();
+    return result; // {{success: true/false, rowsAffected: N, message: '...'}}
+}}
+
+// Esempio: salva una riga modificata
+async function saveRow(anno, mese, peso) {{
+    const sql = "UPDATE dbo.BudgetMensile SET Peso=" + peso + " WHERE Anno=" + anno + " AND Mese=" + mese;
+    const result = await saveToDb(sql);
+    if (result.success) {{
+        alert('Salvato! ' + result.rowsAffected + ' righe aggiornate');
+    }} else {{
+        alert('Errore: ' + result.message);
+    }}
 }}
 </script>"""
 \`\`\`
-Cosi' il JavaScript nell'HTML puo' fare query al DB direttamente.
+
+#### Pattern CORRETTO per LETTURA DB da HTML JavaScript:
+\`\`\`python
+html = f"""<script>
+async function queryDb(sqlQuery) {{
+    const resp = await fetch('/api/update-commessa', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{
+            query: sqlQuery,
+            connectorId: '{_db_connector_id}',
+            internalToken: '{_db_api_token}'
+        }})
+    }});
+    const result = await resp.json();
+    return result; // {{success: true, data: [...], rowCount: N}}
+}}
+</script>"""
+\`\`\`
+
+#### ERRORI COMUNI (DA EVITARE):
+- ❌ \`window.parent.postMessage({type: 'SAVE_BUDGET', data: updates}, '*')\` — NON salva, e' un messaggio vuoto
+- ❌ \`fetch('/api/budget/update', ...)\` — endpoint inesistente, causa errore
+- ❌ Simulare il salvataggio con setTimeout e messaggio finto — l'utente vuole salvare nel DB
+- ✅ \`fetch('/api/update-commessa', {method:'POST', body: JSON.stringify({query:'UPDATE...', connectorId:'...', internalToken:'...'})})\` — FUNZIONA
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
 Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.
