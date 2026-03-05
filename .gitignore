@@ -88,3 +88,4 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 *.log
+dump.sql

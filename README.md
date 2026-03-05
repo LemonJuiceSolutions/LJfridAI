@@ -41,8 +41,10 @@ task docker:logs:python       # View Python backend logs
 task docker:stop              # Stop all services
 task docker:shell:app         # Open shell in Next.js container
 task docker:shell:python      # Open shell in Python container
-task docker:prisma:push       # Apply database migrations
-task db:reset          # Reset database
+task docker:prisma:migrate    # Apply database migrations + create admin user
+task db:reset                 # Reset database (drop, recreate, migrate)
+task db:dump                  # Dump database to dump.sql (FILE=myfile.sql to override)
+task db:restore               # Restore database from dump.sql (FILE=myfile.sql to override)
 ```
 
 For full Docker documentation, see [`docs/DOCKER-DEV.md`](docs/DOCKER-DEV.md).
@@ -79,9 +81,11 @@ This automatically:
 
 App is available at:
 - **http://localhost:9002**
-- demo.com organization 
-- user: admin
-- pass: admin
+- demo.com organization
+- user: `admin` (or `admin@demo.com`)
+- pass: `admin`
+
+> The login form accepts plain usernames — `@demo.com` is appended automatically if no `@` is present. Override the domain with `NEXT_PUBLIC_DEFAULT_EMAIL_DOMAIN` in `.env`.
 
 
 ---

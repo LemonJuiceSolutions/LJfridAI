@@ -185,6 +185,16 @@ tasks:
       - task: docker:stop
       - echo "Database reset complete."
 
+  db:dump:
+    desc: "Dump the Docker database to a file (default: dump.sql, override with FILE=myfile.sql)"
+    cmds:
+      - FILE=${FILE:-dump.sql}; docker compose exec db pg_dump -U postgres rulesagedb > "$FILE" && echo "Database dumped to $FILE"
+
+  db:restore:
+    desc: "Restore the Docker database from a file (default: dump.sql, override with FILE=myfile.sql)"
+    cmds:
+      - FILE=${FILE:-dump.sql}; docker compose exec -T db psql -U postgres rulesagedb < "$FILE" && echo "Database restored from $FILE"
+
   docker:clean:
     desc: Clean up Docker resources (containers, volumes, images)
     cmds:
