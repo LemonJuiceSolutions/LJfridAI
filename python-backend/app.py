@@ -463,6 +463,49 @@ def execute_python():
             ns['query_db'] = _make_query_db(query_db_endpoint, query_db_connector, query_db_token)
             print(f"   ✅ query_db() injected (endpoint: {query_db_endpoint})")
 
+            # --- Inject execute_db() for write operations (UPDATE/INSERT/DELETE) ---
+            def _make_execute_db(endpoint, connector_id, token):
+                def execute_db(sql_query):
+                    """Esegue una query SQL di scrittura (UPDATE/INSERT/DELETE) sul database.
+                    Ritorna il numero di righe modificate.
+                    Uso: rows_affected = execute_db("UPDATE dbo.Tabella SET col='val' WHERE id=1")
+                    """
+                    print(f"✏️ execute_db() chiamata con: {sql_query[:200]}...")
+                    try:
+                        resp = _requests.post(endpoint, json={
+                            'query': sql_query,
+                            'connectorId': connector_id,
+                            'internalToken': token,
+                        }, timeout=120)
+                        if resp.ok:
+                            resp_json = resp.json()
+                            rows_affected = resp_json.get('rowsAffected', 0)
+                            print(f"✅ execute_db() completata: {rows_affected} righe modificate")
+                            return rows_affected
+                        else:
+                            try:
+                                err = resp.json().get('error', resp.text)
+                            except Exception:
+                                err = resp.text
+                            error_msg = f"execute_db HTTP {resp.status_code}: {err}"
+                            print(f"❌ {error_msg}")
+                            raise RuntimeError(error_msg)
+                    except RuntimeError:
+                        raise
+                    except Exception as e:
+                        error_msg = f"execute_db eccezione: {type(e).__name__}: {e}"
+                        print(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
+                return execute_db
+            ns['execute_db'] = _make_execute_db(query_db_endpoint, query_db_connector, query_db_token)
+            print(f"   ✅ execute_db() injected")
+
+            # --- Inject DB API credentials as variables for HTML/JS code generation ---
+            ns['_db_api_url'] = query_db_endpoint
+            ns['_db_connector_id'] = query_db_connector
+            ns['_db_api_token'] = query_db_token
+            print(f"   ✅ _db_api_url, _db_connector_id, _db_api_token injected for HTML generation")
+
         # --- Prevent exit/quit calls from killing the Flask process ---
         def no_op_exit(*args, **kwargs):
             print("⚠️ [EXECUTE] exit()/quit() call ignored to prevent killing the server.")

@@ -3596,8 +3596,19 @@ export default function EditNodeDialog({
                                 <Settings2 className="h-4 w-4 text-violet-500" />
                               </button>
                               <iframe
-                                srcDoc={applyHtmlStyleOverrides(pythonPreviewResult.html, htmlStyleOverrides)}
+                                srcDoc={(() => {
+                                  const html = applyHtmlStyleOverrides(pythonPreviewResult.html, htmlStyleOverrides);
+                                  // Inject <base> tag so fetch() with relative URLs works inside srcdoc iframe
+                                  const baseTag = `<base href="${window.location.origin}/">`;
+                                  if (html.includes('<head>')) {
+                                    return html.replace('<head>', `<head>${baseTag}`);
+                                  } else if (html.includes('<html>')) {
+                                    return html.replace('<html>', `<html><head>${baseTag}</head>`);
+                                  }
+                                  return `<head>${baseTag}</head>${html}`;
+                                })()}
                                 className="w-full border-none min-h-[400px]"
+                                sandbox="allow-scripts allow-same-origin allow-forms"
                                 title="HTML Preview"
                               />
                               {/* HTML Style Editor Dialog */}

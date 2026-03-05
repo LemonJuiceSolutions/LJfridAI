@@ -590,8 +590,10 @@ NON USARE MAI LA LIBRERIA 'tabulate' (non e' installata).
    - I dati DEVONO arrivare da query_db() o dalla pipeline (df)
    - Se df e' vuoto: USA query_db() per caricare i dati. NON inventare dati.
 
-## FUNZIONE query_db() (DISPONIBILE NEL RUNTIME):
-La funzione \`query_db(sql)\` esegue una query SQL sul database e restituisce un DataFrame pandas.
+## FUNZIONI DATABASE (DISPONIBILI NEL RUNTIME):
+
+### query_db(sql) - LETTURA dati
+La funzione \`query_db(sql)\` esegue una query SQL SELECT sul database e restituisce un DataFrame pandas.
 Uso: \`df = query_db("SELECT * FROM dbo.NomeTabella")\`
 - Funziona sia durante il test (pyTestCode) che a runtime (nel nodo)
 - PRIORITA': Se df ha dati (da upstream) -> usa df.copy(). Se df e' vuoto -> usa query_db()
@@ -602,6 +604,39 @@ Uso: \`df = query_db("SELECT * FROM dbo.NomeTabella")\`
   df_data = df.copy()
   result = df_data
   \`\`\`
+
+### execute_db(sql) - SCRITTURA dati (UPDATE/INSERT/DELETE)
+La funzione \`execute_db(sql)\` esegue una query SQL di scrittura e restituisce il numero di righe modificate.
+Uso: \`rows = execute_db("UPDATE dbo.Tabella SET col='val' WHERE id=1")\`
+- Esempio UPDATE:
+  \`\`\`python
+  rows = execute_db("UPDATE dbo.Commesse SET Stato='Chiuso' WHERE Job='J001'")
+  print(f"Aggiornate {rows} righe")
+  \`\`\`
+- Esempio INSERT:
+  \`\`\`python
+  rows = execute_db("INSERT INTO dbo.Log (Messaggio, Data) VALUES ('Test', GETDATE())")
+  \`\`\`
+- Esempio DELETE:
+  \`\`\`python
+  rows = execute_db("DELETE FROM dbo.TempData WHERE Scaduto=1")
+  \`\`\`
+
+### Variabili per HTML interattivo (_db_api_url, _db_connector_id, _db_api_token)
+Quando generi HTML con JavaScript che deve leggere/scrivere nel DB, usa queste variabili:
+\`\`\`python
+html = f"""<script>
+async function queryDB(sql) {{
+    const resp = await fetch('{_db_api_url}', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{query: sql, connectorId: '{_db_connector_id}', internalToken: '{_db_api_token}'}})
+    }});
+    return await resp.json();
+}}
+</script>"""
+\`\`\`
+Cosi' il JavaScript nell'HTML puo' fare query al DB direttamente.
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
 Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.

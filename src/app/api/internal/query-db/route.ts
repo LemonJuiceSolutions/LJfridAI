@@ -78,8 +78,23 @@ export async function POST(req: NextRequest) {
 
         const result = await pool.request().query(query);
         const data = result.recordset || [];
+        const rowsAffected = result.rowsAffected ? result.rowsAffected.reduce((a: number, b: number) => a + b, 0) : 0;
 
-        console.log(`[internal/query-db] DIRECT query returned ${data.length} rows`);
+        // Detect if this is a write operation (UPDATE/INSERT/DELETE)
+        const isWrite = /^\s*(UPDATE|INSERT|DELETE|MERGE)\b/i.test(query);
+
+        if (isWrite) {
+            console.log(`[internal/query-db] WRITE query: ${rowsAffected} rows affected`);
+            return NextResponse.json({
+                success: true,
+                rowsAffected,
+                data: data.length > 0 ? data : [],
+                columns: data.length > 0 ? Object.keys(data[0]) : [],
+                rowCount: data.length,
+            });
+        }
+
+        console.log(`[internal/query-db] READ query returned ${data.length} rows`);
         return NextResponse.json({
             success: true,
             data,
