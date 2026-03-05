@@ -352,6 +352,7 @@ def execute_python():
         input_data = data.get('inputData', {})
         df_table_target = data.get('dfTable', None)  # Explicit df target from frontend
         chart_theme = data.get('chartTheme', None)  # Full theme object from frontend
+        env_vars = data.get('env', {})  # Receive env vars
         _safe_log(f"🎨 [THEME] chart_theme received: {type(chart_theme).__name__}, value: {str(chart_theme)[:200] if chart_theme else 'None'}")
 
         if not code:
@@ -409,7 +410,37 @@ def execute_python():
                 ns['data'] = last_df_table
                 print(f"   - 'df' & 'data' mapped to '{last_table_name}' (last table = fallback)")
 
-        
+        # --- Inject query_db() helper for direct SQL queries from Python code ---
+        query_db_endpoint = env_vars.get('QUERY_DB_ENDPOINT', '')
+        query_db_connector = env_vars.get('QUERY_DB_CONNECTOR_ID', '')
+        query_db_token = env_vars.get('QUERY_DB_TOKEN', '')
+        if query_db_endpoint and query_db_connector:
+            import requests as _requests
+            def _make_query_db(endpoint, connector_id, token):
+                def query_db(sql_query):
+                    """Esegue una query SQL sul database e restituisce un DataFrame pandas.
+                    Uso: df = query_db("SELECT * FROM dbo.NomeTabella")
+                    """
+                    try:
+                        resp = _requests.post(endpoint, json={
+                            'query': sql_query,
+                            'connectorId': connector_id,
+                            'internalToken': token,
+                        }, timeout=120)
+                        if resp.ok:
+                            result_data = resp.json().get('data', [])
+                            return pd.DataFrame(result_data) if result_data else pd.DataFrame()
+                        else:
+                            err = resp.json().get('error', resp.text)
+                            print(f"⚠️ query_db error: {err}")
+                            return pd.DataFrame()
+                    except Exception as e:
+                        print(f"⚠️ query_db exception: {e}")
+                        return pd.DataFrame()
+                return query_db
+            ns['query_db'] = _make_query_db(query_db_endpoint, query_db_connector, query_db_token)
+            print(f"   ✅ query_db() injected (endpoint: {query_db_endpoint})")
+
         # --- Prevent exit/quit calls from killing the Flask process ---
         def no_op_exit(*args, **kwargs):
             print("⚠️ [EXECUTE] exit()/quit() call ignored to prevent killing the server.")
@@ -458,7 +489,6 @@ def execute_python():
         safe_code = safe_code.replace('exit()', '# exit() removed')
         safe_code = safe_code.replace('quit()', '# quit() removed')
         
-        env_vars = data.get('env', {}) # Receive env vars
         from unittest.mock import patch
 
         # Apply per-request chart theme if provided (colors, fonts, grid, margins)

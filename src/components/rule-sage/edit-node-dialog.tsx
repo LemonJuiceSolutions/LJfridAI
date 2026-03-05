@@ -4581,25 +4581,7 @@ export default function EditNodeDialog({
                       </div>
                     )}
 
-                    {/* Generic Execution Preview Display */}
-                    {(initialNode as any).executionPreviewResult && (
-                      <div className="mb-4 p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20 rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase flex items-center gap-1.5">
-                            <Check className="h-3.5 w-3.5" />
-                            Ultima Esecuzione (Anteprima)
-                          </h4>
-                          <span className="text-[10px] text-muted-foreground">
-                            {new Date((initialNode as any).executionPreviewResult.timestamp).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="text-xs text-foreground bg-white dark:bg-zinc-900 p-2 rounded border font-mono whitespace-pre-wrap max-h-[150px] overflow-y-auto">
-                          {typeof (initialNode as any).executionPreviewResult.data === 'string'
-                            ? (initialNode as any).executionPreviewResult.data
-                            : JSON.stringify((initialNode as any).executionPreviewResult.data, null, 2)}
-                        </div>
-                      </div>
-                    )}
+                    {/* Execution preview removed — not useful for email nodes */}
 
                     {/* Test Email Button */}
                     <div className="flex gap-2">
@@ -4864,6 +4846,21 @@ export default function EditNodeDialog({
                                   title: "Email Inviata",
                                   description: "L'email di test è stata inviata con successo.",
                                 });
+                                // Update executionPreviewResult on the current email node so the
+                                // "Ultima Esecuzione (Anteprima)" section shows the fresh result
+                                if (treeId && currentNodeId) {
+                                  try {
+                                    const { saveAncestorPreviewsBatchAction } = await import('@/app/actions/scheduler');
+                                    await saveAncestorPreviewsBatchAction(treeId, [{
+                                      nodeId: currentNodeId,
+                                      isPython: false,
+                                      result: { success: true, message: res.message || `Email inviata a ${emailConfig.to}`, timestamp: Date.now() }
+                                    }]);
+                                    if (onRefreshTree) onRefreshTree();
+                                  } catch (err) {
+                                    console.warn('[EMAIL] Error updating email node preview:', err);
+                                  }
+                                }
                               } else {
                                 toast({
                                   variant: 'destructive',

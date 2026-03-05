@@ -85,8 +85,12 @@ async function executeNode(node: Node, context: ExecutionContext): Promise<NodeE
         throw new Error(`Unsupported node type: ${node.type}`);
     }
 
-    // Store result in context
+    // Store result in context — by node ID and also by result name for dependency resolution
     context.results.set(node.id, result);
+    const resultName = node.sqlResultName || node.pythonResultName || node.aiConfig?.outputName || node.name;
+    if (resultName && resultName !== node.id) {
+      context.results.set(resultName, result);
+    }
     context.executedNodes.add(node.id);
 
     // Persist result if treeId is available
@@ -181,6 +185,16 @@ async function executePythonNode(node: Node, context: ExecutionContext): Promise
   // Build dependencies from context
   const dependencies = buildDependencies(node, context);
 
+  // Pre-populate inputData from resolved dependencies so executePythonPreviewAction
+  // can skip re-fetching data that's already available from parent nodes
+  const inputData: Record<string, any[]> = {};
+  for (const dep of dependencies) {
+    if (dep.data && Array.isArray(dep.data)) {
+      inputData[dep.tableName] = dep.data;
+      console.log(`[executePythonNode] Pre-loaded ${dep.data.length} rows for "${dep.tableName}" from pipeline context`);
+    }
+  }
+
   // Convert pythonOutputType to valid type
   const outputType: PythonOutputType = node.pythonOutputType || 'table';
 
@@ -188,7 +202,7 @@ async function executePythonNode(node: Node, context: ExecutionContext): Promise
   const result = await executePythonPreviewAction(
     node.pythonCode,
     outputType,
-    {},
+    inputData,
     dependencies,
     node.pythonConnectorId,
     undefined,
@@ -197,6 +211,18 @@ async function executePythonNode(node: Node, context: ExecutionContext): Promise
 
   if (!result.success) {
     throw new Error(result.error || 'Python execution failed');
+  }
+
+  // For html/chart output types, return the full result so downstream nodes can access html/chart fields
+  if (outputType === 'html' || outputType === 'chart') {
+    return {
+      data: result.data,
+      html: result.html,
+      chartBase64: result.chartBase64,
+      chartHtml: result.chartHtml,
+      plotlyJson: result.plotlyJson,
+      type: outputType
+    };
   }
 
   return result.data;
@@ -482,17 +508,36 @@ function buildDependencies(node: Node, context: ExecutionContext): any[] {
 
   // Map dependencies to context results
   for (const depName of node.dependencies) {
-    // Find the node that produces this dependency
-    for (const [nodeId, result] of context.results.entries()) {
-      // Check if this node's result matches the dependency name
-      if (result && typeof result === 'object' && 'name' in result && result.name === depName) {
-        dependencies.push({
-          tableName: depName,
-          data: result,
-          isPython: result.isPython || false
-        });
-        break;
+    let found = false;
+
+    // 1. Direct lookup by name (stored via resultName in executeNode)
+    if (context.results.has(depName)) {
+      const result = context.results.get(depName);
+      dependencies.push({
+        tableName: depName,
+        data: Array.isArray(result) ? result : (result?.data || result),
+        isPython: false
+      });
+      found = true;
+    }
+
+    // 2. Fallback: search by result.name property (legacy)
+    if (!found) {
+      for (const [nodeId, result] of context.results.entries()) {
+        if (result && typeof result === 'object' && 'name' in result && result.name === depName) {
+          dependencies.push({
+            tableName: depName,
+            data: result,
+            isPython: result.isPython || false
+          });
+          found = true;
+          break;
+        }
       }
+    }
+
+    if (!found) {
+      console.warn(`[buildDependencies] Dependency "${depName}" not found in context. Available keys: ${[...context.results.keys()].join(', ')}`);
     }
   }
 

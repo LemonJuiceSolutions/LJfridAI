@@ -69,9 +69,25 @@ async function doPyTestSqlQuery(input: { query: string; connectorId: string }) {
     }
 }
 
-async function doPyTestCode(input: { code: string; outputType: string; connectorId?: string }) {
+async function doPyTestCode(input: { code: string; outputType: string; connectorId?: string; sqlQuery?: string }) {
     try {
-        const result = await executePythonPreviewAction(input.code, input.outputType as any, {}, [], input.connectorId, true);
+        let inputData: Record<string, any[]> = {};
+
+        // If sqlQuery is provided, pre-fetch data from the database so that `df` is populated
+        if (input.sqlQuery && input.connectorId) {
+            try {
+                const sqlResult = await executeSqlPreviewAction(input.sqlQuery, input.connectorId, [], true);
+                if (sqlResult.data && sqlResult.data.length > 0) {
+                    // Use 'df' as key so it maps directly to the df variable in Python
+                    inputData['df'] = sqlResult.data;
+                }
+            } catch (sqlErr: any) {
+                console.warn('[pyTestCode] SQL pre-fetch failed:', sqlErr.message);
+                // Continue without data - the Python code will get an empty df
+            }
+        }
+
+        const result = await executePythonPreviewAction(input.code, input.outputType as any, inputData, [], input.connectorId, true);
         if (!result.success) return JSON.stringify({ error: result.error || 'Errore esecuzione' });
         return JSON.stringify({
             success: true,
@@ -255,12 +271,13 @@ export function createPythonAgentTools(opts: {
 
     // pyTestCode is ALWAYS available — it's the core Python tool
     tools.pyTestCode = tool({
-        description: "Esegue codice Python di test per verificare che funzioni. Restituisce dati, variabili, stdout. E' il tuo strumento PRINCIPALE per testare il codice!",
+        description: "Esegue codice Python di test per verificare che funzioni. Restituisce dati, variabili, stdout. E' il tuo strumento PRINCIPALE per testare il codice! Se passi sqlQuery, i dati vengono pre-caricati dal database e iniettati come df nel codice Python.",
         inputSchema: z.object({
             code: z.string().describe('Il codice Python da eseguire.'),
             outputType: z.enum(['table', 'variable', 'chart', 'html']).describe("Tipo di output atteso: 'table' per DataFrame, 'chart' per grafici Plotly, 'variable' per dizionari, 'html' per HTML."),
+            sqlQuery: z.string().optional().describe("Query SQL opzionale per pre-caricare i dati dal database. Se specificata, il risultato viene iniettato come df nel codice Python. Esempio: 'SELECT * FROM dbo.NomeTabella'. Usa SEMPRE questo parametro quando testi codice che lavora su una tabella del DB."),
         }),
-        execute: async ({ code, outputType }) => doPyTestCode({ code, outputType, connectorId: cid || undefined }),
+        execute: async ({ code, outputType, sqlQuery }) => doPyTestCode({ code, outputType, connectorId: cid || undefined, sqlQuery }),
     });
 
     if (opts.connectorId) {

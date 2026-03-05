@@ -2556,6 +2556,14 @@ export async function executePythonPreviewAction(
             debugLogs.push(`[${new Date().toLocaleTimeString()}] Documenti selezionati: ${selectedDocuments.join(', ')}`);
         }
 
+        // Inject query_db() support: pass endpoint and connector info for direct SQL queries from Python
+        if (connectorId && connectorId !== 'none') {
+            const port = process.env.PORT || '9002';
+            envVars['QUERY_DB_ENDPOINT'] = `http://localhost:${port}/api/internal/query-db`;
+            envVars['QUERY_DB_CONNECTOR_ID'] = connectorId;
+            envVars['QUERY_DB_TOKEN'] = process.env.INTERNAL_QUERY_TOKEN || 'fridai-internal-query-2024';
+        }
+
         // If there are dependencies (SQL queries from parent nodes), fetch them first
         if (dependencies && dependencies.length > 0) {
             console.log(`[Python] Fetching ${dependencies.length} dependencies:`, dependencies.map(d => d.tableName).join(', '));
