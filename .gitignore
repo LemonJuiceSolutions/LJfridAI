@@ -89,3 +89,5 @@ htmlcov/
 .dmypy.json
 *.log
 dump.sql
+*.csv
+*.html
