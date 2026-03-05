@@ -643,6 +643,9 @@ Il sistema inietta automaticamente connectorId e token — tu NON devi preoccupa
 - NON simulare il salvataggio con setTimeout o messaggi finti
 
 #### ESEMPIO COMPLETO FUNZIONANTE (tabella editabile con salvataggio DB):
+NOTA: questo esempio usa triple-quotes Python (""") e concatenazione di stringhe (""" + json_data + """).
+NON e' una f-string, quindi le parentesi graffe { } nel CSS e JS restano NORMALI — NON raddoppiarle con {{ }}.
+
 \`\`\`python
 import pandas as pd
 import json
@@ -655,27 +658,29 @@ data_records = df.to_dict('records')
 json_data = json.dumps(data_records, default=str)
 
 # 3. Genera HTML con tabella editabile e salvataggio via fetch
+#    USA concatenazione (""" + json_data + """), NON f-string
+#    Quindi { e } nel CSS/JS sono NORMALI, non serve raddoppiarle
 html = """<!DOCTYPE html>
 <html lang="it">
 <head>
     <meta charset="UTF-8">
     <style>
-        body {{ font-family: sans-serif; padding: 20px; }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        th {{ background: #f8f9fa; padding: 12px; text-align: left; border-bottom: 2px solid #667eea; }}
-        td {{ padding: 10px; border-bottom: 1px solid #e9ecef; }}
-        .editable-cell {{ background: #fffbf0; border: 1px solid #ffe0b2; border-radius: 4px; padding: 8px; cursor: text; }}
-        .editable-cell:focus {{ outline: none; border-color: #ffc107; box-shadow: 0 0 0 2px rgba(255,193,7,0.2); }}
-        .editable-cell.modified {{ background: #fff3e0; border-color: #ff9800; }}
-        .btn-save {{ background: #4caf50; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }}
-        .btn-save:disabled {{ background: #ccc; cursor: not-allowed; }}
-        .status-message {{ padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }}
-        .status-message.success {{ background: #d4edda; color: #155724; display: block; }}
-        .status-message.error {{ background: #f8d7da; color: #721c24; display: block; }}
+        body { font-family: sans-serif; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #f8f9fa; padding: 12px; text-align: left; border-bottom: 2px solid #667eea; }
+        td { padding: 10px; border-bottom: 1px solid #e9ecef; }
+        .editable-cell { background: #fffbf0; border: 1px solid #ffe0b2; border-radius: 4px; padding: 8px; cursor: text; }
+        .editable-cell:focus { outline: none; border-color: #ffc107; box-shadow: 0 0 0 2px rgba(255,193,7,0.2); }
+        .editable-cell.modified { background: #fff3e0; border-color: #ff9800; }
+        .btn-save { background: #4caf50; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+        .btn-save:disabled { background: #ccc; cursor: not-allowed; }
+        .status-message { padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }
+        .status-message.success { background: #d4edda; color: #155724; display: block; }
+        .status-message.error { background: #f8d7da; color: #721c24; display: block; }
     </style>
 </head>
 <body>
-    <h2>Commesse HubSpot - Editabile</h2>
+    <h2>Tabella Editabile</h2>
     <div id="statusMessage" class="status-message"></div>
     <table>
         <thead><tr>
@@ -688,64 +693,78 @@ html = """<!DOCTYPE html>
         const tableBody = document.getElementById('tableBody');
         const statusMessage = document.getElementById('statusMessage');
 
-        data.forEach((row, index) => {{
-            const tr = document.createElement('tr');
+        data.forEach(function(row, index) {
+            var tr = document.createElement('tr');
+            tr.dataset.index = index;
             tr.dataset.originalData = JSON.stringify(row);
-            tr.innerHTML = \\'
-                <td class="editable-cell" contenteditable="true" data-field="Job">' + (row.Job || '') + '</td>\\' +
-                '<td class="editable-cell" contenteditable="true" data-field="Descrizione">' + (row.Descrizione || '') + '</td>\\' +
-                '<td class="editable-cell" contenteditable="true" data-field="Codice">' + (row.Codice || '') + '</td>\\' +
-                '<td class="editable-cell" contenteditable="true" data-field="Cliente">' + (row.Cliente || '') + '</td>\\' +
-                '<td class="editable-cell" contenteditable="true" data-field="Inizio">' + (row.Inizio || '') + '</td>\\' +
-                '<td class="editable-cell" contenteditable="true" data-field="Fine">' + (row.Fine || '') + '</td>\\' +
+            tr.innerHTML = '<td class="editable-cell" contenteditable="true" data-field="Job">' + (row.Job || '-') + '</td>' +
+                '<td class="editable-cell" contenteditable="true" data-field="Descrizione">' + (row.Descrizione || '-') + '</td>' +
+                '<td class="editable-cell" contenteditable="true" data-field="Codice">' + (row.Codice || '-') + '</td>' +
+                '<td class="editable-cell" contenteditable="true" data-field="Cliente">' + (row.Cliente || '-') + '</td>' +
+                '<td class="editable-cell" contenteditable="true" data-field="Inizio">' + (row.Inizio || '-') + '</td>' +
+                '<td class="editable-cell" contenteditable="true" data-field="Fine">' + (row.Fine || '-') + '</td>' +
                 '<td><button class="btn-save" onclick="saveRow(this)">Salva</button></td>';
-            tr.querySelectorAll('.editable-cell').forEach(cell => {{
-                cell.addEventListener('input', function() {{ this.classList.add('modified'); }});
-            }});
+            var cells = tr.querySelectorAll('.editable-cell');
+            cells.forEach(function(cell) {
+                cell.addEventListener('input', function() { this.classList.add('modified'); });
+            });
             tableBody.appendChild(tr);
-        }});
+        });
 
-        function saveRow(button) {{
-            const tr = button.closest('tr');
-            const updatedData = {{}};
-            tr.querySelectorAll('.editable-cell').forEach(cell => {{
-                updatedData[cell.dataset.field] = cell.textContent.trim() || null;
-            }});
+        function saveRow(button) {
+            var tr = button.closest('tr');
+            var updatedData = {};
+            tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+                var field = cell.dataset.field;
+                var value = cell.textContent.trim();
+                updatedData[field] = value === '-' ? null : value;
+            });
             button.disabled = true;
             button.textContent = 'Salvataggio...';
 
-            fetch('/api/update-commessa', {{
+            fetch('/api/update-commessa', {
                 method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(updatedData)
-            }})
-            .then(r => r.json())
-            .then(result => {{
-                if (result.success) {{
-                    statusMessage.textContent = 'Riga salvata con successo!';
-                    statusMessage.className = 'status-message success';
-                    tr.querySelectorAll('.editable-cell').forEach(c => c.classList.remove('modified'));
-                }} else {{
-                    statusMessage.textContent = 'Errore: ' + result.message;
-                    statusMessage.className = 'status-message error';
-                }}
-                setTimeout(() => {{ statusMessage.className = 'status-message'; }}, 5000);
-            }})
-            .catch(err => {{
-                statusMessage.textContent = 'Errore di connessione: ' + err.message;
-                statusMessage.className = 'status-message error';
-            }})
-            .finally(() => {{
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(result) {
+                if (result.success) {
+                    showStatus('Riga salvata con successo!', 'success');
+                    tr.querySelectorAll('.editable-cell').forEach(function(c) { c.classList.remove('modified'); });
+                } else {
+                    showStatus('Errore: ' + result.message, 'error');
+                }
+            })
+            .catch(function(error) {
+                showStatus('Errore di connessione: ' + error.message, 'error');
+            })
+            .finally(function() {
                 button.disabled = false;
                 button.textContent = 'Salva';
-            }});
-        }}
+            });
+        }
+
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = 'status-message ' + type;
+            setTimeout(function() { statusMessage.className = 'status-message'; }, 5000);
+        }
     </script>
 </body>
 </html>"""
 
 result = html
 \`\`\`
+
+#### PUNTI CHIAVE DELL'ESEMPIO:
+1. I dati si leggono con \`query_db()\` in Python — MAI dati hardcoded
+2. Si convertono in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
+3. Si iniettano nell'HTML con concatenazione: \`""" + json_data + """\`
+4. NON e' una f-string, quindi { e } nel CSS/JS sono NORMALI
+5. Il salvataggio usa \`fetch('/api/update-commessa')\` con i campi della riga nel body
+6. \`result = html\` come ultima riga — l'outputType del nodo DEVE essere 'html'
+7. Per il JS nell'HTML: usa \`function()\` invece di arrow functions per evitare problemi di escaping
 
 #### ERRORI COMUNI — DA NON FARE MAI:
 - ❌ \`window.parent.postMessage({type: 'SAVE_BUDGET', data: updates}, '*')\` — NON salva nel DB, e' solo un messaggio al parent iframe
