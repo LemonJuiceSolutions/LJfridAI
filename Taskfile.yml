@@ -12,9 +12,9 @@ tasks:
     cmds:
       - uv venv --clear
       - uv pip install nodeenv
-      - nodeenv --node=lts -p
+      - uv run nodeenv --node=lts -p
       - uv pip install -r python-backend/requirements.txt
-      - npm install
+      - uv run npm install
 
   start:
     desc: Start all services (DB, schema sync, Python backend, Next.js)
