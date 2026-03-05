@@ -21,10 +21,11 @@ For a completely isolated development environment with hot reloading:
 cp .env.template .env
 # Edit .env and add: NEXTAUTH_SECRET, GOOGLE_GENAI_API_KEY, etc.
 
-# 2. Start all services with Docker Compose
-docker compose up --build
+# 2. Build and initialize db
+task docker:build
+task docker:db:reset
 
-# Or with Task:
+# 3. Start
 task docker:start
 
 # 3. Services will be available at:

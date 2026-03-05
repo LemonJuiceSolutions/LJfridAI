@@ -116,7 +116,7 @@ tasks:
       - |
         until curl -s -o /dev/null -w "%{http_code}" http://localhost:9002 | grep -q "200\|302\|307"; do sleep 2; done
         echo "Next.js is ready."
-      - task: docker:prisma:push
+      - task: docker:prisma:migrate
       - |
         echo "All Docker services started successfully."
         echo "  - Next.js: http://localhost:9002"
@@ -170,10 +170,10 @@ tasks:
     cmds:
       - docker compose exec db psql -U postgres -d rulesagedb
 
-  docker:prisma:push:
-    desc: Push Prisma schema to Docker database
+  docker:prisma:migrate:
+    desc: Apply Prisma migrations to Docker database
     cmds:
-      - docker compose exec app npx prisma db push
+      - docker compose exec app npx prisma migrate deploy
       - docker compose exec app npx prisma generate
 
   docker:prisma:studio:
@@ -202,10 +202,11 @@ tasks:
     desc: Reset Docker database (drop and recreate)
     cmds:
       - docker compose down -v
-      - docker compose up -d db
+      - docker compose up -d db app
       - echo "Waiting for PostgreSQL to be ready..."
       - sleep 5
-      - task: docker:prisma:push
+      - task: docker:prisma:migrate
+      - task: docker:stop
       - echo "Database reset complete."
 
   docker:clean:
