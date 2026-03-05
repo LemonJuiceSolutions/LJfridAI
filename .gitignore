@@ -91,3 +91,4 @@ htmlcov/
 dump.sql
 *.csv
 *.html
+/logs

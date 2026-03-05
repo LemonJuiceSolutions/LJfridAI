@@ -87,6 +87,15 @@ App is available at:
 
 > The login form accepts plain usernames — `@demo.com` is appended automatically if no `@` is present. Override the domain with `NEXT_PUBLIC_DEFAULT_EMAIL_DOMAIN` in `.env`.
 
+### 3. Debug with logpiper
+
+Logpiper mcp is configured in **.mcp.conf**
+
+example prompt:
+```
+use logpiper to read ./logs and find tuning advices
+```
+
 
 ---
 
