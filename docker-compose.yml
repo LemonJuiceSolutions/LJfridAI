@@ -26,6 +26,7 @@ services:
     volumes:
       # Mount source code for hot reloading
       - ./src:/app/src:delegated
+      - ./scripts:/app/scripts:delegated
       - ./public:/app/public:delegated
       - ./prisma:/app/prisma:delegated
       # Mount config files that might change
@@ -40,12 +41,12 @@ services:
       - app_next_cache:/app/.next
     networks:
       - app-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9002/api/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 60s
-      retries: 3
+    # healthcheck:
+    #   test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9002/api/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   start_period: 60s
+    #   retries: 3
 
   # ============================================================================
   # Python Flask Backend
@@ -67,12 +68,12 @@ services:
       - ./python-backend:/app:delegated
     networks:
       - app-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 10s
-      retries: 3
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   start_period: 10s
+    #   retries: 3
 
   # ============================================================================
   # PostgreSQL Database

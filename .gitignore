@@ -87,3 +87,5 @@ htmlcov/
 *.py,cover
 .mypy_cache/
 .dmypy.json
+*.log
+dump.sql

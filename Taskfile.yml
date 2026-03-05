@@ -3,21 +3,29 @@ version: '3'
 dotenv: ['.env.local', '.env']
 
 tasks:
+  venv:
+    desc: local bootstrap backend nextjs and python
+    status:
+      - test -d .venv
+    env:
+      UV_PROJECT_ENVIRONMENT: .venv
+    cmds:
+      - uv venv --clear
+      - uv pip install nodeenv
+      - nodeenv --node=lts -p
+      - uv pip install -r python-backend/requirements.txt
+      - npm install
+
   start:
     desc: Start all services (DB, schema sync, Python backend, Next.js)
-    deps: [db:start]
+    deps: [db:start, venv]
     cmds:
-      - task: db:push
-      - |
-        cd python-backend
-        if [ ! -d "venv" ]; then python3 -m venv venv; fi
-        source venv/bin/activate
-        pip install -r requirements.txt --quiet
-        python app.py &> /tmp/python-backend.log &
-        echo "Waiting for Python backend..."
-        until curl -s http://localhost:5005/health > /dev/null 2>&1; do sleep 1; done
-        echo "Python backend ready. Logs: /tmp/python-backend.log"
-      - task: dev
+      - task: db:migrate
+      - task: start:services
+
+  start:services:
+    internal: true
+    deps: [python:start, dev]
 
   stop:
     desc: Stop all services
@@ -28,54 +36,20 @@ tasks:
 
   # ── Database ──────────────────────────────────────────────────────────────
 
-  db:start:
-    desc: Start the PostgreSQL Docker container (creates it if it doesn't exist)
-    cmds:
-      - |
-        if docker ps -a --filter name=^rulesage-db$ --format '.' | grep -q '.'; then
-          docker start rulesage-db
-        else
-          docker run -d --name rulesage-db \
-            -e POSTGRES_USER=postgres \
-            -e POSTGRES_PASSWORD=postgres \
-            -e POSTGRES_DB=rulesagedb \
-            -p 5432:5432 \
-            postgres:15
-        fi
-      - echo "Waiting for PostgreSQL..."
-      - until docker exec rulesage-db pg_isready -U postgres > /dev/null 2>&1; do sleep 1; done
-      - echo "PostgreSQL is ready."
-
-  db:stop:
-    desc: Stop the PostgreSQL Docker container
-    cmds:
-      - docker stop rulesage-db
-      - echo "PostgreSQL stopped."
-
-  db:drop:
-    desc: Drop and recreate the rulesagedb database (destructive!)
-    cmds:
-      - docker exec rulesage-db psql -U postgres -c "DROP DATABASE IF EXISTS rulesagedb;"
-      - docker exec rulesage-db psql -U postgres -c "CREATE DATABASE rulesagedb;"
-      - echo "Database dropped and recreated."
-
-  db:push:
+  db:migrate:
     desc: Apply Prisma schema to the database
     cmds:
-      - npx prisma db push
+      - npx prisma migrate deploy
       - npx prisma generate
 
   # ── Python backend ────────────────────────────────────────────────────────
 
   python:start:
     desc: Start the Python/Flask backend on port 5005
+    deps: [venv]
     dir: python-backend
     cmds:
-      - |
-        if [ ! -d "venv" ]; then
-          python3 -m venv venv
-        fi
-      - source venv/bin/activate && pip install -r requirements.txt --quiet && python app.py
+      - python app.py
 
   python:stop:
     desc: Stop the Python/Flask backend (kills process on port 5005)
@@ -87,6 +61,7 @@ tasks:
 
   dev:
     desc: Start the Next.js dev server on port 9002
+    deps: [venv]
     cmds:
       - npm run dev
 
@@ -106,7 +81,7 @@ tasks:
 
   docker:start:
     desc: Start all services using Docker Compose (DB, Python, Next.js)
-    deps: [docker:db:start]
+    deps: [db:start]
     cmds:
       - docker compose up -d
       - echo "Waiting for services to be healthy..."
@@ -116,7 +91,7 @@ tasks:
       - |
         until curl -s -o /dev/null -w "%{http_code}" http://localhost:9002 | grep -q "200\|302\|307"; do sleep 2; done
         echo "Next.js is ready."
-      - task: docker:prisma:push
+      - task: docker:prisma:migrate
       - |
         echo "All Docker services started successfully."
         echo "  - Next.js: http://localhost:9002"
@@ -170,18 +145,19 @@ tasks:
     cmds:
       - docker compose exec db psql -U postgres -d rulesagedb
 
-  docker:prisma:push:
-    desc: Push Prisma schema to Docker database
+  docker:prisma:migrate:
+    desc: Apply Prisma migrations to Docker database
     cmds:
-      - docker compose exec app npx prisma db push
+      - docker compose exec app npx prisma migrate deploy
       - docker compose exec app npx prisma generate
+      - docker compose exec app npx tsx scripts/create-admin.ts
 
   docker:prisma:studio:
     desc: Open Prisma Studio (database GUI)
     cmds:
       - docker compose exec app npx prisma studio
 
-  docker:db:start:
+  db:start:
     desc: Start PostgreSQL Docker container
     cmds:
       - |
@@ -192,21 +168,32 @@ tasks:
         fi
       - echo "PostgreSQL container ready."
 
-  docker:db:stop:
+  db:stop:
     desc: Stop PostgreSQL Docker container
     cmds:
       - docker compose stop db
       - echo "PostgreSQL container stopped."
 
-  docker:db:reset:
+  db:reset:
     desc: Reset Docker database (drop and recreate)
     cmds:
       - docker compose down -v
-      - docker compose up -d db
+      - docker compose up -d db app
       - echo "Waiting for PostgreSQL to be ready..."
       - sleep 5
-      - task: docker:prisma:push
+      - task: docker:prisma:migrate
+      - task: docker:stop
       - echo "Database reset complete."
+
+  db:dump:
+    desc: "Dump the Docker database to a file (default: dump.sql, override with FILE=myfile.sql)"
+    cmds:
+      - FILE=${FILE:-dump.sql}; docker compose exec db pg_dump -U postgres rulesagedb > "$FILE" && echo "Database dumped to $FILE"
+
+  db:restore:
+    desc: "Restore the Docker database from a file (default: dump.sql, override with FILE=myfile.sql)"
+    cmds:
+      - FILE=${FILE:-dump.sql}; docker compose exec -T db psql -U postgres rulesagedb < "$FILE" && echo "Database restored from $FILE"
 
   docker:clean:
     desc: Clean up Docker resources (containers, volumes, images)
@@ -214,3 +201,5 @@ tasks:
       - docker compose down -v
       - docker rmi likeaisaid-app likeaisaid-python-backend 2>/dev/null || true
       - echo "Docker resources cleaned."
+
+

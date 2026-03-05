@@ -23,9 +23,12 @@ export default function SignInPage() {
         e.preventDefault();
         setIsLoading(true);
 
+        const domain = process.env.NEXT_PUBLIC_DEFAULT_EMAIL_DOMAIN ?? '@demo.com';
+        const resolvedEmail = email.includes('@') ? email : email + domain;
+
         try {
             const result = await signIn('credentials', {
-                email,
+                email: resolvedEmail,
                 password,
                 redirect: false,
             });
@@ -71,7 +74,7 @@ export default function SignInPage() {
                             <Label htmlFor="email">Email</Label>
                             <Input
                                 id="email"
-                                type="email"
+                                type="text"
                                 placeholder="nome@azienda.com"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
