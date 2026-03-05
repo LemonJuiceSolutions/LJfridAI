@@ -388,6 +388,7 @@ export default function EditNodeDialog({
   const [selectedPipelines, setSelectedPipelines] = useState<string[]>([]);
   const sqlPreviewRef = useRef<HTMLDivElement>(null);
   const pythonPreviewRef = useRef<HTMLDivElement>(null);
+  const pythonPreviewBtnRef = useRef<HTMLButtonElement>(null);
 
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
   const [sqlPreviewTimestamp, setSqlPreviewTimestamp] = useState<number | null>(null);
@@ -472,6 +473,22 @@ export default function EditNodeDialog({
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, [htmlStyleEditorOpen]);
+
+  // Listen for DB write success from HTML iframe and re-run preview
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'iframe-db-write-success') {
+        console.log('[IFRAME] DB write success - re-running preview...');
+        // Small delay to let the DB commit, then click the preview button
+        setTimeout(() => {
+          pythonPreviewBtnRef.current?.click();
+        }, 500);
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
   const { theme: globalChartTheme } = useChartTheme();
 
   // SQL Export State
@@ -3221,6 +3238,7 @@ export default function EditNodeDialog({
 
                         <div className="flex gap-2 relative z-20">
                           <Button
+                            ref={pythonPreviewBtnRef}
                             className="bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
                             onClick={() => {
                               if (!pythonCode) {
@@ -3505,15 +3523,6 @@ export default function EditNodeDialog({
                   )}
 
                   {/* Preview Result - BELOW the two columns, max 200px */}
-                  {/* DEBUG LOGS VIEWER */}
-                  {pythonPreviewResult?.debugLogs && pythonPreviewResult.debugLogs.length > 0 && (
-                    <div className="mt-4 p-4 border rounded-lg bg-slate-950 text-xs font-mono text-green-400 overflow-auto max-h-60">
-                      <div className="font-bold text-white mb-2 pb-2 border-b border-slate-800">Server-Side Debug Logs:</div>
-                      {pythonPreviewResult.debugLogs.map((log, i) => (
-                        <div key={i} className="whitespace-pre-wrap">{log}</div>
-                      ))}
-                    </div>
-                  )}
 
                   {pythonPreviewResult && (
                     <div ref={pythonPreviewRef} className="mt-4 border rounded-md overflow-hidden bg-white dark:bg-zinc-950 relative min-h-[40px]">
@@ -3596,16 +3605,17 @@ export default function EditNodeDialog({
                                 <Settings2 className="h-4 w-4 text-violet-500" />
                               </button>
                               <iframe
+                                key={pythonPreviewResult.timestamp || Date.now()}
                                 srcDoc={(() => {
                                   const html = applyHtmlStyleOverrides(pythonPreviewResult.html, htmlStyleOverrides);
-                                  // Inject <base> tag so fetch() with relative URLs works inside srcdoc iframe
-                                  const baseTag = `<base href="${window.location.origin}/">`;
+                                  const cid = pythonConnectorId || '';
+                                  const fetchPolyfill = `<script>(function(){var F=window.fetch;var B=${JSON.stringify(window.location.origin)};var CID=${JSON.stringify(cid)};window.fetch=function(u,o){if(typeof u==='string'&&u.startsWith('/'))u=B+u;if(!o)o={};o.credentials='include';if(o.method&&o.method.toUpperCase()==='POST'&&o.body&&CID){try{var b=JSON.parse(o.body);if(!b.connectorId){b.connectorId=CID;o.body=JSON.stringify(b)}}catch(e){}}return F.call(this,u,o).then(function(r){if(o.method&&o.method.toUpperCase()==='POST'){r.clone().json().then(function(j){if(j.success){window.parent.postMessage({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})}})();</script>`;
                                   if (html.includes('<head>')) {
-                                    return html.replace('<head>', `<head>${baseTag}`);
+                                    return html.replace('<head>', `<head>${fetchPolyfill}`);
                                   } else if (html.includes('<html>')) {
-                                    return html.replace('<html>', `<html><head>${baseTag}</head>`);
+                                    return html.replace('<html>', `<html><head>${fetchPolyfill}</head>`);
                                   }
-                                  return `<head>${baseTag}</head>${html}`;
+                                  return `<head>${fetchPolyfill}</head>${html}`;
                                 })()}
                                 className="w-full border-none min-h-[400px]"
                                 sandbox="allow-scripts allow-same-origin allow-forms"
