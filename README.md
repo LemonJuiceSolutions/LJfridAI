@@ -6,9 +6,8 @@ Like AI Said is a Next.js application that acts as a Business Rules Engine with 
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+
 - [Docker](https://www.docker.com/) (for PostgreSQL)
-- [Python](https://www.python.org/) 3.10+ (for the data backend)
+- [uv](https://docs.astral.sh/uv/) (manages Python venv + Node.js LTS via nodeenv)
 - A [Google AI API key](https://aistudio.google.com/apikey) (Gemini)
 - [Task](https://taskfile.dev/) (optional, for `task` commands)
 
@@ -52,13 +51,13 @@ For full Docker documentation, see [`docs/DOCKER-DEV.md`](docs/DOCKER-DEV.md).
 
 ## Local Quickstart (with Taskfile)
 
-### 1. Install dependencies
+### Prerequisites (local)
 
-```bash
-npm install
-```
+- [uv](https://docs.astral.sh/uv/) (Python package manager — handles venv + pip)
+- [Docker](https://www.docker.com/) (for PostgreSQL)
+- [Task](https://taskfile.dev/)
 
-### 2. Configure environment
+### 1. Configure environment
 
 ```bash
 cp .env.template .env.local
@@ -66,47 +65,33 @@ cp .env.template .env.local
 
 Then fill in the values — at minimum `NEXTAUTH_SECRET` and `GOOGLE_GENAI_API_KEY`.
 
-### 3–7. Start all services
-
-With [Task](https://taskfile.dev/):
+### 2. Start all services
 
 ```bash
 task start
 ```
 
-Or manually:
-
-**4. Start PostgreSQL**
-```bash
-task db:start
-# or: docker run -d --name rulesage-db -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=rulesagedb -p 5432:5432 postgres:15
-```
-
-**5. Apply database schema**
-```bash
-task db:push
-# or: npx prisma db push
-```
-
-**6. Start the Python backend**
-```bash
-task python:start
-# or: cd python-backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && python app.py
-```
-
-**7. Start the Next.js dev server**
-```bash
-task dev
-# or: npm run dev
-```
+This automatically:
+- Starts PostgreSQL (Docker)
+- Creates `.venv` with Node.js LTS + Python dependencies (first run only)
+- Applies the Prisma schema
+- Starts the Python backend and Next.js dev server in parallel
 
 App is available at **http://localhost:9002**.
+
+### Individual tasks
+
+```bash
+task venv          # bootstrap .venv (auto-skipped if already exists)
+task db:push       # apply Prisma schema
+task python:start  # start Flask backend only
+task dev           # start Next.js only
+```
 
 ### Stop services
 
 ```bash
 task stop          # stop everything
-task db:stop       # stop PostgreSQL only
 task python:stop   # stop Flask backend only
 task dev:stop      # stop Next.js only
 ```
