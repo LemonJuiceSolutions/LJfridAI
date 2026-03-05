@@ -623,24 +623,61 @@ Uso: \`rows = execute_db("UPDATE dbo.Tabella SET col='val' WHERE id=1")\`
   \`\`\`
 
 ### SCRITTURA DB da HTML interattivo (CRITICO - LEGGI ATTENTAMENTE)
-Quando generi HTML interattivo con tabelle editabili che scrivono nel DB, segui ESATTAMENTE questo pattern.
-Il sistema inietta automaticamente connectorId e token — tu NON devi preoccupartene.
+Quando generi HTML interattivo con tabelle editabili che scrivono nel DB, usa \`fetch('/api/update-commessa')\`.
+Il sistema inietta automaticamente connectorId, internalToken e URL assoluto — tu NON li metti nel body.
 
-#### COME FUNZIONA:
-1. Usa \`query_db()\` in Python per LEGGERE i dati dal DB
-2. Converti i dati in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
-3. Inietta il JSON nell'HTML con concatenazione di stringhe
-4. Nel JavaScript dell'HTML, usa \`fetch('/api/update-commessa')\` per SCRIVERE — manda i dati della riga direttamente
-5. Il polyfill di sistema aggiunge automaticamente connectorId e URL assoluto
+#### ENDPOINT /api/update-commessa — DUE MODALITA':
+L'endpoint accetta POST con JSON body:
+- **Mode 1 (RAW SQL)**: manda \`{query: "UPDATE dbo.Tabella SET col='val' WHERE pk=123"}\` — il sistema aggiunge connectorId e internalToken automaticamente. FUNZIONA PER QUALSIASI TABELLA.
+- **Mode 2 (ROW DATA)**: manda \`{Job:'J001', Descrizione:'...', Cliente:'...'}\` — FUNZIONA SOLO per dbo.CommesseHubSpot con Job come PK.
+
+**USA SEMPRE MODE 1 (RAW SQL)** perche' funziona con QUALSIASI tabella.
 
 #### REGOLE FONDAMENTALI:
-- Usa \`fetch('/api/update-commessa', {method:'POST', body: JSON.stringify(rowData)})\` per scrivere
-- Manda i campi della riga come body (es. {Job:'J001', Descrizione:'test', Cliente:'ABC'})
-- NON serve connectorId ne' internalToken nel body — il sistema li inietta automaticamente
+- L'unico endpoint e': \`/api/update-commessa\` — NON ne esistono altri
+- Manda \`{query: "UPDATE dbo.NomeTabella SET ..."}\` nel body — il sistema aggiunge connectorId e internalToken
+- NON mettere connectorId o internalToken nel body — il sistema li inietta automaticamente
 - NON usare MAI \`postMessage\` per salvare dati — NON FUNZIONA, NON SCRIVE NEL DB
 - NON usare MAI \`window.parent.postMessage({type: 'SAVE_...'})\` — e' solo un messaggio al parent, non salva niente
 - NON inventare endpoint come \`/api/budget/update\` o \`/api/save-data\` — non esistono
 - NON simulare il salvataggio con setTimeout o messaggi finti
+
+#### PATTERN SALVATAGGIO (COPIA ESATTAMENTE):
+Nel JavaScript dell'HTML, la funzione di salvataggio deve essere ESATTAMENTE cosi':
+\`\`\`
+function saveRow(button) {
+    var tr = button.closest('tr');
+    // Raccogli i valori delle celle editabili
+    var anno = tr.querySelector('[data-field="Anno"]').textContent.trim();
+    var mese = tr.querySelector('[data-field="Mese"]').textContent.trim();
+    var peso = tr.querySelector('[data-field="Peso"]').textContent.trim();
+    // Costruisci la query UPDATE con i nomi delle colonne e PK corretti
+    var sqlQuery = "UPDATE dbo.BudgetMensile SET Peso=" + peso + " WHERE Anno=" + anno + " AND Mese=" + mese;
+    button.disabled = true;
+    button.textContent = 'Salvataggio...';
+    fetch('/api/update-commessa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: sqlQuery })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(result) {
+        if (result.success) {
+            showStatus('Salvato! ' + (result.rowsAffected || 0) + ' righe aggiornate', 'success');
+        } else {
+            showStatus('Errore: ' + result.message, 'error');
+        }
+    })
+    .catch(function(err) {
+        showStatus('Errore connessione: ' + err.message, 'error');
+    })
+    .finally(function() {
+        button.disabled = false;
+        button.textContent = 'Salva';
+    });
+}
+\`\`\`
+**NOTA**: Adatta sqlQuery alla tabella e colonne corrette. Usa i nomi ESATTI delle colonne dal DB.
 
 #### ESEMPIO COMPLETO FUNZIONANTE (tabella editabile con salvataggio DB):
 NOTA: questo esempio usa triple-quotes Python (""") e concatenazione di stringhe (""" + json_data + """).
@@ -650,8 +687,8 @@ NON e' una f-string, quindi le parentesi graffe { } nel CSS e JS restano NORMALI
 import pandas as pd
 import json
 
-# 1. Leggi i dati dal DB
-df = query_db("SELECT * FROM dbo.CommesseHubSpot")
+# 1. Leggi i dati dal DB (adatta la tabella alla richiesta dell'utente)
+df = query_db("SELECT Anno, Mese, NomeMese, Peso, BudgetMensile FROM dbo.BudgetMensile")
 
 # 2. Converti in JSON per iniettare nell'HTML
 data_records = df.to_dict('records')
@@ -680,29 +717,26 @@ html = """<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <h2>Tabella Editabile</h2>
+    <h2>Budget Mensile - Editabile</h2>
     <div id="statusMessage" class="status-message"></div>
     <table>
         <thead><tr>
-            <th>Job</th><th>Descrizione</th><th>Codice</th><th>Cliente</th><th>Inizio</th><th>Fine</th><th>Azione</th>
+            <th>Anno</th><th>Mese</th><th>Nome Mese</th><th>Peso</th><th>Budget</th><th>Azione</th>
         </tr></thead>
         <tbody id="tableBody"></tbody>
     </table>
     <script>
-        const data = """ + json_data + """;
-        const tableBody = document.getElementById('tableBody');
-        const statusMessage = document.getElementById('statusMessage');
+        var data = """ + json_data + """;
+        var tableBody = document.getElementById('tableBody');
+        var statusMessage = document.getElementById('statusMessage');
 
-        data.forEach(function(row, index) {
+        data.forEach(function(row) {
             var tr = document.createElement('tr');
-            tr.dataset.index = index;
-            tr.dataset.originalData = JSON.stringify(row);
-            tr.innerHTML = '<td class="editable-cell" contenteditable="true" data-field="Job">' + (row.Job || '-') + '</td>' +
-                '<td class="editable-cell" contenteditable="true" data-field="Descrizione">' + (row.Descrizione || '-') + '</td>' +
-                '<td class="editable-cell" contenteditable="true" data-field="Codice">' + (row.Codice || '-') + '</td>' +
-                '<td class="editable-cell" contenteditable="true" data-field="Cliente">' + (row.Cliente || '-') + '</td>' +
-                '<td class="editable-cell" contenteditable="true" data-field="Inizio">' + (row.Inizio || '-') + '</td>' +
-                '<td class="editable-cell" contenteditable="true" data-field="Fine">' + (row.Fine || '-') + '</td>' +
+            tr.innerHTML = '<td data-field="Anno">' + (row.Anno || '') + '</td>' +
+                '<td data-field="Mese">' + (row.Mese || '') + '</td>' +
+                '<td>' + (row.NomeMese || '') + '</td>' +
+                '<td class="editable-cell" contenteditable="true" data-field="Peso">' + (row.Peso || '') + '</td>' +
+                '<td>' + (row.BudgetMensile || '') + '</td>' +
                 '<td><button class="btn-save" onclick="saveRow(this)">Salva</button></td>';
             var cells = tr.querySelectorAll('.editable-cell');
             cells.forEach(function(cell) {
@@ -713,31 +747,28 @@ html = """<!DOCTYPE html>
 
         function saveRow(button) {
             var tr = button.closest('tr');
-            var updatedData = {};
-            tr.querySelectorAll('.editable-cell').forEach(function(cell) {
-                var field = cell.dataset.field;
-                var value = cell.textContent.trim();
-                updatedData[field] = value === '-' ? null : value;
-            });
+            var anno = tr.querySelector('[data-field="Anno"]').textContent.trim();
+            var mese = tr.querySelector('[data-field="Mese"]').textContent.trim();
+            var peso = tr.querySelector('[data-field="Peso"]').textContent.trim();
+            var sqlQuery = "UPDATE dbo.BudgetMensile SET Peso=" + peso + " WHERE Anno=" + anno + " AND Mese=" + mese;
             button.disabled = true;
             button.textContent = 'Salvataggio...';
-
             fetch('/api/update-commessa', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updatedData)
+                body: JSON.stringify({ query: sqlQuery })
             })
-            .then(function(response) { return response.json(); })
+            .then(function(r) { return r.json(); })
             .then(function(result) {
                 if (result.success) {
-                    showStatus('Riga salvata con successo!', 'success');
+                    showStatus('Salvato! ' + (result.rowsAffected || 0) + ' righe aggiornate', 'success');
                     tr.querySelectorAll('.editable-cell').forEach(function(c) { c.classList.remove('modified'); });
                 } else {
-                    showStatus('Errore: ' + result.message, 'error');
+                    showStatus('Errore: ' + (result.message || 'sconosciuto'), 'error');
                 }
             })
-            .catch(function(error) {
-                showStatus('Errore di connessione: ' + error.message, 'error');
+            .catch(function(err) {
+                showStatus('Errore connessione: ' + err.message, 'error');
             })
             .finally(function() {
                 button.disabled = false;
@@ -757,22 +788,23 @@ html = """<!DOCTYPE html>
 result = html
 \`\`\`
 
-#### PUNTI CHIAVE DELL'ESEMPIO:
+#### PUNTI CHIAVE:
 1. I dati si leggono con \`query_db()\` in Python — MAI dati hardcoded
 2. Si convertono in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
 3. Si iniettano nell'HTML con concatenazione: \`""" + json_data + """\`
 4. NON e' una f-string, quindi { e } nel CSS/JS sono NORMALI
-5. Il salvataggio usa \`fetch('/api/update-commessa')\` con i campi della riga nel body
-6. \`result = html\` come ultima riga — l'outputType del nodo DEVE essere 'html'
-7. Per il JS nell'HTML: usa \`function()\` invece di arrow functions per evitare problemi di escaping
+5. Il salvataggio usa \`fetch('/api/update-commessa')\` con \`{query: "UPDATE ..."}\` nel body
+6. Il body DEVE contenere il campo \`query\` con la query SQL UPDATE — il sistema aggiunge il resto
+7. \`result = html\` come ultima riga — l'outputType del nodo DEVE essere 'html'
+8. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
 
 #### ERRORI COMUNI — DA NON FARE MAI:
-- ❌ \`window.parent.postMessage({type: 'SAVE_BUDGET', data: updates}, '*')\` — NON salva nel DB, e' solo un messaggio al parent iframe
-- ❌ \`fetch('/api/budget/update', ...)\` — endpoint inesistente, errore 404
-- ❌ \`fetch('/api/save-data', ...)\` — endpoint inesistente
+- ❌ \`window.parent.postMessage({type: 'SAVE_BUDGET', data: updates}, '*')\` — NON salva nel DB, e' solo un messaggio vuoto
+- ❌ \`fetch('/api/budget/update', ...)\` — endpoint INESISTENTE, errore 404
+- ❌ \`fetch('/api/save-data', ...)\` — endpoint INESISTENTE
 - ❌ Simulare il salvataggio con setTimeout e messaggio finto — l'utente vuole salvare nel DB per davvero
-- ❌ Mettere connectorId o internalToken nel body della fetch — non servono, il sistema li aggiunge da solo
-- ✅ \`fetch('/api/update-commessa', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(rowData)})\` — UNICO modo corretto
+- ❌ \`body: JSON.stringify(updatedData)\` senza il campo \`query\` — funziona SOLO per CommesseHubSpot con Job come PK
+- ✅ \`body: JSON.stringify({query: "UPDATE dbo.NomeTabella SET col=val WHERE pk=id"})\` — UNICO modo corretto per QUALSIASI tabella
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
 Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.
