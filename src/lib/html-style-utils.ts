@@ -1,5 +1,29 @@
 // HTML Style Overrides - mirrors the pattern of plotly-utils.ts
 
+/**
+ * Inject a fetch polyfill into srcdoc HTML so that:
+ * 1. Relative URLs (e.g. /api/...) are resolved to the app's absolute origin
+ * 2. credentials: 'include' is added to every request
+ * 3. connectorId is injected into POST bodies when missing
+ * 4. Successful POST writes send a postMessage to the parent frame
+ *
+ * This is needed because srcdoc iframes have origin "null" which breaks fetch.
+ */
+export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: string; baseUrl?: string }): string {
+  const cid = opts?.connectorId || '';
+  // baseUrl must be provided at call site (from window.location.origin) since this may run server-side
+  const base = opts?.baseUrl || '';
+
+  const polyfillScript = `<script>(function(){var F=window.fetch;var B=${JSON.stringify(base)};var CID=${JSON.stringify(cid)};window.fetch=function(u,o){if(typeof u==='string'&&u.startsWith('/'))u=B+u;if(!o)o={};o.credentials='include';if(o.method&&o.method.toUpperCase()==='POST'&&o.body&&CID){try{var b=JSON.parse(o.body);if(!b.connectorId){b.connectorId=CID;o.body=JSON.stringify(b)}}catch(e){}}return F.call(this,u,o).then(function(r){if(o.method&&o.method.toUpperCase()==='POST'){r.clone().json().then(function(j){if(j.success){window.parent.postMessage({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})}})();</script>`;
+
+  if (html.includes('<head>')) {
+    return html.replace('<head>', `<head>${polyfillScript}`);
+  } else if (html.includes('<html>')) {
+    return html.replace('<html>', `<html><head>${polyfillScript}</head>`);
+  }
+  return `<head>${polyfillScript}</head>${html}`;
+}
+
 export interface HtmlStyleOverrides {
   // ── Page / Container ──
   page_bg_color?: string;

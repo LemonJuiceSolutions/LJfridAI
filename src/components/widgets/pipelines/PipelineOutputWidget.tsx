@@ -63,9 +63,10 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
     const { data: session, status } = useSession();
     const [reportData, setReportData] = useState<any>(null);
     const [reportContent, setReportContent] = useState<string>('');
-    const [reportType, setReportType] = useState<'table' | 'kpi' | 'chart' | undefined>(undefined);
+    const [reportType, setReportType] = useState<'table' | 'kpi' | 'chart' | 'html' | undefined>(undefined);
     const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | undefined>(undefined);
     const [htmlStyleOverrides, setHtmlStyleOverrides] = useState<HtmlStyleOverrides | undefined>(undefined);
+    const [nodeConnectorId, setNodeConnectorId] = useState<string | undefined>(undefined);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [showExecutionDialog, setShowExecutionDialog] = useState(false);
@@ -120,6 +121,8 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
                 // Load htmlStyleOverrides from pythonPreviewResult or directly from node
                 const nodeHtmlOverrides = node.pythonPreviewResult?.htmlStyleOverrides || node.htmlStyleOverrides;
                 setHtmlStyleOverrides(nodeHtmlOverrides || undefined);
+                // Store connectorId for HTML iframe fetch polyfill
+                setNodeConnectorId(node.pythonConnectorId || node.sqlConnectorId || undefined);
 
                 // Always try to get persisted result from DB
                 let result: any = null;
@@ -230,6 +233,7 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
                     onRefresh={handleRefresh}
                     onUpdateHierarchy={handleUpdateHierarchyClick}
                     htmlStyleOverrides={htmlStyleOverrides}
+                    connectorId={nodeConnectorId}
                 />
             )}
 

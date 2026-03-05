@@ -58,7 +58,7 @@ import ChartStyleEditor from '@/components/widgets/builder/ChartStyleEditor';
 import PlotlyStyleEditor, { PlotlyStyleOverrides, applyPlotlyOverrides, plotlyJsonToHtml } from '@/components/widgets/builder/PlotlyStyleEditor';
 import HtmlStyleEditor from '@/components/widgets/builder/HtmlStyleEditor';
 import type { HtmlStyleOverrides, HtmlInspectorZone } from '@/lib/html-style-utils';
-import { applyHtmlStyleOverrides } from '@/lib/html-style-utils';
+import { applyHtmlStyleOverrides, injectIframeFetchPolyfill } from '@/lib/html-style-utils';
 import { ChartStyle } from '@/lib/chart-style';
 import { useChartTheme } from '@/hooks/use-chart-theme';
 import { AgentChat } from '@/components/agents/agent-chat';
@@ -3606,17 +3606,10 @@ export default function EditNodeDialog({
                               </button>
                               <iframe
                                 key={pythonPreviewResult.timestamp || Date.now()}
-                                srcDoc={(() => {
-                                  const html = applyHtmlStyleOverrides(pythonPreviewResult.html, htmlStyleOverrides);
-                                  const cid = pythonConnectorId || '';
-                                  const fetchPolyfill = `<script>(function(){var F=window.fetch;var B=${JSON.stringify(window.location.origin)};var CID=${JSON.stringify(cid)};window.fetch=function(u,o){if(typeof u==='string'&&u.startsWith('/'))u=B+u;if(!o)o={};o.credentials='include';if(o.method&&o.method.toUpperCase()==='POST'&&o.body&&CID){try{var b=JSON.parse(o.body);if(!b.connectorId){b.connectorId=CID;o.body=JSON.stringify(b)}}catch(e){}}return F.call(this,u,o).then(function(r){if(o.method&&o.method.toUpperCase()==='POST'){r.clone().json().then(function(j){if(j.success){window.parent.postMessage({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})}})();</script>`;
-                                  if (html.includes('<head>')) {
-                                    return html.replace('<head>', `<head>${fetchPolyfill}`);
-                                  } else if (html.includes('<html>')) {
-                                    return html.replace('<html>', `<html><head>${fetchPolyfill}</head>`);
-                                  }
-                                  return `<head>${fetchPolyfill}</head>${html}`;
-                                })()}
+                                srcDoc={injectIframeFetchPolyfill(
+                                  applyHtmlStyleOverrides(pythonPreviewResult.html, htmlStyleOverrides),
+                                  { connectorId: pythonConnectorId, baseUrl: typeof window !== 'undefined' ? window.location.origin : '' }
+                                )}
                                 className="w-full border-none min-h-[400px]"
                                 sandbox="allow-scripts allow-same-origin allow-forms"
                                 title="HTML Preview"

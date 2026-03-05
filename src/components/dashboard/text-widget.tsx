@@ -21,7 +21,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuChe
 import { ScrollArea } from '../ui/scroll-area';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
-import { applyHtmlStyleOverrides } from '@/lib/html-style-utils';
+import { applyHtmlStyleOverrides, injectIframeFetchPolyfill } from '@/lib/html-style-utils';
 
 
 interface TextWidgetProps {
@@ -35,6 +35,7 @@ interface TextWidgetProps {
     isRefreshing?: boolean;
     onUpdateHierarchy?: () => void;
     htmlStyleOverrides?: HtmlStyleOverrides;
+    connectorId?: string;
 }
 
 const ChartRenderer = ({ data }: { data: { name: string; value: number }[] }) => {
@@ -229,7 +230,8 @@ export default function TextWidget({
     onRefresh,
     isRefreshing,
     onUpdateHierarchy,
-    htmlStyleOverrides
+    htmlStyleOverrides,
+    connectorId
 }: TextWidgetProps) {
     const editorRef = useRef<HTMLDivElement>(null);
     const [liveContent, setLiveContent] = useState(content);
@@ -356,14 +358,18 @@ export default function TextWidget({
                                 const styledSrcDoc = htmlStyleOverrides
                                     ? applyHtmlStyleOverrides(htmlContent, htmlStyleOverrides)
                                     : `<html><head><style>body { margin: 0; padding: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: auto; }</style></head><body>${htmlContent}</body></html>`;
+                                const finalSrcDoc = injectIframeFetchPolyfill(styledSrcDoc, {
+                                    connectorId,
+                                    baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+                                });
                                 return (
                                     <div key={index} className="w-full my-4 bg-white dark:bg-zinc-950 overflow-hidden rounded-md border" style={{ minHeight: 200 }}>
                                         <iframe
-                                            srcDoc={styledSrcDoc}
+                                            srcDoc={finalSrcDoc}
                                             className="w-full border-none"
                                             style={{ minHeight: 200, height: '100%' }}
                                             title="HTML Widget"
-                                            sandbox="allow-same-origin"
+                                            sandbox="allow-scripts allow-same-origin allow-forms"
                                         />
                                     </div>
                                 );

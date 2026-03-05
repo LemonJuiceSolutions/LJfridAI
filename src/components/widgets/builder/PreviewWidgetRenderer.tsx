@@ -5,7 +5,7 @@ import { getCachedTree, invalidateAndNotifyWidgets } from '@/lib/tree-cache';
 import { DataTable } from '@/components/ui/data-table';
 import SmartWidgetRenderer from './SmartWidgetRenderer';
 import { applyPlotlyOverrides, plotlyJsonToHtml } from '@/lib/plotly-utils';
-import { applyHtmlStyleOverrides } from '@/lib/html-style-utils';
+import { applyHtmlStyleOverrides, injectIframeFetchPolyfill } from '@/lib/html-style-utils';
 import { Loader2, Database, Code, AlertCircle, RefreshCw, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -89,7 +89,8 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                             // Fallback: show Python preview (chart/html/variable)
                             setPreviewData({
                                 ...node.pythonPreviewResult,
-                                timestamp: pythonTs
+                                timestamp: pythonTs,
+                                connectorId: node.pythonConnectorId,
                             });
                         } else {
                             setError('Nessuna anteprima trovata per questo nodo');
@@ -97,7 +98,8 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                     } else if (previewType === 'python' && node.pythonPreviewResult) {
                         setPreviewData({
                             ...node.pythonPreviewResult,
-                            timestamp: node.pythonPreviewResult?.timestamp
+                            timestamp: node.pythonPreviewResult?.timestamp,
+                            connectorId: node.pythonConnectorId,
                         });
                     } else {
                         setError(`Nessuna anteprima ${previewType.toUpperCase()} trovata per questo nodo`);
@@ -264,8 +266,13 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                 ) : previewData.type === 'html' && previewData.html ? (
                     <div className="w-full h-full bg-white dark:bg-zinc-950 overflow-hidden min-h-[300px]">
                         <iframe
-                            srcDoc={applyHtmlStyleOverrides(previewData.html, previewData.htmlStyleOverrides || {})}
+                            key={previewData.timestamp || Date.now()}
+                            srcDoc={injectIframeFetchPolyfill(
+                                applyHtmlStyleOverrides(previewData.html, previewData.htmlStyleOverrides || {}),
+                                { connectorId: previewData.connectorId, baseUrl: typeof window !== 'undefined' ? window.location.origin : '' }
+                            )}
                             className="w-full h-full border-none min-h-[300px]"
+                            sandbox="allow-scripts allow-same-origin allow-forms"
                             title="HTML Widget Preview"
                         />
                     </div>
