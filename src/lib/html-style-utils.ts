@@ -17,37 +17,65 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
   // internalToken for /api/update-commessa Mode 1 (raw SQL queries)
   const token = opts?.internalToken || process.env.INTERNAL_QUERY_TOKEN || 'fridai-internal-query-2024';
 
-  // Polyfill script: overrides fetch for URL resolution + credential injection,
-  // AND intercepts postMessage save attempts (safety net for when AI generates wrong code)
+  // Polyfill script: overrides fetch, injects saveToDb(), intercepts postMessage saves
   const polyfillScript = `<script>(function(){` +
-    // --- Fetch polyfill ---
-    `var F=window.fetch;var B=${JSON.stringify(base)};var CID=${JSON.stringify(cid)};var TK=${JSON.stringify(token)};` +
+    // --- Save originals & config ---
+    `var F=window.fetch;var _origPM=window.parent.postMessage.bind(window.parent);` +
+    `var B=${JSON.stringify(base)};var CID=${JSON.stringify(cid)};var TK=${JSON.stringify(token)};` +
+    // --- 1. Fetch polyfill (resolves URLs, injects credentials) ---
     `window.fetch=function(u,o){if(typeof u==='string'&&u.startsWith('/'))u=B+u;if(!o)o={};o.credentials='include';` +
     `if(o.method&&o.method.toUpperCase()==='POST'&&o.body){try{var b=JSON.parse(o.body);var changed=false;` +
     `if(CID&&!b.connectorId){b.connectorId=CID;changed=true}if(TK&&!b.internalToken){b.internalToken=TK;changed=true}` +
     `if(changed)o.body=JSON.stringify(b)}catch(e){}}` +
     `return F.call(this,u,o).then(function(r){if(o.method&&o.method.toUpperCase()==='POST'){` +
-    `r.clone().json().then(function(j){if(j.success){window.parent.postMessage({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})};` +
-    // --- PostMessage save interceptor (safety net) ---
-    // When AI generates postMessage({type:'SAVE_...', data:...}) instead of fetch,
-    // intercept it, show a visible warning, and attempt to save via fetch if possible
-    `var _origPM=window.parent.postMessage.bind(window.parent);` +
+    `r.clone().json().then(function(j){if(j.success){_origPM({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})};` +
+    // --- 2. saveToDb: universal DB save function (constructs UPDATE query, calls polyfilled fetch) ---
+    // Usage: saveToDb('dbo.TableName', {col1:val1, col2:val2}, ['pkCol1']).then(r => ...)
+    `window.saveToDb=function(tbl,data,pks){` +
+    `if(!tbl||!data)return Promise.reject(new Error('Missing table or data'));` +
+    `var S=[],W=[];pks=pks||[];` +
+    `for(var k in data){if(!data.hasOwnProperty(k))continue;` +
+    `var v=data[k]==null?'':String(data[k]).replace(/'/g,"''");` +
+    `if(pks.indexOf(k)>=0)W.push(k+"='"+v+"'");else S.push(k+"='"+v+"'")}` +
+    `if(S.length===0&&W.length>1){S=W.slice(1);W=[W[0]]}` +
+    `if(W.length===0)return Promise.reject(new Error('No PK for WHERE clause'));` +
+    `var q="UPDATE "+tbl+" SET "+S.join(", ")+" WHERE "+W.join(" AND ");` +
+    `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
+    `body:JSON.stringify({query:q})}).then(function(r){return r.json()})};` +
+    // --- 3. PostMessage interceptor: auto-converts save-type postMessage to saveToDb ---
+    // When AI generates postMessage({type:'SAVE_...', data:...}), this interceptor
+    // catches it and redirects to saveToDb using __DB_TABLE__ and __DB_PK__ metadata
+    // (injected by post-processing in python-agent-flow.ts)
     `window.parent.postMessage=function(msg,orig){` +
     `if(msg&&typeof msg==='object'&&msg.type&&/save|update|write/i.test(msg.type)&&msg.type!=='iframe-db-write-success'){` +
-    `console.error('[polyfill] postMessage save detected — this does NOT write to DB. Use fetch instead.');` +
-    // Show visible error in the iframe
+    `console.warn('[polyfill] postMessage save intercepted -> auto-converting to saveToDb');` +
+    `var tbl=window.__DB_TABLE__;var pk=window.__DB_PK__||[];` +
+    `var d=msg.data||msg.payload||{};if(d.data&&typeof d.data==='object')d=d.data;` +
+    // If we have table metadata and data, convert to saveToDb call
+    `if(tbl&&typeof d==='object'&&Object.keys(d).length>0){` +
+    `saveToDb(tbl,d,pk).then(function(r){` +
+    `var el=document.getElementById('statusMessage');` +
+    `if(r.success){if(el){el.textContent='Salvato! '+(r.rowsAffected||0)+' righe aggiornate';` +
+    `el.className='status-message success';el.style.display='block'}}` +
+    `else{if(el){el.textContent='Errore: '+(r.message||'');` +
+    `el.className='status-message error';el.style.display='block'}}` +
+    `}).catch(function(e){var el=document.getElementById('statusMessage');` +
+    `if(el){el.textContent='Errore: '+e.message;el.className='status-message error';el.style.display='block'}});` +
+    `return}` +
+    // If data has a raw 'query' field, use it directly
+    `if(d.query){fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
+    `body:JSON.stringify({query:d.query})}).then(function(r){return r.json()}).then(function(r){` +
+    `var el=document.getElementById('statusMessage');` +
+    `if(r.success&&el){el.textContent='Salvato!';el.className='status-message success';el.style.display='block'}` +
+    `}).catch(function(){});return}` +
+    // No table metadata - show error
     `var errDiv=document.getElementById('_pm_save_error');` +
     `if(!errDiv){errDiv=document.createElement('div');errDiv.id='_pm_save_error';` +
     `errDiv.style.cssText='position:fixed;top:0;left:0;right:0;padding:12px;background:#f8d7da;color:#721c24;text-align:center;z-index:99999;font-family:sans-serif;font-size:14px;border-bottom:2px solid #f5c6cb;';` +
     `document.body.appendChild(errDiv)}` +
-    `errDiv.textContent='Errore: il salvataggio non funziona (usa postMessage invece di fetch). Rigenera il widget.';` +
+    `errDiv.textContent='Errore: postMessage save senza __DB_TABLE__. Rigenera widget.';` +
     `errDiv.style.display='block';setTimeout(function(){errDiv.style.display='none'},8000);` +
-    // If data has a 'query' field, try to save via fetch as fallback
-    `if(msg.data&&msg.data.query){` +
-    `fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:msg.data.query})})` +
-    `.then(function(r){return r.json()}).then(function(j){if(j.success){errDiv.textContent='Salvato (auto-correzione postMessage->fetch)';errDiv.style.background='#d4edda';errDiv.style.color='#155724'}})` +
-    `.catch(function(){});` +
-    `}return}` +
+    `return}` +
     `return _origPM(msg,orig)};` +
     `})();</script>`;
 

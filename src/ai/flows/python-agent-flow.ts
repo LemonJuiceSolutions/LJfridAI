@@ -435,6 +435,96 @@ const openRouterTools: OpenRouterTool[] = [
 // --- Main Agent Flow ---
 
 // Robust JSON parser that handles updatedScript with curly braces and unescaped newlines
+/**
+ * Post-process generated Python code to fix postMessage saves.
+ * Instead of relying on the LLM to generate correct code (which fails with Haiku 4.5),
+ * this function directly modifies the code after generation:
+ * 1. Extracts table name from query_db() calls
+ * 2. Extracts PK columns from WHERE clauses
+ * 3. Injects window.__DB_TABLE__ and window.__DB_PK__ metadata into HTML
+ * 4. Replaces postMessage save calls with saveToDb() calls
+ * The polyfill (html-style-utils.ts) also intercepts any remaining postMessage saves at runtime.
+ */
+function fixPostMessageSaves(pythonCode: string): string {
+    // Quick check: does this code even contain postMessage?
+    if (!/postMessage/i.test(pythonCode)) return pythonCode;
+
+    console.log('[fixPostMessageSaves] Detected postMessage in generated code — applying auto-fix');
+
+    // 1. Extract table name from query_db("SELECT ... FROM dbo.XXX") or execute_db("UPDATE dbo.XXX ...")
+    let tableName: string | null = null;
+    const fromMatch = pythonCode.match(/query_db\s*\(\s*["'][\s\S]*?FROM\s+(dbo\.\w+)/i);
+    if (fromMatch) tableName = fromMatch[1];
+    if (!tableName) {
+        const execMatch = pythonCode.match(/execute_db\s*\(\s*["']UPDATE\s+(dbo\.\w+)/i);
+        if (execMatch) tableName = execMatch[1];
+    }
+    if (!tableName) {
+        const updateMatch = pythonCode.match(/["']UPDATE\s+(dbo\.\w+)\s+SET/i);
+        if (updateMatch) tableName = updateMatch[1];
+    }
+    if (!tableName) {
+        console.log('[fixPostMessageSaves] Could not determine table name — injecting metadata only');
+        // Still inject empty metadata so polyfill can show a better error
+        tableName = '';
+    }
+
+    // 2. Extract PK column(s) from WHERE clauses in SQL strings
+    const whereMatches = [...pythonCode.matchAll(/WHERE\s+(\w+)\s*[=<>!]/gi)];
+    const pkColumns = [...new Set(whereMatches.map(m => m[1]))];
+    console.log(`[fixPostMessageSaves] Table: ${tableName || 'unknown'}, PKs: ${pkColumns.join(', ') || 'none'}`);
+
+    let fixed = pythonCode;
+
+    // 3. Inject __DB_TABLE__ and __DB_PK__ after first <script> tag in the HTML
+    if (tableName) {
+        const metaScript = `window.__DB_TABLE__='${tableName}';window.__DB_PK__=${JSON.stringify(pkColumns)};`;
+        if (fixed.includes('<script>')) {
+            fixed = fixed.replace(/<script>/, `<script>${metaScript}`);
+        }
+    }
+
+    // 4. Replace postMessage save calls with saveToDb calls
+    // Pattern A: window.parent.postMessage({...data: VAR...}, '...')  — named variable
+    const thenChain = `.then(function(r){` +
+        `if(r.success){if(typeof showStatus==='function')showStatus('Salvato! '+(r.rowsAffected||0)+' righe','success')}` +
+        `else{if(typeof showStatus==='function')showStatus('Errore: '+(r.message||''),'error')}` +
+        `}).catch(function(e){if(typeof showStatus==='function')showStatus('Errore: '+e.message,'error')})`;
+
+    const tblRef = tableName ? `'${tableName}'` : `window.__DB_TABLE__`;
+    const pkRef = pkColumns.length > 0 ? JSON.stringify(pkColumns) : `window.__DB_PK__||[]`;
+
+    // Replace postMessage with named data variable: postMessage({..., data: myVar}, '*')
+    fixed = fixed.replace(
+        /window\.parent\.postMessage\s*\(\s*\{[^}]*?(?:data|payload)\s*:\s*(\w+)[^}]*?\}\s*,\s*['"][^'"]*['"]\s*\)/g,
+        (_match, dataVar) => `saveToDb(${tblRef},${dataVar},${pkRef})${thenChain}`
+    );
+
+    // Pattern B: any remaining postMessage with save/update/write intent
+    // Replace with a wrapper that extracts data from the message object
+    fixed = fixed.replace(
+        /window\.parent\.postMessage\s*\(\s*(\{[^}]*(?:save|update|write)[^}]*\})\s*,\s*['"][^'"]*['"]\s*\)/gi,
+        (_match, msgObj) => `(function(_m){var _d=_m.data||_m.payload||_m;saveToDb(${tblRef},_d,${pkRef})${thenChain}})(${msgObj})`
+    );
+
+    // Pattern C: any still-remaining postMessage calls (catch-all)
+    if (/window\.parent\.postMessage\s*\(/i.test(fixed)) {
+        // Check if it's actually a save-related one we missed
+        const remaining = fixed.match(/window\.parent\.postMessage\s*\([^)]+\)/gi);
+        if (remaining) {
+            for (const call of remaining) {
+                if (/save|update|write|salva|aggiorna/i.test(call) || /type\s*:/i.test(call)) {
+                    console.log(`[fixPostMessageSaves] Catch-all replacing: ${call.substring(0, 80)}...`);
+                    fixed = fixed.replace(call, `console.warn('[auto-fix] postMessage save blocked')`);
+                }
+            }
+        }
+    }
+
+    console.log('[fixPostMessageSaves] Auto-fix complete');
+    return fixed;
+}
+
 function parseAgentJson(text: string): any | null {
     // 1. Try to strip markdown code blocks if present
     const markdownMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
@@ -563,16 +653,13 @@ export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
 
         const systemPrompt = `Sei un agente AI esperto in Python per analisi dati. Stai utilizzando il modello: ${modelName}. NON MOLLARE MAI. Sei tenace e persistente.
 
-#################################################################
-# REGOLA NUMERO 1 — SALVATAGGIO DB DA HTML (LEGGI SUBITO!)      #
-# Per SALVARE/UPDATE dati nel database da HTML interattivo:      #
-# USA SOLO: fetch('/api/update-commessa')                        #
-# body: JSON.stringify({query: "UPDATE dbo.Tabella SET..."})     #
+##################################################################
+# REGOLA NUMERO 1 — SALVATAGGIO DB DA HTML                       #
+# Usa SOLO: saveToDb('dbo.Tabella', dataObj, ['pkCol'])          #
+# E' una funzione globale gia' disponibile nell'iframe.          #
 # NON USARE MAI postMessage — NON SCRIVE NEL DATABASE!          #
-# NON USARE MAI window.parent.postMessage — E' SOLO UN EVENTO!  #
-# L'UNICO endpoint e': /api/update-commessa                     #
-# NON INVENTARE endpoint come /api/budget/update — NON ESISTONO #
-#################################################################
+# NON INVENTARE endpoint — USA SOLO saveToDb()                   #
+##################################################################
 
 DATA DI OGGI: ${today}
 
@@ -634,169 +721,95 @@ Uso: \`rows = execute_db("UPDATE dbo.Tabella SET col='val' WHERE id=1")\`
   rows = execute_db("DELETE FROM dbo.TempData WHERE Scaduto=1")
   \`\`\`
 
-### SCRITTURA DB da HTML interattivo (CRITICO - LEGGI ATTENTAMENTE)
-Quando generi HTML interattivo con tabelle editabili che scrivono nel DB, usa \`fetch('/api/update-commessa')\`.
-Il sistema inietta automaticamente connectorId, internalToken e URL assoluto — tu NON li metti nel body.
+### SCRITTURA DB da HTML interattivo (CRITICO):
+Per salvare dati dal JavaScript dell'HTML usa la funzione globale \`saveToDb()\`:
+\`\`\`
+saveToDb('dbo.NomeTabella', {col1: val1, col2: val2, pkCol: pkVal}, ['pkCol'])
+  .then(function(r) { if(r.success) showStatus('Salvato!','success'); else showStatus('Errore: '+r.message,'error'); })
+  .catch(function(e) { showStatus('Errore: '+e.message,'error'); })
+\`\`\`
+- Parametro 1: nome tabella completo (es. 'dbo.BudgetMensile')
+- Parametro 2: oggetto con TUTTI i campi (inclusi PK e campi da aggiornare)
+- Parametro 3: array dei nomi colonne PK (vanno nel WHERE)
+- La funzione costruisce automaticamente UPDATE ... SET ... WHERE ... e chiama il DB
+- NON servono connectorId o internalToken — il sistema li aggiunge
 
-#### ENDPOINT /api/update-commessa — DUE MODALITA':
-L'endpoint accetta POST con JSON body:
-- **Mode 1 (RAW SQL)**: manda \`{query: "UPDATE dbo.Tabella SET col='val' WHERE pk=123"}\` — il sistema aggiunge connectorId e internalToken automaticamente. FUNZIONA PER QUALSIASI TABELLA.
-- **Mode 2 (ROW DATA)**: manda \`{Job:'J001', Descrizione:'...', Cliente:'...'}\` — FUNZIONA SOLO per dbo.CommesseHubSpot con Job come PK.
+❌ NON usare MAI \`window.parent.postMessage\` per salvare dati — NON scrive nel DB
+❌ NON inventare endpoint come \`/api/budget/update\` — non esistono
+❌ NON usare \`fetch('/api/update-commessa')\` direttamente — usa \`saveToDb()\`
 
-**USA SEMPRE MODE 1 (RAW SQL)** perche' funziona con QUALSIASI tabella.
-
-#### REGOLE FONDAMENTALI:
-- L'unico endpoint e': \`/api/update-commessa\` — NON ne esistono altri
-- Manda \`{query: "UPDATE dbo.NomeTabella SET ..."}\` nel body — il sistema aggiunge connectorId e internalToken
-- NON mettere connectorId o internalToken nel body — il sistema li inietta automaticamente
-- NON usare MAI \`postMessage\` per salvare dati — NON FUNZIONA, NON SCRIVE NEL DB
-- NON usare MAI \`window.parent.postMessage({type: 'SAVE_...'})\` — e' solo un messaggio al parent, non salva niente
-- NON inventare endpoint come \`/api/budget/update\` o \`/api/save-data\` — non esistono
-- NON simulare il salvataggio con setTimeout o messaggi finti
-
-#### PATTERN SALVATAGGIO (COPIA ESATTAMENTE):
-Nel JavaScript dell'HTML, la funzione di salvataggio deve essere ESATTAMENTE cosi':
+#### ESEMPIO SALVATAGGIO CON saveToDb:
 \`\`\`
 function saveRow(button) {
     var tr = button.closest('tr');
-    // Raccogli i valori delle celle editabili
     var anno = tr.querySelector('[data-field="Anno"]').textContent.trim();
-    var mese = tr.querySelector('[data-field="Mese"]').textContent.trim();
     var peso = tr.querySelector('[data-field="Peso"]').textContent.trim();
-    // Costruisci la query UPDATE con i nomi delle colonne e PK corretti
-    var sqlQuery = "UPDATE dbo.BudgetMensile SET Peso=" + peso + " WHERE Anno=" + anno + " AND Mese=" + mese;
     button.disabled = true;
     button.textContent = 'Salvataggio...';
-    fetch('/api/update-commessa', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: sqlQuery })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(result) {
-        if (result.success) {
-            showStatus('Salvato! ' + (result.rowsAffected || 0) + ' righe aggiornate', 'success');
-        } else {
-            showStatus('Errore: ' + result.message, 'error');
-        }
-    })
-    .catch(function(err) {
-        showStatus('Errore connessione: ' + err.message, 'error');
-    })
-    .finally(function() {
-        button.disabled = false;
-        button.textContent = 'Salva';
-    });
+    saveToDb('dbo.BudgetMensile', {Anno: anno, Peso: peso}, ['Anno'])
+        .then(function(r) {
+            if (r.success) { showStatus('Salvato!', 'success'); }
+            else { showStatus('Errore: ' + r.message, 'error'); }
+        })
+        .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+        .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
 }
 \`\`\`
-**NOTA**: Adatta sqlQuery alla tabella e colonne corrette. Usa i nomi ESATTI delle colonne dal DB.
 
-#### ESEMPIO COMPLETO FUNZIONANTE (tabella editabile con salvataggio DB):
-NOTA: questo esempio usa triple-quotes Python (""") e concatenazione di stringhe (""" + json_data + """).
-NON e' una f-string, quindi le parentesi graffe { } nel CSS e JS restano NORMALI — NON raddoppiarle con {{ }}.
-
+#### ESEMPIO COMPLETO TABELLA EDITABILE:
 \`\`\`python
 import pandas as pd
 import json
 
-# 1. Leggi i dati dal DB (adatta la tabella alla richiesta dell'utente)
-df = query_db("SELECT Anno, Mese, NomeMese, Peso, BudgetMensile FROM dbo.BudgetMensile")
+df = query_db("SELECT Anno, Mese, Peso FROM dbo.BudgetMensile")
+json_data = json.dumps(df.to_dict('records'), default=str)
 
-# 2. Converti in JSON per iniettare nell'HTML
-data_records = df.to_dict('records')
-json_data = json.dumps(data_records, default=str)
-
-# 3. Genera HTML con tabella editabile e salvataggio via fetch
-#    USA concatenazione (""" + json_data + """), NON f-string
-#    Quindi { e } nel CSS/JS sono NORMALI, non serve raddoppiarle
 html = """<!DOCTYPE html>
-<html lang="it">
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; padding: 20px; }
-        table { width: 100%; border-collapse: collapse; }
-        th { background: #f8f9fa; padding: 12px; text-align: left; border-bottom: 2px solid #667eea; }
-        td { padding: 10px; border-bottom: 1px solid #e9ecef; }
-        .editable-cell { background: #fffbf0; border: 1px solid #ffe0b2; border-radius: 4px; padding: 8px; cursor: text; }
-        .editable-cell:focus { outline: none; border-color: #ffc107; box-shadow: 0 0 0 2px rgba(255,193,7,0.2); }
-        .editable-cell.modified { background: #fff3e0; border-color: #ff9800; }
-        .btn-save { background: #4caf50; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
-        .btn-save:disabled { background: #ccc; cursor: not-allowed; }
-        .status-message { padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }
-        .status-message.success { background: #d4edda; color: #155724; display: block; }
-        .status-message.error { background: #f8d7da; color: #721c24; display: block; }
-    </style>
-</head>
-<body>
-    <h2>Budget Mensile - Editabile</h2>
-    <div id="statusMessage" class="status-message"></div>
-    <table>
-        <thead><tr>
-            <th>Anno</th><th>Mese</th><th>Nome Mese</th><th>Peso</th><th>Budget</th><th>Azione</th>
-        </tr></thead>
-        <tbody id="tableBody"></tbody>
-    </table>
-    <script>
-        var data = """ + json_data + """;
-        var tableBody = document.getElementById('tableBody');
-        var statusMessage = document.getElementById('statusMessage');
-
-        data.forEach(function(row) {
-            var tr = document.createElement('tr');
-            tr.innerHTML = '<td data-field="Anno">' + (row.Anno || '') + '</td>' +
-                '<td data-field="Mese">' + (row.Mese || '') + '</td>' +
-                '<td>' + (row.NomeMese || '') + '</td>' +
-                '<td class="editable-cell" contenteditable="true" data-field="Peso">' + (row.Peso || '') + '</td>' +
-                '<td>' + (row.BudgetMensile || '') + '</td>' +
-                '<td><button class="btn-save" onclick="saveRow(this)">Salva</button></td>';
-            var cells = tr.querySelectorAll('.editable-cell');
-            cells.forEach(function(cell) {
-                cell.addEventListener('input', function() { this.classList.add('modified'); });
-            });
-            tableBody.appendChild(tr);
-        });
-
-        function saveRow(button) {
-            var tr = button.closest('tr');
-            var anno = tr.querySelector('[data-field="Anno"]').textContent.trim();
-            var mese = tr.querySelector('[data-field="Mese"]').textContent.trim();
-            var peso = tr.querySelector('[data-field="Peso"]').textContent.trim();
-            var sqlQuery = "UPDATE dbo.BudgetMensile SET Peso=" + peso + " WHERE Anno=" + anno + " AND Mese=" + mese;
-            button.disabled = true;
-            button.textContent = 'Salvataggio...';
-            fetch('/api/update-commessa', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: sqlQuery })
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(result) {
-                if (result.success) {
-                    showStatus('Salvato! ' + (result.rowsAffected || 0) + ' righe aggiornate', 'success');
-                    tr.querySelectorAll('.editable-cell').forEach(function(c) { c.classList.remove('modified'); });
-                } else {
-                    showStatus('Errore: ' + (result.message || 'sconosciuto'), 'error');
-                }
-            })
-            .catch(function(err) {
-                showStatus('Errore connessione: ' + err.message, 'error');
-            })
-            .finally(function() {
-                button.disabled = false;
-                button.textContent = 'Salva';
-            });
-        }
-
-        function showStatus(message, type) {
-            statusMessage.textContent = message;
-            statusMessage.className = 'status-message ' + type;
-            setTimeout(function() { statusMessage.className = 'status-message'; }, 5000);
-        }
-    </script>
-</body>
-</html>"""
-
+<html><head><style>
+body { font-family: sans-serif; padding: 20px; }
+table { width: 100%; border-collapse: collapse; }
+th { background: #f8f9fa; padding: 12px; border-bottom: 2px solid #667eea; }
+td { padding: 10px; border-bottom: 1px solid #e9ecef; }
+.editable-cell { background: #fffbf0; border: 1px solid #ffe0b2; border-radius: 4px; padding: 8px; cursor: text; }
+.btn-save { background: #4caf50; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+.status-message { padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }
+.status-message.success { background: #d4edda; color: #155724; display: block; }
+.status-message.error { background: #f8d7da; color: #721c24; display: block; }
+</style></head><body>
+<div id="statusMessage" class="status-message"></div>
+<table><thead><tr><th>Anno</th><th>Mese</th><th>Peso</th><th>Azione</th></tr></thead>
+<tbody id="tableBody"></tbody></table>
+<script>
+var data = """ + json_data + """;
+var tableBody = document.getElementById('tableBody');
+data.forEach(function(row) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td data-field="Anno">' + row.Anno + '</td>' +
+        '<td data-field="Mese">' + row.Mese + '</td>' +
+        '<td class="editable-cell" contenteditable="true" data-field="Peso">' + row.Peso + '</td>' +
+        '<td><button class="btn-save" onclick="saveRow(this)">Salva</button></td>';
+    tableBody.appendChild(tr);
+});
+function saveRow(button) {
+    var tr = button.closest('tr');
+    var anno = tr.querySelector('[data-field="Anno"]').textContent.trim();
+    var mese = tr.querySelector('[data-field="Mese"]').textContent.trim();
+    var peso = tr.querySelector('[data-field="Peso"]').textContent.trim();
+    button.disabled = true; button.textContent = 'Salvataggio...';
+    saveToDb('dbo.BudgetMensile', {Anno: anno, Mese: mese, Peso: peso}, ['Anno', 'Mese'])
+        .then(function(r) {
+            if (r.success) showStatus('Salvato!', 'success');
+            else showStatus('Errore: ' + r.message, 'error');
+        })
+        .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+        .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
+}
+function showStatus(msg, type) {
+    var el = document.getElementById('statusMessage');
+    el.textContent = msg; el.className = 'status-message ' + type;
+    setTimeout(function() { el.className = 'status-message'; }, 5000);
+}
+</script></body></html>"""
 result = html
 \`\`\`
 
@@ -805,18 +818,15 @@ result = html
 2. Si convertono in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
 3. Si iniettano nell'HTML con concatenazione: \`""" + json_data + """\`
 4. NON e' una f-string, quindi { e } nel CSS/JS sono NORMALI
-5. Il salvataggio usa \`fetch('/api/update-commessa')\` con \`{query: "UPDATE ..."}\` nel body
-6. Il body DEVE contenere il campo \`query\` con la query SQL UPDATE — il sistema aggiunge il resto
+5. Il salvataggio usa \`saveToDb('dbo.Tabella', dati, ['pk'])\` — GIA' DISPONIBILE nell'iframe
 7. \`result = html\` come ultima riga — l'outputType del nodo DEVE essere 'html'
 8. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
 
 #### ERRORI COMUNI — DA NON FARE MAI:
-- ❌ \`window.parent.postMessage({type: 'SAVE_BUDGET', data: updates}, '*')\` — NON salva nel DB, e' solo un messaggio vuoto
-- ❌ \`fetch('/api/budget/update', ...)\` — endpoint INESISTENTE, errore 404
-- ❌ \`fetch('/api/save-data', ...)\` — endpoint INESISTENTE
-- ❌ Simulare il salvataggio con setTimeout e messaggio finto — l'utente vuole salvare nel DB per davvero
-- ❌ \`body: JSON.stringify(updatedData)\` senza il campo \`query\` — funziona SOLO per CommesseHubSpot con Job come PK
-- ✅ \`body: JSON.stringify({query: "UPDATE dbo.NomeTabella SET col=val WHERE pk=id"})\` — UNICO modo corretto per QUALSIASI tabella
+- ❌ \`window.parent.postMessage({type: 'SAVE_BUDGET', data: updates}, '*')\` — NON salva nel DB
+- ❌ \`fetch('/api/budget/update', ...)\` — endpoint INESISTENTE
+- ❌ Simulare il salvataggio con setTimeout e messaggio finto
+- ✅ \`saveToDb('dbo.Tabella', datiObj, ['pkCol'])\` — UNICO modo corretto
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
 Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.
@@ -1021,12 +1031,8 @@ Devi imparare dai tuoi errori AUTOMATICAMENTE. Segui queste regole:
 - Prima di scrivere codice che tocca un'area dove hai gia' sbagliato in passato.
 
 ## PROMEMORIA FINALE - SALVATAGGIO DB DA HTML:
-Se l'utente chiede di SALVARE o AGGIORNARE dati nel database da una tabella HTML editabile:
-1. USA SOLO fetch('/api/update-commessa') — l'UNICO endpoint che esiste
-2. Il body DEVE avere {query: "UPDATE dbo.NomeTabella SET col=val WHERE pk=id"}
-3. NON usare MAI window.parent.postMessage per salvare dati — non scrive nel DB
-4. NON inventare endpoint — /api/budget/update, /api/save-data NON ESISTONO
-5. NON simulare il salvataggio con setTimeout o messaggi finti
+Per salvare dati nel DB da HTML editabile: usa SOLO \`saveToDb('dbo.Tabella', data, ['pk'])\`.
+MAI usare postMessage. MAI inventare endpoint. saveToDb e' gia' disponibile nell'iframe.
 Vedi la sezione "SCRITTURA DB da HTML interattivo" per il pattern completo.
 
 ## FORMATO RISPOSTE:
@@ -1090,7 +1096,7 @@ Quando il codice fallisce, segui questa scala:
         const wantsDbWrite = /salva|update|aggiorn|modific|edit|scriv|database|db|save/i.test(userMsgLower) &&
                              /html|tabella|widget|interattiv/i.test(userMsgLower);
         const dbWriteReminder = wantsDbWrite ? `
-IMPORTANTE: Per il salvataggio nel DB da HTML, usa SOLO fetch('/api/update-commessa') con body {query: "UPDATE dbo.Tabella SET..."}. MAI usare postMessage.` : '';
+IMPORTANTE: Per salvare nel DB da HTML, usa SOLO saveToDb('dbo.Tabella', data, ['pk']). MAI usare postMessage.` : '';
 
         const userPrompt = `=== RICHIESTA ===
 ${input.userMessage}
@@ -1196,33 +1202,15 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
             if (postMessageSaveRegex.test(resultText)) {
                 console.log('[PythonFlow] ⚠️ Detected postMessage save pattern in generated code — requesting auto-correction');
 
-                const correctionPrompt = `ERRORE CRITICO NEL TUO CODICE: Hai usato window.parent.postMessage per salvare dati nel database. postMessage NON scrive nel database — e' solo un evento JavaScript che non fa nulla.
+                const correctionPrompt = `ERRORE: Hai usato postMessage per salvare. postMessage NON scrive nel DB.
 
-DEVI correggere il codice usando SOLO questo pattern per il salvataggio:
+CORREZIONE: usa saveToDb() che e' gia' disponibile nell'iframe:
 
-function saveRow(button) {
-    var tr = button.closest('tr');
-    var col1 = tr.querySelector('[data-field="ColonnaPK"]').textContent.trim();
-    var col2 = tr.querySelector('[data-field="ColonnaDaAggiornare"]').textContent.trim();
-    var sqlQuery = "UPDATE dbo.NomeTabella SET ColonnaDaAggiornare='" + col2 + "' WHERE ColonnaPK='" + col1 + "'";
-    fetch('/api/update-commessa', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({query: sqlQuery})
-    }).then(function(r){return r.json()}).then(function(res){
-        if(res.success) { showStatus('Salvato!','success'); }
-        else { showStatus('Errore: '+res.message,'error'); }
-    }).catch(function(e){ showStatus('Errore: '+e.message,'error'); });
-}
+saveToDb('dbo.NomeTabella', {pkCol: val, dataCol: val2}, ['pkCol'])
+  .then(function(r){ if(r.success) showStatus('Salvato!','success'); else showStatus('Errore: '+r.message,'error'); })
+  .catch(function(e){ showStatus('Errore: '+e.message,'error'); })
 
-REGOLE:
-- Costruisci una stringa sqlQuery con UPDATE dbo.NomeTabella SET...
-- Manda {query: sqlQuery} nel body di fetch
-- L'endpoint e' /api/update-commessa (l'UNICO che esiste)
-- NON usare postMessage in nessun modo
-- Adatta nomi tabella/colonne alla richiesta dell'utente
-
-Riscrivi il codice Python COMPLETO con il salvataggio corretto via fetch.`;
+Riscrivi il codice Python COMPLETO usando saveToDb invece di postMessage.`;
 
                 // Append assistant response and correction to messages
                 messages.push({ role: 'assistant', content: resultText });
@@ -1277,6 +1265,13 @@ Riscrivi il codice Python COMPLETO con il salvataggio corretto via fetch.`;
             }
         }
 
+        // 1b. POST-PROCESSING: Fix postMessage saves in extracted Python code
+        // This is the NUCLEAR fix: even if the LLM ignores all prompt instructions,
+        // we directly replace postMessage with saveToDb in the generated code.
+        if (extractedScript) {
+            extractedScript = fixPostMessageSaves(extractedScript);
+        }
+
         // 2. Extract JSON Metadata
         // We look for the LAST JSON block or just the JSON object if no block
         let parsedMetadata: any = null;
@@ -1297,7 +1292,11 @@ Riscrivi il codice Python COMPLETO con il salvataggio corretto via fetch.`;
             let displayMessage = parsedMetadata.message || 'Ecco il codice aggiornato:';
 
             // Prefer extracted script from markdown, fallback to JSON script if provided (legacy/fallback)
-            const finalScript = extractedScript || parsedMetadata.updatedScript;
+            let finalScript = extractedScript || parsedMetadata.updatedScript;
+            // Also apply postMessage fix to JSON-extracted script (in case extractedScript was null)
+            if (finalScript && !extractedScript && /postMessage/i.test(finalScript)) {
+                finalScript = fixPostMessageSaves(finalScript);
+            }
 
             // Mark the solution source node based on LLM's indication
             if (parsedMetadata.solutionSourceNode && typeof parsedMetadata.solutionSourceNode === 'string') {
