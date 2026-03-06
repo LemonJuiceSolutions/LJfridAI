@@ -1543,14 +1543,14 @@ if __name__ == '__main__':
     import logging
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--log', metavar='FILE', help='Write debug logs to FILE')
+    parser.add_argument('--log-file', metavar='FILE', help='Write debug logs to FILE')
     args = parser.parse_args()
 
-    if args.log:
+    if args.log_file:
         logging.basicConfig(
             level=logging.DEBUG,
             format='%(asctime)s %(levelname)s %(name)s: %(message)s',
-            handlers=[logging.FileHandler(args.log), logging.StreamHandler()],
+            handlers=[logging.FileHandler(args.log_file), logging.StreamHandler()],
         )
     else:
         logging.basicConfig(level=logging.WARNING)

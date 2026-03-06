@@ -53,7 +53,7 @@ tasks:
     dir: python-backend
     cmds:
       - mkdir -p ../{{.LOG_DIR}}
-      - python app.py --log ../{{.LOG_DIR}}/python-backend.log
+      - python app.py --log-file ../{{.LOG_DIR}}/python-backend.log
 
   python:stop:
     desc: Stop the Python/Flask backend (kills process on port 5005)
