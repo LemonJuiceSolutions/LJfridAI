@@ -62,7 +62,7 @@ For full Docker documentation, see [`docs/DOCKER-DEV.md`](docs/DOCKER-DEV.md).
 ### 1. Configure environment
 
 ```bash
-cp .env.template .env.local
+cp .env.template .env
 ```
 
 Then fill in the values — at minimum `NEXTAUTH_SECRET` and `GOOGLE_GENAI_API_KEY`.
