@@ -1000,8 +1000,11 @@ Devi imparare dai tuoi errori AUTOMATICAMENTE. Segui queste regole:
 - Prima di scrivere codice che tocca un'area dove hai gia' sbagliato in passato.
 
 ## PROMEMORIA FINALE - SALVATAGGIO DB DA HTML:
-Per salvare dati nel DB da HTML editabile: usa SOLO \`fetch('/api/update-commessa', {method:'POST', ...})\`.
-MAI inventare endpoint. Vedi la sezione "SCRITTURA DB da HTML interattivo" per il pattern completo.
+###############################################################
+# L'UNICO endpoint: fetch('/api/update-commessa', ...)        #
+# Body: {query: "UPDATE dbo.Tabella SET Col=Val WHERE ..."}    #
+# MAI INVENTARE URL. MAI usare window.location.href.           #
+###############################################################
 
 ## FORMATO RISPOSTE:
 - Rispondi SEMPRE in italiano.
@@ -1059,20 +1062,29 @@ Quando il codice fallisce, segui questa scala:
 - Se la tua soluzione e' stata ispirata o basata su uno script trovato in un altro nodo (tramite pyBrowseOtherScripts), indica il NOME di quel nodo in solutionSourceNode.
 - Se hai risolto senza ispirazione da altri nodi, metti null.`;
 
-        // Detect if user is asking for DB write/save from HTML
+        // Detect if user wants DB write/save from HTML — broad detection
         const userMsgLower = input.userMessage.toLowerCase();
-        const wantsDbWrite = /salva|update|aggiorn|modific|edit|scriv|database|db|save/i.test(userMsgLower) &&
-                             /html|tabella|widget|interattiv/i.test(userMsgLower);
+        const isHtmlOutput = input.outputType === 'html';
+        const mentionsSave = /salva|update|aggiorn|modific|edit|scriv|database|db|save|pulsant|button|bottone/i.test(userMsgLower);
+        const mentionsHtml = /html|tabella|widget|interattiv|griglia|grid/i.test(userMsgLower);
+        const wantsDbWrite = (mentionsSave && mentionsHtml) || (isHtmlOutput && mentionsSave);
         const dbWriteReminder = wantsDbWrite ? `
-IMPORTANTE: Per salvare nel DB da HTML, usa SOLO fetch('/api/update-commessa', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(dati)}). Vedi sezione SCRITTURA DB.` : '';
+
+###############################################################
+# RICORDA: SALVATAGGIO DB → UNICO MODO:                       #
+# fetch('/api/update-commessa', {method:'POST',                #
+#   headers:{'Content-Type':'application/json'},               #
+#   body: JSON.stringify({query:"UPDATE dbo.X SET Y=1"})       #
+# })                                                           #
+# NESSUN ALTRO URL ESISTE. NON INVENTARE ENDPOINT.             #
+###############################################################` : '';
 
         const userPrompt = `=== RICHIESTA ===
 ${input.userMessage}
-${dbWriteReminder}
 === CODICE PYTHON CORRENTE ===
 ${input.script || '(nessun codice definito)'}
 ${context}${historyContext}
-
+${dbWriteReminder}
 Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
 
         let resultText = '';
