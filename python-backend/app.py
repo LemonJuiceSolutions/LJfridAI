@@ -1539,5 +1539,21 @@ def analyze_excel():
 
 
 if __name__ == '__main__':
+    import argparse
+    import logging
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--log', metavar='FILE', help='Write debug logs to FILE')
+    args = parser.parse_args()
+
+    if args.log:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+            handlers=[logging.FileHandler(args.log), logging.StreamHandler()],
+        )
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
     print("🐍 Starting Python Execution Backend on port 5005...")
     app.run(host='0.0.0.0', port=5005, debug=True, use_reloader=False, threaded=True)
