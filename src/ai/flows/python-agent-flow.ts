@@ -568,13 +568,13 @@ export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
 # La funzione saveToDb() e' GIA' disponibile in ogni HTML.       #
 # NON SERVE fetch, NON SERVE URL, NON SERVE import.              #
 ##################################################################
-# COPIA QUESTO per salvare:                                       #
+# ALL'INIZIO del <script> scrivi SEMPRE:                          #
+# window.__DB_TABLE__ = 'dbo.NomeTabella';                        #
+# window.__DB_PK__ = ['ColonnaPK1'];                              #
+#                                                                  #
+# Per salvare:                                                     #
 # saveToDb('dbo.NomeTabella', riga, ['ColonnaPK'])                #
-# Esempio:                                                        #
-# saveToDb('dbo.BudgetMensile_2026',                              #
-#   {Peso:5, Anno:2026, Mese:1}, ['Anno','Mese'])                #
 #   .then(function(r){ if(r.success) alert('OK'); })              #
-# saveToDb costruisce l'UPDATE SQL automaticamente.               #
 ##################################################################
 
 DATA DI OGGI: ${today}
@@ -646,8 +646,12 @@ saveToDb(nomeTabella, oggettoRiga, arrayColonnePK)
 \`\`\`
 Ritorna una Promise con \`{success: true/false}\`.
 
-#### ESEMPIO 1 — Salvataggio singola riga (BudgetMensile):
+#### ESEMPIO 1 — Salvataggio BudgetMensile (COPIA QUESTO):
 \`\`\`
+// PRIMA COSA: dichiara tabella e PK (OBBLIGATORIO)
+window.__DB_TABLE__ = 'dbo.BudgetMensile_2026';
+window.__DB_PK__ = ['Anno', 'Mese'];
+
 function salvaDati() {
     var promises = [];
     currentData.forEach(function(row) {
@@ -662,8 +666,12 @@ function salvaDati() {
 }
 \`\`\`
 
-#### ESEMPIO 2 — Tabella editabile con pulsante salva per riga:
+#### ESEMPIO 2 — Tabella editabile con salva per riga:
 \`\`\`
+// PRIMA COSA: dichiara tabella e PK (OBBLIGATORIO)
+window.__DB_TABLE__ = 'dbo.CommesseHubSpot';
+window.__DB_PK__ = ['Job'];
+
 function saveRow(button) {
     var tr = button.closest('tr');
     var data = JSON.parse(tr.dataset.originalData);
@@ -684,15 +692,16 @@ function saveRow(button) {
 
 #### PUNTI CHIAVE:
 1. \`saveToDb()\` e' GLOBALE — non serve definirla, e' gia' iniettata dal sistema
-2. Parametro 1: nome tabella completo (es. \`'dbo.BudgetMensile_2026'\`)
-3. Parametro 2: oggetto con TUTTI i campi della riga (sia valori modificati che PK)
-4. Parametro 3: array con i nomi delle colonne PK per la clausola WHERE
-5. I dati si leggono con \`query_db()\` in Python — MAI dati hardcoded
-6. Si convertono in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
-7. Si iniettano nell'HTML con concatenazione: \`""" + json_data + """\`
-8. NON e' una f-string, quindi { e } nel CSS/JS sono NORMALI
-9. \`result = html\` come ultima riga — l'outputType del nodo DEVE essere 'html'
-10. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
+2. SEMPRE all'inizio del \`<script>\`, scrivi: \`window.__DB_TABLE__ = 'dbo.NomeTabella'; window.__DB_PK__ = ['pk1'];\`
+3. Parametro 1: nome tabella completo (es. \`'dbo.BudgetMensile_2026'\`)
+4. Parametro 2: oggetto con TUTTI i campi della riga (sia valori modificati che PK)
+5. Parametro 3: array con i nomi delle colonne PK per la clausola WHERE
+6. I dati si leggono con \`query_db()\` in Python — MAI dati hardcoded
+7. Si convertono in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
+8. Si iniettano nell'HTML con concatenazione: \`""" + json_data + """\`
+9. NON e' una f-string, quindi { e } nel CSS/JS sono NORMALI
+10. \`result = html\` come ultima riga — l'outputType del nodo DEVE essere 'html'
+11. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
 Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.

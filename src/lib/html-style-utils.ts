@@ -29,12 +29,15 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     `if(!o)o={};o.credentials='include';` +
     // For POST requests with JSON body: detect wrong URLs and redirect to /api/update-commessa
     `if(o.method&&o.method.toUpperCase()==='POST'&&o.body){try{var b=JSON.parse(o.body);var changed=false;` +
-    // Redirect: if URL is NOT /api/update-commessa and body has data fields, redirect
+    // Redirect: if URL is NOT /api/update-commessa and body has data fields, use saveToDb or redirect
     `var isCorrectUrl=(typeof u==='string'&&u.indexOf('/api/update-commessa')>=0);` +
     `if(!isCorrectUrl&&typeof b==='object'&&Object.keys(b).length>0){` +
-    `console.warn('[polyfill] fetch POST to wrong URL redirected:',u,'->','/api/update-commessa');` +
-    // If body has a 'query' field, use it directly; otherwise try to construct from data
-    `u=B+'/api/update-commessa';changed=true}` +
+    `console.warn('[polyfill] fetch POST to wrong URL intercepted:',u);` +
+    // If body has 'query', just redirect URL. Otherwise use saveToDb with __DB_TABLE__
+    `if(b.query){u=B+'/api/update-commessa';changed=true}` +
+    `else if(window.__DB_TABLE__){console.warn('[polyfill] -> converting to saveToDb(',window.__DB_TABLE__,')');` +
+    `return window.saveToDb(window.__DB_TABLE__,b,window.__DB_PK__||[])}` +
+    `else{u=B+'/api/update-commessa';changed=true}}` +
     // Inject connectorId and internalToken
     `if(CID&&!b.connectorId){b.connectorId=CID;changed=true}if(TK&&!b.internalToken){b.internalToken=TK;changed=true}` +
     `if(changed)o.body=JSON.stringify(b)}catch(e){}}` +
