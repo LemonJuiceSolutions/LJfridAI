@@ -22,9 +22,20 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     // --- Save originals & config ---
     `var F=window.fetch;var _origPM=window.parent.postMessage.bind(window.parent);` +
     `var B=${JSON.stringify(base)};var CID=${JSON.stringify(cid)};var TK=${JSON.stringify(token)};` +
-    // --- 1. Fetch polyfill (resolves URLs, injects credentials) ---
-    `window.fetch=function(u,o){if(typeof u==='string'&&u.startsWith('/'))u=B+u;if(!o)o={};o.credentials='include';` +
+    // --- 1. Fetch polyfill (resolves URLs, injects credentials, redirects wrong-URL POSTs) ---
+    `window.fetch=function(u,o){` +
+    // Resolve relative URLs
+    `if(typeof u==='string'&&u.startsWith('/'))u=B+u;` +
+    `if(!o)o={};o.credentials='include';` +
+    // For POST requests with JSON body: detect wrong URLs and redirect to /api/update-commessa
     `if(o.method&&o.method.toUpperCase()==='POST'&&o.body){try{var b=JSON.parse(o.body);var changed=false;` +
+    // Redirect: if URL is NOT /api/update-commessa and body has data fields, redirect
+    `var isCorrectUrl=(typeof u==='string'&&u.indexOf('/api/update-commessa')>=0);` +
+    `if(!isCorrectUrl&&typeof b==='object'&&Object.keys(b).length>0){` +
+    `console.warn('[polyfill] fetch POST to wrong URL redirected:',u,'->','/api/update-commessa');` +
+    // If body has a 'query' field, use it directly; otherwise try to construct from data
+    `u=B+'/api/update-commessa';changed=true}` +
+    // Inject connectorId and internalToken
     `if(CID&&!b.connectorId){b.connectorId=CID;changed=true}if(TK&&!b.internalToken){b.internalToken=TK;changed=true}` +
     `if(changed)o.body=JSON.stringify(b)}catch(e){}}` +
     `return F.call(this,u,o).then(function(r){if(o.method&&o.method.toUpperCase()==='POST'){` +

@@ -565,17 +565,16 @@ export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
 
 ##################################################################
 # REGOLA NUMERO 1 — SALVATAGGIO DB DA HTML EDITABILE             #
-# L'UNICO endpoint per salvare dati e': /api/update-commessa     #
-# Qualsiasi altro URL (window.location.href, /api/save-budget,   #
-# /api/save-data, /api/budget/update) NON ESISTE.                #
+# La funzione saveToDb() e' GIA' disponibile in ogni HTML.       #
+# NON SERVE fetch, NON SERVE URL, NON SERVE import.              #
 ##################################################################
-# COPIA QUESTO per salvare da HTML:                               #
-# fetch('/api/update-commessa', {                                 #
-#   method: 'POST',                                               #
-#   headers: {'Content-Type': 'application/json'},                #
-#   body: JSON.stringify({query: "UPDATE dbo.TABELLA SET X=1"})   #
-# }).then(function(r){return r.json()})                           #
-#   .then(function(d){if(d.success) alert('OK')})                 #
+# COPIA QUESTO per salvare:                                       #
+# saveToDb('dbo.NomeTabella', riga, ['ColonnaPK'])                #
+# Esempio:                                                        #
+# saveToDb('dbo.BudgetMensile_2026',                              #
+#   {Peso:5, Anno:2026, Mese:1}, ['Anno','Mese'])                #
+#   .then(function(r){ if(r.success) alert('OK'); })              #
+# saveToDb costruisce l'UPDATE SQL automaticamente.               #
 ##################################################################
 
 DATA DI OGGI: ${today}
@@ -639,163 +638,61 @@ Uso: \`rows = execute_db("UPDATE dbo.Tabella SET col='val' WHERE id=1")\`
   \`\`\`
 
 ### SCRITTURA DB da HTML interattivo (CRITICO):
-Per salvare dati dal JavaScript nell'HTML usa SEMPRE \`fetch('/api/update-commessa')\`.
-Il sistema inietta automaticamente connectorId e internalToken nel body della richiesta.
+La funzione \`saveToDb()\` e' GIA' DISPONIBILE in ogni HTML. Non serve importarla, non serve fetch, non serve nessun URL.
 
-#### PATTERN SALVATAGGIO — COPIA QUESTO:
+#### FIRMA:
+\`\`\`
+saveToDb(nomeTabella, oggettoRiga, arrayColonnePK)
+\`\`\`
+Ritorna una Promise con \`{success: true/false}\`.
+
+#### ESEMPIO 1 — Salvataggio singola riga (BudgetMensile):
+\`\`\`
+function salvaDati() {
+    var promises = [];
+    currentData.forEach(function(row) {
+        promises.push(
+            saveToDb('dbo.BudgetMensile_2026', row, ['Anno', 'Mese'])
+        );
+    });
+    Promise.all(promises).then(function(results) {
+        var ok = results.every(function(r) { return r.success; });
+        showMessage(ok ? 'Salvato!' : 'Errore', ok ? 'success' : 'error');
+    });
+}
+\`\`\`
+
+#### ESEMPIO 2 — Tabella editabile con pulsante salva per riga:
 \`\`\`
 function saveRow(button) {
     var tr = button.closest('tr');
-    var originalData = JSON.parse(tr.dataset.originalData);
-    var updatedData = Object.assign({}, originalData);
-    var cells = tr.querySelectorAll('.editable-cell');
-    cells.forEach(function(cell) {
-        var field = cell.dataset.field;
-        var value = cell.textContent.trim().replace(/<[^>]*>/g, '');
-        updatedData[field] = (value === '-') ? null : value;
+    var data = JSON.parse(tr.dataset.originalData);
+    tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+        data[cell.dataset.field] = cell.textContent.trim();
     });
     button.disabled = true;
     button.textContent = 'Salvataggio...';
-    fetch('/api/update-commessa', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(updatedData)
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(result) {
-        if (result.success) {
-            showStatus('Salvato!', 'success');
-            tr.dataset.originalData = JSON.stringify(updatedData);
-            cells.forEach(function(c) { c.classList.remove('modified'); });
-        } else {
-            showStatus('Errore: ' + result.message, 'error');
-        }
-    })
-    .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
-    .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
+    saveToDb('dbo.CommesseHubSpot', data, ['Job'])
+        .then(function(r) {
+            if (r.success) showStatus('Salvato!', 'success');
+            else showStatus('Errore: ' + r.message, 'error');
+        })
+        .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+        .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
 }
-\`\`\`
-
-#### DUE MODI DI SALVATAGGIO (sempre /api/update-commessa):
-- **Modo 1 (qualsiasi tabella)**: manda un campo \`query\` con SQL UPDATE:
-  \`fetch('/api/update-commessa', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({query: "UPDATE dbo.Tabella SET Col='val' WHERE PK=1"})})\`
-- **Modo 2 (dbo.CommesseHubSpot)**: manda direttamente i campi riga con Job come PK:
-  \`fetch('/api/update-commessa', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({Job:'J001', Descrizione:'...', Cliente:'...'})})\`
-
-ATTENZIONE: l'endpoint e' SEMPRE \`/api/update-commessa\` per QUALSIASI tabella. NON cambiare il nome dell'endpoint in base alla tabella.
-
-#### ESEMPIO MODO 1 — SALVATAGGIO GENERICO (qualsiasi tabella):
-\`\`\`
-function salvaDati() {
-    var updates = [];
-    currentData.forEach(function(row) {
-        updates.push({
-            query: "UPDATE dbo.BudgetMensile_2026 SET Peso = " + row.Peso + " WHERE Anno = " + row.Anno + " AND Mese = " + row.Mese
-        });
-    });
-    var promises = updates.map(function(update) {
-        return fetch('/api/update-commessa', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(update)
-        }).then(function(response) { return response.json(); });
-    });
-    Promise.all(promises).then(function(results) {
-        var allSuccess = results.every(function(r) { return r.success; });
-        if (allSuccess) showMessage('Dati salvati!', 'success');
-        else showMessage('Errore nel salvataggio', 'error');
-    }).catch(function(e) { showMessage('Errore: ' + e.message, 'error'); });
-}
-\`\`\`
-
-#### ESEMPIO COMPLETO TABELLA EDITABILE (Modo 2 — CommesseHubSpot):
-\`\`\`python
-import pandas as pd
-import json
-
-df = query_db("SELECT Job, Descrizione, Cliente, Inizio, Fine FROM dbo.CommesseHubSpot")
-json_data = json.dumps(df.to_dict('records'), default=str)
-
-html = """<!DOCTYPE html>
-<html><head><style>
-body { font-family: sans-serif; padding: 20px; }
-table { width: 100%; border-collapse: collapse; }
-th { background: #f8f9fa; padding: 12px; border-bottom: 2px solid #667eea; }
-td { padding: 10px; border-bottom: 1px solid #e9ecef; }
-.editable-cell { background: #fffbf0; border: 1px solid #ffe0b2; border-radius: 4px; padding: 8px; cursor: text; }
-.btn-save { background: #4caf50; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
-.status-message { padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }
-.status-message.success { background: #d4edda; color: #155724; display: block; }
-.status-message.error { background: #f8d7da; color: #721c24; display: block; }
-</style></head><body>
-<div id="statusMessage" class="status-message"></div>
-<table><thead><tr><th>Job</th><th>Descrizione</th><th>Cliente</th><th>Inizio</th><th>Fine</th><th>Azione</th></tr></thead>
-<tbody id="tableBody"></tbody></table>
-<script>
-var data = """ + json_data + """;
-var tableBody = document.getElementById('tableBody');
-data.forEach(function(row) {
-    var tr = document.createElement('tr');
-    tr.dataset.originalData = JSON.stringify(row);
-    tr.innerHTML = '<td data-field="Job">' + (row.Job || '') + '</td>' +
-        '<td class="editable-cell" contenteditable="true" data-field="Descrizione">' + (row.Descrizione || '') + '</td>' +
-        '<td class="editable-cell" contenteditable="true" data-field="Cliente">' + (row.Cliente || '') + '</td>' +
-        '<td class="editable-cell" contenteditable="true" data-field="Inizio">' + (row.Inizio || '') + '</td>' +
-        '<td class="editable-cell" contenteditable="true" data-field="Fine">' + (row.Fine || '') + '</td>' +
-        '<td><button class="btn-save" onclick="saveRow(this)">Salva</button></td>';
-    tableBody.appendChild(tr);
-});
-function saveRow(button) {
-    var tr = button.closest('tr');
-    var originalData = JSON.parse(tr.dataset.originalData);
-    var updatedData = Object.assign({}, originalData);
-    var cells = tr.querySelectorAll('.editable-cell');
-    cells.forEach(function(cell) {
-        var field = cell.dataset.field;
-        var value = cell.textContent.trim().replace(/<[^>]*>/g, '');
-        updatedData[field] = (value === '-') ? null : value;
-    });
-    button.disabled = true; button.textContent = 'Salvataggio...';
-    fetch('/api/update-commessa', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(updatedData)
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(result) {
-        if (result.success) {
-            showStatus('Salvato!', 'success');
-            tr.dataset.originalData = JSON.stringify(updatedData);
-            cells.forEach(function(c) { c.classList.remove('modified'); });
-        } else { showStatus('Errore: ' + result.message, 'error'); }
-    })
-    .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
-    .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
-}
-function showStatus(msg, type) {
-    var el = document.getElementById('statusMessage');
-    el.textContent = msg; el.className = 'status-message ' + type;
-    setTimeout(function() { el.className = 'status-message'; }, 5000);
-}
-</script></body></html>"""
-result = html
 \`\`\`
 
 #### PUNTI CHIAVE:
-1. I dati si leggono con \`query_db()\` in Python — MAI dati hardcoded
-2. Si convertono in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
-3. Si iniettano nell'HTML con concatenazione: \`""" + json_data + """\`
-4. NON e' una f-string, quindi { e } nel CSS/JS sono NORMALI
-5. Ogni riga salva con \`tr.dataset.originalData\` per tracciare lo stato originale
-6. Il salvataggio usa \`fetch('/api/update-commessa', ...)\` — l'UNICO endpoint disponibile
-7. \`result = html\` come ultima riga — l'outputType del nodo DEVE essere 'html'
-8. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
-
-#### ERRORI DA EVITARE:
-- ❌ Inventare endpoint: \`/api/save-budget\`, \`/api/budget/update\`, \`/api/save-data\` — NON ESISTONO
-- ❌ Simulare il salvataggio con setTimeout e messaggio finto
-- ❌ Creare funzioni Python \`save_budget_to_db()\` — il salvataggio avviene nel BROWSER via fetch, non in Python
-- ✅ L'UNICO endpoint e' \`/api/update-commessa\` — anche per tabelle che NON sono CommesseHubSpot
+1. \`saveToDb()\` e' GLOBALE — non serve definirla, e' gia' iniettata dal sistema
+2. Parametro 1: nome tabella completo (es. \`'dbo.BudgetMensile_2026'\`)
+3. Parametro 2: oggetto con TUTTI i campi della riga (sia valori modificati che PK)
+4. Parametro 3: array con i nomi delle colonne PK per la clausola WHERE
+5. I dati si leggono con \`query_db()\` in Python — MAI dati hardcoded
+6. Si convertono in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
+7. Si iniettano nell'HTML con concatenazione: \`""" + json_data + """\`
+8. NON e' una f-string, quindi { e } nel CSS/JS sono NORMALI
+9. \`result = html\` come ultima riga — l'outputType del nodo DEVE essere 'html'
+10. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
 Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.
@@ -1001,9 +898,9 @@ Devi imparare dai tuoi errori AUTOMATICAMENTE. Segui queste regole:
 
 ## PROMEMORIA FINALE - SALVATAGGIO DB DA HTML:
 ###############################################################
-# L'UNICO endpoint: fetch('/api/update-commessa', ...)        #
-# Body: {query: "UPDATE dbo.Tabella SET Col=Val WHERE ..."}    #
-# MAI INVENTARE URL. MAI usare window.location.href.           #
+# USA saveToDb('dbo.Tabella', riga, ['pk'])                    #
+# E' GIA' disponibile. NON serve fetch. NON serve URL.         #
+# NON inventare funzioni. NON usare window.location.href.      #
 ###############################################################
 
 ## FORMATO RISPOSTE:
@@ -1071,12 +968,9 @@ Quando il codice fallisce, segui questa scala:
         const dbWriteReminder = wantsDbWrite ? `
 
 ###############################################################
-# RICORDA: SALVATAGGIO DB → UNICO MODO:                       #
-# fetch('/api/update-commessa', {method:'POST',                #
-#   headers:{'Content-Type':'application/json'},               #
-#   body: JSON.stringify({query:"UPDATE dbo.X SET Y=1"})       #
-# })                                                           #
-# NESSUN ALTRO URL ESISTE. NON INVENTARE ENDPOINT.             #
+# RICORDA: per salvare nel DB da HTML usa SOLO:                #
+# saveToDb('dbo.NomeTabella', oggettoRiga, ['colPK'])          #
+# E' GIA' disponibile. NON usare fetch. NON inventare URL.    #
 ###############################################################` : '';
 
         const userPrompt = `=== RICHIESTA ===
