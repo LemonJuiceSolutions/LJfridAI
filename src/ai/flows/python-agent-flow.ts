@@ -565,9 +565,17 @@ export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
 
 ##################################################################
 # REGOLA NUMERO 1 — SALVATAGGIO DB DA HTML EDITABILE             #
-# Per salvare dati nel DB da JavaScript nell'HTML usa SEMPRE:    #
-# fetch('/api/update-commessa', {method:'POST', body:...})       #
-# E' l'UNICO endpoint che esiste — il sistema aggiunge token    #
+# L'UNICO endpoint per salvare dati e': /api/update-commessa     #
+# Qualsiasi altro URL (window.location.href, /api/save-budget,   #
+# /api/save-data, /api/budget/update) NON ESISTE.                #
+##################################################################
+# COPIA QUESTO per salvare da HTML:                               #
+# fetch('/api/update-commessa', {                                 #
+#   method: 'POST',                                               #
+#   headers: {'Content-Type': 'application/json'},                #
+#   body: JSON.stringify({query: "UPDATE dbo.TABELLA SET X=1"})   #
+# }).then(function(r){return r.json()})                           #
+#   .then(function(d){if(d.success) alert('OK')})                 #
 ##################################################################
 
 DATA DI OGGI: ${today}
