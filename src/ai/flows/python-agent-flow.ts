@@ -668,13 +668,39 @@ function saveRow(button) {
 }
 \`\`\`
 
-#### DUE MODI DI SALVATAGGIO:
+#### DUE MODI DI SALVATAGGIO (sempre /api/update-commessa):
 - **Modo 1 (qualsiasi tabella)**: manda un campo \`query\` con SQL UPDATE:
   \`fetch('/api/update-commessa', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({query: "UPDATE dbo.Tabella SET Col='val' WHERE PK=1"})})\`
 - **Modo 2 (dbo.CommesseHubSpot)**: manda direttamente i campi riga con Job come PK:
   \`fetch('/api/update-commessa', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({Job:'J001', Descrizione:'...', Cliente:'...'})})\`
 
-#### ESEMPIO COMPLETO TABELLA EDITABILE:
+ATTENZIONE: l'endpoint e' SEMPRE \`/api/update-commessa\` per QUALSIASI tabella. NON cambiare il nome dell'endpoint in base alla tabella.
+
+#### ESEMPIO MODO 1 — SALVATAGGIO GENERICO (qualsiasi tabella):
+\`\`\`
+function salvaDati() {
+    var updates = [];
+    currentData.forEach(function(row) {
+        updates.push({
+            query: "UPDATE dbo.BudgetMensile_2026 SET Peso = " + row.Peso + " WHERE Anno = " + row.Anno + " AND Mese = " + row.Mese
+        });
+    });
+    var promises = updates.map(function(update) {
+        return fetch('/api/update-commessa', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(update)
+        }).then(function(response) { return response.json(); });
+    });
+    Promise.all(promises).then(function(results) {
+        var allSuccess = results.every(function(r) { return r.success; });
+        if (allSuccess) showMessage('Dati salvati!', 'success');
+        else showMessage('Errore nel salvataggio', 'error');
+    }).catch(function(e) { showMessage('Errore: ' + e.message, 'error'); });
+}
+\`\`\`
+
+#### ESEMPIO COMPLETO TABELLA EDITABILE (Modo 2 — CommesseHubSpot):
 \`\`\`python
 import pandas as pd
 import json
@@ -758,9 +784,10 @@ result = html
 8. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
 
 #### ERRORI DA EVITARE:
-- ❌ Inventare endpoint come \`/api/budget/update\` — non esistono
+- ❌ Inventare endpoint: \`/api/save-budget\`, \`/api/budget/update\`, \`/api/save-data\` — NON ESISTONO
 - ❌ Simulare il salvataggio con setTimeout e messaggio finto
-- ✅ \`fetch('/api/update-commessa', {method:'POST', ...})\` — UNICO modo corretto
+- ❌ Creare funzioni Python \`save_budget_to_db()\` — il salvataggio avviene nel BROWSER via fetch, non in Python
+- ✅ L'UNICO endpoint e' \`/api/update-commessa\` — anche per tabelle che NON sono CommesseHubSpot
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
 Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.
