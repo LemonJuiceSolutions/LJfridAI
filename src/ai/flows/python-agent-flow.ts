@@ -562,6 +562,18 @@ export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
         const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
         const systemPrompt = `Sei un agente AI esperto in Python per analisi dati. Stai utilizzando il modello: ${modelName}. NON MOLLARE MAI. Sei tenace e persistente.
+
+#################################################################
+# REGOLA NUMERO 1 — SALVATAGGIO DB DA HTML (LEGGI SUBITO!)      #
+# Per SALVARE/UPDATE dati nel database da HTML interattivo:      #
+# USA SOLO: fetch('/api/update-commessa')                        #
+# body: JSON.stringify({query: "UPDATE dbo.Tabella SET..."})     #
+# NON USARE MAI postMessage — NON SCRIVE NEL DATABASE!          #
+# NON USARE MAI window.parent.postMessage — E' SOLO UN EVENTO!  #
+# L'UNICO endpoint e': /api/update-commessa                     #
+# NON INVENTARE endpoint come /api/budget/update — NON ESISTONO #
+#################################################################
+
 DATA DI OGGI: ${today}
 
 ${connectorInfo}${companyInfo}${documentsContext}
@@ -1008,6 +1020,15 @@ Devi imparare dai tuoi errori AUTOMATICAMENTE. Segui queste regole:
 - ALL'INIZIO di ogni nuova richiesta, cerca nella KB parole chiave relative alla richiesta dell'utente.
 - Prima di scrivere codice che tocca un'area dove hai gia' sbagliato in passato.
 
+## PROMEMORIA FINALE - SALVATAGGIO DB DA HTML:
+Se l'utente chiede di SALVARE o AGGIORNARE dati nel database da una tabella HTML editabile:
+1. USA SOLO fetch('/api/update-commessa') — l'UNICO endpoint che esiste
+2. Il body DEVE avere {query: "UPDATE dbo.NomeTabella SET col=val WHERE pk=id"}
+3. NON usare MAI window.parent.postMessage per salvare dati — non scrive nel DB
+4. NON inventare endpoint — /api/budget/update, /api/save-data NON ESISTONO
+5. NON simulare il salvataggio con setTimeout o messaggi finti
+Vedi la sezione "SCRITTURA DB da HTML interattivo" per il pattern completo.
+
 ## FORMATO RISPOSTE:
 - Rispondi SEMPRE in italiano.
 - Usa **grassetto** per evidenziare.
@@ -1064,9 +1085,16 @@ Quando il codice fallisce, segui questa scala:
 - Se la tua soluzione e' stata ispirata o basata su uno script trovato in un altro nodo (tramite pyBrowseOtherScripts), indica il NOME di quel nodo in solutionSourceNode.
 - Se hai risolto senza ispirazione da altri nodi, metti null.`;
 
+        // Detect if user is asking for DB write/save from HTML
+        const userMsgLower = input.userMessage.toLowerCase();
+        const wantsDbWrite = /salva|update|aggiorn|modific|edit|scriv|database|db|save/i.test(userMsgLower) &&
+                             /html|tabella|widget|interattiv/i.test(userMsgLower);
+        const dbWriteReminder = wantsDbWrite ? `
+IMPORTANTE: Per il salvataggio nel DB da HTML, usa SOLO fetch('/api/update-commessa') con body {query: "UPDATE dbo.Tabella SET..."}. MAI usare postMessage.` : '';
+
         const userPrompt = `=== RICHIESTA ===
 ${input.userMessage}
-
+${dbWriteReminder}
 === CODICE PYTHON CORRENTE ===
 ${input.script || '(nessun codice definito)'}
 ${context}${historyContext}
@@ -1162,6 +1190,66 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
             );
             resultText = result.text;
             usage = result.usage;
+
+            // --- AUTO-CORRECTION: detect postMessage save patterns and retry ---
+            const postMessageSaveRegex = /postMessage\s*\([^)]*(?:SAVE|UPDATE|WRITE|save|update|write)/i;
+            if (postMessageSaveRegex.test(resultText)) {
+                console.log('[PythonFlow] ⚠️ Detected postMessage save pattern in generated code — requesting auto-correction');
+
+                const correctionPrompt = `ERRORE CRITICO NEL TUO CODICE: Hai usato window.parent.postMessage per salvare dati nel database. postMessage NON scrive nel database — e' solo un evento JavaScript che non fa nulla.
+
+DEVI correggere il codice usando SOLO questo pattern per il salvataggio:
+
+function saveRow(button) {
+    var tr = button.closest('tr');
+    var col1 = tr.querySelector('[data-field="ColonnaPK"]').textContent.trim();
+    var col2 = tr.querySelector('[data-field="ColonnaDaAggiornare"]').textContent.trim();
+    var sqlQuery = "UPDATE dbo.NomeTabella SET ColonnaDaAggiornare='" + col2 + "' WHERE ColonnaPK='" + col1 + "'";
+    fetch('/api/update-commessa', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({query: sqlQuery})
+    }).then(function(r){return r.json()}).then(function(res){
+        if(res.success) { showStatus('Salvato!','success'); }
+        else { showStatus('Errore: '+res.message,'error'); }
+    }).catch(function(e){ showStatus('Errore: '+e.message,'error'); });
+}
+
+REGOLE:
+- Costruisci una stringa sqlQuery con UPDATE dbo.NomeTabella SET...
+- Manda {query: sqlQuery} nel body di fetch
+- L'endpoint e' /api/update-commessa (l'UNICO che esiste)
+- NON usare postMessage in nessun modo
+- Adatta nomi tabella/colonne alla richiesta dell'utente
+
+Riscrivi il codice Python COMPLETO con il salvataggio corretto via fetch.`;
+
+                // Append assistant response and correction to messages
+                messages.push({ role: 'assistant', content: resultText });
+                messages.push({ role: 'user', content: correctionPrompt });
+
+                try {
+                    const correctedResult = await runOpenRouterAgentLoop(
+                        apiKey,
+                        modelName,
+                        messages,
+                        activeTools,
+                        dispatcher,
+                        true
+                    );
+                    console.log('[PythonFlow] ✅ Auto-correction completed');
+                    resultText = correctedResult.text;
+                    // Accumulate usage
+                    if (correctedResult.usage && usage) {
+                        usage.prompt_tokens += correctedResult.usage.prompt_tokens;
+                        usage.completion_tokens += correctedResult.usage.completion_tokens;
+                        usage.total_tokens += correctedResult.usage.total_tokens;
+                    }
+                } catch (correctionError: any) {
+                    console.error('[PythonFlow] Auto-correction failed:', correctionError.message);
+                    // Continue with original result
+                }
+            }
         }
 
         // Parse the response - New Robust Logic

@@ -17,7 +17,39 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
   // internalToken for /api/update-commessa Mode 1 (raw SQL queries)
   const token = opts?.internalToken || process.env.INTERNAL_QUERY_TOKEN || 'fridai-internal-query-2024';
 
-  const polyfillScript = `<script>(function(){var F=window.fetch;var B=${JSON.stringify(base)};var CID=${JSON.stringify(cid)};var TK=${JSON.stringify(token)};window.fetch=function(u,o){if(typeof u==='string'&&u.startsWith('/'))u=B+u;if(!o)o={};o.credentials='include';if(o.method&&o.method.toUpperCase()==='POST'&&o.body){try{var b=JSON.parse(o.body);var changed=false;if(CID&&!b.connectorId){b.connectorId=CID;changed=true}if(TK&&!b.internalToken){b.internalToken=TK;changed=true}if(changed)o.body=JSON.stringify(b)}catch(e){}}return F.call(this,u,o).then(function(r){if(o.method&&o.method.toUpperCase()==='POST'){r.clone().json().then(function(j){if(j.success){window.parent.postMessage({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})}})();</script>`;
+  // Polyfill script: overrides fetch for URL resolution + credential injection,
+  // AND intercepts postMessage save attempts (safety net for when AI generates wrong code)
+  const polyfillScript = `<script>(function(){` +
+    // --- Fetch polyfill ---
+    `var F=window.fetch;var B=${JSON.stringify(base)};var CID=${JSON.stringify(cid)};var TK=${JSON.stringify(token)};` +
+    `window.fetch=function(u,o){if(typeof u==='string'&&u.startsWith('/'))u=B+u;if(!o)o={};o.credentials='include';` +
+    `if(o.method&&o.method.toUpperCase()==='POST'&&o.body){try{var b=JSON.parse(o.body);var changed=false;` +
+    `if(CID&&!b.connectorId){b.connectorId=CID;changed=true}if(TK&&!b.internalToken){b.internalToken=TK;changed=true}` +
+    `if(changed)o.body=JSON.stringify(b)}catch(e){}}` +
+    `return F.call(this,u,o).then(function(r){if(o.method&&o.method.toUpperCase()==='POST'){` +
+    `r.clone().json().then(function(j){if(j.success){window.parent.postMessage({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})};` +
+    // --- PostMessage save interceptor (safety net) ---
+    // When AI generates postMessage({type:'SAVE_...', data:...}) instead of fetch,
+    // intercept it, show a visible warning, and attempt to save via fetch if possible
+    `var _origPM=window.parent.postMessage.bind(window.parent);` +
+    `window.parent.postMessage=function(msg,orig){` +
+    `if(msg&&typeof msg==='object'&&msg.type&&/save|update|write/i.test(msg.type)&&msg.type!=='iframe-db-write-success'){` +
+    `console.error('[polyfill] postMessage save detected — this does NOT write to DB. Use fetch instead.');` +
+    // Show visible error in the iframe
+    `var errDiv=document.getElementById('_pm_save_error');` +
+    `if(!errDiv){errDiv=document.createElement('div');errDiv.id='_pm_save_error';` +
+    `errDiv.style.cssText='position:fixed;top:0;left:0;right:0;padding:12px;background:#f8d7da;color:#721c24;text-align:center;z-index:99999;font-family:sans-serif;font-size:14px;border-bottom:2px solid #f5c6cb;';` +
+    `document.body.appendChild(errDiv)}` +
+    `errDiv.textContent='Errore: il salvataggio non funziona (usa postMessage invece di fetch). Rigenera il widget.';` +
+    `errDiv.style.display='block';setTimeout(function(){errDiv.style.display='none'},8000);` +
+    // If data has a 'query' field, try to save via fetch as fallback
+    `if(msg.data&&msg.data.query){` +
+    `fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:msg.data.query})})` +
+    `.then(function(r){return r.json()}).then(function(j){if(j.success){errDiv.textContent='Salvato (auto-correzione postMessage->fetch)';errDiv.style.background='#d4edda';errDiv.style.color='#155724'}})` +
+    `.catch(function(){});` +
+    `}return}` +
+    `return _origPM(msg,orig)};` +
+    `})();</script>`;
 
   if (html.includes('<head>')) {
     return html.replace('<head>', `<head>${polyfillScript}`);
