@@ -37,7 +37,13 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     `if(b.query){u=B+'/api/update-commessa';changed=true}` +
     `else if(window.__DB_TABLE__){console.warn('[polyfill] -> converting to saveToDb(',window.__DB_TABLE__,')');` +
     `return window.saveToDb(window.__DB_TABLE__,b,window.__DB_PK__||[])}` +
-    `else{u=B+'/api/update-commessa';changed=true}}` +
+    // Fallback: no query, no __DB_TABLE__ — return fake error Response so .then() sees {success:false}
+    // This prevents .catch(() => resolve({success:true})) from hiding the real error
+    `else{console.error('[polyfill] fetch POST to wrong URL, no __DB_TABLE__ set, cannot save');` +
+    `var errMsg='Salvataggio fallito: window.__DB_TABLE__ non impostato. Rigenera il widget.';` +
+    `var errEl=document.getElementById('statusMessage');` +
+    `if(errEl){errEl.textContent=errMsg;errEl.className='status-message error';errEl.style.display='block'}` +
+    `return Promise.resolve(new Response(JSON.stringify({success:false,message:errMsg}),{status:200,headers:{'Content-Type':'application/json'}}))}}` +
     // Inject connectorId and internalToken
     `if(CID&&!b.connectorId){b.connectorId=CID;changed=true}if(TK&&!b.internalToken){b.internalToken=TK;changed=true}` +
     `if(changed)o.body=JSON.stringify(b)}catch(e){}}` +
