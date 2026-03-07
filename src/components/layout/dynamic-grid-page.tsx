@@ -110,7 +110,7 @@ const generateLayouts = (items: Item[], defaultLayouts: Layouts) => {
 export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: DynamicGridPageProps) {
     const { editMode } = useEditMode();
     const { data: session, status } = useSession();
-    const availableWidgets = useAvailableWidgets();
+    const { widgets: availableWidgets, refresh: refreshWidgets } = useAvailableWidgets();
     const { toast } = useToast();
 
     // Use optimized hook with caching for dashboard layout
@@ -299,31 +299,6 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         });
     };
 
-    const hideAllStaticWidgets = () => {
-        // List of static widget IDs from widget-list.tsx
-        const staticWidgetIds = [
-            'kpi-1', 'kpi-2', 'kpi-3', 'kpi-4',
-            'overview', 'revenue-by-product', 'capacity', 'cost-center', 'job-margin',
-            'sql-test-table', 'orders', 'planning', 'acquisti', 'cutting', 'sewing',
-            'printing', 'embroidery', 'lavanderia', 'stiro', 'controllo-qualita',
-            'packaging', 'magazzino', 'setup', 'pipelines'
-        ];
-
-        const newHiddenWidgets = new Set(hiddenWidgets);
-        staticWidgetIds.forEach(id => newHiddenWidgets.add(id));
-        setHiddenWidgets(newHiddenWidgets);
-        saveHiddenWidgets(newHiddenWidgets);
-
-        // Also remove static widgets from current dashboard if present
-        const itemsToRemove = items.filter(item => staticWidgetIds.includes(item.id));
-        itemsToRemove.forEach(item => removeWidget(item.id));
-
-        toast({
-            title: "Widget statici nascosti",
-            description: `Nascosti ${staticWidgetIds.length} widget statici dalla lista`,
-        });
-    };
-
     const currentWidgetIds = useMemo(() => new Set(items.map(i => i.id)), [items]);
 
     // Filter available widgets to exclude hidden ones and apply search filter
@@ -454,7 +429,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         <div className='flex flex-col gap-4'>
             {editMode && (
                 <div className='flex justify-end gap-2 flex-wrap'>
-                    <DropdownMenu>
+                    <DropdownMenu onOpenChange={(open) => { if (open) refreshWidgets(); }}>
                         <DropdownMenuTrigger asChild>
                             <Button size="sm">
                                 <LayoutGrid className="h-4 w-4 mr-2" />
@@ -502,29 +477,15 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
                                     </div>
                                 ))
                             )}
-                            {(hiddenWidgets.size > 0 || Object.keys(availableWidgets).some(key =>
-                                ['kpi-1', 'kpi-2', 'kpi-3', 'kpi-4', 'overview', 'revenue-by-product',
-                                    'capacity', 'cost-center', 'job-margin', 'sql-test-table', 'orders',
-                                    'planning', 'acquisti', 'cutting', 'sewing', 'printing', 'embroidery',
-                                    'lavanderia', 'stiro', 'controllo-qualita', 'packaging', 'magazzino',
-                                    'setup', 'pipelines'].includes(key) && !hiddenWidgets.has(key)
-                            )) && (
+                            {hiddenWidgets.size > 0 && (
                                     <>
                                         <div className="border-t my-2" />
                                         <DropdownMenuItem
-                                            className="text-sm text-destructive hover:text-destructive"
-                                            onSelect={hideAllStaticWidgets}
+                                            className="text-sm text-muted-foreground"
+                                            onSelect={handleShowAllWidgets}
                                         >
-                                            Nascondi tutti i widget statici
+                                            Mostra tutti i widget nascosti ({hiddenWidgets.size})
                                         </DropdownMenuItem>
-                                        {hiddenWidgets.size > 0 && (
-                                            <DropdownMenuItem
-                                                className="text-sm text-muted-foreground"
-                                                onSelect={handleShowAllWidgets}
-                                            >
-                                                Mostra tutti i widget nascosti ({hiddenWidgets.size})
-                                            </DropdownMenuItem>
-                                        )}
                                     </>
                                 )}
                         </DropdownMenuContent>
