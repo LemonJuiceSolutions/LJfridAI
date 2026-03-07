@@ -679,13 +679,19 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             totalProcessed += res.batchProcessed;
             setAiProgress({ current: totalProcessed, total: res.totalToProcess });
 
-            // Aggiorna la mappa in UI dopo ogni batch
-            const cached = await getCachedDatabaseMapAction(connectorId);
-            if (cached.data) setMap(cached.data);
+            // Aggiorna la mappa in UI ogni 3 iterazioni o quando finisce (evita re-fetch continuo su mappe grandi)
+            if (res.done || batchIdx % 3 === 0) {
+                const cached = await getCachedDatabaseMapAction(connectorId);
+                if (cached.data) setMap(cached.data);
+            }
 
             if (res.done) break;
             batchIdx++;
         }
+
+        // Final refresh to ensure UI is up to date
+        const finalCached = await getCachedDatabaseMapAction(connectorId);
+        if (finalCached.data) setMap(finalCached.data);
 
         if (lastError) {
             toast({ variant: 'destructive', title: 'Errore AI', description: lastError });
@@ -860,8 +866,10 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                 if (res.error && res.done) break;
                 totalProcessed += res.batchProcessed;
                 setAiProgress({ current: totalProcessed, total: res.totalToProcess });
-                const cached = await getCachedDatabaseMapAction(connectorId);
-                if (cached.data) setMap(cached.data);
+                if (res.done || batchIdx % 3 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) setMap(cached.data);
+                }
                 if (res.done) break;
                 batchIdx++;
             }

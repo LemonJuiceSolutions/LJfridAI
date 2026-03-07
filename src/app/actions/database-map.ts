@@ -75,7 +75,7 @@ function buildSqlConfig(conf: any) {
             encrypt: conf.host && conf.host.includes('database.windows.net'),
             trustServerCertificate: true,
             connectTimeout: 30000,
-            requestTimeout: 60000,
+            requestTimeout: 120000,
         },
     };
     if (conf.port) sqlConfig.port = parseInt(conf.port);
@@ -798,7 +798,9 @@ export async function saveNodePositionsAction(
 // Processa UN singolo batch di tabelle. Il client chiama in loop per avere progress live.
 // mode: 'all' = rigenera tutte | 'missing' = solo mancanti
 // batchIndex: quale batch (0, 1, 2, ...)
-const DESC_BATCH_SIZE = 15;
+const DESC_BATCH_SIZE = 15;          // tables per single AI call
+const DESC_PARALLEL_CALLS = 3;       // parallel AI calls per batch iteration
+const DESC_SAVE_EVERY = 3;           // save to DB every N iterations (not every single one)
 
 export async function generateDescriptionBatchAction(
     connectorId: string,
@@ -841,38 +843,48 @@ export async function generateDescriptionBatchAction(
         }
 
         const totalToProcess = tablesToProcess.length;
-        const startIdx = batchIndex * DESC_BATCH_SIZE;
+        // Each iteration processes DESC_PARALLEL_CALLS * DESC_BATCH_SIZE tables
+        const tablesPerIteration = DESC_PARALLEL_CALLS * DESC_BATCH_SIZE;
+        const startIdx = batchIndex * tablesPerIteration;
 
         // Check if done
         if (startIdx >= totalToProcess) {
             return { batchProcessed: 0, totalToProcess, totalTables: map.tables.length, done: true };
         }
 
-        const batch = tablesToProcess.slice(startIdx, startIdx + DESC_BATCH_SIZE);
+        const iterationTables = tablesToProcess.slice(startIdx, startIdx + tablesPerIteration);
 
-        const tablesSummary = batch.map(t => {
-            const needsTableDesc = mode === 'all' || (!t.description && !t.userDescription);
-            const cols = t.columns
-                .filter(c => mode === 'all' || (!c.description && !c.userDescription))
-                .map(c => {
-                    let colDesc = `  - ${c.name} (${c.dataType}`;
-                    if (c.maxLength && c.maxLength > 0) colDesc += `(${c.maxLength})`;
-                    colDesc += ')';
-                    if (c.isPrimaryKey) colDesc += ' [PK]';
-                    if (c.isForeignKey && c.foreignKeyTarget) {
-                        colDesc += ` [FK → ${c.foreignKeyTarget.table}.${c.foreignKeyTarget.column}]`;
-                    }
-                    if (!c.isNullable) colDesc += ' NOT NULL';
-                    return colDesc;
-                }).join('\n');
+        // Split into parallel sub-batches
+        const subBatches: TableInfo[][] = [];
+        for (let i = 0; i < iterationTables.length; i += DESC_BATCH_SIZE) {
+            subBatches.push(iterationTables.slice(i, i + DESC_BATCH_SIZE));
+        }
 
-            let block = `TABELLA: ${t.fullName} (${t.rowCount} righe)`;
-            if (!needsTableDesc) block += ' [DESCRIZIONE GIA\' PRESENTE - genera solo colonne mancanti]';
-            block += `\nColonne:\n${cols}`;
-            return block;
-        }).join('\n\n---\n\n');
+        // Process sub-batches in parallel
+        const results = await Promise.allSettled(subBatches.map(async (batch, subIdx) => {
+            const tablesSummary = batch.map(t => {
+                const needsTableDesc = mode === 'all' || (!t.description && !t.userDescription);
+                const cols = t.columns
+                    .filter(c => mode === 'all' || (!c.description && !c.userDescription))
+                    .map(c => {
+                        let colDesc = `  - ${c.name} (${c.dataType}`;
+                        if (c.maxLength && c.maxLength > 0) colDesc += `(${c.maxLength})`;
+                        colDesc += ')';
+                        if (c.isPrimaryKey) colDesc += ' [PK]';
+                        if (c.isForeignKey && c.foreignKeyTarget) {
+                            colDesc += ` [FK → ${c.foreignKeyTarget.table}.${c.foreignKeyTarget.column}]`;
+                        }
+                        if (!c.isNullable) colDesc += ' NOT NULL';
+                        return colDesc;
+                    }).join('\n');
 
-        const prompt = `Sei un esperto di database SQL Server. Analizza queste tabelle e genera descrizioni dettagliate in italiano:
+                let block = `TABELLA: ${t.fullName} (${t.rowCount} righe)`;
+                if (!needsTableDesc) block += ' [DESCRIZIONE GIA\' PRESENTE - genera solo colonne mancanti]';
+                block += `\nColonne:\n${cols}`;
+                return block;
+            }).join('\n\n---\n\n');
+
+            const prompt = `Sei un esperto di database SQL Server. Analizza queste tabelle e genera descrizioni dettagliate in italiano:
 - Per ogni TABELLA: 2-3 frasi che spiegano lo scopo, il tipo di dati contenuti e come si relaziona alle altre tabelle del sistema.
 - Per ogni COLONNA: 1-2 frasi che spiegano il significato del campo, il formato dei dati e l'utilizzo tipico.
 
@@ -892,71 +904,79 @@ Ecco le tabelle da descrivere:
 
 ${tablesSummary}`;
 
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${orSettings.apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: orModel,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.3,
-            }),
-        });
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout per call
 
-        if (!response.ok) {
-            const errBody = await response.text();
-            console.error(`[DB-MAP] OpenRouter error (batch ${batchIndex}):`, errBody);
-            // Non bloccare: ritorna come se il batch fosse stato elaborato, il prossimo riproverà
-            const nextDone = (startIdx + DESC_BATCH_SIZE) >= totalToProcess;
-            return { batchProcessed: batch.length, totalToProcess, totalTables: map.tables.length, done: nextDone, error: `Errore API nel batch ${batchIndex + 1}` };
-        }
+            try {
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${orSettings.apiKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: orModel,
+                        messages: [{ role: 'user', content: prompt }],
+                        temperature: 0.3,
+                    }),
+                    signal: controller.signal,
+                });
+                clearTimeout(timeoutId);
 
-        const data = await response.json();
-        const text = data.choices?.[0]?.message?.content || '';
+                if (!response.ok) {
+                    const errBody = await response.text();
+                    console.error(`[DB-MAP] OpenRouter error (batch ${batchIndex}, sub ${subIdx}):`, errBody);
+                    return;
+                }
 
-        let jsonStr = text.trim();
-        if (jsonStr.startsWith('```')) {
-            jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-        }
+                const data = await response.json();
+                const text = data.choices?.[0]?.message?.content || '';
 
-        try {
-            const parsed = JSON.parse(jsonStr);
-            if (parsed.tables) {
-                for (const table of batch) {
-                    const tableDescs = parsed.tables[table.fullName];
-                    if (!tableDescs) continue;
+                let jsonStr = text.trim();
+                if (jsonStr.startsWith('```')) {
+                    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+                }
 
-                    if (tableDescs.description) {
-                        if (mode === 'all' || (!table.description && !table.userDescription)) {
-                            table.description = tableDescs.description;
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.tables) {
+                    for (const table of batch) {
+                        const tableDescs = parsed.tables[table.fullName];
+                        if (!tableDescs) continue;
+
+                        if (tableDescs.description) {
+                            if (mode === 'all' || (!table.description && !table.userDescription)) {
+                                table.description = tableDescs.description;
+                            }
                         }
-                    }
-                    if (tableDescs.columns) {
-                        for (const col of table.columns) {
-                            if (tableDescs.columns[col.name]) {
-                                if (mode === 'all' || (!col.description && !col.userDescription)) {
-                                    col.description = tableDescs.columns[col.name];
+                        if (tableDescs.columns) {
+                            for (const col of table.columns) {
+                                if (tableDescs.columns[col.name]) {
+                                    if (mode === 'all' || (!col.description && !col.userDescription)) {
+                                        col.description = tableDescs.columns[col.name];
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            } catch (err: any) {
+                clearTimeout(timeoutId);
+                console.error(`[DB-MAP] Sub-batch ${subIdx} error:`, err.message);
             }
-        } catch (parseErr: any) {
-            console.error(`[DB-MAP] JSON parse error (batch ${batchIndex}):`, parseErr.message);
+        }));
+
+        // Save to DB (not every single iteration - only every N iterations, or when done)
+        const nextDone = (startIdx + tablesPerIteration) >= totalToProcess;
+        const shouldSave = nextDone || (batchIndex % DESC_SAVE_EVERY === 0);
+        if (shouldSave) {
+            map.descriptionsGeneratedAt = new Date().toISOString();
+            await db.connector.update({
+                where: { id: connectorId },
+                data: { databaseMap: JSON.stringify(map) },
+            });
         }
 
-        // Salva dopo ogni batch
-        map.descriptionsGeneratedAt = new Date().toISOString();
-        await db.connector.update({
-            where: { id: connectorId },
-            data: { databaseMap: JSON.stringify(map) },
-        });
-
-        const nextDone = (startIdx + DESC_BATCH_SIZE) >= totalToProcess;
-        return { batchProcessed: batch.length, totalToProcess, totalTables: map.tables.length, done: nextDone };
+        return { batchProcessed: iterationTables.length, totalToProcess, totalTables: map.tables.length, done: nextDone };
     } catch (e: any) {
         console.error('[DB-MAP] AI batch error:', e);
         return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: `Errore: ${e.message}` };
@@ -1251,10 +1271,10 @@ IMPORTANTE: suggerisci solo relazioni ad alta probabilità, non indovinare.`;
 // 3-phase deep data analysis: fingerprinting → overlap → AI validation
 // Called in a loop from the client. Reads dataSamplingState to know which phase.
 
-const DATA_FINGERPRINT_BATCH = 3;   // tables per batch in phase 1 (fewer per batch, larger samples)
-const DATA_AI_BATCH = 15;           // candidates per batch in phase 3
-const DATA_SAMPLE_SIZE = 1000;      // rows to sample per table (high for reliable fingerprints)
-const DATA_VERIFY_BATCH = 10;       // candidates per batch in sql verification phase
+const DATA_FINGERPRINT_BATCH = 15;  // tables per batch in phase 1
+const DATA_AI_BATCH = 30;           // candidates per batch in phase 3
+const DATA_SAMPLE_SIZE = 500;       // rows to sample per table
+const DATA_VERIFY_BATCH = 25;       // candidates per batch in sql verification phase
 
 // Type compatibility matrix for overlap analysis
 const TYPE_COMPAT: Record<string, string[]> = {
@@ -1400,7 +1420,7 @@ export async function inferRelationshipsFromDataAction(
                                     nullCount++;
                                     continue;
                                 }
-                                if (!seen.has(strVal) && seen.size < 500) {
+                                if (!seen.has(strVal) && seen.size < 200) {
                                     seen.add(strVal);
                                     values.push(strVal);
                                 }
@@ -1605,8 +1625,8 @@ export async function inferRelationshipsFromDataAction(
                         // Cap score to 0-100 range
                         score = Math.min(100, Math.max(0, score));
 
-                        // Minimum score threshold (lowered - SQL verification + AI will filter)
-                        if (score < 10) continue;
+                        // Minimum score threshold
+                        if (score < 20) continue;
 
                         candidates.push({
                             sourceTable: sourceTableName,
@@ -1624,9 +1644,9 @@ export async function inferRelationshipsFromDataAction(
                 }
             }
 
-            // Sort by score descending, take top 100
+            // Sort by score descending, take top 200
             candidates.sort((a, b) => b.score - a.score);
-            const topCandidates = candidates.slice(0, 100);
+            const topCandidates = candidates.slice(0, 200);
 
             state.candidates = topCandidates;
             state.totalCandidates = topCandidates.length;
@@ -1721,16 +1741,17 @@ export async function inferRelationshipsFromDataAction(
                         const tgtTable = map.tables.find(t => t.fullName === candidate.targetTable);
                         if (!srcTable || !tgtTable) continue;
 
-                        // Real overlap verification via INTERSECT
+                        // Real overlap verification via INTERSECT (with TOP limit to avoid full scans on huge tables)
+                        const VERIFY_TOP = 50000;
                         const verifyQuery = `
                             SELECT
-                              (SELECT COUNT(DISTINCT [${candidate.sourceColumn}]) FROM [${srcTable.schema}].[${srcTable.name}] WHERE [${candidate.sourceColumn}] IS NOT NULL) AS src_distinct,
+                              (SELECT COUNT(*) FROM (SELECT DISTINCT TOP (${VERIFY_TOP}) [${candidate.sourceColumn}] FROM [${srcTable.schema}].[${srcTable.name}] WHERE [${candidate.sourceColumn}] IS NOT NULL) s) AS src_distinct,
                               (SELECT COUNT(*) FROM (
-                                SELECT DISTINCT [${candidate.sourceColumn}] AS val FROM [${srcTable.schema}].[${srcTable.name}] WHERE [${candidate.sourceColumn}] IS NOT NULL
+                                SELECT DISTINCT [${candidate.sourceColumn}] AS val FROM (SELECT TOP (${VERIFY_TOP}) [${candidate.sourceColumn}] FROM [${srcTable.schema}].[${srcTable.name}] WHERE [${candidate.sourceColumn}] IS NOT NULL) s1
                                 INTERSECT
-                                SELECT DISTINCT [${candidate.targetColumn}] AS val FROM [${tgtTable.schema}].[${tgtTable.name}] WHERE [${candidate.targetColumn}] IS NOT NULL
+                                SELECT DISTINCT [${candidate.targetColumn}] AS val FROM (SELECT TOP (${VERIFY_TOP}) [${candidate.targetColumn}] FROM [${tgtTable.schema}].[${tgtTable.name}] WHERE [${candidate.targetColumn}] IS NOT NULL) t1
                               ) x) AS overlap_count,
-                              (SELECT COUNT(DISTINCT [${candidate.targetColumn}]) FROM [${tgtTable.schema}].[${tgtTable.name}] WHERE [${candidate.targetColumn}] IS NOT NULL) AS tgt_distinct
+                              (SELECT COUNT(*) FROM (SELECT DISTINCT TOP (${VERIFY_TOP}) [${candidate.targetColumn}] FROM [${tgtTable.schema}].[${tgtTable.name}] WHERE [${candidate.targetColumn}] IS NOT NULL) t) AS tgt_distinct
                         `;
 
                         const result = await pool.request().query(verifyQuery);
