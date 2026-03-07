@@ -564,17 +564,17 @@ export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
         const systemPrompt = `Sei un agente AI esperto in Python per analisi dati. Stai utilizzando il modello: ${modelName}. NON MOLLARE MAI. Sei tenace e persistente.
 
 ##################################################################
-# REGOLA NUMERO 1 — SALVATAGGIO DB DA HTML EDITABILE             #
-# La funzione saveToDb() e' GIA' disponibile in ogni HTML.       #
+# REGOLA NUMERO 1 — CRUD DB DA HTML EDITABILE                    #
+# saveToDb(), insertToDb(), deleteFromDb() sono GIA' disponibili.#
 # NON SERVE fetch, NON SERVE URL, NON SERVE import.              #
 ##################################################################
 # ALL'INIZIO del <script> scrivi SEMPRE:                          #
 # window.__DB_TABLE__ = 'dbo.NomeTabella';                        #
 # window.__DB_PK__ = ['ColonnaPK1'];                              #
 #                                                                  #
-# Per salvare:                                                     #
-# saveToDb('dbo.NomeTabella', riga, ['ColonnaPK'])                #
-#   .then(function(r){ if(r.success) alert('OK'); })              #
+# UPDATE: saveToDb('dbo.Tab', riga, ['PK'])                       #
+# INSERT: insertToDb('dbo.Tab', riga)                              #
+# DELETE: deleteFromDb('dbo.Tab', riga, ['PK'])                    #
 ##################################################################
 
 DATA DI OGGI: ${today}
@@ -690,12 +690,78 @@ function saveRow(button) {
 }
 \`\`\`
 
+#### insertToDb() — PER NUOVI RECORD (INSERT):
+Quando l'HTML ha un bottone "Aggiungi Record", per salvare il nuovo record nel DB usa \`insertToDb()\`:
+\`\`\`
+insertToDb(nomeTabella, oggettoRiga)
+\`\`\`
+- Parametro 1: nome tabella completo (es. 'dbo.BudgetMensile_2026')
+- Parametro 2: oggetto con TUTTI i campi della riga (le proprieta' che iniziano con _ vengono ignorate)
+- Ritorna Promise con {success: true/false}
+
+#### ESEMPIO 3 — saveRow con distinzione nuovo/esistente:
+\`\`\`
+function saveRow(button) {
+    var tr = button.closest('tr');
+    var isNew = tr.dataset.isNew === 'true';
+    var rowData = {};
+    tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+        rowData[cell.dataset.field] = cell.textContent.trim();
+    });
+    button.disabled = true;
+    button.textContent = 'Salvataggio...';
+    var promise = isNew
+        ? insertToDb('dbo.NomeTabella', rowData)
+        : saveToDb('dbo.NomeTabella', rowData, ['ColonnaPK']);
+    promise.then(function(r) {
+        if (r.success) {
+            showStatus('Salvato!', 'success');
+            tr.dataset.isNew = 'false';
+        } else { showStatus('Errore: ' + r.message, 'error'); }
+    })
+    .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+    .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
+}
+\`\`\`
+REGOLA: riga nuova (_isNew) -> insertToDb(). Riga esistente -> saveToDb().
+
+#### deleteFromDb() — PER ELIMINARE RIGHE (DELETE):
+\`\`\`
+deleteFromDb(nomeTabella, oggettoRiga, arrayColonnePK)
+\`\`\`
+- Parametro 1: nome tabella completo
+- Parametro 2: oggetto con almeno i campi PK della riga
+- Parametro 3: array PK per la clausola WHERE
+- Il bottone Elimina DEVE chiedere conferma con confirm() prima di procedere
+
+#### ESEMPIO 4 — Bottone Elimina per riga:
+\`\`\`
+function deleteRow(button) {
+    if (!confirm('Sei sicuro di voler eliminare questa riga?')) return;
+    var tr = button.closest('tr');
+    var rowData = {};
+    tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+        rowData[cell.dataset.field] = cell.textContent.trim();
+    });
+    button.disabled = true;
+    button.textContent = 'Eliminazione...';
+    deleteFromDb('dbo.NomeTabella', rowData, ['ColonnaPK'])
+        .then(function(r) {
+            if (r.success) { tr.remove(); showStatus('Riga eliminata!', 'success'); }
+            else { showStatus('Errore: ' + r.message, 'error'); }
+        })
+        .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+        .finally(function() { button.disabled = false; button.textContent = 'Elimina'; });
+}
+\`\`\`
+
 #### PUNTI CHIAVE:
-1. \`saveToDb()\` e' GLOBALE — non serve definirla, e' gia' iniettata dal sistema
+1. \`saveToDb()\`, \`insertToDb()\` e \`deleteFromDb()\` sono GLOBALI — non serve definirle, sono gia' iniettate dal sistema
 2. SEMPRE all'inizio del \`<script>\`, scrivi: \`window.__DB_TABLE__ = 'dbo.NomeTabella'; window.__DB_PK__ = ['pk1'];\`
-3. Parametro 1: nome tabella completo (es. \`'dbo.BudgetMensile_2026'\`)
-4. Parametro 2: oggetto con TUTTI i campi della riga (sia valori modificati che PK)
-5. Parametro 3: array con i nomi delle colonne PK per la clausola WHERE
+3. \`saveToDb\`: Parametro 1: nome tabella, Parametro 2: oggetto riga, Parametro 3: array PK -> genera UPDATE
+4. \`insertToDb\`: Parametro 1: nome tabella, Parametro 2: oggetto riga -> genera INSERT
+5. \`deleteFromDb\`: Parametro 1: nome tabella, Parametro 2: oggetto con PK, Parametro 3: array PK -> genera DELETE
+6. Parametro 2: oggetto con TUTTI i campi della riga (sia valori modificati che PK)
 6. I dati si leggono con \`query_db()\` in Python — MAI dati hardcoded
 7. Si convertono in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
 8. Si iniettano nell'HTML con concatenazione: \`""" + json_data + """\`

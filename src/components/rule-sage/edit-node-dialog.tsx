@@ -3611,7 +3611,7 @@ export default function EditNodeDialog({
                                   { connectorId: pythonConnectorId, baseUrl: typeof window !== 'undefined' ? window.location.origin : '' }
                                 )}
                                 className="w-full border-none min-h-[400px]"
-                                sandbox="allow-scripts allow-same-origin allow-forms"
+                                sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                                 title="HTML Preview"
                               />
                               {/* HTML Style Editor Dialog */}

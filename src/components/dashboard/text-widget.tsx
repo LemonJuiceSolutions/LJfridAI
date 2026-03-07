@@ -369,7 +369,7 @@ export default function TextWidget({
                                             className="w-full border-none"
                                             style={{ minHeight: 200, height: '100%' }}
                                             title="HTML Widget"
-                                            sandbox="allow-scripts allow-same-origin allow-forms"
+                                            sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                                         />
                                     </div>
                                 );

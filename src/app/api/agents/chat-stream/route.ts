@@ -198,17 +198,17 @@ function buildPythonSystemPrompt(opts: {
     return `Sei un agente AI esperto in Python per analisi dati. Stai utilizzando il modello: ${opts.modelName}. NON MOLLARE MAI. Sei tenace e persistente.
 
 ##################################################################
-# REGOLA NUMERO 1 — SALVATAGGIO DB DA HTML EDITABILE             #
-# La funzione saveToDb() e' GIA' disponibile in ogni HTML.       #
+# REGOLA NUMERO 1 — CRUD DB DA HTML EDITABILE                    #
+# saveToDb(), insertToDb(), deleteFromDb() sono GIA' disponibili.#
 # NON SERVE fetch, NON SERVE URL, NON SERVE import.              #
 ##################################################################
 # ALL'INIZIO del <script> scrivi SEMPRE:                          #
 # window.__DB_TABLE__ = 'dbo.NomeTabella';                        #
 # window.__DB_PK__ = ['ColonnaPK1'];                              #
 #                                                                  #
-# Per salvare:                                                     #
-# saveToDb('dbo.NomeTabella', riga, ['ColonnaPK'])                #
-#   .then(function(r){ if(r.success) alert('OK'); })              #
+# UPDATE: saveToDb('dbo.Tab', riga, ['PK'])                       #
+# INSERT: insertToDb('dbo.Tab', riga)                              #
+# DELETE: deleteFromDb('dbo.Tab', riga, ['PK'])                    #
 ##################################################################
 
 DATA DI OGGI: ${today}
@@ -487,8 +487,79 @@ result = html
 5. Parametro 3: array con i nomi delle colonne PK per la clausola WHERE
 6. Il bottone Salva DEVE cambiare aspetto durante il salvataggio (disabled + testo "Salvataggio...")
 7. Le celle modificate DEVONO avere classe "modified" con bordo arancione
-8. NON usare MAI fetch() diretto o URL — usa SOLO saveToDb()
+8. NON usare MAI fetch() diretto o URL — usa SOLO saveToDb() e insertToDb()
 9. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
+
+### insertToDb() — PER NUOVI RECORD (INSERT):
+Quando l'HTML ha un bottone "Aggiungi Record" o simile, per salvare il nuovo record nel DB usa \`insertToDb()\`:
+\`\`\`
+insertToDb(nomeTabella, oggettoRiga)
+\`\`\`
+Ritorna una Promise con \`{success: true/false, message: '...'}\`.
+- Parametro 1: nome tabella completo (es. 'dbo.BudgetMensile_2026')
+- Parametro 2: oggetto con TUTTI i campi della riga da inserire (le proprieta' che iniziano con _ vengono ignorate)
+- NON ha bisogno delle PK come terzo parametro (e' un INSERT, non un UPDATE)
+
+ESEMPIO nel saveRow con distinzione nuovo/esistente:
+\`\`\`
+function saveRow(button) {
+    var tr = button.closest('tr');
+    var isNew = tr.dataset.isNew === 'true';
+    var rowData = {};
+    tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+        rowData[cell.dataset.field] = cell.textContent.trim();
+    });
+    button.disabled = true;
+    button.textContent = 'Salvataggio...';
+    var promise = isNew
+        ? insertToDb('dbo.NomeTabella', rowData)
+        : saveToDb('dbo.NomeTabella', rowData, ['ColonnaPK']);
+    promise.then(function(r) {
+        if (r.success) {
+            showStatus('Salvato!', 'success');
+            tr.dataset.isNew = 'false';  // dopo l'insert diventa update
+        } else { showStatus('Errore: ' + r.message, 'error'); }
+    })
+    .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+    .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
+}
+\`\`\`
+
+REGOLA: Se la riga e' nuova (_isNew, appena aggiunta dall'utente) -> usa insertToDb(). Se la riga esiste gia' nel DB -> usa saveToDb().
+
+### deleteFromDb() — PER ELIMINARE RIGHE (DELETE):
+Per eliminare una riga dal DB usa \`deleteFromDb()\`:
+\`\`\`
+deleteFromDb(nomeTabella, oggettoRiga, arrayColonnePK)
+\`\`\`
+Ritorna una Promise con \`{success: true/false, message: '...'}\`.
+- Parametro 1: nome tabella completo (es. 'dbo.BudgetMensile_2026')
+- Parametro 2: oggetto che contiene ALMENO i campi PK della riga da eliminare
+- Parametro 3: array con i nomi delle colonne PK per la clausola WHERE
+
+ESEMPIO bottone Elimina per riga:
+\`\`\`
+function deleteRow(button) {
+    if (!confirm('Sei sicuro di voler eliminare questa riga?')) return;
+    var tr = button.closest('tr');
+    var rowData = {};
+    tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+        rowData[cell.dataset.field] = cell.textContent.trim();
+    });
+    button.disabled = true;
+    button.textContent = 'Eliminazione...';
+    deleteFromDb('dbo.NomeTabella', rowData, ['ColonnaPK'])
+        .then(function(r) {
+            if (r.success) {
+                tr.remove();
+                showStatus('Riga eliminata!', 'success');
+            } else { showStatus('Errore: ' + r.message, 'error'); }
+        })
+        .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+        .finally(function() { button.disabled = false; button.textContent = 'Elimina'; });
+}
+\`\`\`
+REGOLA: Il bottone Elimina DEVE chiedere conferma con confirm() prima di procedere. Dopo l'eliminazione, la riga viene rimossa dal DOM con tr.remove().
 
 ## CORREZIONE ERRORI AUTOMATICA (CRITICO):
 - Se ricevi "ERRORE ESECUZIONE AUTOMATICA", DEVI restituire il codice corretto.

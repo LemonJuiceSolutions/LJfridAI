@@ -995,7 +995,7 @@ function PythonDataPreview({
                                         baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
                                     })}
                                     className="w-full border-none h-full"
-                                    sandbox="allow-scripts allow-same-origin allow-forms"
+                                    sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                                     title="HTML Widget"
                                 />
                             </div>

@@ -272,7 +272,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                                 { connectorId: previewData.connectorId, baseUrl: typeof window !== 'undefined' ? window.location.origin : '' }
                             )}
                             className="w-full h-full border-none min-h-[300px]"
-                            sandbox="allow-scripts allow-same-origin allow-forms"
+                            sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                             title="HTML Widget Preview"
                         />
                     </div>

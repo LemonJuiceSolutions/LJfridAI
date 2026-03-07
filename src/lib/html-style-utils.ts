@@ -62,6 +62,32 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     `var q="UPDATE "+tbl+" SET "+S.join(", ")+" WHERE "+W.join(" AND ");` +
     `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
     `body:JSON.stringify({query:q})}).then(function(r){return r.json()})};` +
+    // --- 2b. insertToDb: universal DB insert function (constructs INSERT query, calls polyfilled fetch) ---
+    // Usage: insertToDb('dbo.TableName', {col1:val1, col2:val2}).then(r => ...)
+    `window.insertToDb=function(tbl,data){` +
+    `if(!tbl||!data)return Promise.reject(new Error('Missing table or data'));` +
+    `var C=[],V=[];` +
+    `for(var k in data){if(!data.hasOwnProperty(k))continue;` +
+    `if(k.charAt(0)==='_')continue;` + // skip internal fields like _isNew
+    `C.push(k);` +
+    `var v=data[k]==null?'NULL':"'"+String(data[k]).replace(/'/g,"''")+"'";` +
+    `V.push(v)}` +
+    `if(C.length===0)return Promise.reject(new Error('No columns to insert'));` +
+    `var q="INSERT INTO "+tbl+" ("+C.join(", ")+") VALUES ("+V.join(", ")+")";` +
+    `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
+    `body:JSON.stringify({query:q})}).then(function(r){return r.json()})};` +
+    // --- 2c. deleteFromDb: universal DB delete function (constructs DELETE query, calls polyfilled fetch) ---
+    // Usage: deleteFromDb('dbo.TableName', {pkCol1:val1, pkCol2:val2}, ['pkCol1','pkCol2']).then(r => ...)
+    `window.deleteFromDb=function(tbl,data,pks){` +
+    `if(!tbl||!data||!pks||pks.length===0)return Promise.reject(new Error('Missing table, data or PKs'));` +
+    `var W=[];` +
+    `for(var i=0;i<pks.length;i++){var k=pks[i];` +
+    `if(!data.hasOwnProperty(k))return Promise.reject(new Error('PK field missing: '+k));` +
+    `var v=data[k]==null?'':String(data[k]).replace(/'/g,"''");` +
+    `W.push(k+"='"+v+"'")}` +
+    `var q="DELETE FROM "+tbl+" WHERE "+W.join(" AND ");` +
+    `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
+    `body:JSON.stringify({query:q})}).then(function(r){return r.json()})};` +
     // --- 3. PostMessage interceptor: auto-converts save-type postMessage to saveToDb ---
     // When AI generates postMessage({type:'SAVE_...', data:...}), this interceptor
     // catches it and redirects to saveToDb using __DB_TABLE__ and __DB_PK__ metadata
