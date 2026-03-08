@@ -6,6 +6,31 @@ import sql from 'mssql';
 import type { DatabaseMap, TableInfo, ColumnInfo, RelationshipInfo, ColumnFingerprint, OverlapCandidate, DataSamplingState } from '@/lib/database-map-types';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
 
+// ─── In-memory cache for parsed DatabaseMap (avoids repeated JSON.parse of ~30MB) ────
+let _parsedMapCache: { connectorId: string; map: DatabaseMap; rawHash: number; updatedAt: number } | null = null;
+
+function simpleHash(s: string): number {
+    let h = 0;
+    for (let i = 0; i < Math.min(s.length, 200); i++) {
+        h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    }
+    return h;
+}
+
+function getCachedParsedMap(connectorId: string, rawJson: string): DatabaseMap {
+    const hash = simpleHash(rawJson);
+    if (_parsedMapCache && _parsedMapCache.connectorId === connectorId && _parsedMapCache.rawHash === hash) {
+        return _parsedMapCache.map;
+    }
+    const map: DatabaseMap = JSON.parse(rawJson);
+    _parsedMapCache = { connectorId, map, rawHash: hash, updatedAt: Date.now() };
+    return map;
+}
+
+function setCachedParsedMap(connectorId: string, map: DatabaseMap) {
+    _parsedMapCache = { connectorId, map, rawHash: 0, updatedAt: Date.now() };
+}
+
 // ─── Helper: fetch free models dynamically from OpenRouter ──────────────────
 let _freeModelsCache: { models: string[]; fetchedAt: number } | null = null;
 const FREE_MODELS_CACHE_TTL = 1000 * 60 * 30; // 30 min
@@ -65,7 +90,7 @@ async function fetchFreeModels(apiKey: string): Promise<string[]> {
 }
 
 // ─── Helper: build SQL config from connector ────────────────────────────────
-function buildSqlConfig(conf: any) {
+function buildSqlConfig(conf: any, requestTimeoutMs = 120000) {
     const sqlConfig: any = {
         user: conf.user,
         password: conf.password,
@@ -75,7 +100,7 @@ function buildSqlConfig(conf: any) {
             encrypt: conf.host && conf.host.includes('database.windows.net'),
             trustServerCertificate: true,
             connectTimeout: 30000,
-            requestTimeout: 120000,
+            requestTimeout: requestTimeoutMs,
         },
     };
     if (conf.port) sqlConfig.port = parseInt(conf.port);
@@ -98,33 +123,30 @@ WHERE t.is_ms_shipped = 0
 ORDER BY s.name, t.name
 `;
 
-// ─── Q2: All columns with metadata ─────────────────────────────────────────
+// ─── Q2: All columns with metadata (uses sys.columns for performance on large DBs) ─
 const COLUMNS_QUERY = `
 SELECT
-    c.TABLE_SCHEMA,
-    c.TABLE_NAME,
-    c.COLUMN_NAME,
-    c.DATA_TYPE,
-    c.CHARACTER_MAXIMUM_LENGTH,
-    c.IS_NULLABLE,
-    c.COLUMN_DEFAULT,
-    CASE WHEN kcu.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS is_primary_key,
+    s.name AS TABLE_SCHEMA,
+    t.name AS TABLE_NAME,
+    c.name AS COLUMN_NAME,
+    tp.name AS DATA_TYPE,
+    c.max_length AS CHARACTER_MAXIMUM_LENGTH,
+    CASE WHEN c.is_nullable = 1 THEN 'YES' ELSE 'NO' END AS IS_NULLABLE,
+    dc.definition AS COLUMN_DEFAULT,
+    CASE WHEN ic.column_id IS NOT NULL THEN 1 ELSE 0 END AS is_primary_key,
     CAST(ep.value AS NVARCHAR(MAX)) AS column_description
-FROM INFORMATION_SCHEMA.COLUMNS c
-LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-    ON tc.TABLE_SCHEMA = c.TABLE_SCHEMA AND tc.TABLE_NAME = c.TABLE_NAME
-    AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
-LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-    ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME AND kcu.TABLE_SCHEMA = tc.TABLE_SCHEMA
-    AND kcu.TABLE_NAME = tc.TABLE_NAME AND kcu.COLUMN_NAME = c.COLUMN_NAME
-LEFT JOIN sys.columns sc
-    ON sc.object_id = OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME)
-    AND sc.name = c.COLUMN_NAME
+FROM sys.columns c
+INNER JOIN sys.tables t ON c.object_id = t.object_id
+INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+INNER JOIN sys.types tp ON c.user_type_id = tp.user_type_id
+LEFT JOIN sys.default_constraints dc ON c.default_object_id = dc.object_id
+LEFT JOIN sys.indexes i ON i.object_id = t.object_id AND i.is_primary_key = 1
+LEFT JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.column_id = c.column_id
 LEFT JOIN sys.extended_properties ep
-    ON ep.major_id = sc.object_id AND ep.minor_id = sc.column_id
+    ON ep.major_id = c.object_id AND ep.minor_id = c.column_id
     AND ep.name = 'MS_Description'
-WHERE OBJECTPROPERTY(OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME), 'IsMSShipped') = 0
-ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION
+WHERE t.is_ms_shipped = 0
+ORDER BY s.name, t.name, c.column_id
 `;
 
 // ─── Q3: All foreign key relationships ──────────────────────────────────────
@@ -144,24 +166,24 @@ INNER JOIN sys.columns cr ON fkc.referenced_object_id = cr.object_id AND fkc.ref
 ORDER BY sch1.name, tp.name, fk.name
 `;
 
-// ─── Q4: VIEW definitions to extract JOIN relationships ─────────────────────
+// ─── Q4: VIEW definitions to extract JOIN relationships (limit to 500 to avoid timeout) ─
 const VIEWS_QUERY = `
-SELECT
+SELECT TOP 500
     s.name AS view_schema,
     v.name AS view_name,
-    m.definition AS view_definition
+    LEFT(m.definition, 8000) AS view_definition
 FROM sys.views v
 INNER JOIN sys.schemas s ON v.schema_id = s.schema_id
 INNER JOIN sys.sql_modules m ON v.object_id = m.object_id
 WHERE v.is_ms_shipped = 0
 `;
 
-// ─── Q5: Stored Procedure definitions to extract JOIN relationships ──────────
+// ─── Q5: Stored Procedure definitions to extract JOIN relationships (limit to 500) ─
 const SP_QUERY = `
-SELECT
+SELECT TOP 500
     s.name AS sp_schema,
     p.name AS sp_name,
-    m.definition AS sp_definition
+    LEFT(m.definition, 8000) AS sp_definition
 FROM sys.procedures p
 INNER JOIN sys.schemas s ON p.schema_id = s.schema_id
 INNER JOIN sys.sql_modules m ON p.object_id = m.object_id
@@ -282,19 +304,38 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
             return { error: 'Configurazione connettore non valida' };
         }
 
-        const sqlConfig = buildSqlConfig(conf);
+        // Use longer request timeout for scan (5 min) – large DBs need it
+        const sqlConfig = buildSqlConfig(conf, 300000);
         const pool = new sql.ConnectionPool(sqlConfig);
         await pool.connect();
 
         try {
-            // Execute all five queries
-            const [tablesResult, columnsResult, fkResult, viewsResult, spResult] = await Promise.all([
+            // Execute core queries first (tables, columns, FK) – these are essential
+            const [tablesResult, columnsResult, fkResult] = await Promise.all([
                 pool.request().query(TABLES_QUERY),
                 pool.request().query(COLUMNS_QUERY),
                 pool.request().query(FK_QUERY),
-                pool.request().query(VIEWS_QUERY).catch(() => ({ recordset: [] })),
-                pool.request().query(SP_QUERY).catch(() => ({ recordset: [] })),
             ]);
+
+            // VIEW/SP parsing is optional and slow on large DBs – skip if >800 tables
+            const tableCount = tablesResult.recordset.length;
+            let viewsResult: { recordset: any[] } = { recordset: [] };
+            let spResult: { recordset: any[] } = { recordset: [] };
+
+            if (tableCount <= 800) {
+                // Run VIEW/SP queries with shorter timeout (60s)
+                try {
+                    const shortReq1 = pool.request();
+                    (shortReq1 as any).timeout = 60000;
+                    viewsResult = await shortReq1.query(VIEWS_QUERY).catch(() => ({ recordset: [] }));
+                } catch { /* skip views */ }
+
+                try {
+                    const shortReq2 = pool.request();
+                    (shortReq2 as any).timeout = 60000;
+                    spResult = await shortReq2.query(SP_QUERY).catch(() => ({ recordset: [] }));
+                } catch { /* skip SPs */ }
+            }
 
             // Build relationships array
             const relationships: RelationshipInfo[] = fkResult.recordset.map((row: any) => ({
@@ -666,7 +707,11 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
         }
     } catch (e: any) {
         console.error('[DB-MAP] Error:', e);
-        return { error: `Errore scansione database: ${e.message}` };
+        const msg = e.message || String(e);
+        if (msg.includes('timeout') || msg.includes('Timeout') || e.code === 'ETIMEOUT') {
+            return { error: `Timeout scansione database: il database ha troppe tabelle o la connessione è lenta. Riprova.` };
+        }
+        return { error: `Errore scansione database: ${msg}` };
     }
 }
 
@@ -684,7 +729,7 @@ export async function getCachedDatabaseMapAction(connectorId: string): Promise<{
         if (!connector) return { error: 'Connettore non trovato' };
         if (!connector.databaseMap) return {};
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
         return { data: map, cachedAt: connector.databaseMapAt?.toISOString() };
     } catch (e: any) {
         console.error('[DB-MAP] Cache read error:', e);
@@ -798,8 +843,8 @@ export async function saveNodePositionsAction(
 // Processa UN singolo batch di tabelle. Il client chiama in loop per avere progress live.
 // mode: 'all' = rigenera tutte | 'missing' = solo mancanti
 // batchIndex: quale batch (0, 1, 2, ...)
-const DESC_BATCH_SIZE = 15;          // tables per single AI call
-const DESC_PARALLEL_CALLS = 3;       // parallel AI calls per batch iteration
+const DESC_BATCH_SIZE = 50;          // tables per single AI call
+const DESC_PARALLEL_CALLS = 5;       // parallel AI calls per batch iteration
 const DESC_SAVE_EVERY = 3;           // save to DB every N iterations (not every single one)
 
 export async function generateDescriptionBatchAction(
@@ -828,7 +873,7 @@ export async function generateDescriptionBatchAction(
 
         if (!connector?.databaseMap) return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: 'Mappa non trovata' };
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
 
         // Filter tables based on mode
         let tablesToProcess: TableInfo[];
@@ -884,9 +929,10 @@ export async function generateDescriptionBatchAction(
                 return block;
             }).join('\n\n---\n\n');
 
-            const prompt = `Sei un esperto di database SQL Server. Analizza queste tabelle e genera descrizioni dettagliate in italiano:
-- Per ogni TABELLA: 2-3 frasi che spiegano lo scopo, il tipo di dati contenuti e come si relaziona alle altre tabelle del sistema.
-- Per ogni COLONNA: 1-2 frasi che spiegano il significato del campo, il formato dei dati e l'utilizzo tipico.
+            const prompt = `Sei un esperto di database SQL Server. Analizza queste tabelle e genera descrizioni SINTETICHE in italiano:
+- Per ogni TABELLA: 1 brevissima frase che ne spiega lo scopo.
+- Per ogni COLONNA: max 5-6 parole (es. "Identificativo", "Data inserimento record").
+Generare meno testo possibile per velocizzare il processo.
 
 Rispondi SOLO in formato JSON con questa struttura esatta:
 {
@@ -1094,7 +1140,7 @@ Rispondi in italiano, in modo chiaro e conciso. Se ti chiedono di tabelle o colo
 
 // ─── inferRelationshipsAIAction ──────────────────────────────────────────────
 // Chiede all'AI di suggerire relazioni probabili analizzando nomi tabelle/colonne
-const INFER_BATCH_SIZE = 30;
+const INFER_BATCH_SIZE = 150;
 
 export async function inferRelationshipsAIAction(
     connectorId: string,
@@ -1121,7 +1167,7 @@ export async function inferRelationshipsAIAction(
 
         if (!connector?.databaseMap) return { newRelationships: 0, totalProcessed: 0, totalTables: 0, done: true, error: 'Mappa non trovata' };
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
         const startIdx = batchIndex * INFER_BATCH_SIZE;
 
         if (startIdx >= map.tables.length) {
@@ -1172,7 +1218,7 @@ Rispondi SOLO in formato JSON con questa struttura:
 }
 
 Se non trovi relazioni probabili, rispondi: {"relationships": []}
-IMPORTANTE: suggerisci solo relazioni ad alta probabilità, non indovinare.`;
+IMPORTANTE: suggerisci solo relazioni ad alta probabilità. Limita l'output al puro array JSON.`;
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -1272,9 +1318,9 @@ IMPORTANTE: suggerisci solo relazioni ad alta probabilità, non indovinare.`;
 // Called in a loop from the client. Reads dataSamplingState to know which phase.
 
 const DATA_FINGERPRINT_BATCH = 15;  // tables per batch in phase 1
-const DATA_AI_BATCH = 30;           // candidates per batch in phase 3
-const DATA_SAMPLE_SIZE = 500;       // rows to sample per table
-const DATA_VERIFY_BATCH = 25;       // candidates per batch in sql verification phase
+const DATA_AI_BATCH = 80;           // candidates per batch in phase 3
+const DATA_SAMPLE_SIZE = 150;       // rows to sample per table
+const DATA_VERIFY_BATCH = 50;       // candidates per batch in sql verification phase
 
 // Type compatibility matrix for overlap analysis
 const TYPE_COMPAT: Record<string, string[]> = {
@@ -1330,7 +1376,7 @@ export async function inferRelationshipsFromDataAction(
             return { phase: '', progress: '', newRelationships: 0, done: true, error: 'Mappa database non trovata. Esegui prima una scansione.' };
         }
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
         const effectiveSampleSize = sampleSize || DATA_SAMPLE_SIZE;
 
         // Initialize dataSamplingState if not present
@@ -1906,15 +1952,15 @@ ATTENZIONE: overlap di pochi valori interi bassi (1,2,3,4,5) tra colonne diverse
 
 Per ogni candidato rispondi con:
 - "confirmed": true/false
-- "confidence": 0-100 (quanto sei sicuro che sia una vera relazione FK)
-- "reason": spiegazione DETTAGLIATA del motivo (2-3 frasi: perche' i dati suggeriscono questa relazione, come il nome della colonna, l'overlap dei valori, la cardinalita' supportano la conclusione)
-- "evidence": un dato specifico dai campioni che conferma o smentisce (es. "I valori PRD001,PRD002 corrispondono al pattern dei codici prodotto")
+- "confidence": 0-100
+- "reason": sintetica motivazione (max 10 parole)
+- "evidence": sintesi valore chiave (max 10 parole)
 
 Rispondi SOLO in formato JSON:
 {
   "results": [
-    {"confirmed": true, "confidence": 85, "reason": "Il campo OrderDetail.ProductCode contiene il 98% dei valori presenti in Product.Code (PK). Il nome suggerisce un riferimento al prodotto e la cardinalita' e' coerente.", "evidence": "I valori PRD001,PRD002 seguono lo schema dei codici prodotto in Product.Code"},
-    {"confirmed": false, "confidence": 20, "reason": "L'overlap di 4 valori interi bassi (1,2,3,4) e' una coincidenza comune tra campi status/tipo, non una FK.", "evidence": "I 4 valori in comune (1,2,3,4) sono tipici codici status/tipo"}
+    {"confirmed": true, "confidence": 85, "reason": "Overlap del 98%, coerente", "evidence": "PRD001 compatibile"},
+    {"confirmed": false, "confidence": 20, "reason": "Valori casuali comuni, non FK", "evidence": "valori status 1,2,3"}
   ]
 }
 
@@ -1958,13 +2004,9 @@ ${candidateDescriptions}`;
                 }
             };
 
-            // Run all free models in parallel, plus the configured model as fallback
+            // Sospendo la cross-validation parallela su 7 modelli (genera pesanti colli di bottiglia e timeouts per modelli free)
             const configuredModel = orSettings.model || 'google/gemini-2.0-flash-001';
-            const modelsToTry = [...FREE_MODELS];
-            // Add configured model if it's different from free ones
-            if (!modelsToTry.some(m => m.replace(':free', '') === configuredModel.replace(':free', ''))) {
-                modelsToTry.push(configuredModel);
-            }
+            const modelsToTry = [configuredModel];
 
             const modelResults = await Promise.allSettled(modelsToTry.map(m => callModel(m)));
             const validResults = modelResults
@@ -2137,12 +2179,13 @@ ${candidateDescriptions}`;
     }
 }
 
-// Helper to save the map
+// Helper to save the map (also updates in-memory cache)
 async function saveDatabaseMap(connectorId: string, map: DatabaseMap) {
     await db.connector.update({
         where: { id: connectorId },
         data: { databaseMap: JSON.stringify(map) },
     });
+    setCachedParsedMap(connectorId, map);
 }
 
 // Helper to finish data analysis: cleanup state, assign confidence, save

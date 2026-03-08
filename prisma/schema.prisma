@@ -41,6 +41,8 @@ model Company {
   leads                    Lead[]
   leadGeneratorConversations LeadGeneratorConversation[]
   leadGenApiKeys           Json?
+  unifiedStylePresets      Json?
+  activeUnifiedStyleId     String?
 }
 
 model Department {

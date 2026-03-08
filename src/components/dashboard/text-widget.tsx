@@ -22,6 +22,8 @@ import { ScrollArea } from '../ui/scroll-area';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
 import { applyHtmlStyleOverrides, injectIframeFetchPolyfill } from '@/lib/html-style-utils';
+import { generateUiElementsCss } from '@/lib/unified-style-css';
+import { useActiveUnifiedStyle } from '@/hooks/use-active-style';
 
 
 interface TextWidgetProps {
@@ -236,6 +238,7 @@ export default function TextWidget({
     const editorRef = useRef<HTMLDivElement>(null);
     const [liveContent, setLiveContent] = useState(content);
     const savedSelectionRef = useRef<Range | null>(null);
+    const { activeStyle } = useActiveUnifiedStyle();
 
     useEffect(() => {
         setLiveContent(content);
@@ -355,9 +358,15 @@ export default function TextWidget({
                             case 'html': {
                                 const htmlContent = typeof reportData === 'string' ? reportData : (reportData?.html || '');
                                 if (!htmlContent) return <p key={index} className="text-xs text-muted-foreground my-4">[Contenuto HTML vuoto]</p>;
-                                const styledSrcDoc = htmlStyleOverrides
-                                    ? applyHtmlStyleOverrides(htmlContent, htmlStyleOverrides)
+                                const effectiveOverrides = htmlStyleOverrides || activeStyle?.html || {};
+                                let styledSrcDoc = Object.keys(effectiveOverrides).length > 0
+                                    ? applyHtmlStyleOverrides(htmlContent, effectiveOverrides)
                                     : `<html><head><style>body { margin: 0; padding: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: auto; }</style></head><body>${htmlContent}</body></html>`;
+                                // Inject UI elements CSS from active style if available
+                                if (activeStyle?.ui) {
+                                    const uiCss = generateUiElementsCss(activeStyle.ui);
+                                    styledSrcDoc = styledSrcDoc.replace('</head>', `<style>${uiCss}</style></head>`);
+                                }
                                 const finalSrcDoc = injectIframeFetchPolyfill(styledSrcDoc, {
                                     connectorId,
                                     baseUrl: typeof window !== 'undefined' ? window.location.origin : '',

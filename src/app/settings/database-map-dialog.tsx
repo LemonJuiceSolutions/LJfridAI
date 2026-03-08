@@ -25,7 +25,7 @@ import type { DatabaseMap, TableInfo, ColumnInfo, RelationshipInfo } from '@/lib
 import {
     Loader2, Search, RefreshCw, Sparkles, ChevronRight, ChevronDown,
     Key, ArrowRight, Database, Pencil, Check, X, GitFork, Table2, Link2, Network,
-    ScanSearch, Eye, Zap,
+    ScanSearch, Eye, Zap, Timer, PlayCircle,
 } from 'lucide-react';
 import { DatabaseERDiagram } from './database-er-diagram';
 
@@ -647,7 +647,9 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
 
     const handleScan = async () => {
         setLoading(true);
+        startTimer();
         const res = await getDatabaseMapAction(connectorId);
+        stopTimer();
         if (res.error) {
             toast({ variant: 'destructive', title: 'Errore Scansione', description: res.error });
         } else if (res.data) {
@@ -661,6 +663,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         setGeneratingAI(true);
         setAiProgress({ current: 0, total: 0 });
         cancelRef.current = false;
+        startTimer();
 
         let batchIdx = 0;
         let totalProcessed = 0;
@@ -693,6 +696,8 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         const finalCached = await getCachedDatabaseMapAction(connectorId);
         if (finalCached.data) setMap(finalCached.data);
 
+        stopTimer();
+
         if (lastError) {
             toast({ variant: 'destructive', title: 'Errore AI', description: lastError });
         } else if (!cancelRef.current) {
@@ -715,10 +720,46 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
     const [fullAnalysisRunning, setFullAnalysisRunning] = useState(false);
     const [fullAnalysisStep, setFullAnalysisStep] = useState<string | null>(null);
 
+    // ─── Elapsed time timer ──────────────────────────────────────────────────
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const startTimer = useCallback(() => {
+        setElapsedSeconds(0);
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = setInterval(() => {
+            setElapsedSeconds(prev => prev + 1);
+        }, 1000);
+    }, []);
+
+    const stopTimer = useCallback(() => {
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+    }, []);
+
+    const formatElapsed = (seconds: number) => {
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
+        if (mins > 0) return `${mins}m ${secs}s`;
+        return `${secs}s`;
+    };
+
+    // Cleanup timer on unmount
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, []);
+
     const handleInferRelationshipsAI = async () => {
         setInferringRels(true);
         setInferProgress({ current: 0, total: 0, found: 0 });
         cancelRef.current = false;
+        startTimer();
 
         let batchIdx = 0;
         let totalFound = 0;
@@ -737,13 +778,17 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             totalFound += res.newRelationships;
             setInferProgress({ current: res.totalProcessed, total: res.totalTables, found: totalFound });
 
-            // Refresh map after each batch
-            const cached = await getCachedDatabaseMapAction(connectorId);
-            if (cached.data) setMap(cached.data);
+            // Refresh map only every 5 batches or when done (avoid 30MB round-trips on every iteration)
+            if (res.done || batchIdx % 5 === 0) {
+                const cached = await getCachedDatabaseMapAction(connectorId);
+                if (cached.data) setMap(cached.data);
+            }
 
             if (res.done) break;
             batchIdx++;
         }
+
+        stopTimer();
 
         if (lastError) {
             toast({ variant: 'destructive', title: 'Errore AI', description: lastError });
@@ -759,6 +804,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         setDataSampling(true);
         setDataProgress({ phase: 'fingerprinting', progress: 'Avvio analisi...', found: 0, percent: 0 });
         cancelRef.current = false;
+        startTimer();
 
         // Snapshot existing relationships for "NUOVO" badge detection
         const preExistingKeys = new Set(
@@ -788,18 +834,20 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             if (res.totalCandidates) candidatesEvaluated = res.totalCandidates;
             setDataProgress({ phase: res.phase, progress: res.progress, found: totalFound, percent: res.progressPercent ?? 0 });
 
-            // Refresh map after each batch
-            const cached = await getCachedDatabaseMapAction(connectorId);
-            if (cached.data) {
-                setMap(cached.data);
-                // Detect new relationships for "NUOVO" badge
-                if (res.done || res.newRelationships > 0) {
-                    const newKeys = new Set<string>();
-                    for (const r of cached.data.relationships) {
-                        const key = `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase();
-                        if (!preExistingKeys.has(key)) newKeys.add(key);
+            // Refresh map only every 5 batches or when done (avoid 30MB round-trips on every iteration)
+            if (res.done || batchIdx % 5 === 0) {
+                const cached = await getCachedDatabaseMapAction(connectorId);
+                if (cached.data) {
+                    setMap(cached.data);
+                    // Detect new relationships for "NUOVO" badge
+                    if (res.done || res.newRelationships > 0) {
+                        const newKeys = new Set<string>();
+                        for (const r of cached.data.relationships) {
+                            const key = `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase();
+                            if (!preExistingKeys.has(key)) newKeys.add(key);
+                        }
+                        if (newKeys.size > 0) setNewRelKeys(newKeys);
                     }
-                    if (newKeys.size > 0) setNewRelKeys(newKeys);
                 }
             }
 
@@ -815,6 +863,8 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                 description: `${totalFound} relazioni scoperte (${tablesAnalyzed} tabelle, ${candidatesEvaluated} candidati valutati)`,
             });
         }
+
+        stopTimer();
 
         // Show final state briefly before clearing
         if (!cancelRef.current && !lastError) {
@@ -838,6 +888,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
     const handleFullAnalysis = async () => {
         setFullAnalysisRunning(true);
         cancelRef.current = false;
+        startTimer();
 
         // Step 1: Scan DB
         setFullAnalysisStep('Scansione database...');
@@ -846,12 +897,12 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         setLoading(false);
         if (scanRes.error) {
             toast({ variant: 'destructive', title: 'Errore Scansione', description: scanRes.error });
-            setFullAnalysisRunning(false);
+            stopTimer(); setFullAnalysisRunning(false);
             setFullAnalysisStep(null);
             return;
         }
         if (scanRes.data) setMap(scanRes.data);
-        if (cancelRef.current) { setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+        if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
 
         // Step 2: AI descriptions (missing only)
         setFullAnalysisStep('Generazione descrizioni AI...');
@@ -876,7 +927,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         }
         setGeneratingAI(false);
         setAiProgress(null);
-        if (cancelRef.current) { setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+        if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
 
         // Step 3: Infer relationships AI
         setFullAnalysisStep('Scoperta relazioni AI...');
@@ -891,15 +942,18 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                 if (res.error && res.done) break;
                 totalFound += res.newRelationships;
                 setInferProgress({ current: res.totalProcessed, total: res.totalTables, found: totalFound });
-                const cached = await getCachedDatabaseMapAction(connectorId);
-                if (cached.data) setMap(cached.data);
+                // Refresh map only every 5 batches or when done
+                if (res.done || batchIdx % 5 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) setMap(cached.data);
+                }
                 if (res.done) break;
                 batchIdx++;
             }
         }
         setInferringRels(false);
         setInferProgress(null);
-        if (cancelRef.current) { setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+        if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
 
         // Step 4: Deep data analysis
         setFullAnalysisStep('Analisi profonda dati...');
@@ -924,16 +978,19 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                 if (res.totalTables) tablesAnalyzed = res.totalTables;
                 if (res.totalCandidates) candidatesEvaluated = res.totalCandidates;
                 setDataProgress({ phase: res.phase, progress: res.progress, found: totalFound, percent: res.progressPercent ?? 0 });
-                const cached = await getCachedDatabaseMapAction(connectorId);
-                if (cached.data) {
-                    setMap(cached.data);
-                    if (res.done || res.newRelationships > 0) {
-                        const newKeys = new Set<string>();
-                        for (const r of cached.data.relationships) {
-                            const key = `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase();
-                            if (!preExistingKeys.has(key)) newKeys.add(key);
+                // Refresh map only every 5 batches or when done
+                if (res.done || batchIdx % 5 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) {
+                        setMap(cached.data);
+                        if (res.done || res.newRelationships > 0) {
+                            const newKeys = new Set<string>();
+                            for (const r of cached.data.relationships) {
+                                const key = `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase();
+                                if (!preExistingKeys.has(key)) newKeys.add(key);
+                            }
+                            if (newKeys.size > 0) setNewRelKeys(newKeys);
                         }
-                        if (newKeys.size > 0) setNewRelKeys(newKeys);
                     }
                 }
                 if (res.done) break;
@@ -941,9 +998,141 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             }
         }
 
+        stopTimer();
+
         if (!cancelRef.current) {
             setDataProgress({ phase: 'done', progress: 'Analisi completa!', found: 0, percent: 100 });
             toast({ title: 'Analisi completa', description: 'Scansione, descrizioni, relazioni e analisi dati completate.' });
+            setTimeout(() => { setDataSampling(false); setDataProgress(null); }, 3000);
+        } else {
+            setDataSampling(false);
+            setDataProgress(null);
+        }
+
+        setFullAnalysisRunning(false);
+        setFullAnalysisStep(null);
+    };
+
+    // ─── "Completa Mappatura" – resumes from where it left off ───────────────
+    const handleResumeAnalysis = async () => {
+        if (!map) {
+            // No map at all → run full analysis
+            handleFullAnalysis();
+            return;
+        }
+
+        setFullAnalysisRunning(true);
+        cancelRef.current = false;
+        startTimer();
+
+        // Determine what's already done
+        const totalTables = map.summary.totalTables;
+        const descDone = map.tables.filter(t => t.userDescription || t.description).length;
+        const hasRelationships = map.summary.totalRelationships > 0;
+
+        // Step 1: Skip scan – map already exists
+
+        // Step 2: AI descriptions (missing only) – skip if all have descriptions
+        if (descDone < totalTables) {
+            setFullAnalysisStep('Completamento descrizioni AI...');
+            setGeneratingAI(true);
+            setAiProgress({ current: 0, total: 0 });
+            {
+                let batchIdx = 0;
+                let totalProcessed = 0;
+                while (true) {
+                    if (cancelRef.current) break;
+                    const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx);
+                    if (res.error && res.done) break;
+                    totalProcessed += res.batchProcessed;
+                    setAiProgress({ current: totalProcessed, total: res.totalToProcess });
+                    if (res.done || batchIdx % 3 === 0) {
+                        const cached = await getCachedDatabaseMapAction(connectorId);
+                        if (cached.data) setMap(cached.data);
+                    }
+                    if (res.done) break;
+                    batchIdx++;
+                }
+            }
+            setGeneratingAI(false);
+            setAiProgress(null);
+            if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+        }
+
+        // Step 3: Infer relationships AI
+        setFullAnalysisStep('Scoperta relazioni AI...');
+        setInferringRels(true);
+        setInferProgress({ current: 0, total: 0, found: 0 });
+        {
+            let batchIdx = 0;
+            let totalFound = 0;
+            while (true) {
+                if (cancelRef.current) break;
+                const res = await inferRelationshipsAIAction(connectorId, batchIdx);
+                if (res.error && res.done) break;
+                totalFound += res.newRelationships;
+                setInferProgress({ current: res.totalProcessed, total: res.totalTables, found: totalFound });
+                // Refresh map only every 5 batches or when done
+                if (res.done || batchIdx % 5 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) setMap(cached.data);
+                }
+                if (res.done) break;
+                batchIdx++;
+            }
+        }
+        setInferringRels(false);
+        setInferProgress(null);
+        if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+
+        // Step 4: Deep data analysis
+        setFullAnalysisStep('Analisi profonda dati...');
+        setDataSampling(true);
+        setDataProgress({ phase: 'fingerprinting', progress: 'Avvio analisi dati...', found: 0, percent: 0 });
+
+        const preExistingKeys = new Set(
+            ((await getCachedDatabaseMapAction(connectorId)).data?.relationships || []).map(r =>
+                `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase()
+            )
+        );
+        {
+            let batchIdx = 0;
+            let totalFound = 0;
+            let tablesAnalyzed = 0;
+            let candidatesEvaluated = 0;
+            while (true) {
+                if (cancelRef.current) break;
+                const res = await inferRelationshipsFromDataAction(connectorId, batchIdx);
+                if (res.error && res.done) break;
+                totalFound += res.newRelationships;
+                if (res.totalTables) tablesAnalyzed = res.totalTables;
+                if (res.totalCandidates) candidatesEvaluated = res.totalCandidates;
+                setDataProgress({ phase: res.phase, progress: res.progress, found: totalFound, percent: res.progressPercent ?? 0 });
+                // Refresh map only every 5 batches or when done
+                if (res.done || batchIdx % 5 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) {
+                        setMap(cached.data);
+                        if (res.done || res.newRelationships > 0) {
+                            const newKeys = new Set<string>();
+                            for (const r of cached.data.relationships) {
+                                const key = `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase();
+                                if (!preExistingKeys.has(key)) newKeys.add(key);
+                            }
+                            if (newKeys.size > 0) setNewRelKeys(newKeys);
+                        }
+                    }
+                }
+                if (res.done) break;
+                batchIdx++;
+            }
+        }
+
+        stopTimer();
+
+        if (!cancelRef.current) {
+            setDataProgress({ phase: 'done', progress: 'Analisi completa!', found: 0, percent: 100 });
+            toast({ title: 'Mappatura completata', description: 'Descrizioni, relazioni e analisi dati completate.' });
             setTimeout(() => { setDataSampling(false); setDataProgress(null); }, 3000);
         } else {
             setDataSampling(false);
@@ -1050,15 +1239,32 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                     {/* Row 2: Action buttons + progress */}
                     <div className="flex items-center gap-2 flex-wrap">
                         {!fullAnalysisRunning && !generatingAI && !inferringRels && !dataSampling && (
-                            <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleFullAnalysis} disabled={loading}>
-                                {loading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
-                                {map ? 'Analisi Completa' : 'Scansiona e Analizza'}
-                            </Button>
+                            <>
+                                <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleFullAnalysis} disabled={loading}>
+                                    {loading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
+                                    {map ? 'Analisi Completa' : 'Scansiona e Analizza'}
+                                </Button>
+                                {map && (
+                                    <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleResumeAnalysis} disabled={loading}>
+                                        <PlayCircle className="h-3 w-3 mr-1" />
+                                        Completa Mappatura
+                                    </Button>
+                                )}
+                            </>
                         )}
                         {fullAnalysisStep && (
                             <Badge variant="secondary" className="text-[10px] h-5 px-2 animate-pulse">
                                 {fullAnalysisStep}
                             </Badge>
+                        )}
+                        {/* Elapsed time timer */}
+                        {(loading || fullAnalysisRunning || generatingAI || inferringRels || dataSampling) && elapsedSeconds > 0 && (
+                            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-0.5">
+                                <Timer className="h-3 w-3 text-slate-500" />
+                                <span className="text-xs font-mono font-medium text-slate-600 dark:text-slate-300 tabular-nums">
+                                    {formatElapsed(elapsedSeconds)}
+                                </span>
+                            </div>
                         )}
                         {/* Progress for descriptions */}
                         {generatingAI && aiProgress && (
@@ -1144,6 +1350,16 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                         <div className="flex flex-col items-center justify-center h-64 gap-3">
                             <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
                             <p className="text-sm text-muted-foreground">Scansione database in corso...</p>
+                            {elapsedSeconds > 0 && (
+                                <p className="text-xs font-mono text-muted-foreground/60 tabular-nums">
+                                    {formatElapsed(elapsedSeconds)}
+                                </p>
+                            )}
+                            {elapsedSeconds > 30 && (
+                                <p className="text-xs text-amber-600 dark:text-amber-400 max-w-sm text-center">
+                                    Database con molte tabelle – la scansione potrebbe richiedere qualche minuto...
+                                </p>
+                            )}
                         </div>
                     ) : !map ? (
                         <div className="flex flex-col items-center justify-center h-64 gap-3">

@@ -27,7 +27,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { cn } from '@/lib/utils';
 import { DataTable } from '@/components/ui/data-table';
 import { Database, Code, LineChart } from 'lucide-react';
-import { injectIframeFetchPolyfill } from '@/lib/html-style-utils';
+import { injectIframeFetchPolyfill, applyHtmlStyleOverrides } from '@/lib/html-style-utils';
+import { generateUiElementsCss } from '@/lib/unified-style-css';
+import { useActiveUnifiedStyle } from '@/hooks/use-active-style';
 // import { useFlowExecution } from '@/ai/flows/client-executor'; // Removed broken import
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -575,6 +577,7 @@ function PythonDataPreview({
         error,
         executeFlow
     } = useFlowExecution();
+    const { activeStyle } = useActiveUnifiedStyle();
 
     // Memoize the dependencies to prevent infinite loops and apply filtering
     const stableDeps = useMemo(() => {
@@ -990,10 +993,23 @@ function PythonDataPreview({
                             <div className="w-full h-[70vh] border-none overflow-hidden">
                                 <iframe
                                     key={finalResult.timestamp || Date.now()}
-                                    srcDoc={injectIframeFetchPolyfill(finalResult.html, {
-                                        connectorId: pythonConnectorId,
-                                        baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
-                                    })}
+                                    srcDoc={(() => {
+                                        let styledHtml = activeStyle?.html
+                                            ? applyHtmlStyleOverrides(finalResult.html, activeStyle.html)
+                                            : finalResult.html;
+                                        if (activeStyle?.ui) {
+                                            const uiCss = generateUiElementsCss(activeStyle.ui);
+                                            if (styledHtml.includes('</head>')) {
+                                                styledHtml = styledHtml.replace('</head>', `<style>${uiCss}</style></head>`);
+                                            } else {
+                                                styledHtml = `<html><head><style>${uiCss}</style></head><body>${styledHtml}</body></html>`;
+                                            }
+                                        }
+                                        return injectIframeFetchPolyfill(styledHtml, {
+                                            connectorId: pythonConnectorId,
+                                            baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+                                        });
+                                    })()}
                                     className="w-full border-none h-full"
                                     sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                                     title="HTML Widget"

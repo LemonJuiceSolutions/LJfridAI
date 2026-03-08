@@ -184,6 +184,7 @@ function buildPythonSystemPrompt(opts: {
     connectorId?: string;
     companyId?: string;
     selectedDocuments?: string[];
+    activeStyleName?: string | null;
 }) {
     const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const connectorInfo = opts.connectorId ? `\nConnettore DB attuale: ${opts.connectorId}` : '';
@@ -307,6 +308,65 @@ NON usare valori CSS problematici FUORI dalle stringhe:
 - box-shadow: 0 20px 60px -> OK se dentro triple quotes
 Se il CSS causa "invalid decimal literal", il codice e' SBAGLIATO: controlla che le triple quotes siano bilanciate.
 
+## !!!! SISTEMA STILI CSS - REGOLA FONDAMENTALE (CRITICO) !!!!
+${opts.activeStyleName ? `STILE ATTIVO: "${opts.activeStyleName}" - Lo stile CSS viene applicato AUTOMATICAMENTE dalla piattaforma.` : `NESSUNO STILE ATTIVO: Se l'utente chiede un output HTML con stile grafico, suggerisci di selezionare uno stile dalla pagina /style dell'app.`}
+
+La piattaforma ha un SISTEMA DI STILI centralizzato che applica CSS automaticamente a TUTTO l'HTML renderizzato.
+Il tuo codice NON DEVE MAI definire stili inline o CSS personalizzato per elementi standard.
+
+### REGOLA D'ORO STILI:
+1. **NON SCRIVERE MAI CSS per**: colori tabelle, font, bordi, sfondi, ombre, padding delle celle, colori header, hover, striping.
+   Il sistema di stili li applica AUTOMATICAMENTE via classi CSS predefinite.
+2. **USA SEMPRE tag HTML semantici standard**: \`<table>\`, \`<thead>\`, \`<tbody>\`, \`<tr>\`, \`<th>\`, \`<td>\`, \`<h1>\`-\`<h6>\`, \`<p>\`, \`<a>\`, \`<hr>\`, \`<ul>\`, \`<ol>\`, \`<li>\`
+3. **USA QUESTE CLASSI CSS per elementi UI**:
+   - \`.btn\` o \`.btn-primary\` → bottone primario (colore tema)
+   - \`.btn-secondary\` → bottone secondario
+   - \`.badge\` → badge/etichetta
+   - \`.card\` → contenitore card con bordo e ombra
+   - \`.positive\` → valore positivo (verde, es. +15%)
+   - \`.negative\` → valore negativo (rosso, es. -8%)
+   - \`<hr>\` → divisore orizzontale stilizzato
+   - \`<input>\`, \`<select>\`, \`<textarea>\` → form elements stilizzati automaticamente
+4. **CSS CUSTOM AMMESSO SOLO per**: layout (grid, flexbox, position), dimensioni (width, height, max-width), margini/padding del LAYOUT (non dei singoli elementi come td/th), animazioni.
+5. **MAI** scrivere colori hardcoded (#hex, rgb, hsl) per testi, sfondi, bordi. Lascia che il sistema di stili li gestisca.
+6. **MAI** impostare font-family, font-size, font-weight su elementi standard (tabelle, heading, paragrafi). Il sistema lo fa automaticamente.
+
+### ESEMPIO HTML CORRETTO (senza stili inline):
+\`\`\`html
+<div style="max-width: 900px; margin: 0 auto; padding: 20px;">
+  <h1>Dashboard Vendite</h1>
+  <p>Riepilogo aggiornato al 2026-03-08</p>
+  <table>
+    <thead><tr><th>Prodotto</th><th>Vendite</th><th>Variazione</th></tr></thead>
+    <tbody>
+      <tr><td>Prodotto A</td><td>€ 15.000</td><td class="positive">+12%</td></tr>
+      <tr><td>Prodotto B</td><td>€ 8.200</td><td class="negative">-5%</td></tr>
+    </tbody>
+  </table>
+  <hr>
+  <div style="display: flex; gap: 10px; margin-top: 15px;">
+    <button class="btn-primary" onclick="refresh()">Aggiorna</button>
+    <button class="btn-secondary" onclick="exportCsv()">Esporta CSV</button>
+  </div>
+  <div class="card" style="margin-top: 15px;">
+    <h3>Note</h3>
+    <p>Dati estratti dal database aziendale.</p>
+  </div>
+</div>
+\`\`\`
+
+### ESEMPIO HTML SBAGLIATO (NON FARE COSI'):
+\`\`\`html
+<!-- SBAGLIATO: stili hardcoded per tabella -->
+<table style="border-collapse: collapse; background: #fff; border-radius: 8px;">
+  <thead><tr style="background: #1a365d; color: white;"><th style="padding: 12px; font-weight: 600;">...</th></tr></thead>
+  <tbody><tr style="background: #f7fafc; border-bottom: 1px solid #e2e8f0;"><td style="padding: 10px; color: #2d3748;">...</td></tr></tbody>
+</table>
+<!-- SBAGLIATO: colori hardcoded per valori -->
+<td style="color: #38a169; font-weight: bold;">+12%</td>
+\`\`\`
+MOTIVO: Tutti questi stili vengono sovrascritti dal sistema di stili della piattaforma. Il codice diventa piu' pulito e l'utente puo' cambiare tema da /style.
+
 ## COME ARRIVANO I DATI (DUE MODI):
 1. **Pipeline (df)**: I dati dal nodo upstream arrivano come \`df\`. Se il nodo ha piu' dipendenze, ogni dipendenza e' disponibile col suo NOME.
 2. **query_db()**: Puoi caricare dati DIRETTAMENTE dal database con \`df = query_db("SELECT * FROM dbo.Tabella")\`.
@@ -319,6 +379,8 @@ Se il CSS causa "invalid decimal literal", il codice e' SBAGLIATO: controlla che
 - I grafici Plotly vengono automaticamente convertiti nel sistema Recharts della piattaforma.
 - Per i GANTT: usa SEMPRE go.Bar con orientation='h'. NON usare px.timeline().
 - PREFERISCI SEMPRE tipi semplici (bar, line, scatter, pie, area).
+- NON personalizzare colori, font o layout del grafico Plotly. La piattaforma applica automaticamente lo stile attivo (colori, font, sfondi, legenda) dal sistema stili /style.
+- Concentrati SOLO sui dati e il tipo di grafico, NON sulla grafica.
 
 ## CONTESTO PIATTAFORMA (IMPORTANTE):
 - I CONNETTORI forniscono automaticamente token e credenziali come variabili d'ambiente
@@ -419,17 +481,20 @@ html = \\"\\"\\"<!DOCTYPE html>
     <meta charset="UTF-8">
     <title>Titolo - Editabile</title>
     <style>
-        /* ... stili ... */
-        .editable-cell { background: #fffbf0; border: 1px solid #ffe0b2; border-radius: 4px; padding: 8px; cursor: text; }
-        .editable-cell:focus { outline: none; background: #fff9e6; border-color: #ffc107; box-shadow: 0 0 0 2px rgba(255,193,7,0.2); }
-        .editable-cell.modified { background: #fff3e0; border-color: #ff9800; }
-        .btn-save { background: #4caf50; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; }
-        .btn-save:disabled { background: #ccc; cursor: not-allowed; }
+        /* SOLO stili funzionali per editing - i colori/font vengono dal sistema stili */
+        .editable-cell { cursor: text; }
+        .editable-cell:focus { outline: 2px solid currentColor; outline-offset: -2px; }
+        .editable-cell.modified { outline: 2px dashed orange; outline-offset: -2px; }
+        .status-message { padding: 8px 12px; margin: 8px 0; border-radius: 4px; display: none; }
+        .status-message.success { display: block; background: #d4edda; color: #155724; }
+        .status-message.error { display: block; background: #f8d7da; color: #721c24; }
     </style>
 </head>
 <body>
+    <div style="max-width: 1000px; margin: 0 auto; padding: 20px;">
     <div id="statusMessage" class="status-message"></div>
     <table><thead>...</thead><tbody id="tableBody"></tbody></table>
+    </div>
     <script>
         window.__DB_TABLE__ = 'dbo.NomeTabella';
         window.__DB_PK__ = ['ColonnaPK'];
@@ -442,7 +507,7 @@ html = \\"\\"\\"<!DOCTYPE html>
             tr.innerHTML =
                 '<td class="editable-cell" contenteditable="true" data-field="Campo1">' + (row.Campo1 || '-') + '</td>' +
                 '<td class="editable-cell" contenteditable="true" data-field="Campo2">' + (row.Campo2 || '-') + '</td>' +
-                '<td><button class="btn-save" onclick="saveRow(this)">Salva</button></td>';
+                '<td><button class="btn btn-primary" onclick="saveRow(this)">Salva</button></td>';
             var cells = tr.querySelectorAll('.editable-cell');
             cells.forEach(function(cell) {
                 cell.addEventListener('input', function() { this.classList.add('modified'); });
@@ -793,6 +858,27 @@ export async function POST(request: NextRequest) {
 
         console.log('[chat-stream] Using model:', model);
 
+        // 3b. Get active style name (for Python agent prompt)
+        let activeStyleName: string | null = null;
+        if (agentType === 'python' && user.company) {
+            const co = user.company as any;
+            if (co.activeUnifiedStyleId) {
+                // Check custom presets first
+                const customPresets = (co.unifiedStylePresets as any[] | null) || [];
+                const customMatch = customPresets.find((p: any) => p.id === co.activeUnifiedStyleId);
+                if (customMatch) {
+                    activeStyleName = customMatch.label || customMatch.id;
+                } else {
+                    // Check built-in presets (lazy import to avoid bundle bloat)
+                    try {
+                        const { BUILTIN_PRESETS } = await import('@/lib/unified-style-presets');
+                        const builtinMatch = BUILTIN_PRESETS.find(p => p.id === co.activeUnifiedStyleId);
+                        activeStyleName = builtinMatch?.label || co.activeUnifiedStyleId;
+                    } catch { activeStyleName = co.activeUnifiedStyleId; }
+                }
+            }
+        }
+
         // 4. Get conversation history
         const conversation = await db.agentConversation.findUnique({
             where: { nodeId_agentType: { nodeId, agentType } },
@@ -805,7 +891,7 @@ export async function POST(request: NextRequest) {
 
         // 6. Build prompts (branched by agent type)
         const systemPrompt = agentType === 'python'
-            ? buildPythonSystemPrompt({ modelName: model, connectorId, companyId, selectedDocuments })
+            ? buildPythonSystemPrompt({ modelName: model, connectorId, companyId, selectedDocuments, activeStyleName })
             : buildSystemPrompt({ modelName: model, connectorId, companyId });
 
         const userPrompt = agentType === 'python'

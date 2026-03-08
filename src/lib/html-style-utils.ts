@@ -478,9 +478,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'mckinsey',
-    label: 'McKinsey',
-    description: 'Blu scuro su bianco, rigore senza fronzoli — top consulting',
+    id: 'navy-consulting',
+    label: 'Navy Consulting',
+    description: 'Blu scuro su bianco, rigore senza fronzoli',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 24, container_max_width: 900, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#00263a', header_text_color: '#ffffff',
@@ -499,9 +499,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'deloitte',
-    label: 'Deloitte',
-    description: 'Verde Deloitte e nero — corporate audit e advisory',
+    id: 'green-consulting',
+    label: 'Green Consulting',
+    description: 'Verde brillante e nero — corporate audit e advisory',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 22, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#86bc25', header_text_color: '#ffffff',
@@ -519,9 +519,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'kpmg',
-    label: 'KPMG',
-    description: 'Blu royal intenso — revisione e consulenza istituzionale',
+    id: 'royal-advisory',
+    label: 'Royal Advisory',
+    description: 'Blu royal intenso — stile istituzionale',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 22, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#00338d', header_text_color: '#ffffff',
@@ -539,9 +539,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'pwc',
-    label: 'PwC',
-    description: 'Arancione e carbone — stile PricewaterhouseCoopers',
+    id: 'ember-serif',
+    label: 'Ember Serif',
+    description: 'Arancione e carbone — serif caldo e autorevole',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 22, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#2d2d2d', header_text_color: '#ffffff',
@@ -601,9 +601,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'notion-style',
-    label: 'Notion Style',
-    description: 'Bianco e nero leggero — stile Notion, ampio respiro',
+    id: 'soft-minimal',
+    label: 'Soft Minimal',
+    description: 'Bianco e nero leggero — ampio respiro, pulito',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 24, container_max_width: 900, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#ffffff', header_text_color: '#787774',
@@ -622,9 +622,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'stripe-docs',
-    label: 'Stripe Docs',
-    description: 'Viola sottile, tipografia raffinata — stile documentazione Stripe',
+    id: 'indigo-docs',
+    label: 'Indigo Docs',
+    description: 'Viola sottile, tipografia raffinata — documentazione moderna',
     overrides: {
       page_bg_color: '#f6f9fc', page_padding: 20, container_border_radius: 6, container_shadow: 'sm',
       header_bg_color: '#32325d', header_text_color: '#ffffff',
@@ -643,9 +643,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
   },
   // ─── FINANZA & DATI ───
   {
-    id: 'bloomberg',
-    label: 'Bloomberg',
-    description: 'Terminale nero con dati arancio — stile Bloomberg',
+    id: 'terminal-pro',
+    label: 'Terminal Pro',
+    description: 'Terminale nero con dati arancio — stile trading',
     overrides: {
       page_bg_color: '#000000', page_padding: 12, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#1a1a1a', header_text_color: '#ff8c00',
@@ -664,9 +664,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'financial-times',
-    label: 'Financial Times',
-    description: 'Salmone caldo e nero — stile giornalismo finanziario',
+    id: 'salmon-press',
+    label: 'Salmon Press',
+    description: 'Salmone caldo e nero — giornalismo finanziario',
     overrides: {
       page_bg_color: '#fff1e5', page_padding: 22, container_max_width: 940, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#1a1a1a', header_text_color: '#fff1e5',
@@ -684,9 +684,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'economist',
-    label: 'The Economist',
-    description: 'Rosso e bianco, serif editoriale — stile settimanale economico',
+    id: 'crimson-editorial',
+    label: 'Crimson Editorial',
+    description: 'Rosso e bianco, serif editoriale — stile settimanale',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 24, container_max_width: 880, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#e3120b', header_text_color: '#ffffff',
@@ -705,9 +705,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'excel-classic',
-    label: 'Excel Classic',
-    description: 'Griglia visibile, sfondo celle bianco — stile foglio di calcolo',
+    id: 'spreadsheet-classic',
+    label: 'Spreadsheet Classic',
+    description: 'Griglia visibile, sfondo celle bianco — foglio di calcolo',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 10, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#4472c4', header_text_color: '#ffffff',
@@ -809,9 +809,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'github-dark',
-    label: 'GitHub Dark',
-    description: 'Grigio scuro con bordi sottili — stile GitHub dark mode',
+    id: 'code-dark',
+    label: 'Code Dark',
+    description: 'Grigio scuro con bordi sottili — dark mode per sviluppatori',
     overrides: {
       page_bg_color: '#0d1117', page_padding: 16, container_border_radius: 6, container_shadow: 'none',
       header_bg_color: '#161b22', header_text_color: '#c9d1d9',
