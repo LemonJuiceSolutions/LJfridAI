@@ -5,10 +5,12 @@ import { getCachedTree, invalidateAndNotifyWidgets } from '@/lib/tree-cache';
 import { DataTable } from '@/components/ui/data-table';
 import SmartWidgetRenderer from './SmartWidgetRenderer';
 import { applyPlotlyOverrides, plotlyJsonToHtml } from '@/lib/plotly-utils';
-import { applyHtmlStyleOverrides } from '@/lib/html-style-utils';
+import { applyHtmlStyleOverrides, injectIframeFetchPolyfill } from '@/lib/html-style-utils';
+import { generateUiElementsCss } from '@/lib/unified-style-css';
 import { Loader2, Database, Code, AlertCircle, RefreshCw, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { useActiveUnifiedStyle } from '@/hooks/use-active-style';
 import { PipelineExecutionDialog } from '@/components/widgets/builder/PipelineExecutionDialog';
 
 interface PreviewWidgetRendererProps {
@@ -25,6 +27,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
     const [showExecutionDialog, setShowExecutionDialog] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
+    const { activeStyle } = useActiveUnifiedStyle();
     const isLoadingRef = useRef(false);
 
     const loadPreview = useCallback(async (showLoading = true) => {
@@ -89,7 +92,8 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                             // Fallback: show Python preview (chart/html/variable)
                             setPreviewData({
                                 ...node.pythonPreviewResult,
-                                timestamp: pythonTs
+                                timestamp: pythonTs,
+                                connectorId: node.pythonConnectorId,
                             });
                         } else {
                             setError('Nessuna anteprima trovata per questo nodo');
@@ -97,7 +101,8 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                     } else if (previewType === 'python' && node.pythonPreviewResult) {
                         setPreviewData({
                             ...node.pythonPreviewResult,
-                            timestamp: node.pythonPreviewResult?.timestamp
+                            timestamp: node.pythonPreviewResult?.timestamp,
+                            connectorId: node.pythonConnectorId,
                         });
                     } else {
                         setError(`Nessuna anteprima ${previewType.toUpperCase()} trovata per questo nodo`);
@@ -227,7 +232,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                     <div className="h-full">
                         {previewData.plotlyJson ? (
                             <iframe
-                                srcDoc={plotlyJsonToHtml(applyPlotlyOverrides(previewData.plotlyJson, previewData.plotlyStyleOverrides || {}))}
+                                srcDoc={plotlyJsonToHtml(applyPlotlyOverrides(previewData.plotlyJson, previewData.plotlyStyleOverrides || activeStyle?.plotly || {}))}
                                 className="w-full border-none"
                                 title="Interactive Chart"
                                 style={{ height: `${Math.max(400, previewData.plotlyJson?.layout?.height || 500)}px` }}
@@ -264,8 +269,22 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                 ) : previewData.type === 'html' && previewData.html ? (
                     <div className="w-full h-full bg-white dark:bg-zinc-950 overflow-hidden min-h-[300px]">
                         <iframe
-                            srcDoc={applyHtmlStyleOverrides(previewData.html, previewData.htmlStyleOverrides || {})}
+                            key={previewData.timestamp || Date.now()}
+                            srcDoc={(() => {
+                                const htmlOverrides = previewData.htmlStyleOverrides || activeStyle?.html || {};
+                                let styledHtml = applyHtmlStyleOverrides(previewData.html, htmlOverrides);
+                                // Inject UI elements CSS from active style if available
+                                if (activeStyle?.ui) {
+                                    const uiCss = generateUiElementsCss(activeStyle.ui);
+                                    styledHtml = styledHtml.replace('</head>', `<style>${uiCss}</style></head>`);
+                                }
+                                return injectIframeFetchPolyfill(styledHtml, {
+                                    connectorId: previewData.connectorId,
+                                    baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+                                });
+                            })()}
                             className="w-full h-full border-none min-h-[300px]"
+                            sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                             title="HTML Widget Preview"
                         />
                     </div>

@@ -25,8 +25,10 @@ import type { DatabaseMap, TableInfo, ColumnInfo, RelationshipInfo } from '@/lib
 import {
     Loader2, Search, RefreshCw, Sparkles, ChevronRight, ChevronDown,
     Key, ArrowRight, Database, Pencil, Check, X, GitFork, Table2, Link2, Network,
-    ScanSearch, Eye, Zap,
+    ScanSearch, Eye, Zap, Timer, PlayCircle, DollarSign, Gift, CheckCircle2,
 } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { fetchOpenRouterModelsAction } from '../actions';
 import { DatabaseERDiagram } from './database-er-diagram';
 
 interface DatabaseMapDialogProps {
@@ -647,7 +649,9 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
 
     const handleScan = async () => {
         setLoading(true);
+        startTimer();
         const res = await getDatabaseMapAction(connectorId);
+        stopTimer();
         if (res.error) {
             toast({ variant: 'destructive', title: 'Errore Scansione', description: res.error });
         } else if (res.data) {
@@ -661,36 +665,76 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         setGeneratingAI(true);
         setAiProgress({ current: 0, total: 0 });
         cancelRef.current = false;
+        startTimer();
 
-        let batchIdx = 0;
-        let totalProcessed = 0;
+        const MAX_RETRIES = 5;
+        let retryRound = 0;
         let lastError: string | undefined;
 
-        while (true) {
+        while (retryRound <= MAX_RETRIES) {
             if (cancelRef.current) break;
 
-            const res = await generateDescriptionBatchAction(connectorId, mode, batchIdx);
+            let batchIdx = 0;
+            let roundFailed = 0;
+            let roundProcessed = 0;
 
-            if (res.error && res.done) {
-                lastError = res.error;
-                break;
+            // For 'all' mode first round processes everything; subsequent retries use 'missing'
+            const effectiveMode = (mode === 'all' && retryRound === 0) ? 'all' : 'missing';
+
+            while (true) {
+                if (cancelRef.current) break;
+
+                const res = await generateDescriptionBatchAction(connectorId, effectiveMode, batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+                if (res.usage) {
+                    setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
+                }
+
+                if (res.error && res.done) {
+                    lastError = res.error;
+                    roundFailed = -1;
+                    break;
+                }
+
+                roundProcessed += res.batchProcessed;
+                if (res.failedTables) roundFailed += res.failedTables;
+                const globalProcessed = (res.totalTables - res.totalToProcess) + roundProcessed;
+                setAiProgress({ current: globalProcessed, total: res.totalTables });
+
+                if (res.done || batchIdx % 8 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) setMap(cached.data);
+                }
+
+                if (res.done) break;
+                batchIdx++;
             }
 
-            totalProcessed += res.batchProcessed;
-            setAiProgress({ current: totalProcessed, total: res.totalToProcess });
+            // Fatal error or cancelled
+            if (roundFailed === -1 || cancelRef.current) break;
 
-            // Aggiorna la mappa in UI dopo ogni batch
-            const cached = await getCachedDatabaseMapAction(connectorId);
-            if (cached.data) setMap(cached.data);
+            // All done
+            if (roundFailed === 0) break;
 
-            if (res.done) break;
-            batchIdx++;
+            // Retry failed tables
+            retryRound++;
+            if (retryRound > MAX_RETRIES) {
+                toast({ variant: 'destructive', title: 'Descrizioni incomplete', description: `Ancora ${roundFailed} tabelle senza descrizione dopo ${MAX_RETRIES} tentativi.` });
+                break;
+            }
+            console.log(`[handleGenerateAI] Retry round ${retryRound}: ${roundFailed} tables failed, retrying...`);
+            await new Promise(r => setTimeout(r, 2000));
         }
+
+        // Final refresh
+        const finalCached = await getCachedDatabaseMapAction(connectorId);
+        if (finalCached.data) setMap(finalCached.data);
+
+        stopTimer();
 
         if (lastError) {
             toast({ variant: 'destructive', title: 'Errore AI', description: lastError });
         } else if (!cancelRef.current) {
-            toast({ title: 'Descrizioni completate', description: `${totalProcessed} tabelle elaborate` });
+            toast({ title: 'Descrizioni completate' });
         }
 
         setGeneratingAI(false);
@@ -709,10 +753,82 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
     const [fullAnalysisRunning, setFullAnalysisRunning] = useState(false);
     const [fullAnalysisStep, setFullAnalysisStep] = useState<string | null>(null);
 
+    // AI model selection: 'free' (auto-rotate best free models) or 'paid' (user-selected)
+    const [aiMode, setAiMode] = useState<'free' | 'paid'>('free');
+    const [selectedModel, setSelectedModel] = useState('');
+    const [allModelsMap, setAllModelsMap] = useState<any[]>([]);
+    const [isModelsLoadingMap, setIsModelsLoadingMap] = useState(false);
+    const [modelSearchMap, setModelSearchMap] = useState('');
+    const [isModelDialogOpenMap, setIsModelDialogOpenMap] = useState(false);
+
+    // ─── Session cost tracking (USD → EUR) ──────────────────────────────────
+    const USD_TO_EUR = 0.92;
+    const [sessionCost, setSessionCost] = useState({ tokens: 0, costUsd: 0 });
+
+    // Load models when model dialog opens
+    useEffect(() => {
+        if (isModelDialogOpenMap && allModelsMap.length === 0) {
+            setIsModelsLoadingMap(true);
+            fetchOpenRouterModelsAction().then(result => {
+                if (result.data) {
+                    // Sort by price ascending (cheapest first)
+                    const sorted = [...result.data].sort((a, b) => {
+                        const pa = parseFloat(a.pricing?.prompt || '0');
+                        const pb = parseFloat(b.pricing?.prompt || '0');
+                        return pa - pb;
+                    });
+                    setAllModelsMap(sorted);
+                }
+                setIsModelsLoadingMap(false);
+            });
+        }
+    }, [isModelDialogOpenMap, allModelsMap.length]);
+
+    const filteredModelsMap = allModelsMap.filter(m =>
+        m.name.toLowerCase().includes(modelSearchMap.toLowerCase()) ||
+        m.id.toLowerCase().includes(modelSearchMap.toLowerCase())
+    );
+
+    // ─── Elapsed time timer ──────────────────────────────────────────────────
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const startTimer = useCallback(() => {
+        setElapsedSeconds(0);
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = setInterval(() => {
+            setElapsedSeconds(prev => prev + 1);
+        }, 1000);
+    }, []);
+
+    const stopTimer = useCallback(() => {
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+    }, []);
+
+    const formatElapsed = (seconds: number) => {
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
+        if (mins > 0) return `${mins}m ${secs}s`;
+        return `${secs}s`;
+    };
+
+    // Cleanup timer on unmount
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, []);
+
     const handleInferRelationshipsAI = async () => {
         setInferringRels(true);
         setInferProgress({ current: 0, total: 0, found: 0 });
         cancelRef.current = false;
+        startTimer();
 
         let batchIdx = 0;
         let totalFound = 0;
@@ -721,7 +837,10 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         while (true) {
             if (cancelRef.current) break;
 
-            const res = await inferRelationshipsAIAction(connectorId, batchIdx);
+            const res = await inferRelationshipsAIAction(connectorId, batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+            if (res.usage) {
+                setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
+            }
 
             if (res.error && res.done) {
                 lastError = res.error;
@@ -731,13 +850,17 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             totalFound += res.newRelationships;
             setInferProgress({ current: res.totalProcessed, total: res.totalTables, found: totalFound });
 
-            // Refresh map after each batch
-            const cached = await getCachedDatabaseMapAction(connectorId);
-            if (cached.data) setMap(cached.data);
+            // Refresh map only every 10 batches or when done (avoid round-trips on every iteration)
+            if (res.done || batchIdx % 10 === 0) {
+                const cached = await getCachedDatabaseMapAction(connectorId);
+                if (cached.data) setMap(cached.data);
+            }
 
             if (res.done) break;
             batchIdx++;
         }
+
+        stopTimer();
 
         if (lastError) {
             toast({ variant: 'destructive', title: 'Errore AI', description: lastError });
@@ -753,6 +876,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         setDataSampling(true);
         setDataProgress({ phase: 'fingerprinting', progress: 'Avvio analisi...', found: 0, percent: 0 });
         cancelRef.current = false;
+        startTimer();
 
         // Snapshot existing relationships for "NUOVO" badge detection
         const preExistingKeys = new Set(
@@ -782,18 +906,20 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             if (res.totalCandidates) candidatesEvaluated = res.totalCandidates;
             setDataProgress({ phase: res.phase, progress: res.progress, found: totalFound, percent: res.progressPercent ?? 0 });
 
-            // Refresh map after each batch
-            const cached = await getCachedDatabaseMapAction(connectorId);
-            if (cached.data) {
-                setMap(cached.data);
-                // Detect new relationships for "NUOVO" badge
-                if (res.done || res.newRelationships > 0) {
-                    const newKeys = new Set<string>();
-                    for (const r of cached.data.relationships) {
-                        const key = `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase();
-                        if (!preExistingKeys.has(key)) newKeys.add(key);
+            // Refresh map only every 10 batches or when done (avoid round-trips on every iteration)
+            if (res.done || batchIdx % 10 === 0) {
+                const cached = await getCachedDatabaseMapAction(connectorId);
+                if (cached.data) {
+                    setMap(cached.data);
+                    // Detect new relationships for "NUOVO" badge
+                    if (res.done || res.newRelationships > 0) {
+                        const newKeys = new Set<string>();
+                        for (const r of cached.data.relationships) {
+                            const key = `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase();
+                            if (!preExistingKeys.has(key)) newKeys.add(key);
+                        }
+                        if (newKeys.size > 0) setNewRelKeys(newKeys);
                     }
-                    if (newKeys.size > 0) setNewRelKeys(newKeys);
                 }
             }
 
@@ -809,6 +935,8 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                 description: `${totalFound} relazioni scoperte (${tablesAnalyzed} tabelle, ${candidatesEvaluated} candidati valutati)`,
             });
         }
+
+        stopTimer();
 
         // Show final state briefly before clearing
         if (!cancelRef.current && !lastError) {
@@ -832,6 +960,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
     const handleFullAnalysis = async () => {
         setFullAnalysisRunning(true);
         cancelRef.current = false;
+        startTimer();
 
         // Step 1: Scan DB
         setFullAnalysisStep('Scansione database...');
@@ -840,35 +969,80 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         setLoading(false);
         if (scanRes.error) {
             toast({ variant: 'destructive', title: 'Errore Scansione', description: scanRes.error });
-            setFullAnalysisRunning(false);
+            stopTimer(); setFullAnalysisRunning(false);
             setFullAnalysisStep(null);
             return;
         }
         if (scanRes.data) setMap(scanRes.data);
-        if (cancelRef.current) { setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+        if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
 
-        // Step 2: AI descriptions (missing only)
+        // Step 2: AI descriptions (missing only) — retry until all done
         setFullAnalysisStep('Generazione descrizioni AI...');
         setGeneratingAI(true);
         setAiProgress({ current: 0, total: 0 });
         {
-            let batchIdx = 0;
-            let totalProcessed = 0;
-            while (true) {
+            const MAX_RETRIES = 5; // max retry rounds for failed tables
+            let retryRound = 0;
+            let globalProcessed = 0;
+
+            while (retryRound <= MAX_RETRIES) {
                 if (cancelRef.current) break;
-                const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx);
-                if (res.error && res.done) break;
-                totalProcessed += res.batchProcessed;
-                setAiProgress({ current: totalProcessed, total: res.totalToProcess });
-                const cached = await getCachedDatabaseMapAction(connectorId);
-                if (cached.data) setMap(cached.data);
-                if (res.done) break;
-                batchIdx++;
+
+                let batchIdx = 0;
+                let roundFailed = 0;
+                let roundProcessed = 0;
+                let roundTotal = 0;
+
+                while (true) {
+                    if (cancelRef.current) break;
+                    const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+                    if (res.usage) {
+                        setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
+                    }
+                    if (res.error && res.done) {
+                        // Fatal error (no API key, no map, etc.) — abort entirely
+                        toast({ variant: 'destructive', title: 'Errore Descrizioni AI', description: res.error });
+                        roundFailed = -1; // signal to break outer loop
+                        break;
+                    }
+                    roundProcessed += res.batchProcessed;
+                    roundTotal = res.totalToProcess;
+                    if (res.failedTables) roundFailed += res.failedTables;
+                    globalProcessed = (res.totalTables - roundTotal) + roundProcessed; // described so far
+                    setAiProgress({ current: globalProcessed, total: res.totalTables });
+                    if (retryRound > 0) {
+                        setFullAnalysisStep(`Generazione descrizioni AI... (retry ${retryRound}/${MAX_RETRIES})`);
+                    }
+                    if (res.done || batchIdx % 8 === 0) {
+                        const cached = await getCachedDatabaseMapAction(connectorId);
+                        if (cached.data) setMap(cached.data);
+                    }
+                    if (res.done) break;
+                    batchIdx++;
+                }
+
+                // Fatal error or cancelled — stop
+                if (roundFailed === -1 || cancelRef.current) break;
+
+                // All done — no missing tables left
+                if (roundFailed === 0) break;
+
+                // There are still failed tables — retry with 'missing' mode
+                console.log(`[DB-MAP] Description retry round ${retryRound + 1}: ${roundFailed} tables failed, retrying...`);
+                retryRound++;
+
+                if (retryRound > MAX_RETRIES) {
+                    toast({ variant: 'destructive', title: 'Descrizioni incomplete', description: `Ancora ${roundFailed} tabelle senza descrizione dopo ${MAX_RETRIES} tentativi.` });
+                    break;
+                }
+
+                // Small delay before retry to let rate limits reset
+                await new Promise(r => setTimeout(r, 2000));
             }
         }
         setGeneratingAI(false);
         setAiProgress(null);
-        if (cancelRef.current) { setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+        if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
 
         // Step 3: Infer relationships AI
         setFullAnalysisStep('Scoperta relazioni AI...');
@@ -879,19 +1053,25 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             let totalFound = 0;
             while (true) {
                 if (cancelRef.current) break;
-                const res = await inferRelationshipsAIAction(connectorId, batchIdx);
+                const res = await inferRelationshipsAIAction(connectorId, batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+                if (res.usage) {
+                    setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
+                }
                 if (res.error && res.done) break;
                 totalFound += res.newRelationships;
                 setInferProgress({ current: res.totalProcessed, total: res.totalTables, found: totalFound });
-                const cached = await getCachedDatabaseMapAction(connectorId);
-                if (cached.data) setMap(cached.data);
+                // Refresh map only every 5 batches or when done
+                if (res.done || batchIdx % 10 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) setMap(cached.data);
+                }
                 if (res.done) break;
                 batchIdx++;
             }
         }
         setInferringRels(false);
         setInferProgress(null);
-        if (cancelRef.current) { setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+        if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
 
         // Step 4: Deep data analysis
         setFullAnalysisStep('Analisi profonda dati...');
@@ -916,16 +1096,19 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                 if (res.totalTables) tablesAnalyzed = res.totalTables;
                 if (res.totalCandidates) candidatesEvaluated = res.totalCandidates;
                 setDataProgress({ phase: res.phase, progress: res.progress, found: totalFound, percent: res.progressPercent ?? 0 });
-                const cached = await getCachedDatabaseMapAction(connectorId);
-                if (cached.data) {
-                    setMap(cached.data);
-                    if (res.done || res.newRelationships > 0) {
-                        const newKeys = new Set<string>();
-                        for (const r of cached.data.relationships) {
-                            const key = `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase();
-                            if (!preExistingKeys.has(key)) newKeys.add(key);
+                // Refresh map only every 5 batches or when done
+                if (res.done || batchIdx % 10 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) {
+                        setMap(cached.data);
+                        if (res.done || res.newRelationships > 0) {
+                            const newKeys = new Set<string>();
+                            for (const r of cached.data.relationships) {
+                                const key = `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase();
+                                if (!preExistingKeys.has(key)) newKeys.add(key);
+                            }
+                            if (newKeys.size > 0) setNewRelKeys(newKeys);
                         }
-                        if (newKeys.size > 0) setNewRelKeys(newKeys);
                     }
                 }
                 if (res.done) break;
@@ -933,9 +1116,147 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             }
         }
 
+        stopTimer();
+
         if (!cancelRef.current) {
             setDataProgress({ phase: 'done', progress: 'Analisi completa!', found: 0, percent: 100 });
             toast({ title: 'Analisi completa', description: 'Scansione, descrizioni, relazioni e analisi dati completate.' });
+            setTimeout(() => { setDataSampling(false); setDataProgress(null); }, 3000);
+        } else {
+            setDataSampling(false);
+            setDataProgress(null);
+        }
+
+        setFullAnalysisRunning(false);
+        setFullAnalysisStep(null);
+    };
+
+    // ─── "Completa Mappatura" – resumes from where it left off ───────────────
+    const handleResumeAnalysis = async () => {
+        if (!map) {
+            // No map at all → run full analysis
+            handleFullAnalysis();
+            return;
+        }
+
+        setFullAnalysisRunning(true);
+        cancelRef.current = false;
+        startTimer();
+
+        // Determine what's already done
+        const totalTables = map.summary.totalTables;
+        const descDone = map.tables.filter(t => t.userDescription || t.description).length;
+        const hasRelationships = map.summary.totalRelationships > 0;
+
+        // Step 1: Skip scan – map already exists
+
+        // Step 2: AI descriptions (missing only) – skip if all have descriptions
+        if (descDone < totalTables) {
+            setFullAnalysisStep('Completamento descrizioni AI...');
+            setGeneratingAI(true);
+            setAiProgress({ current: 0, total: 0 });
+            {
+                let batchIdx = 0;
+                let totalProcessed = 0;
+                while (true) {
+                    if (cancelRef.current) break;
+                    const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+                    if (res.usage) {
+                        setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
+                    }
+                    if (res.error && res.done) break;
+                    totalProcessed += res.batchProcessed;
+                    setAiProgress({ current: totalProcessed, total: res.totalToProcess });
+                    if (res.done || batchIdx % 8 === 0) {
+                        const cached = await getCachedDatabaseMapAction(connectorId);
+                        if (cached.data) setMap(cached.data);
+                    }
+                    if (res.done) break;
+                    batchIdx++;
+                }
+            }
+            setGeneratingAI(false);
+            setAiProgress(null);
+            if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+        }
+
+        // Step 3: Infer relationships AI
+        setFullAnalysisStep('Scoperta relazioni AI...');
+        setInferringRels(true);
+        setInferProgress({ current: 0, total: 0, found: 0 });
+        {
+            let batchIdx = 0;
+            let totalFound = 0;
+            while (true) {
+                if (cancelRef.current) break;
+                const res = await inferRelationshipsAIAction(connectorId, batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+                if (res.usage) {
+                    setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
+                }
+                if (res.error && res.done) break;
+                totalFound += res.newRelationships;
+                setInferProgress({ current: res.totalProcessed, total: res.totalTables, found: totalFound });
+                // Refresh map only every 5 batches or when done
+                if (res.done || batchIdx % 10 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) setMap(cached.data);
+                }
+                if (res.done) break;
+                batchIdx++;
+            }
+        }
+        setInferringRels(false);
+        setInferProgress(null);
+        if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+
+        // Step 4: Deep data analysis
+        setFullAnalysisStep('Analisi profonda dati...');
+        setDataSampling(true);
+        setDataProgress({ phase: 'fingerprinting', progress: 'Avvio analisi dati...', found: 0, percent: 0 });
+
+        const preExistingKeys = new Set(
+            ((await getCachedDatabaseMapAction(connectorId)).data?.relationships || []).map(r =>
+                `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase()
+            )
+        );
+        {
+            let batchIdx = 0;
+            let totalFound = 0;
+            let tablesAnalyzed = 0;
+            let candidatesEvaluated = 0;
+            while (true) {
+                if (cancelRef.current) break;
+                const res = await inferRelationshipsFromDataAction(connectorId, batchIdx);
+                if (res.error && res.done) break;
+                totalFound += res.newRelationships;
+                if (res.totalTables) tablesAnalyzed = res.totalTables;
+                if (res.totalCandidates) candidatesEvaluated = res.totalCandidates;
+                setDataProgress({ phase: res.phase, progress: res.progress, found: totalFound, percent: res.progressPercent ?? 0 });
+                // Refresh map only every 5 batches or when done
+                if (res.done || batchIdx % 10 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) {
+                        setMap(cached.data);
+                        if (res.done || res.newRelationships > 0) {
+                            const newKeys = new Set<string>();
+                            for (const r of cached.data.relationships) {
+                                const key = `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}->${r.targetSchema}.${r.targetTable}.${r.targetColumn}`.toLowerCase();
+                                if (!preExistingKeys.has(key)) newKeys.add(key);
+                            }
+                            if (newKeys.size > 0) setNewRelKeys(newKeys);
+                        }
+                    }
+                }
+                if (res.done) break;
+                batchIdx++;
+            }
+        }
+
+        stopTimer();
+
+        if (!cancelRef.current) {
+            setDataProgress({ phase: 'done', progress: 'Analisi completa!', found: 0, percent: 100 });
+            toast({ title: 'Mappatura completata', description: 'Descrizioni, relazioni e analisi dati completate.' });
             setTimeout(() => { setDataSampling(false); setDataProgress(null); }, 3000);
         } else {
             setDataSampling(false);
@@ -1039,18 +1360,166 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                             </Badge>
                         </div>
                     )}
-                    {/* Row 2: Action buttons + progress */}
+                    {/* Row 2: AI Model selector + Action buttons + progress */}
                     <div className="flex items-center gap-2 flex-wrap">
+                        {/* AI Mode Toggle: Free / Paid */}
                         {!fullAnalysisRunning && !generatingAI && !inferringRels && !dataSampling && (
-                            <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleFullAnalysis} disabled={loading}>
-                                {loading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
-                                {map ? 'Analisi Completa' : 'Scansiona e Analizza'}
-                            </Button>
+                            <div className="flex items-center gap-1 border rounded-md h-7 px-1">
+                                <button
+                                    onClick={() => setAiMode('free')}
+                                    className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                                        aiMode === 'free' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'text-muted-foreground hover:text-foreground'
+                                    }`}
+                                >
+                                    <Gift className="h-2.5 w-2.5" />
+                                    Free
+                                </button>
+                                <button
+                                    onClick={() => setAiMode('paid')}
+                                    className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                                        aiMode === 'paid' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' : 'text-muted-foreground hover:text-foreground'
+                                    }`}
+                                >
+                                    <DollarSign className="h-2.5 w-2.5" />
+                                    Paid
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Paid model selector - opens Dialog with Table */}
+                        {aiMode === 'paid' && !fullAnalysisRunning && !generatingAI && !inferringRels && !dataSampling && (
+                            <Dialog open={isModelDialogOpenMap} onOpenChange={setIsModelDialogOpenMap}>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-[10px] max-w-[220px] justify-between font-normal"
+                                    onClick={() => setIsModelDialogOpenMap(true)}
+                                >
+                                    <span className="truncate">
+                                        {selectedModel
+                                            ? (allModelsMap.find(m => m.id === selectedModel)?.name || selectedModel.split('/').pop())
+                                            : 'Seleziona modello...'}
+                                    </span>
+                                    <span className="text-muted-foreground ml-1 text-[9px] shrink-0">Cambia</span>
+                                </Button>
+                                <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+                                    <DialogHeader>
+                                        <DialogTitle className="text-sm">Seleziona Modello AI per Mappatura DB</DialogTitle>
+                                    </DialogHeader>
+                                    <div className="flex items-center border rounded-md px-2 py-1.5 my-1 bg-muted/30">
+                                        <Search className="mr-1.5 h-3 w-3 opacity-50" />
+                                        <Input
+                                            placeholder="Cerca modello..."
+                                            value={modelSearchMap}
+                                            onChange={e => setModelSearchMap(e.target.value)}
+                                            className="border-0 focus-visible:ring-0 bg-transparent h-7 text-xs"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <div className="flex-1 overflow-auto border rounded-md">
+                                        {isModelsLoadingMap ? (
+                                            <div className="flex items-center justify-center h-40">
+                                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                                <span className="ml-2 text-xs text-muted-foreground">Caricamento modelli...</span>
+                                            </div>
+                                        ) : (
+                                            <Table>
+                                                <TableHeader className="bg-muted/50 sticky top-0 backdrop-blur-sm z-10">
+                                                    <TableRow>
+                                                        <TableHead className="text-[10px]">Nome</TableHead>
+                                                        <TableHead className="text-[10px]">ID</TableHead>
+                                                        <TableHead className="text-[10px]">Context</TableHead>
+                                                        <TableHead className="text-[10px]">Input ($/1M)</TableHead>
+                                                        <TableHead className="text-[10px]">Output ($/1M)</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {filteredModelsMap.map((m) => {
+                                                        const isSelected = selectedModel === m.id;
+                                                        const promptPrice = parseFloat(m.pricing?.prompt || '0');
+                                                        const completionPrice = parseFloat(m.pricing?.completion || '0');
+                                                        const isFree = promptPrice === 0 && completionPrice === 0;
+                                                        return (
+                                                            <TableRow
+                                                                key={m.id}
+                                                                className={`cursor-pointer hover:bg-muted/50 ${isSelected ? 'bg-primary/5 dark:bg-primary/20' : ''}`}
+                                                                onClick={() => {
+                                                                    setSelectedModel(m.id);
+                                                                    setIsModelDialogOpenMap(false);
+                                                                }}
+                                                            >
+                                                                <TableCell className="font-medium p-1.5 text-[10px] truncate max-w-[200px]" title={m.name}>
+                                                                    {m.name}
+                                                                    {isSelected && <CheckCircle2 className="inline ml-1 h-2.5 w-2.5 text-primary" />}
+                                                                </TableCell>
+                                                                <TableCell className="text-[9px] text-muted-foreground font-mono p-1.5 truncate max-w-[150px]" title={m.id}>{m.id}</TableCell>
+                                                                <TableCell className="text-[9px] p-1.5">{Math.round(m.context_length / 1000)}k</TableCell>
+                                                                <TableCell className={`text-[9px] font-mono p-1.5 ${isFree ? 'text-green-600 font-semibold' : ''}`}>
+                                                                    {isFree ? 'FREE' : `$${(promptPrice * 1000000).toFixed(2)}`}
+                                                                </TableCell>
+                                                                <TableCell className={`text-[9px] font-mono p-1.5 ${isFree ? 'text-green-600 font-semibold' : ''}`}>
+                                                                    {isFree ? 'FREE' : `$${(completionPrice * 1000000).toFixed(2)}`}
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        );
+                                                    })}
+                                                    {filteredModelsMap.length === 0 && (
+                                                        <TableRow>
+                                                            <TableCell colSpan={5} className="text-center py-6 text-xs text-muted-foreground">
+                                                                Nessun modello trovato per &quot;{modelSearchMap}&quot;
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    )}
+                                                </TableBody>
+                                            </Table>
+                                        )}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground text-right pt-1">
+                                        {filteredModelsMap.length} modelli • ordinati per prezzo
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
+                        )}
+
+                        {!fullAnalysisRunning && !generatingAI && !inferringRels && !dataSampling && (
+                            <>
+                                <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleFullAnalysis} disabled={loading || (aiMode === 'paid' && !selectedModel)}>
+                                    {loading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
+                                    {map ? 'Analisi Completa' : 'Scansiona e Analizza'}
+                                </Button>
+                                {map && (
+                                    <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleResumeAnalysis} disabled={loading || (aiMode === 'paid' && !selectedModel)}>
+                                        <PlayCircle className="h-3 w-3 mr-1" />
+                                        Completa Mappatura
+                                    </Button>
+                                )}
+                            </>
                         )}
                         {fullAnalysisStep && (
                             <Badge variant="secondary" className="text-[10px] h-5 px-2 animate-pulse">
                                 {fullAnalysisStep}
                             </Badge>
+                        )}
+                        {/* Elapsed time timer */}
+                        {(loading || fullAnalysisRunning || generatingAI || inferringRels || dataSampling) && elapsedSeconds > 0 && (
+                            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-0.5">
+                                <Timer className="h-3 w-3 text-slate-500" />
+                                <span className="text-xs font-mono font-medium text-slate-600 dark:text-slate-300 tabular-nums">
+                                    {formatElapsed(elapsedSeconds)}
+                                </span>
+                            </div>
+                        )}
+                        {/* Session cost counter */}
+                        {sessionCost.tokens > 0 && (
+                            <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md px-2 py-0.5" title={`Token: ${sessionCost.tokens.toLocaleString()} | USD: $${sessionCost.costUsd.toFixed(6)}`}>
+                                <DollarSign className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                                <span className="text-xs font-mono font-medium text-amber-700 dark:text-amber-300 tabular-nums">
+                                    {sessionCost.costUsd > 0
+                                        ? `€${(sessionCost.costUsd * USD_TO_EUR).toFixed(4)}`
+                                        : `${(sessionCost.tokens / 1000).toFixed(0)}k tok`
+                                    }
+                                </span>
+                            </div>
                         )}
                         {/* Progress for descriptions */}
                         {generatingAI && aiProgress && (
@@ -1136,6 +1605,16 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                         <div className="flex flex-col items-center justify-center h-64 gap-3">
                             <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
                             <p className="text-sm text-muted-foreground">Scansione database in corso...</p>
+                            {elapsedSeconds > 0 && (
+                                <p className="text-xs font-mono text-muted-foreground/60 tabular-nums">
+                                    {formatElapsed(elapsedSeconds)}
+                                </p>
+                            )}
+                            {elapsedSeconds > 30 && (
+                                <p className="text-xs text-amber-600 dark:text-amber-400 max-w-sm text-center">
+                                    Database con molte tabelle – la scansione potrebbe richiedere qualche minuto...
+                                </p>
+                            )}
                         </div>
                     ) : !map ? (
                         <div className="flex flex-col items-center justify-center h-64 gap-3">

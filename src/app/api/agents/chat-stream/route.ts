@@ -8,6 +8,7 @@ import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
 import { createSqlAgentTools, doTestSqlQuery } from '@/ai/tools/sql-agent-tools';
 import { createPythonAgentTools } from '@/ai/tools/python-agent-tools';
 import type { ConsultedNodeType } from '@/ai/schemas/agent-schema';
+import { setAgentUsageCache } from '@/lib/agent-usage-cache';
 
 export const maxDuration = 120; // Allow up to 2 min for agent runs
 
@@ -184,6 +185,7 @@ function buildPythonSystemPrompt(opts: {
     connectorId?: string;
     companyId?: string;
     selectedDocuments?: string[];
+    activeStyleName?: string | null;
 }) {
     const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const connectorInfo = opts.connectorId ? `\nConnettore DB attuale: ${opts.connectorId}` : '';
@@ -196,6 +198,21 @@ function buildPythonSystemPrompt(opts: {
     }
 
     return `Sei un agente AI esperto in Python per analisi dati. Stai utilizzando il modello: ${opts.modelName}. NON MOLLARE MAI. Sei tenace e persistente.
+
+##################################################################
+# REGOLA NUMERO 1 — CRUD DB DA HTML EDITABILE                    #
+# saveToDb(), insertToDb(), deleteFromDb() sono GIA' disponibili.#
+# NON SERVE fetch, NON SERVE URL, NON SERVE import.              #
+##################################################################
+# ALL'INIZIO del <script> scrivi SEMPRE:                          #
+# window.__DB_TABLE__ = 'dbo.NomeTabella';                        #
+# window.__DB_PK__ = ['ColonnaPK1'];                              #
+#                                                                  #
+# UPDATE: saveToDb('dbo.Tab', riga, ['PK'])                       #
+# INSERT: insertToDb('dbo.Tab', riga)                              #
+# DELETE: deleteFromDb('dbo.Tab', riga, ['PK'])                    #
+##################################################################
+
 DATA DI OGGI: ${today}
 
 ${connectorInfo}${companyInfo}${documentsContext}
@@ -292,6 +309,65 @@ NON usare valori CSS problematici FUORI dalle stringhe:
 - box-shadow: 0 20px 60px -> OK se dentro triple quotes
 Se il CSS causa "invalid decimal literal", il codice e' SBAGLIATO: controlla che le triple quotes siano bilanciate.
 
+## !!!! SISTEMA STILI CSS - REGOLA FONDAMENTALE (CRITICO) !!!!
+${opts.activeStyleName ? `STILE ATTIVO: "${opts.activeStyleName}" - Lo stile CSS viene applicato AUTOMATICAMENTE dalla piattaforma.` : `NESSUNO STILE ATTIVO: Se l'utente chiede un output HTML con stile grafico, suggerisci di selezionare uno stile dalla pagina /style dell'app.`}
+
+La piattaforma ha un SISTEMA DI STILI centralizzato che applica CSS automaticamente a TUTTO l'HTML renderizzato.
+Il tuo codice NON DEVE MAI definire stili inline o CSS personalizzato per elementi standard.
+
+### REGOLA D'ORO STILI:
+1. **NON SCRIVERE MAI CSS per**: colori tabelle, font, bordi, sfondi, ombre, padding delle celle, colori header, hover, striping.
+   Il sistema di stili li applica AUTOMATICAMENTE via classi CSS predefinite.
+2. **USA SEMPRE tag HTML semantici standard**: \`<table>\`, \`<thead>\`, \`<tbody>\`, \`<tr>\`, \`<th>\`, \`<td>\`, \`<h1>\`-\`<h6>\`, \`<p>\`, \`<a>\`, \`<hr>\`, \`<ul>\`, \`<ol>\`, \`<li>\`
+3. **USA QUESTE CLASSI CSS per elementi UI**:
+   - \`.btn\` o \`.btn-primary\` → bottone primario (colore tema)
+   - \`.btn-secondary\` → bottone secondario
+   - \`.badge\` → badge/etichetta
+   - \`.card\` → contenitore card con bordo e ombra
+   - \`.positive\` → valore positivo (verde, es. +15%)
+   - \`.negative\` → valore negativo (rosso, es. -8%)
+   - \`<hr>\` → divisore orizzontale stilizzato
+   - \`<input>\`, \`<select>\`, \`<textarea>\` → form elements stilizzati automaticamente
+4. **CSS CUSTOM AMMESSO SOLO per**: layout (grid, flexbox, position), dimensioni (width, height, max-width), margini/padding del LAYOUT (non dei singoli elementi come td/th), animazioni.
+5. **MAI** scrivere colori hardcoded (#hex, rgb, hsl) per testi, sfondi, bordi. Lascia che il sistema di stili li gestisca.
+6. **MAI** impostare font-family, font-size, font-weight su elementi standard (tabelle, heading, paragrafi). Il sistema lo fa automaticamente.
+
+### ESEMPIO HTML CORRETTO (senza stili inline):
+\`\`\`html
+<div style="max-width: 900px; margin: 0 auto; padding: 20px;">
+  <h1>Dashboard Vendite</h1>
+  <p>Riepilogo aggiornato al 2026-03-08</p>
+  <table>
+    <thead><tr><th>Prodotto</th><th>Vendite</th><th>Variazione</th></tr></thead>
+    <tbody>
+      <tr><td>Prodotto A</td><td>€ 15.000</td><td class="positive">+12%</td></tr>
+      <tr><td>Prodotto B</td><td>€ 8.200</td><td class="negative">-5%</td></tr>
+    </tbody>
+  </table>
+  <hr>
+  <div style="display: flex; gap: 10px; margin-top: 15px;">
+    <button class="btn-primary" onclick="refresh()">Aggiorna</button>
+    <button class="btn-secondary" onclick="exportCsv()">Esporta CSV</button>
+  </div>
+  <div class="card" style="margin-top: 15px;">
+    <h3>Note</h3>
+    <p>Dati estratti dal database aziendale.</p>
+  </div>
+</div>
+\`\`\`
+
+### ESEMPIO HTML SBAGLIATO (NON FARE COSI'):
+\`\`\`html
+<!-- SBAGLIATO: stili hardcoded per tabella -->
+<table style="border-collapse: collapse; background: #fff; border-radius: 8px;">
+  <thead><tr style="background: #1a365d; color: white;"><th style="padding: 12px; font-weight: 600;">...</th></tr></thead>
+  <tbody><tr style="background: #f7fafc; border-bottom: 1px solid #e2e8f0;"><td style="padding: 10px; color: #2d3748;">...</td></tr></tbody>
+</table>
+<!-- SBAGLIATO: colori hardcoded per valori -->
+<td style="color: #38a169; font-weight: bold;">+12%</td>
+\`\`\`
+MOTIVO: Tutti questi stili vengono sovrascritti dal sistema di stili della piattaforma. Il codice diventa piu' pulito e l'utente puo' cambiare tema da /style.
+
 ## COME ARRIVANO I DATI (DUE MODI):
 1. **Pipeline (df)**: I dati dal nodo upstream arrivano come \`df\`. Se il nodo ha piu' dipendenze, ogni dipendenza e' disponibile col suo NOME.
 2. **query_db()**: Puoi caricare dati DIRETTAMENTE dal database con \`df = query_db("SELECT * FROM dbo.Tabella")\`.
@@ -304,6 +380,8 @@ Se il CSS causa "invalid decimal literal", il codice e' SBAGLIATO: controlla che
 - I grafici Plotly vengono automaticamente convertiti nel sistema Recharts della piattaforma.
 - Per i GANTT: usa SEMPRE go.Bar con orientation='h'. NON usare px.timeline().
 - PREFERISCI SEMPRE tipi semplici (bar, line, scatter, pie, area).
+- NON personalizzare colori, font o layout del grafico Plotly. La piattaforma applica automaticamente lo stile attivo (colori, font, sfondi, legenda) dal sistema stili /style.
+- Concentrati SOLO sui dati e il tipo di grafico, NON sulla grafica.
 
 ## CONTESTO PIATTAFORMA (IMPORTANTE):
 - I CONNETTORI forniscono automaticamente token e credenziali come variabili d'ambiente
@@ -372,6 +450,182 @@ result = df_data
 pyTestCode ha anche il parametro opzionale \`sqlQuery\` per pre-caricare df durante il test:
 pyTestCode({ code: "...", outputType: "table", sqlQuery: "SELECT * FROM dbo.BudgetMensile" })
 Ma il codice FINALE deve usare query_db() per essere autosufficiente a runtime.
+
+## !!!! SCRITTURA DB DA HTML EDITABILE (CRITICO) !!!!
+La funzione \`saveToDb()\` e' GIA' DISPONIBILE GLOBALMENTE in ogni HTML renderizzato dalla piattaforma.
+NON serve fetch, NON serve URL, NON serve importarla. E' iniettata automaticamente dal sistema.
+
+### SETUP OBBLIGATORIO (all'inizio del <script>):
+\`\`\`
+window.__DB_TABLE__ = 'dbo.NomeTabella';
+window.__DB_PK__ = ['ColonnaPK1'];
+\`\`\`
+
+### FIRMA:
+\`\`\`
+saveToDb(nomeTabella, oggettoRiga, arrayColonnePK)
+\`\`\`
+Ritorna una Promise con \`{success: true/false, message: '...'}\`.
+
+### PATTERN COMPLETO — TABELLA EDITABILE CON SALVATAGGIO PER RIGA:
+Quando l'utente chiede un HTML per salvare, fare save, update o aggiornare celle nel DB, USA QUESTO PATTERN:
+\`\`\`python
+import pandas as pd
+import json
+df = query_db("SELECT * FROM dbo.NomeTabella")
+data_records = df.to_dict('records')
+json_data = json.dumps(data_records, default=str)
+
+html = \\"\\"\\"<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Titolo - Editabile</title>
+    <style>
+        /* SOLO stili funzionali per editing - i colori/font vengono dal sistema stili */
+        .editable-cell { cursor: text; }
+        .editable-cell:focus { outline: 2px solid currentColor; outline-offset: -2px; }
+        .editable-cell.modified { outline: 2px dashed orange; outline-offset: -2px; }
+        .status-message { padding: 8px 12px; margin: 8px 0; border-radius: 4px; display: none; }
+        .status-message.success { display: block; background: #d4edda; color: #155724; }
+        .status-message.error { display: block; background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div style="max-width: 1000px; margin: 0 auto; padding: 20px;">
+    <div id="statusMessage" class="status-message"></div>
+    <table><thead>...</thead><tbody id="tableBody"></tbody></table>
+    </div>
+    <script>
+        window.__DB_TABLE__ = 'dbo.NomeTabella';
+        window.__DB_PK__ = ['ColonnaPK'];
+        var data = \\"\\"\\" + json_data + \\"\\"\\";
+        var tableBody = document.getElementById('tableBody');
+
+        data.forEach(function(row, index) {
+            var tr = document.createElement('tr');
+            tr.dataset.originalData = JSON.stringify(row);
+            tr.innerHTML =
+                '<td class="editable-cell" contenteditable="true" data-field="Campo1">' + (row.Campo1 || '-') + '</td>' +
+                '<td class="editable-cell" contenteditable="true" data-field="Campo2">' + (row.Campo2 || '-') + '</td>' +
+                '<td><button class="btn btn-primary" onclick="saveRow(this)">Salva</button></td>';
+            var cells = tr.querySelectorAll('.editable-cell');
+            cells.forEach(function(cell) {
+                cell.addEventListener('input', function() { this.classList.add('modified'); });
+            });
+            tableBody.appendChild(tr);
+        });
+
+        function saveRow(button) {
+            var tr = button.closest('tr');
+            var rowData = JSON.parse(tr.dataset.originalData);
+            tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+                rowData[cell.dataset.field] = cell.textContent.trim();
+            });
+            button.disabled = true;
+            button.textContent = 'Salvataggio...';
+            saveToDb('dbo.NomeTabella', rowData, ['ColonnaPK'])
+                .then(function(r) {
+                    if (r.success) {
+                        showStatus('Salvato!', 'success');
+                        tr.dataset.originalData = JSON.stringify(rowData);
+                        tr.querySelectorAll('.editable-cell').forEach(function(c) { c.classList.remove('modified'); });
+                    } else { showStatus('Errore: ' + r.message, 'error'); }
+                })
+                .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+                .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
+        }
+        function showStatus(msg, type) {
+            var el = document.getElementById('statusMessage');
+            el.textContent = msg; el.className = 'status-message ' + type;
+            setTimeout(function() { el.className = 'status-message'; }, 5000);
+        }
+    </script>
+</body></html>\\"\\"\\"
+result = html
+\`\`\`
+
+### PUNTI CHIAVE saveToDb():
+1. \`saveToDb()\` e' GLOBALE — non serve definirla, e' gia' iniettata dal sistema
+2. SEMPRE all'inizio del \`<script>\`, scrivi: \`window.__DB_TABLE__ = 'dbo.NomeTabella'; window.__DB_PK__ = ['pk1'];\`
+3. Parametro 1: nome tabella completo (es. 'dbo.BudgetMensile_2026')
+4. Parametro 2: oggetto con TUTTI i campi della riga (sia valori modificati che PK)
+5. Parametro 3: array con i nomi delle colonne PK per la clausola WHERE
+6. Il bottone Salva DEVE cambiare aspetto durante il salvataggio (disabled + testo "Salvataggio...")
+7. Le celle modificate DEVONO avere classe "modified" con bordo arancione
+8. NON usare MAI fetch() diretto o URL — usa SOLO saveToDb() e insertToDb()
+9. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
+
+### insertToDb() — PER NUOVI RECORD (INSERT):
+Quando l'HTML ha un bottone "Aggiungi Record" o simile, per salvare il nuovo record nel DB usa \`insertToDb()\`:
+\`\`\`
+insertToDb(nomeTabella, oggettoRiga)
+\`\`\`
+Ritorna una Promise con \`{success: true/false, message: '...'}\`.
+- Parametro 1: nome tabella completo (es. 'dbo.BudgetMensile_2026')
+- Parametro 2: oggetto con TUTTI i campi della riga da inserire (le proprieta' che iniziano con _ vengono ignorate)
+- NON ha bisogno delle PK come terzo parametro (e' un INSERT, non un UPDATE)
+
+ESEMPIO nel saveRow con distinzione nuovo/esistente:
+\`\`\`
+function saveRow(button) {
+    var tr = button.closest('tr');
+    var isNew = tr.dataset.isNew === 'true';
+    var rowData = {};
+    tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+        rowData[cell.dataset.field] = cell.textContent.trim();
+    });
+    button.disabled = true;
+    button.textContent = 'Salvataggio...';
+    var promise = isNew
+        ? insertToDb('dbo.NomeTabella', rowData)
+        : saveToDb('dbo.NomeTabella', rowData, ['ColonnaPK']);
+    promise.then(function(r) {
+        if (r.success) {
+            showStatus('Salvato!', 'success');
+            tr.dataset.isNew = 'false';  // dopo l'insert diventa update
+        } else { showStatus('Errore: ' + r.message, 'error'); }
+    })
+    .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+    .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
+}
+\`\`\`
+
+REGOLA: Se la riga e' nuova (_isNew, appena aggiunta dall'utente) -> usa insertToDb(). Se la riga esiste gia' nel DB -> usa saveToDb().
+
+### deleteFromDb() — PER ELIMINARE RIGHE (DELETE):
+Per eliminare una riga dal DB usa \`deleteFromDb()\`:
+\`\`\`
+deleteFromDb(nomeTabella, oggettoRiga, arrayColonnePK)
+\`\`\`
+Ritorna una Promise con \`{success: true/false, message: '...'}\`.
+- Parametro 1: nome tabella completo (es. 'dbo.BudgetMensile_2026')
+- Parametro 2: oggetto che contiene ALMENO i campi PK della riga da eliminare
+- Parametro 3: array con i nomi delle colonne PK per la clausola WHERE
+
+ESEMPIO bottone Elimina per riga:
+\`\`\`
+function deleteRow(button) {
+    if (!confirm('Sei sicuro di voler eliminare questa riga?')) return;
+    var tr = button.closest('tr');
+    var rowData = {};
+    tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+        rowData[cell.dataset.field] = cell.textContent.trim();
+    });
+    button.disabled = true;
+    button.textContent = 'Eliminazione...';
+    deleteFromDb('dbo.NomeTabella', rowData, ['ColonnaPK'])
+        .then(function(r) {
+            if (r.success) {
+                tr.remove();
+                showStatus('Riga eliminata!', 'success');
+            } else { showStatus('Errore: ' + r.message, 'error'); }
+        })
+        .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+        .finally(function() { button.disabled = false; button.textContent = 'Elimina'; });
+}
+\`\`\`
+REGOLA: Il bottone Elimina DEVE chiedere conferma con confirm() prima di procedere. Dopo l'eliminazione, la riga viene rimossa dal DOM con tr.remove().
 
 ## CORREZIONE ERRORI AUTOMATICA (CRITICO):
 - Se ricevi "ERRORE ESECUZIONE AUTOMATICA", DEVI restituire il codice corretto.
@@ -605,6 +859,27 @@ export async function POST(request: NextRequest) {
 
         console.log('[chat-stream] Using model:', model);
 
+        // 3b. Get active style name (for Python agent prompt)
+        let activeStyleName: string | null = null;
+        if (agentType === 'python' && user.company) {
+            const co = user.company as any;
+            if (co.activeUnifiedStyleId) {
+                // Check custom presets first
+                const customPresets = (co.unifiedStylePresets as any[] | null) || [];
+                const customMatch = customPresets.find((p: any) => p.id === co.activeUnifiedStyleId);
+                if (customMatch) {
+                    activeStyleName = customMatch.label || customMatch.id;
+                } else {
+                    // Check built-in presets (lazy import to avoid bundle bloat)
+                    try {
+                        const { BUILTIN_PRESETS } = await import('@/lib/unified-style-presets');
+                        const builtinMatch = BUILTIN_PRESETS.find(p => p.id === co.activeUnifiedStyleId);
+                        activeStyleName = builtinMatch?.label || co.activeUnifiedStyleId;
+                    } catch { activeStyleName = co.activeUnifiedStyleId; }
+                }
+            }
+        }
+
         // 4. Get conversation history
         const conversation = await db.agentConversation.findUnique({
             where: { nodeId_agentType: { nodeId, agentType } },
@@ -617,7 +892,7 @@ export async function POST(request: NextRequest) {
 
         // 6. Build prompts (branched by agent type)
         const systemPrompt = agentType === 'python'
-            ? buildPythonSystemPrompt({ modelName: model, connectorId, companyId, selectedDocuments })
+            ? buildPythonSystemPrompt({ modelName: model, connectorId, companyId, selectedDocuments, activeStyleName })
             : buildSystemPrompt({ modelName: model, connectorId, companyId });
 
         const userPrompt = agentType === 'python'
@@ -665,6 +940,13 @@ export async function POST(request: NextRequest) {
             },
             onFinish: async ({ text, usage }) => {
                 console.log('[chat-stream] === FINISHED === textLen:', text?.length, 'usage:', JSON.stringify(usage));
+                // Cache usage for client-side cost tracking
+                if (usage && nodeId) {
+                    setAgentUsageCache(nodeId, {
+                        inputTokens: usage.inputTokens || 0,
+                        outputTokens: usage.outputTokens || 0,
+                    });
+                }
                 try {
                     const updatedHistory = [
                         ...conversationHistory,

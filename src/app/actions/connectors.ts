@@ -1263,9 +1263,24 @@ print(f"PNG generated: {len(result)} chars base64")
                 </thead>
                 <tbody>
                     ${params.pipelineReport.map(entry => {
-                const statusIcon = entry.status === 'success' ? '✅' : entry.status === 'error' ? '❌' : '⏭️';
+                // Inline SVG icons — exact Lucide icon paths from node_modules/lucide-react, same colors as visual-tree.tsx
+                const svgAttrs = 'xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"';
+                // Status: Lucide Check (emerald) / X (red) / dash (slate)
+                const statusIcon = entry.status === 'success'
+                    ? `<svg ${svgAttrs} stroke="#059669"><path d="M20 6 9 17l-5-5"/></svg>`
+                    : entry.status === 'error'
+                    ? `<svg ${svgAttrs} stroke="#dc2626"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`
+                    : `<svg ${svgAttrs} stroke="#94a3b8"><path d="M18 6 6 18"/></svg>`;
                 const statusColor = entry.status === 'success' ? '#4ade80' : entry.status === 'error' ? '#f87171' : '#94a3b8';
-                const typeIcon = entry.type === 'Python' ? '🐍' : '📊';
+                // Python: Lucide FileCode (emerald-600 #059669) — visual-tree.tsx:1878
+                const pythonSvg = `<svg ${svgAttrs} stroke="#059669"><path d="M10 12.5 8 15l2 2.5"/><path d="m14 12.5 2 2.5-2 2.5"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/></svg>`;
+                // SQL: Lucide Database (blue-600 #2563eb) — visual-tree.tsx:1872
+                const sqlSvg = `<svg ${svgAttrs} stroke="#2563eb"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>`;
+                // AI: Lucide Sparkles (violet-600 #7c3aed) — visual-tree.tsx:1881
+                const aiSvg = `<svg ${svgAttrs} stroke="#7c3aed"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>`;
+                // Export: Lucide Upload (slate)
+                const exportSvg = `<svg ${svgAttrs} stroke="#94a3b8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>`;
+                const typeIcon = entry.type === 'Python' ? pythonSvg : entry.type === 'AI' ? aiSvg : entry.type === 'Export' ? exportSvg : sqlSvg;
                 const time = new Date(entry.timestamp).toLocaleTimeString('it-IT');
                 const nodePathShort = entry.nodePath ? entry.nodePath.split('.').pop()?.replace(/[\[\]']/g, '') || entry.nodePath.slice(-20) : '-';
                 return `

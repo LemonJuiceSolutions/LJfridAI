@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { tool } from 'ai';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction } from '@/app/actions';
+import { getCachedParsedMap } from '@/lib/database-map-cache';
 
 // ─── Tool Implementation Functions ───────────────────────────────────────────
 // These are extracted from sql-agent-flow.ts to be shared between both systems.
@@ -20,7 +21,7 @@ async function doExploreDbSchema(input: { connectorId: string }) {
         });
         if (connector?.databaseMap) {
             try {
-                const map = JSON.parse(connector.databaseMap);
+                const map = getCachedParsedMap(input.connectorId, connector.databaseMap);
                 const tables = (map.tables || []).map((t: any) => ({
                     table_name: t.fullName,
                     row_count: t.rowCount,
@@ -51,7 +52,7 @@ async function doExploreTableColumns(input: { connectorId: string; tableName: st
         });
         if (connector?.databaseMap) {
             try {
-                const map = JSON.parse(connector.databaseMap);
+                const map = getCachedParsedMap(input.connectorId, connector.databaseMap);
                 const searchName = input.tableName.toLowerCase();
                 const table = (map.tables || []).find((t: any) =>
                     t.name.toLowerCase() === searchName ||

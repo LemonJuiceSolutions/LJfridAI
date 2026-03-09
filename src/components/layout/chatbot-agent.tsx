@@ -22,6 +22,7 @@ import {
     Check,
     BarChart3,
     Save,
+    Coins,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +30,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { fetchOpenRouterModelsAction } from '@/app/actions';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
-import { getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction } from '@/actions/openrouter';
+import { getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction, getAgentLastUsageAction } from '@/actions/openrouter';
 import {
     Popover,
     PopoverContent,
@@ -326,6 +327,9 @@ export function ChatBotAgent() {
         }),
     }), []);
 
+    // ─── Session cost tracking ─────────────────────────────────────────────
+    const [totalUsage, setTotalUsage] = useState<{ tokens: number; cost: number }>({ tokens: 0, cost: 0 });
+
     // useChat hook for streaming
     const {
         messages: streamMessages,
@@ -397,6 +401,23 @@ export function ChatBotAgent() {
     });
 
     const isStreamLoading = streamStatus === 'streaming' || streamStatus === 'submitted';
+
+    // Fetch usage from server after stream completes
+    const prevStreamStatusRef = useRef(streamStatus);
+    useEffect(() => {
+        if (prevStreamStatusRef.current === 'streaming' && streamStatus === 'ready') {
+            // Use company-scoped key matching server-side cache key
+            getAgentLastUsageAction('super-agent').then(usage => {
+                if (usage) {
+                    setTotalUsage(prev => ({
+                        tokens: prev.tokens + (usage.inputTokens || 0) + (usage.outputTokens || 0),
+                        cost: prev.cost,
+                    }));
+                }
+            });
+        }
+        prevStreamStatusRef.current = streamStatus;
+    }, [streamStatus]);
 
     // Load models and saved agent model on mount
     useEffect(() => {
@@ -666,6 +687,15 @@ export function ChatBotAgent() {
                                         </Command>
                                     </PopoverContent>
                                 </Popover>
+                                {totalUsage.tokens > 0 && (
+                                    <span className="flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px] font-medium cursor-default" title={`Token: ${totalUsage.tokens.toLocaleString()}${totalUsage.cost > 0 ? ` | $${totalUsage.cost.toFixed(6)}` : ''}`}>
+                                        <Coins className="h-2.5 w-2.5" />
+                                        {totalUsage.cost > 0
+                                            ? `€${(totalUsage.cost * 0.92).toFixed(4)}`
+                                            : `${(totalUsage.tokens / 1000).toFixed(1)}k tok`
+                                        }
+                                    </span>
+                                )}
                             </div>
                         </div>
                         <div className="flex items-center gap-1">

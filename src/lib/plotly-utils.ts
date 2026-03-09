@@ -166,9 +166,9 @@ export interface PlotlyStylePreset {
 export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
   // ─── CORPORATE / CONSULTING ───
   {
-    id: 'mckinsey',
-    label: 'McKinsey',
-    description: 'Blu scuro su bianco, palette controllata — top consulting',
+    id: 'navy-consulting',
+    label: 'Navy Consulting',
+    description: 'Blu scuro su bianco, palette controllata',
     overrides: {
       paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
       font_family: 'Helvetica Neue', font_size: 12, font_color: '#2c2c2c',
@@ -181,9 +181,9 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
     },
   },
   {
-    id: 'deloitte',
-    label: 'Deloitte',
-    description: 'Verde Deloitte su bianco — audit e advisory',
+    id: 'green-consulting',
+    label: 'Green Consulting',
+    description: 'Verde brillante su bianco — consulting',
     overrides: {
       paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
       font_family: 'Arial', font_size: 12, font_color: '#2d2d2d',
@@ -196,9 +196,9 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
     },
   },
   {
-    id: 'kpmg',
-    label: 'KPMG',
-    description: 'Blu royal intenso — revisione e consulenza istituzionale',
+    id: 'royal-advisory',
+    label: 'Royal Advisory',
+    description: 'Blu royal intenso — stile istituzionale',
     overrides: {
       paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
       font_family: 'Arial', font_size: 12, font_color: '#1e1e1e',
@@ -211,9 +211,9 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
     },
   },
   {
-    id: 'pwc',
-    label: 'PwC',
-    description: 'Arancione e carbone — stile PricewaterhouseCoopers',
+    id: 'ember-serif',
+    label: 'Ember Serif',
+    description: 'Arancione e carbone — serif caldo e autorevole',
     overrides: {
       paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
       font_family: 'Georgia', font_size: 12, font_color: '#2d2d2d',
@@ -227,9 +227,9 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
   },
   // ─── FINANZA & DATI ───
   {
-    id: 'bloomberg',
-    label: 'Bloomberg',
-    description: 'Terminale nero con arancio — stile Bloomberg',
+    id: 'terminal-pro',
+    label: 'Terminal Pro',
+    description: 'Terminale nero con arancio — stile trading',
     overrides: {
       paper_bgcolor: '#000000', plot_bgcolor: '#0d0d0d',
       font_family: 'Consolas', font_size: 11, font_color: '#cccccc',
@@ -243,8 +243,8 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
     },
   },
   {
-    id: 'financial-times',
-    label: 'Financial Times',
+    id: 'salmon-press',
+    label: 'Salmon Press',
     description: 'Salmone caldo e nero — giornalismo finanziario',
     overrides: {
       paper_bgcolor: '#fff1e5', plot_bgcolor: '#fff1e5',
@@ -258,9 +258,9 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
     },
   },
   {
-    id: 'economist',
-    label: 'The Economist',
-    description: 'Rosso e bianco, serif — settimanale economico',
+    id: 'crimson-editorial',
+    label: 'Crimson Editorial',
+    description: 'Rosso e bianco, serif — stile editoriale',
     overrides: {
       paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
       font_family: 'Georgia', font_size: 12, font_color: '#1d1d1b',
@@ -273,9 +273,9 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
     },
   },
   {
-    id: 'excel-classic',
-    label: 'Excel Classic',
-    description: 'Palette classica Excel — familiare e leggibile',
+    id: 'spreadsheet-classic',
+    label: 'Spreadsheet Classic',
+    description: 'Palette classica foglio di calcolo — familiare e leggibile',
     overrides: {
       paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
       font_family: 'Calibri', font_size: 11, font_color: '#000000',
@@ -319,9 +319,9 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
     },
   },
   {
-    id: 'notion-style',
-    label: 'Notion Style',
-    description: 'Bianco e nero leggero — stile Notion',
+    id: 'soft-minimal',
+    label: 'Soft Minimal',
+    description: 'Bianco e nero leggero — ampio respiro',
     overrides: {
       paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
       font_family: 'Inter', font_size: 12, font_color: '#37352f',
@@ -334,9 +334,9 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
     },
   },
   {
-    id: 'stripe-docs',
-    label: 'Stripe Docs',
-    description: 'Viola e blu — stile documentazione Stripe',
+    id: 'indigo-docs',
+    label: 'Indigo Docs',
+    description: 'Viola e blu — documentazione moderna',
     overrides: {
       paper_bgcolor: '#f6f9fc', plot_bgcolor: '#ffffff',
       font_family: 'Inter', font_size: 12, font_color: '#525f7f',
@@ -411,9 +411,9 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
     },
   },
   {
-    id: 'github-dark',
-    label: 'GitHub Dark',
-    description: 'Grigio scuro — stile GitHub dark mode',
+    id: 'code-dark',
+    label: 'Code Dark',
+    description: 'Grigio scuro — dark mode per sviluppatori',
     overrides: {
       paper_bgcolor: '#0d1117', plot_bgcolor: '#0d1117',
       font_family: 'Inter', font_size: 12, font_color: '#c9d1d9',

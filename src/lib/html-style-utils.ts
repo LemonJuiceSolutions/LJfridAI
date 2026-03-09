@@ -1,5 +1,138 @@
 // HTML Style Overrides - mirrors the pattern of plotly-utils.ts
 
+/**
+ * Inject a fetch polyfill into srcdoc HTML so that:
+ * 1. Relative URLs (e.g. /api/...) are resolved to the app's absolute origin
+ * 2. credentials: 'include' is added to every request
+ * 3. connectorId AND internalToken are injected into POST bodies when missing
+ * 4. Successful POST writes send a postMessage to the parent frame
+ *
+ * This is needed because srcdoc iframes have origin "null" which breaks fetch.
+ * The internalToken is required for Mode 1 (raw SQL) on /api/update-commessa.
+ */
+export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: string; baseUrl?: string; internalToken?: string }): string {
+  const cid = opts?.connectorId || '';
+  // baseUrl must be provided at call site (from window.location.origin) since this may run server-side
+  const base = opts?.baseUrl || '';
+  // internalToken for /api/update-commessa Mode 1 (raw SQL queries)
+  const token = opts?.internalToken || process.env.INTERNAL_QUERY_TOKEN || 'fridai-internal-query-2024';
+
+  // Polyfill script: overrides fetch, injects saveToDb(), intercepts postMessage saves
+  const polyfillScript = `<script>(function(){` +
+    // --- Save originals & config ---
+    `var F=window.fetch;var _origPM=window.parent.postMessage.bind(window.parent);` +
+    `var B=${JSON.stringify(base)};var CID=${JSON.stringify(cid)};var TK=${JSON.stringify(token)};` +
+    // --- 1. Fetch polyfill (resolves URLs, injects credentials, redirects wrong-URL POSTs) ---
+    `window.fetch=function(u,o){` +
+    // Resolve relative URLs
+    `if(typeof u==='string'&&u.startsWith('/'))u=B+u;` +
+    `if(!o)o={};o.credentials='include';` +
+    // For POST requests with JSON body: detect wrong URLs and redirect to /api/update-commessa
+    `if(o.method&&o.method.toUpperCase()==='POST'&&o.body){try{var b=JSON.parse(o.body);var changed=false;` +
+    // Redirect: if URL is NOT /api/update-commessa and body has data fields, use saveToDb or redirect
+    `var isCorrectUrl=(typeof u==='string'&&u.indexOf('/api/update-commessa')>=0);` +
+    `if(!isCorrectUrl&&typeof b==='object'&&Object.keys(b).length>0){` +
+    `console.warn('[polyfill] fetch POST to wrong URL intercepted:',u);` +
+    // If body has 'query', just redirect URL. Otherwise use saveToDb with __DB_TABLE__
+    `if(b.query){u=B+'/api/update-commessa';changed=true}` +
+    `else if(window.__DB_TABLE__){console.warn('[polyfill] -> converting to saveToDb(',window.__DB_TABLE__,')');` +
+    `return window.saveToDb(window.__DB_TABLE__,b,window.__DB_PK__||[])}` +
+    // Fallback: no query, no __DB_TABLE__ — return fake error Response so .then() sees {success:false}
+    // This prevents .catch(() => resolve({success:true})) from hiding the real error
+    `else{console.error('[polyfill] fetch POST to wrong URL, no __DB_TABLE__ set, cannot save');` +
+    `var errMsg='Salvataggio fallito: window.__DB_TABLE__ non impostato. Rigenera il widget.';` +
+    `var errEl=document.getElementById('statusMessage');` +
+    `if(errEl){errEl.textContent=errMsg;errEl.className='status-message error';errEl.style.display='block'}` +
+    `return Promise.resolve(new Response(JSON.stringify({success:false,message:errMsg}),{status:200,headers:{'Content-Type':'application/json'}}))}}` +
+    // Inject connectorId and internalToken
+    `if(CID&&!b.connectorId){b.connectorId=CID;changed=true}if(TK&&!b.internalToken){b.internalToken=TK;changed=true}` +
+    `if(changed)o.body=JSON.stringify(b)}catch(e){}}` +
+    `return F.call(this,u,o).then(function(r){if(o.method&&o.method.toUpperCase()==='POST'){` +
+    `r.clone().json().then(function(j){if(j.success){_origPM({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})};` +
+    // --- 2. saveToDb: universal DB save function (constructs UPDATE query, calls polyfilled fetch) ---
+    // Usage: saveToDb('dbo.TableName', {col1:val1, col2:val2}, ['pkCol1']).then(r => ...)
+    `window.saveToDb=function(tbl,data,pks){` +
+    `if(!tbl||!data)return Promise.reject(new Error('Missing table or data'));` +
+    `var S=[],W=[];pks=pks||[];` +
+    `for(var k in data){if(!data.hasOwnProperty(k))continue;` +
+    `var v=data[k]==null?'':String(data[k]).replace(/'/g,"''");` +
+    `if(pks.indexOf(k)>=0)W.push(k+"='"+v+"'");else S.push(k+"='"+v+"'")}` +
+    `if(S.length===0&&W.length>1){S=W.slice(1);W=[W[0]]}` +
+    `if(W.length===0)return Promise.reject(new Error('No PK for WHERE clause'));` +
+    `var q="UPDATE "+tbl+" SET "+S.join(", ")+" WHERE "+W.join(" AND ");` +
+    `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
+    `body:JSON.stringify({query:q})}).then(function(r){return r.json()})};` +
+    // --- 2b. insertToDb: universal DB insert function (constructs INSERT query, calls polyfilled fetch) ---
+    // Usage: insertToDb('dbo.TableName', {col1:val1, col2:val2}).then(r => ...)
+    `window.insertToDb=function(tbl,data){` +
+    `if(!tbl||!data)return Promise.reject(new Error('Missing table or data'));` +
+    `var C=[],V=[];` +
+    `for(var k in data){if(!data.hasOwnProperty(k))continue;` +
+    `if(k.charAt(0)==='_')continue;` + // skip internal fields like _isNew
+    `C.push(k);` +
+    `var v=data[k]==null?'NULL':"'"+String(data[k]).replace(/'/g,"''")+"'";` +
+    `V.push(v)}` +
+    `if(C.length===0)return Promise.reject(new Error('No columns to insert'));` +
+    `var q="INSERT INTO "+tbl+" ("+C.join(", ")+") VALUES ("+V.join(", ")+")";` +
+    `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
+    `body:JSON.stringify({query:q})}).then(function(r){return r.json()})};` +
+    // --- 2c. deleteFromDb: universal DB delete function (constructs DELETE query, calls polyfilled fetch) ---
+    // Usage: deleteFromDb('dbo.TableName', {pkCol1:val1, pkCol2:val2}, ['pkCol1','pkCol2']).then(r => ...)
+    `window.deleteFromDb=function(tbl,data,pks){` +
+    `if(!tbl||!data||!pks||pks.length===0)return Promise.reject(new Error('Missing table, data or PKs'));` +
+    `var W=[];` +
+    `for(var i=0;i<pks.length;i++){var k=pks[i];` +
+    `if(!data.hasOwnProperty(k))return Promise.reject(new Error('PK field missing: '+k));` +
+    `var v=data[k]==null?'':String(data[k]).replace(/'/g,"''");` +
+    `W.push(k+"='"+v+"'")}` +
+    `var q="DELETE FROM "+tbl+" WHERE "+W.join(" AND ");` +
+    `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
+    `body:JSON.stringify({query:q})}).then(function(r){return r.json()})};` +
+    // --- 3. PostMessage interceptor: auto-converts save-type postMessage to saveToDb ---
+    // When AI generates postMessage({type:'SAVE_...', data:...}), this interceptor
+    // catches it and redirects to saveToDb using __DB_TABLE__ and __DB_PK__ metadata
+    // (injected by post-processing in python-agent-flow.ts)
+    `window.parent.postMessage=function(msg,orig){` +
+    `if(msg&&typeof msg==='object'&&msg.type&&/save|update|write/i.test(msg.type)&&msg.type!=='iframe-db-write-success'){` +
+    `console.warn('[polyfill] postMessage save intercepted -> auto-converting to saveToDb');` +
+    `var tbl=window.__DB_TABLE__;var pk=window.__DB_PK__||[];` +
+    `var d=msg.data||msg.payload||{};if(d.data&&typeof d.data==='object')d=d.data;` +
+    // If we have table metadata and data, convert to saveToDb call
+    `if(tbl&&typeof d==='object'&&Object.keys(d).length>0){` +
+    `saveToDb(tbl,d,pk).then(function(r){` +
+    `var el=document.getElementById('statusMessage');` +
+    `if(r.success){if(el){el.textContent='Salvato! '+(r.rowsAffected||0)+' righe aggiornate';` +
+    `el.className='status-message success';el.style.display='block'}}` +
+    `else{if(el){el.textContent='Errore: '+(r.message||'');` +
+    `el.className='status-message error';el.style.display='block'}}` +
+    `}).catch(function(e){var el=document.getElementById('statusMessage');` +
+    `if(el){el.textContent='Errore: '+e.message;el.className='status-message error';el.style.display='block'}});` +
+    `return}` +
+    // If data has a raw 'query' field, use it directly
+    `if(d.query){fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
+    `body:JSON.stringify({query:d.query})}).then(function(r){return r.json()}).then(function(r){` +
+    `var el=document.getElementById('statusMessage');` +
+    `if(r.success&&el){el.textContent='Salvato!';el.className='status-message success';el.style.display='block'}` +
+    `}).catch(function(){});return}` +
+    // No table metadata - show error
+    `var errDiv=document.getElementById('_pm_save_error');` +
+    `if(!errDiv){errDiv=document.createElement('div');errDiv.id='_pm_save_error';` +
+    `errDiv.style.cssText='position:fixed;top:0;left:0;right:0;padding:12px;background:#f8d7da;color:#721c24;text-align:center;z-index:99999;font-family:sans-serif;font-size:14px;border-bottom:2px solid #f5c6cb;';` +
+    `document.body.appendChild(errDiv)}` +
+    `errDiv.textContent='Errore: postMessage save senza __DB_TABLE__. Rigenera widget.';` +
+    `errDiv.style.display='block';setTimeout(function(){errDiv.style.display='none'},8000);` +
+    `return}` +
+    `return _origPM(msg,orig)};` +
+    `})();</script>`;
+
+  if (html.includes('<head>')) {
+    return html.replace('<head>', `<head>${polyfillScript}`);
+  } else if (html.includes('<html>')) {
+    return html.replace('<html>', `<html><head>${polyfillScript}</head>`);
+  }
+  return `<head>${polyfillScript}</head>${html}`;
+}
+
 export interface HtmlStyleOverrides {
   // ── Page / Container ──
   page_bg_color?: string;
@@ -345,9 +478,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'mckinsey',
-    label: 'McKinsey',
-    description: 'Blu scuro su bianco, rigore senza fronzoli — top consulting',
+    id: 'navy-consulting',
+    label: 'Navy Consulting',
+    description: 'Blu scuro su bianco, rigore senza fronzoli',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 24, container_max_width: 900, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#00263a', header_text_color: '#ffffff',
@@ -366,9 +499,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'deloitte',
-    label: 'Deloitte',
-    description: 'Verde Deloitte e nero — corporate audit e advisory',
+    id: 'green-consulting',
+    label: 'Green Consulting',
+    description: 'Verde brillante e nero — corporate audit e advisory',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 22, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#86bc25', header_text_color: '#ffffff',
@@ -386,9 +519,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'kpmg',
-    label: 'KPMG',
-    description: 'Blu royal intenso — revisione e consulenza istituzionale',
+    id: 'royal-advisory',
+    label: 'Royal Advisory',
+    description: 'Blu royal intenso — stile istituzionale',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 22, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#00338d', header_text_color: '#ffffff',
@@ -406,9 +539,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'pwc',
-    label: 'PwC',
-    description: 'Arancione e carbone — stile PricewaterhouseCoopers',
+    id: 'ember-serif',
+    label: 'Ember Serif',
+    description: 'Arancione e carbone — serif caldo e autorevole',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 22, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#2d2d2d', header_text_color: '#ffffff',
@@ -468,9 +601,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'notion-style',
-    label: 'Notion Style',
-    description: 'Bianco e nero leggero — stile Notion, ampio respiro',
+    id: 'soft-minimal',
+    label: 'Soft Minimal',
+    description: 'Bianco e nero leggero — ampio respiro, pulito',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 24, container_max_width: 900, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#ffffff', header_text_color: '#787774',
@@ -489,9 +622,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'stripe-docs',
-    label: 'Stripe Docs',
-    description: 'Viola sottile, tipografia raffinata — stile documentazione Stripe',
+    id: 'indigo-docs',
+    label: 'Indigo Docs',
+    description: 'Viola sottile, tipografia raffinata — documentazione moderna',
     overrides: {
       page_bg_color: '#f6f9fc', page_padding: 20, container_border_radius: 6, container_shadow: 'sm',
       header_bg_color: '#32325d', header_text_color: '#ffffff',
@@ -510,9 +643,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
   },
   // ─── FINANZA & DATI ───
   {
-    id: 'bloomberg',
-    label: 'Bloomberg',
-    description: 'Terminale nero con dati arancio — stile Bloomberg',
+    id: 'terminal-pro',
+    label: 'Terminal Pro',
+    description: 'Terminale nero con dati arancio — stile trading',
     overrides: {
       page_bg_color: '#000000', page_padding: 12, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#1a1a1a', header_text_color: '#ff8c00',
@@ -531,9 +664,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'financial-times',
-    label: 'Financial Times',
-    description: 'Salmone caldo e nero — stile giornalismo finanziario',
+    id: 'salmon-press',
+    label: 'Salmon Press',
+    description: 'Salmone caldo e nero — giornalismo finanziario',
     overrides: {
       page_bg_color: '#fff1e5', page_padding: 22, container_max_width: 940, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#1a1a1a', header_text_color: '#fff1e5',
@@ -551,9 +684,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'economist',
-    label: 'The Economist',
-    description: 'Rosso e bianco, serif editoriale — stile settimanale economico',
+    id: 'crimson-editorial',
+    label: 'Crimson Editorial',
+    description: 'Rosso e bianco, serif editoriale — stile settimanale',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 24, container_max_width: 880, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#e3120b', header_text_color: '#ffffff',
@@ -572,9 +705,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'excel-classic',
-    label: 'Excel Classic',
-    description: 'Griglia visibile, sfondo celle bianco — stile foglio di calcolo',
+    id: 'spreadsheet-classic',
+    label: 'Spreadsheet Classic',
+    description: 'Griglia visibile, sfondo celle bianco — foglio di calcolo',
     overrides: {
       page_bg_color: '#ffffff', page_padding: 10, container_border_radius: 0, container_shadow: 'none',
       header_bg_color: '#4472c4', header_text_color: '#ffffff',
@@ -676,9 +809,9 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
     },
   },
   {
-    id: 'github-dark',
-    label: 'GitHub Dark',
-    description: 'Grigio scuro con bordi sottili — stile GitHub dark mode',
+    id: 'code-dark',
+    label: 'Code Dark',
+    description: 'Grigio scuro con bordi sottili — dark mode per sviluppatori',
     overrides: {
       page_bg_color: '#0d1117', page_padding: 16, container_border_radius: 6, container_shadow: 'none',
       header_bg_color: '#161b22', header_text_color: '#c9d1d9',

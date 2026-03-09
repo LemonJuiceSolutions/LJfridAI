@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nextjs-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 9002
+    },
+    {
+      "name": "python-backend",
+      "runtimeExecutable": "python-backend/.venv/bin/python3",
+      "runtimeArgs": ["python-backend/app.py"],
+      "port": 5005
+    }
+  ]
+}

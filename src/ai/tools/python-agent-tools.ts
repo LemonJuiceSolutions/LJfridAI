@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { tool } from 'ai';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
+import { getCachedParsedMap } from '@/lib/database-map-cache';
 
 // ─── Tool Implementation Functions ───────────────────────────────────────────
 
@@ -19,7 +20,7 @@ async function doPyExploreDbSchema(input: { connectorId: string }) {
         });
         if (connector?.databaseMap) {
             try {
-                const map = JSON.parse(connector.databaseMap);
+                const map = getCachedParsedMap(input.connectorId, connector.databaseMap);
                 const tables = (map.tables || []).map((t: any) => ({
                     table_name: t.fullName,
                     row_count: t.rowCount,

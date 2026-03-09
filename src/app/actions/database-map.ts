@@ -5,6 +5,64 @@ import { getAuthenticatedUser } from '@/lib/session';
 import sql from 'mssql';
 import type { DatabaseMap, TableInfo, ColumnInfo, RelationshipInfo, ColumnFingerprint, OverlapCandidate, DataSamplingState } from '@/lib/database-map-types';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
+import { getCachedParsedMap, setCachedParsedMap, getParsedMapCacheEntry, recoverPartialJson } from '@/lib/database-map-cache';
+
+// ─── Debounced save to avoid writing 30MB on every single field edit ─────────
+let _debouncedSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let _debouncedSavePromise: Promise<void> | null = null;
+let _debouncedSaveResolvers: (() => void)[] = [];
+const DEBOUNCE_SAVE_MS = 2000;
+
+async function saveDatabaseMapDebounced(connectorId: string, map: DatabaseMap): Promise<void> {
+    // Always update the in-memory cache immediately
+    setCachedParsedMap(connectorId, map);
+
+    return new Promise<void>((resolve) => {
+        _debouncedSaveResolvers.push(resolve);
+
+        if (_debouncedSaveTimer) clearTimeout(_debouncedSaveTimer);
+
+        _debouncedSaveTimer = setTimeout(async () => {
+            _debouncedSaveTimer = null;
+            const resolvers = [..._debouncedSaveResolvers];
+            _debouncedSaveResolvers = [];
+
+            try {
+                await db.connector.update({
+                    where: { id: connectorId },
+                    data: { databaseMap: JSON.stringify(map), databaseMapAt: new Date() },
+                });
+            } catch (e) {
+                console.error('[DB-MAP] Debounced save error:', e);
+            }
+
+            for (const r of resolvers) r();
+        }, DEBOUNCE_SAVE_MS);
+    });
+}
+
+// Force flush any pending debounced saves (call before reads that need consistency)
+async function flushDebouncedSave(): Promise<void> {
+    if (_debouncedSaveTimer) {
+        clearTimeout(_debouncedSaveTimer);
+        _debouncedSaveTimer = null;
+
+        const cacheEntry = getParsedMapCacheEntry();
+        if (cacheEntry) {
+            const resolvers = [..._debouncedSaveResolvers];
+            _debouncedSaveResolvers = [];
+            try {
+                await db.connector.update({
+                    where: { id: cacheEntry.connectorId },
+                    data: { databaseMap: JSON.stringify(cacheEntry.map), databaseMapAt: new Date() },
+                });
+            } catch (e) {
+                console.error('[DB-MAP] Flush save error:', e);
+            }
+            for (const r of resolvers) r();
+        }
+    }
+}
 
 // ─── Helper: fetch free models dynamically from OpenRouter ──────────────────
 let _freeModelsCache: { models: string[]; fetchedAt: number } | null = null;
@@ -65,7 +123,7 @@ async function fetchFreeModels(apiKey: string): Promise<string[]> {
 }
 
 // ─── Helper: build SQL config from connector ────────────────────────────────
-function buildSqlConfig(conf: any) {
+function buildSqlConfig(conf: any, requestTimeoutMs = 120000) {
     const sqlConfig: any = {
         user: conf.user,
         password: conf.password,
@@ -75,7 +133,7 @@ function buildSqlConfig(conf: any) {
             encrypt: conf.host && conf.host.includes('database.windows.net'),
             trustServerCertificate: true,
             connectTimeout: 30000,
-            requestTimeout: 60000,
+            requestTimeout: requestTimeoutMs,
         },
     };
     if (conf.port) sqlConfig.port = parseInt(conf.port);
@@ -98,33 +156,30 @@ WHERE t.is_ms_shipped = 0
 ORDER BY s.name, t.name
 `;
 
-// ─── Q2: All columns with metadata ─────────────────────────────────────────
+// ─── Q2: All columns with metadata (uses sys.columns for performance on large DBs) ─
 const COLUMNS_QUERY = `
 SELECT
-    c.TABLE_SCHEMA,
-    c.TABLE_NAME,
-    c.COLUMN_NAME,
-    c.DATA_TYPE,
-    c.CHARACTER_MAXIMUM_LENGTH,
-    c.IS_NULLABLE,
-    c.COLUMN_DEFAULT,
-    CASE WHEN kcu.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS is_primary_key,
+    s.name AS TABLE_SCHEMA,
+    t.name AS TABLE_NAME,
+    c.name AS COLUMN_NAME,
+    tp.name AS DATA_TYPE,
+    c.max_length AS CHARACTER_MAXIMUM_LENGTH,
+    CASE WHEN c.is_nullable = 1 THEN 'YES' ELSE 'NO' END AS IS_NULLABLE,
+    dc.definition AS COLUMN_DEFAULT,
+    CASE WHEN ic.column_id IS NOT NULL THEN 1 ELSE 0 END AS is_primary_key,
     CAST(ep.value AS NVARCHAR(MAX)) AS column_description
-FROM INFORMATION_SCHEMA.COLUMNS c
-LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-    ON tc.TABLE_SCHEMA = c.TABLE_SCHEMA AND tc.TABLE_NAME = c.TABLE_NAME
-    AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
-LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-    ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME AND kcu.TABLE_SCHEMA = tc.TABLE_SCHEMA
-    AND kcu.TABLE_NAME = tc.TABLE_NAME AND kcu.COLUMN_NAME = c.COLUMN_NAME
-LEFT JOIN sys.columns sc
-    ON sc.object_id = OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME)
-    AND sc.name = c.COLUMN_NAME
+FROM sys.columns c
+INNER JOIN sys.tables t ON c.object_id = t.object_id
+INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+INNER JOIN sys.types tp ON c.user_type_id = tp.user_type_id
+LEFT JOIN sys.default_constraints dc ON c.default_object_id = dc.object_id
+LEFT JOIN sys.indexes i ON i.object_id = t.object_id AND i.is_primary_key = 1
+LEFT JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.column_id = c.column_id
 LEFT JOIN sys.extended_properties ep
-    ON ep.major_id = sc.object_id AND ep.minor_id = sc.column_id
+    ON ep.major_id = c.object_id AND ep.minor_id = c.column_id
     AND ep.name = 'MS_Description'
-WHERE OBJECTPROPERTY(OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME), 'IsMSShipped') = 0
-ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION
+WHERE t.is_ms_shipped = 0
+ORDER BY s.name, t.name, c.column_id
 `;
 
 // ─── Q3: All foreign key relationships ──────────────────────────────────────
@@ -144,24 +199,24 @@ INNER JOIN sys.columns cr ON fkc.referenced_object_id = cr.object_id AND fkc.ref
 ORDER BY sch1.name, tp.name, fk.name
 `;
 
-// ─── Q4: VIEW definitions to extract JOIN relationships ─────────────────────
+// ─── Q4: VIEW definitions to extract JOIN relationships (limit to 500 to avoid timeout) ─
 const VIEWS_QUERY = `
-SELECT
+SELECT TOP 500
     s.name AS view_schema,
     v.name AS view_name,
-    m.definition AS view_definition
+    LEFT(m.definition, 8000) AS view_definition
 FROM sys.views v
 INNER JOIN sys.schemas s ON v.schema_id = s.schema_id
 INNER JOIN sys.sql_modules m ON v.object_id = m.object_id
 WHERE v.is_ms_shipped = 0
 `;
 
-// ─── Q5: Stored Procedure definitions to extract JOIN relationships ──────────
+// ─── Q5: Stored Procedure definitions to extract JOIN relationships (limit to 500) ─
 const SP_QUERY = `
-SELECT
+SELECT TOP 500
     s.name AS sp_schema,
     p.name AS sp_name,
-    m.definition AS sp_definition
+    LEFT(m.definition, 8000) AS sp_definition
 FROM sys.procedures p
 INNER JOIN sys.schemas s ON p.schema_id = s.schema_id
 INNER JOIN sys.sql_modules m ON p.object_id = m.object_id
@@ -282,19 +337,38 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
             return { error: 'Configurazione connettore non valida' };
         }
 
-        const sqlConfig = buildSqlConfig(conf);
+        // Use longer request timeout for scan (5 min) – large DBs need it
+        const sqlConfig = buildSqlConfig(conf, 300000);
         const pool = new sql.ConnectionPool(sqlConfig);
         await pool.connect();
 
         try {
-            // Execute all five queries
-            const [tablesResult, columnsResult, fkResult, viewsResult, spResult] = await Promise.all([
+            // Execute core queries first (tables, columns, FK) – these are essential
+            const [tablesResult, columnsResult, fkResult] = await Promise.all([
                 pool.request().query(TABLES_QUERY),
                 pool.request().query(COLUMNS_QUERY),
                 pool.request().query(FK_QUERY),
-                pool.request().query(VIEWS_QUERY).catch(() => ({ recordset: [] })),
-                pool.request().query(SP_QUERY).catch(() => ({ recordset: [] })),
             ]);
+
+            // VIEW/SP parsing is optional and slow on large DBs – skip if >800 tables
+            const tableCount = tablesResult.recordset.length;
+            let viewsResult: { recordset: any[] } = { recordset: [] };
+            let spResult: { recordset: any[] } = { recordset: [] };
+
+            if (tableCount <= 800) {
+                // Run VIEW/SP queries with shorter timeout (60s)
+                try {
+                    const shortReq1 = pool.request();
+                    (shortReq1 as any).timeout = 60000;
+                    viewsResult = await shortReq1.query(VIEWS_QUERY).catch(() => ({ recordset: [] }));
+                } catch { /* skip views */ }
+
+                try {
+                    const shortReq2 = pool.request();
+                    (shortReq2 as any).timeout = 60000;
+                    spResult = await shortReq2.query(SP_QUERY).catch(() => ({ recordset: [] }));
+                } catch { /* skip SPs */ }
+            }
 
             // Build relationships array
             const relationships: RelationshipInfo[] = fkResult.recordset.map((row: any) => ({
@@ -666,7 +740,11 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
         }
     } catch (e: any) {
         console.error('[DB-MAP] Error:', e);
-        return { error: `Errore scansione database: ${e.message}` };
+        const msg = e.message || String(e);
+        if (msg.includes('timeout') || msg.includes('Timeout') || e.code === 'ETIMEOUT') {
+            return { error: `Timeout scansione database: il database ha troppe tabelle o la connessione è lenta. Riprova.` };
+        }
+        return { error: `Errore scansione database: ${msg}` };
     }
 }
 
@@ -676,6 +754,24 @@ export async function getCachedDatabaseMapAction(connectorId: string): Promise<{
     if (!user) return { error: 'Non autorizzato' };
 
     try {
+        // Check if in-memory cache is valid by comparing timestamps (avoids reading 30MB from DB)
+        const cacheEntry = getParsedMapCacheEntry();
+        if (cacheEntry && cacheEntry.connectorId === connectorId) {
+            const meta = await db.connector.findUnique({
+                where: { id: connectorId, companyId: user.companyId },
+                select: { databaseMapAt: true },
+            });
+            if (!meta) return { error: 'Connettore non trovato' };
+            if (!meta.databaseMapAt) return {};
+
+            const dbTimestamp = meta.databaseMapAt.getTime();
+            // If in-memory cache was updated after or at the same time as DB, use it
+            if (cacheEntry.updatedAt >= dbTimestamp) {
+                return { data: cacheEntry.map, cachedAt: meta.databaseMapAt.toISOString() };
+            }
+        }
+
+        // Cache miss or stale: read full data from DB
         const connector = await db.connector.findUnique({
             where: { id: connectorId, companyId: user.companyId },
             select: { databaseMap: true, databaseMapAt: true },
@@ -684,7 +780,7 @@ export async function getCachedDatabaseMapAction(connectorId: string): Promise<{
         if (!connector) return { error: 'Connettore non trovato' };
         if (!connector.databaseMap) return {};
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
         return { data: map, cachedAt: connector.databaseMapAt?.toISOString() };
     } catch (e: any) {
         console.error('[DB-MAP] Cache read error:', e);
@@ -709,16 +805,13 @@ export async function updateTableDescriptionAction(
 
         if (!connector?.databaseMap) return { error: 'Mappa non trovata' };
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
         const table = map.tables.find(t => t.fullName === tableFullName);
         if (!table) return { error: 'Tabella non trovata' };
 
         table.userDescription = description || null;
 
-        await db.connector.update({
-            where: { id: connectorId },
-            data: { databaseMap: JSON.stringify(map) },
-        });
+        await saveDatabaseMapDebounced(connectorId, map);
 
         return { success: true };
     } catch (e: any) {
@@ -744,7 +837,7 @@ export async function updateColumnDescriptionAction(
 
         if (!connector?.databaseMap) return { error: 'Mappa non trovata' };
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
         const table = map.tables.find(t => t.fullName === tableFullName);
         if (!table) return { error: 'Tabella non trovata' };
 
@@ -753,10 +846,7 @@ export async function updateColumnDescriptionAction(
 
         column.userDescription = description || null;
 
-        await db.connector.update({
-            where: { id: connectorId },
-            data: { databaseMap: JSON.stringify(map) },
-        });
+        await saveDatabaseMapDebounced(connectorId, map);
 
         return { success: true };
     } catch (e: any) {
@@ -780,13 +870,10 @@ export async function saveNodePositionsAction(
 
         if (!connector?.databaseMap) return { error: 'Mappa non trovata' };
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
         map.nodePositions = positions;
 
-        await db.connector.update({
-            where: { id: connectorId },
-            data: { databaseMap: JSON.stringify(map) },
-        });
+        await saveDatabaseMapDebounced(connectorId, map);
 
         return { success: true };
     } catch (e: any) {
@@ -798,25 +885,35 @@ export async function saveNodePositionsAction(
 // Processa UN singolo batch di tabelle. Il client chiama in loop per avere progress live.
 // mode: 'all' = rigenera tutte | 'missing' = solo mancanti
 // batchIndex: quale batch (0, 1, 2, ...)
-const DESC_BATCH_SIZE = 15;
+const DESC_BATCH_SIZE_FREE = 8;      // tables per AI call for free models (small prompt)
+const DESC_BATCH_SIZE_PAID = 25;     // tables per AI call for paid models (can handle larger prompts)
+const DESC_PARALLEL_CALLS = 3;       // parallel AI calls
+const DESC_SAVE_EVERY = 5;           // save to DB every N iterations
 
 export async function generateDescriptionBatchAction(
     connectorId: string,
     mode: 'all' | 'missing',
-    batchIndex: number
+    batchIndex: number,
+    aiModel?: string // if provided, use this paid model; otherwise auto-rotate free models
 ): Promise<{
     batchProcessed: number;
     totalToProcess: number;
     totalTables: number;
     done: boolean;
     error?: string;
+    failedTables?: number;
+    usage?: { promptTokens: number; completionTokens: number; totalTokens: number; costUsd: number };
 }> {
     const user = await getAuthenticatedUser();
     if (!user) return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: 'Non autorizzato' };
 
     const orSettings = await getOpenRouterSettingsAction();
     if (!orSettings.apiKey) return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: 'Chiave API OpenRouter non configurata.' };
-    const orModel = orSettings.model || 'google/gemini-2.0-flash-001';
+
+    const isPaidMode = !!aiModel;
+    const freeModels = isPaidMode ? [] : await fetchFreeModels(orSettings.apiKey);
+    const orModel = aiModel || freeModels[0] || orSettings.model || 'google/gemini-2.0-flash-001';
+    console.log(`[DB-MAP] Using ${isPaidMode ? 'PAID' : 'FREE'} model(s): ${isPaidMode ? orModel : freeModels.slice(0, 3).join(', ')}`);
 
     try {
         const connector = await db.connector.findUnique({
@@ -826,7 +923,8 @@ export async function generateDescriptionBatchAction(
 
         if (!connector?.databaseMap) return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: 'Mappa non trovata' };
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
+        console.log(`[DB-MAP] generateDescriptionBatch: batch ${batchIndex}, mode ${mode}, ${map.tables.length} total tables`);
 
         // Filter tables based on mode
         let tablesToProcess: TableInfo[];
@@ -841,40 +939,55 @@ export async function generateDescriptionBatchAction(
         }
 
         const totalToProcess = tablesToProcess.length;
-        const startIdx = batchIndex * DESC_BATCH_SIZE;
+        const batchSize = isPaidMode ? DESC_BATCH_SIZE_PAID : DESC_BATCH_SIZE_FREE;
+        const tablesPerIteration = DESC_PARALLEL_CALLS * batchSize;
+        const startIdx = batchIndex * tablesPerIteration;
 
         // Check if done
         if (startIdx >= totalToProcess) {
             return { batchProcessed: 0, totalToProcess, totalTables: map.tables.length, done: true };
         }
 
-        const batch = tablesToProcess.slice(startIdx, startIdx + DESC_BATCH_SIZE);
+        const iterationTables = tablesToProcess.slice(startIdx, startIdx + tablesPerIteration);
 
-        const tablesSummary = batch.map(t => {
-            const needsTableDesc = mode === 'all' || (!t.description && !t.userDescription);
-            const cols = t.columns
-                .filter(c => mode === 'all' || (!c.description && !c.userDescription))
-                .map(c => {
-                    let colDesc = `  - ${c.name} (${c.dataType}`;
-                    if (c.maxLength && c.maxLength > 0) colDesc += `(${c.maxLength})`;
-                    colDesc += ')';
-                    if (c.isPrimaryKey) colDesc += ' [PK]';
-                    if (c.isForeignKey && c.foreignKeyTarget) {
-                        colDesc += ` [FK → ${c.foreignKeyTarget.table}.${c.foreignKeyTarget.column}]`;
-                    }
-                    if (!c.isNullable) colDesc += ' NOT NULL';
-                    return colDesc;
-                }).join('\n');
+        // Split into parallel sub-batches
+        const subBatches: TableInfo[][] = [];
+        for (let i = 0; i < iterationTables.length; i += batchSize) {
+            subBatches.push(iterationTables.slice(i, i + batchSize));
+        }
 
-            let block = `TABELLA: ${t.fullName} (${t.rowCount} righe)`;
-            if (!needsTableDesc) block += ' [DESCRIZIONE GIA\' PRESENTE - genera solo colonne mancanti]';
-            block += `\nColonne:\n${cols}`;
-            return block;
-        }).join('\n\n---\n\n');
+        // Helper: process a single sub-batch with retry
+        // Track temporarily rate-limited models (shared across sub-batches)
+        const rateLimitedModels = new Set<string>();
+        let batchUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 };
 
-        const prompt = `Sei un esperto di database SQL Server. Analizza queste tabelle e genera descrizioni dettagliate in italiano:
-- Per ogni TABELLA: 2-3 frasi che spiegano lo scopo, il tipo di dati contenuti e come si relaziona alle altre tabelle del sistema.
-- Per ogni COLONNA: 1-2 frasi che spiegano il significato del campo, il formato dei dati e l'utilizzo tipico.
+        async function processSubBatch(batch: TableInfo[], subIdx: number): Promise<{ ok: boolean; tables: number }> {
+            const tablesSummary = batch.map(t => {
+                const needsTableDesc = mode === 'all' || (!t.description && !t.userDescription);
+                const cols = t.columns
+                    .filter(c => mode === 'all' || (!c.description && !c.userDescription))
+                    .map(c => {
+                        let colDesc = `  - ${c.name} (${c.dataType}`;
+                        if (c.maxLength && c.maxLength > 0) colDesc += `(${c.maxLength})`;
+                        colDesc += ')';
+                        if (c.isPrimaryKey) colDesc += ' [PK]';
+                        if (c.isForeignKey && c.foreignKeyTarget) {
+                            colDesc += ` [FK → ${c.foreignKeyTarget.table}.${c.foreignKeyTarget.column}]`;
+                        }
+                        if (!c.isNullable) colDesc += ' NOT NULL';
+                        return colDesc;
+                    }).join('\n');
+
+                let block = `TABELLA: ${t.fullName} (${t.rowCount} righe)`;
+                if (!needsTableDesc) block += ' [DESCRIZIONE GIA\' PRESENTE - genera solo colonne mancanti]';
+                block += `\nColonne:\n${cols}`;
+                return block;
+            }).join('\n\n---\n\n');
+
+            const prompt = `Sei un esperto di database SQL Server. Analizza queste tabelle e genera descrizioni SINTETICHE in italiano:
+- Per ogni TABELLA: 1 brevissima frase che ne spiega lo scopo.
+- Per ogni COLONNA: max 5-6 parole (es. "Identificativo", "Data inserimento record").
+Generare meno testo possibile per velocizzare il processo.
 
 Rispondi SOLO in formato JSON con questa struttura esatta:
 {
@@ -892,71 +1005,149 @@ Ecco le tabelle da descrivere:
 
 ${tablesSummary}`;
 
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${orSettings.apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: orModel,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.3,
-            }),
-        });
+            const AI_TIMEOUT = isPaidMode ? 90000 : 60000; // paid models get more time (bigger batches possible)
+            const MAX_ATTEMPTS = isPaidMode ? 2 : Math.min(freeModels.length, 5);
 
-        if (!response.ok) {
-            const errBody = await response.text();
-            console.error(`[DB-MAP] OpenRouter error (batch ${batchIndex}):`, errBody);
-            // Non bloccare: ritorna come se il batch fosse stato elaborato, il prossimo riproverà
-            const nextDone = (startIdx + DESC_BATCH_SIZE) >= totalToProcess;
-            return { batchProcessed: batch.length, totalToProcess, totalTables: map.tables.length, done: nextDone, error: `Errore API nel batch ${batchIndex + 1}` };
-        }
+            // Pick first non-rate-limited model, rotating by subIdx
+            function pickModel(offset: number): string {
+                if (isPaidMode) return orModel;
+                for (let i = 0; i < freeModels.length; i++) {
+                    const m = freeModels[(subIdx + offset + i) % freeModels.length];
+                    if (!rateLimitedModels.has(m)) return m;
+                }
+                return freeModels[subIdx % freeModels.length];
+            }
 
-        const data = await response.json();
-        const text = data.choices?.[0]?.message?.content || '';
-
-        let jsonStr = text.trim();
-        if (jsonStr.startsWith('```')) {
-            jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-        }
-
-        try {
-            const parsed = JSON.parse(jsonStr);
-            if (parsed.tables) {
-                for (const table of batch) {
-                    const tableDescs = parsed.tables[table.fullName];
-                    if (!tableDescs) continue;
-
-                    if (tableDescs.description) {
-                        if (mode === 'all' || (!table.description && !table.userDescription)) {
-                            table.description = tableDescs.description;
-                        }
+            console.log(`[DB-MAP] Sub-batch ${subIdx}: prompt ~${Math.round(prompt.length/1024)}KB`);
+            for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+                const currentModel = pickModel(attempt);
+                try {
+                    if (attempt > 0) {
+                        await new Promise(r => setTimeout(r, 800));
+                        console.log(`[DB-MAP] Desc sub-batch ${subIdx}: retry ${attempt} with model=${currentModel}`);
                     }
-                    if (tableDescs.columns) {
-                        for (const col of table.columns) {
-                            if (tableDescs.columns[col.name]) {
-                                if (mode === 'all' || (!col.description && !col.userDescription)) {
-                                    col.description = tableDescs.columns[col.name];
-                                }
+
+                    console.log(`[DB-MAP] Desc sub-batch ${subIdx}: calling AI for ${batch.length} tables, model=${currentModel}`);
+                    const fetchPromise = fetch('https://openrouter.ai/api/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${orSettings.apiKey}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            model: currentModel,
+                            messages: [{ role: 'user', content: prompt }],
+                            temperature: 0.3,
+                        }),
+                        signal: AbortSignal.timeout(AI_TIMEOUT),
+                    });
+                    const timeoutPromise = new Promise<never>((_, reject) =>
+                        setTimeout(() => reject(new Error('HARD_TIMEOUT')), AI_TIMEOUT + 2000)
+                    );
+                    const response = await Promise.race([fetchPromise, timeoutPromise]);
+                    if (!response.ok) {
+                        const errBody = await response.text();
+                        if (response.status === 429) {
+                            rateLimitedModels.add(currentModel);
+                            console.warn(`[DB-MAP] Sub-batch ${subIdx}: ${currentModel} rate-limited (429), blacklisting & trying next`);
+                            continue; // try next model immediately
+                        }
+                        console.error(`[DB-MAP] Desc sub-batch ${subIdx}: HTTP ${response.status} - ${errBody.slice(0, 200)}`);
+                        continue;
+                    }
+
+                    const data = await response.json();
+                    // Track usage/cost from OpenRouter response
+                    // OpenRouter returns usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
+                    // Cost may be in usage.total_cost, usage.cost, or not present at all
+                    const u = data.usage;
+                    if (u) {
+                        const pt = u.prompt_tokens || 0;
+                        const ct = u.completion_tokens || 0;
+                        batchUsage.promptTokens += pt;
+                        batchUsage.completionTokens += ct;
+                        batchUsage.totalTokens += u.total_tokens || (pt + ct);
+                        batchUsage.costUsd += u.total_cost || u.cost || 0;
+                    }
+                    const text = data.choices?.[0]?.message?.content || '';
+                    console.log(`[DB-MAP] Desc sub-batch ${subIdx}: ${text.length} chars from ${currentModel}, usage: in=${u?.prompt_tokens} out=${u?.completion_tokens} cost=${u?.total_cost ?? u?.cost ?? 'N/A'}`);
+
+                    const parsed = recoverPartialJson(text);
+                    if (parsed?.tables) {
+                        applyDescriptions(parsed.tables, batch, mode);
+                        return { ok: true, tables: batch.length };
+                    }
+
+                    // JSON completely unrecoverable — try halving the batch
+                    if (batch.length > 3) {
+                        console.log(`[DB-MAP] Sub-batch ${subIdx}: JSON unrecoverable, splitting ${batch.length} tables in half`);
+                        const mid = Math.ceil(batch.length / 2);
+                        const [r1, r2] = await Promise.all([
+                            processSubBatch(batch.slice(0, mid), subIdx * 10 + 1),
+                            processSubBatch(batch.slice(mid), subIdx * 10 + 2),
+                        ]);
+                        return { ok: r1.ok || r2.ok, tables: batch.length };
+                    }
+                    // Too small to split further
+                    return { ok: true, tables: batch.length };
+                } catch (err: any) {
+                    const isTimeout = err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('aborted') || err.message?.includes('HARD_TIMEOUT') || err.message?.includes('timed out');
+                    console.error(`[DB-MAP] Desc sub-batch ${subIdx} error (${currentModel}, ${isTimeout ? 'TIMEOUT' : 'ERROR'}):`, err.message);
+                    if (isTimeout) return { ok: false, tables: batch.length }; // timeout = give up
+                    continue; // other errors = try next model
+                }
+            }
+            return { ok: false, tables: batch.length };
+        }
+
+        // Helper: apply parsed descriptions to tables
+        function applyDescriptions(tablesData: Record<string, any>, batch: TableInfo[], mode: 'all' | 'missing') {
+            for (const table of batch) {
+                const tableDescs = tablesData[table.fullName];
+                if (!tableDescs) continue;
+
+                if (tableDescs.description) {
+                    if (mode === 'all' || (!table.description && !table.userDescription)) {
+                        table.description = tableDescs.description;
+                    }
+                }
+                if (tableDescs.columns) {
+                    for (const col of table.columns) {
+                        if (tableDescs.columns[col.name]) {
+                            if (mode === 'all' || (!col.description && !col.userDescription)) {
+                                col.description = tableDescs.columns[col.name];
                             }
                         }
                     }
                 }
             }
-        } catch (parseErr: any) {
-            console.error(`[DB-MAP] JSON parse error (batch ${batchIndex}):`, parseErr.message);
         }
 
-        // Salva dopo ogni batch
-        map.descriptionsGeneratedAt = new Date().toISOString();
-        await db.connector.update({
-            where: { id: connectorId },
-            data: { databaseMap: JSON.stringify(map) },
-        });
+        // Process sub-batches in parallel with retry
+        const results = await Promise.allSettled(subBatches.map((batch, subIdx) => processSubBatch(batch, subIdx)));
 
-        const nextDone = (startIdx + DESC_BATCH_SIZE) >= totalToProcess;
-        return { batchProcessed: batch.length, totalToProcess, totalTables: map.tables.length, done: nextDone };
+        let failedTables = 0;
+        for (const r of results) {
+            if (r.status === 'fulfilled' && !r.value.ok) failedTables += r.value.tables;
+            else if (r.status === 'rejected') failedTables += batchSize;
+        }
+
+        // Save to DB using debounce (or flush on last batch)
+        const nextDone = (startIdx + tablesPerIteration) >= totalToProcess;
+        map.descriptionsGeneratedAt = new Date().toISOString();
+        if (nextDone) {
+            // Final batch: flush immediately
+            await flushDebouncedSave();
+            await db.connector.update({
+                where: { id: connectorId },
+                data: { databaseMap: JSON.stringify(map), databaseMapAt: new Date() },
+            });
+            setCachedParsedMap(connectorId, map);
+        } else {
+            await saveDatabaseMapDebounced(connectorId, map);
+        }
+
+        return { batchProcessed: iterationTables.length, totalToProcess, totalTables: map.tables.length, done: nextDone, failedTables, usage: batchUsage };
     } catch (e: any) {
         console.error('[DB-MAP] AI batch error:', e);
         return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: `Errore: ${e.message}` };
@@ -984,7 +1175,7 @@ export async function chatDatabaseMapAction(
 
         if (!connector?.databaseMap) return { error: 'Mappa database non disponibile.' };
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
 
         // Build a concise schema summary for the LLM context
         // Limit total size to avoid exceeding context window
@@ -1074,24 +1265,30 @@ Rispondi in italiano, in modo chiaro e conciso. Se ti chiedono di tabelle o colo
 
 // ─── inferRelationshipsAIAction ──────────────────────────────────────────────
 // Chiede all'AI di suggerire relazioni probabili analizzando nomi tabelle/colonne
-const INFER_BATCH_SIZE = 30;
+const INFER_BATCH_SIZE = 100;        // total tables per iteration
+const INFER_SUB_BATCH = 8;           // tables per single AI call (small prompt for free models)
+const INFER_PARALLEL = 3;            // parallel AI calls
 
 export async function inferRelationshipsAIAction(
     connectorId: string,
-    batchIndex: number
+    batchIndex: number,
+    aiModel?: string // if provided, use this paid model; otherwise auto-rotate free models
 ): Promise<{
     newRelationships: number;
     totalProcessed: number;
     totalTables: number;
     done: boolean;
     error?: string;
+    usage?: { promptTokens: number; completionTokens: number; totalTokens: number; costUsd: number };
 }> {
     const user = await getAuthenticatedUser();
     if (!user) return { newRelationships: 0, totalProcessed: 0, totalTables: 0, done: true, error: 'Non autorizzato' };
 
     const orSettings = await getOpenRouterSettingsAction();
     if (!orSettings.apiKey) return { newRelationships: 0, totalProcessed: 0, totalTables: 0, done: true, error: 'Chiave API OpenRouter non configurata.' };
-    const orModel = orSettings.model || 'google/gemini-2.0-flash-001';
+    const isPaidModeRel = !!aiModel;
+    const freeModelsRel = isPaidModeRel ? [] : await fetchFreeModels(orSettings.apiKey);
+    const orModel = aiModel || freeModelsRel[0] || orSettings.model || 'google/gemini-2.0-flash-001';
 
     try {
         const connector = await db.connector.findUnique({
@@ -1101,14 +1298,14 @@ export async function inferRelationshipsAIAction(
 
         if (!connector?.databaseMap) return { newRelationships: 0, totalProcessed: 0, totalTables: 0, done: true, error: 'Mappa non trovata' };
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
         const startIdx = batchIndex * INFER_BATCH_SIZE;
 
         if (startIdx >= map.tables.length) {
             return { newRelationships: 0, totalProcessed: map.tables.length, totalTables: map.tables.length, done: true };
         }
 
-        const batch = map.tables.slice(startIdx, startIdx + INFER_BATCH_SIZE);
+        const iterationTables = map.tables.slice(startIdx, startIdx + INFER_BATCH_SIZE);
 
         // Build existing relationships set for dedup
         const existingRels = new Set<string>();
@@ -1116,131 +1313,210 @@ export async function inferRelationshipsAIAction(
             existingRels.add(`${rel.sourceSchema}.${rel.sourceTable}.${rel.sourceColumn}->${rel.targetSchema}.${rel.targetTable}.${rel.targetColumn}`.toLowerCase());
         }
 
-        // Build schema summary for the AI
-        const allTableNames = map.tables.map(t => `${t.fullName} (PK: ${t.primaryKeyColumns.join(', ') || 'nessuna'})`).join('\n');
+        // Build PK table list — per-sub-batch, only relevant target tables
+        // This keeps prompts small enough for fast AI responses
+        const allPkTables = map.tables.filter(t => t.primaryKeyColumns.length > 0);
+        const pkTableMap = new Map(allPkTables.map(t => [t.fullName.toLowerCase(), t]));
 
-        const batchSummary = batch.map(t => {
-            const cols = t.columns.map(c => {
-                let info = `  ${c.name} (${c.dataType})`;
-                if (c.isPrimaryKey) info += ' [PK]';
-                if (c.isForeignKey) info += ' [GIA\' FK]';
-                return info;
-            }).join('\n');
-            return `TABELLA: ${t.fullName}\n${cols}`;
-        }).join('\n\n');
+        console.log(`[DB-MAP] Infer relationships batch ${batchIndex}: ${iterationTables.length} tables, ${allPkTables.length} PK tables`);
 
-        const prompt = `Sei un esperto di database SQL Server. Analizza queste tabelle e le loro colonne. Suggerisci SOLO relazioni PROBABILI tra le tabelle che NON sono già marcate come FK.
+        // Build table lookup
+        const tableByFullName = new Map(map.tables.map(t => [t.fullName.toLowerCase(), t]));
 
-Cerca colonne che sembrano riferirsi ad altre tabelle per nome, tipo di dato, o convenzioni comuni (es. colonne che finiscono in "Cod", "Code", "Ref", "Num", "No", "_Key", ecc.).
+        // Split into sub-batches for parallel processing
+        const subBatches: TableInfo[][] = [];
+        for (let i = 0; i < iterationTables.length; i += INFER_SUB_BATCH) {
+            subBatches.push(iterationTables.slice(i, i + INFER_SUB_BATCH));
+        }
 
-TUTTE le tabelle del database:
-${allTableNames}
+        let newCount = 0;
+        let relUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 };
+
+        // Process sub-batches in parallel
+        const rateLimitedRel = new Set<string>();
+        console.log(`[DB-MAP] Processing ${subBatches.length} sub-batches of ~${INFER_SUB_BATCH} tables each`);
+        await Promise.allSettled(subBatches.map(async (batch, sbIdx) => {
+            // Build column list for this sub-batch
+            const batchColNames = new Set<string>();
+            const batchSummary = batch.map(t => {
+                const cols = t.columns
+                    .filter(c => !c.isForeignKey)
+                    .map(c => {
+                        batchColNames.add(c.name.toLowerCase());
+                        let info = `  ${c.name}(${c.dataType})`;
+                        if (c.isPrimaryKey) info += '[PK]';
+                        return info;
+                    }).join('\n');
+                return `${t.fullName}\n${cols}`;
+            }).join('\n\n');
+
+            // Build a SMALL pkTableList: only tables whose name appears in batch column names
+            const batchTableNames = new Set(batch.map(t => t.fullName.toLowerCase()));
+            const relevantPkTables = allPkTables.filter(t => {
+                if (batchTableNames.has(t.fullName.toLowerCase())) return false; // skip self
+                const tName = t.name.toLowerCase();
+                const tStripped = tName.replace(/^(tbl_?|tb_?|t_)/i, '');
+                // Check if any column name contains the table name (or vice versa)
+                for (const cn of batchColNames) {
+                    const cnStripped = cn.replace(/(_?id|_?code|_?cod|_?ref|_?num|_?key|_?no)$/i, '');
+                    if (cnStripped.length >= 3 && (tStripped.includes(cnStripped) || cnStripped.includes(tStripped))) return true;
+                    if (cn.includes(tStripped) || tStripped.includes(cn)) return true;
+                }
+                return false;
+            });
+
+            // Cap relevant PK tables to max 80 to keep prompt under ~15KB
+            const cappedPkTables = relevantPkTables.slice(0, 80);
+            const localPkList = cappedPkTables.map(t => `${t.fullName}(${t.primaryKeyColumns.join(',')})`).join('; ');
+            console.log(`[DB-MAP] Rel sub-batch ${sbIdx}: ${batch.length} tables, ${cappedPkTables.length}/${relevantPkTables.length} PK targets, prompt ~${(batchSummary.length + localPkList.length) / 1000 | 0}KB`);
+
+            const prompt = `Esperto database SQL Server. Trova relazioni FK implicite (non dichiarate).
+
+Cerca colonne il cui nome suggerisce un riferimento a un'altra tabella: prefissi Cod/Id/Num/Ref/FK_, suffissi _ID/_Code/_Key, nomi contenenti nomi di tabelle.
+Sii GENEROSO: includi tutte le relazioni ragionevolmente probabili.
+
+TABELLE TARGET POSSIBILI (con PK):
+${localPkList || 'Nessuna corrispondenza trovata per nome'}
 
 TABELLE DA ANALIZZARE:
 ${batchSummary}
 
-Rispondi SOLO in formato JSON con questa struttura:
-{
-  "relationships": [
-    {
-      "sourceTable": "schema.tabella",
-      "sourceColumn": "colonna",
-      "targetTable": "schema.tabella",
-      "targetColumn": "colonna"
-    }
-  ]
-}
+JSON: {"relationships":[{"sourceTable":"s.t","sourceColumn":"c","targetTable":"s.t","targetColumn":"c"}]}
+Se nessuna: {"relationships":[]}`;
 
-Se non trovi relazioni probabili, rispondi: {"relationships": []}
-IMPORTANTE: suggerisci solo relazioni ad alta probabilità, non indovinare.`;
+            const REL_TIMEOUT = isPaidModeRel ? 90000 : 60000;
+            const MAX_REL_ATTEMPTS = isPaidModeRel ? 2 : Math.min(freeModelsRel.length, 5);
 
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${orSettings.apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: orModel,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.2,
-            }),
-        });
-
-        if (!response.ok) {
-            const nextDone = (startIdx + INFER_BATCH_SIZE) >= map.tables.length;
-            return { newRelationships: 0, totalProcessed: startIdx + batch.length, totalTables: map.tables.length, done: nextDone, error: `Errore API batch ${batchIndex + 1}` };
-        }
-
-        const data = await response.json();
-        const text = data.choices?.[0]?.message?.content || '';
-
-        let jsonStr = text.trim();
-        if (jsonStr.startsWith('```')) {
-            jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-        }
-
-        let newCount = 0;
-        try {
-            const parsed = JSON.parse(jsonStr);
-            if (parsed.relationships && Array.isArray(parsed.relationships)) {
-                // Build table lookup
-                const tableByFullName = new Map(map.tables.map(t => [t.fullName.toLowerCase(), t]));
-
-                for (const rel of parsed.relationships) {
-                    if (!rel.sourceTable || !rel.sourceColumn || !rel.targetTable || !rel.targetColumn) continue;
-
-                    const srcTable = tableByFullName.get(rel.sourceTable.toLowerCase());
-                    const tgtTable = tableByFullName.get(rel.targetTable.toLowerCase());
-                    if (!srcTable || !tgtTable) continue;
-
-                    // Verify columns exist
-                    const srcCol = srcTable.columns.find(c => c.name.toLowerCase() === rel.sourceColumn.toLowerCase());
-                    const tgtCol = tgtTable.columns.find(c => c.name.toLowerCase() === rel.targetColumn.toLowerCase());
-                    if (!srcCol || !tgtCol) continue;
-
-                    // Check not already known
-                    const key = `${srcTable.schema}.${srcTable.name}.${srcCol.name}->${tgtTable.schema}.${tgtTable.name}.${tgtCol.name}`.toLowerCase();
-                    const keyRev = `${tgtTable.schema}.${tgtTable.name}.${tgtCol.name}->${srcTable.schema}.${srcTable.name}.${srcCol.name}`.toLowerCase();
-                    if (existingRels.has(key) || existingRels.has(keyRev)) continue;
-
-                    const aiRel: RelationshipInfo = {
-                        constraintName: `AI_${srcTable.name}_${srcCol.name}_${tgtTable.name}`,
-                        sourceSchema: srcTable.schema,
-                        sourceTable: srcTable.name,
-                        sourceColumn: srcCol.name,
-                        targetSchema: tgtTable.schema,
-                        targetTable: tgtTable.name,
-                        targetColumn: tgtCol.name,
-                        inferred: true,
-                    };
-
-                    map.relationships.push(aiRel);
-                    existingRels.add(key);
-
-                    if (!srcCol.isForeignKey) {
-                        srcCol.isForeignKey = true;
-                        srcCol.foreignKeyTarget = { schema: tgtTable.schema, table: tgtTable.name, column: tgtCol.name };
-                    }
-
-                    srcTable.foreignKeysOut.push(aiRel);
-                    tgtTable.foreignKeysIn.push(aiRel);
-                    newCount++;
+            function pickRelModel(offset: number): string {
+                if (isPaidModeRel) return orModel;
+                for (let i = 0; i < freeModelsRel.length; i++) {
+                    const m = freeModelsRel[(sbIdx + offset + i) % freeModelsRel.length];
+                    if (!rateLimitedRel.has(m)) return m;
                 }
+                return freeModelsRel[sbIdx % freeModelsRel.length];
             }
-        } catch (parseErr: any) {
-            console.error(`[DB-MAP] AI relationships JSON parse error:`, parseErr.message);
+
+            for (let attempt = 0; attempt < MAX_REL_ATTEMPTS; attempt++) {
+            const currentRelModel = pickRelModel(attempt);
+            try {
+                if (attempt > 0) {
+                    await new Promise(r => setTimeout(r, 800));
+                    console.log(`[DB-MAP] Rel sub-batch ${sbIdx}: retry ${attempt} with model=${currentRelModel}`);
+                }
+                console.log(`[DB-MAP] Rel sub-batch ${sbIdx}: calling AI, model=${currentRelModel}`);
+
+                const fetchP = fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${orSettings.apiKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: currentRelModel,
+                        messages: [{ role: 'user', content: prompt }],
+                        temperature: 0.2,
+                    }),
+                    signal: AbortSignal.timeout(REL_TIMEOUT),
+                });
+                const hardTimeout = new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('HARD_TIMEOUT')), REL_TIMEOUT + 2000)
+                );
+                const response = await Promise.race([fetchP, hardTimeout]);
+
+                if (!response.ok) {
+                    const errBody = await response.text().catch(() => '');
+                    if (response.status === 429) {
+                        rateLimitedRel.add(currentRelModel);
+                        console.warn(`[DB-MAP] Rel sub-batch ${sbIdx}: ${currentRelModel} rate-limited (429), trying next`);
+                        continue;
+                    }
+                    console.error(`[DB-MAP] Rel sub-batch ${sbIdx}: HTTP ${response.status} - ${errBody.slice(0, 200)}`);
+                    continue;
+                }
+
+                const data = await response.json();
+                // Track usage/cost
+                const ru = data.usage;
+                if (ru) {
+                    const pt = ru.prompt_tokens || 0;
+                    const ct = ru.completion_tokens || 0;
+                    relUsage.promptTokens += pt;
+                    relUsage.completionTokens += ct;
+                    relUsage.totalTokens += ru.total_tokens || (pt + ct);
+                    relUsage.costUsd += ru.total_cost || ru.cost || 0;
+                }
+                const text = data.choices?.[0]?.message?.content || '';
+                console.log(`[DB-MAP] Rel sub-batch ${sbIdx}: ${text.length} chars from ${currentRelModel}, usage: in=${ru?.prompt_tokens} out=${ru?.completion_tokens}`);
+
+                const parsed = recoverPartialJson(text);
+                if (parsed?.relationships && Array.isArray(parsed.relationships)) {
+                    console.log(`[DB-MAP] Rel sub-batch ${sbIdx}: found ${parsed.relationships.length} candidate relationships`);
+                    for (const rel of parsed.relationships) {
+                        if (!rel.sourceTable || !rel.sourceColumn || !rel.targetTable || !rel.targetColumn) continue;
+
+                        const srcTable = tableByFullName.get(rel.sourceTable.toLowerCase());
+                        const tgtTable = tableByFullName.get(rel.targetTable.toLowerCase());
+                        if (!srcTable || !tgtTable) continue;
+
+                        const srcCol = srcTable.columns.find(c => c.name.toLowerCase() === rel.sourceColumn.toLowerCase());
+                        const tgtCol = tgtTable.columns.find(c => c.name.toLowerCase() === rel.targetColumn.toLowerCase());
+                        if (!srcCol || !tgtCol) continue;
+
+                        const key = `${srcTable.schema}.${srcTable.name}.${srcCol.name}->${tgtTable.schema}.${tgtTable.name}.${tgtCol.name}`.toLowerCase();
+                        const keyRev = `${tgtTable.schema}.${tgtTable.name}.${tgtCol.name}->${srcTable.schema}.${srcTable.name}.${srcCol.name}`.toLowerCase();
+                        if (existingRels.has(key) || existingRels.has(keyRev)) continue;
+
+                        const aiRel: RelationshipInfo = {
+                            constraintName: `AI_${srcTable.name}_${srcCol.name}_${tgtTable.name}`,
+                            sourceSchema: srcTable.schema,
+                            sourceTable: srcTable.name,
+                            sourceColumn: srcCol.name,
+                            targetSchema: tgtTable.schema,
+                            targetTable: tgtTable.name,
+                            targetColumn: tgtCol.name,
+                            inferred: true,
+                        };
+
+                        map.relationships.push(aiRel);
+                        existingRels.add(key);
+
+                        if (!srcCol.isForeignKey) {
+                            srcCol.isForeignKey = true;
+                            srcCol.foreignKeyTarget = { schema: tgtTable.schema, table: tgtTable.name, column: tgtCol.name };
+                        }
+
+                        srcTable.foreignKeysOut.push(aiRel);
+                        tgtTable.foreignKeysIn.push(aiRel);
+                        newCount++;
+                    }
+                    break; // success, exit retry loop
+                }
+                // parsed was null or had no relationships — try next model
+                continue;
+            } catch (err: any) {
+                const isTimeout = err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('aborted') || err.message?.includes('HARD_TIMEOUT') || err.message?.includes('timed out');
+                console.error(`[DB-MAP] Rel sub-batch ${sbIdx} error (${currentRelModel}, ${isTimeout ? 'TIMEOUT' : 'ERROR'}):`, err.message);
+                if (isTimeout) break;
+                continue;
+            }
+            } // end retry loop
+        }));
+
+        // Update summary and save with debounce
+        map.summary.totalRelationships = map.relationships.length;
+        const nextDone = (startIdx + INFER_BATCH_SIZE) >= map.tables.length;
+        if (nextDone) {
+            await flushDebouncedSave();
+            await db.connector.update({
+                where: { id: connectorId },
+                data: { databaseMap: JSON.stringify(map), databaseMapAt: new Date() },
+            });
+            setCachedParsedMap(connectorId, map);
+        } else {
+            await saveDatabaseMapDebounced(connectorId, map);
         }
 
-        // Update summary and save
-        map.summary.totalRelationships = map.relationships.length;
-        await db.connector.update({
-            where: { id: connectorId },
-            data: { databaseMap: JSON.stringify(map) },
-        });
-
-        const nextDone = (startIdx + INFER_BATCH_SIZE) >= map.tables.length;
-        return { newRelationships: newCount, totalProcessed: startIdx + batch.length, totalTables: map.tables.length, done: nextDone };
+        return { newRelationships: newCount, totalProcessed: startIdx + iterationTables.length, totalTables: map.tables.length, done: nextDone, usage: relUsage };
     } catch (e: any) {
         console.error('[DB-MAP] AI infer relationships error:', e);
         return { newRelationships: 0, totalProcessed: 0, totalTables: 0, done: true, error: `Errore: ${e.message}` };
@@ -1251,10 +1527,10 @@ IMPORTANTE: suggerisci solo relazioni ad alta probabilità, non indovinare.`;
 // 3-phase deep data analysis: fingerprinting → overlap → AI validation
 // Called in a loop from the client. Reads dataSamplingState to know which phase.
 
-const DATA_FINGERPRINT_BATCH = 3;   // tables per batch in phase 1 (fewer per batch, larger samples)
-const DATA_AI_BATCH = 15;           // candidates per batch in phase 3
-const DATA_SAMPLE_SIZE = 1000;      // rows to sample per table (high for reliable fingerprints)
-const DATA_VERIFY_BATCH = 10;       // candidates per batch in sql verification phase
+const DATA_FINGERPRINT_BATCH = 15;  // tables per batch in phase 1
+const DATA_AI_BATCH = 80;           // candidates per batch in phase 3
+const DATA_SAMPLE_SIZE = 150;       // rows to sample per table
+const DATA_VERIFY_BATCH = 50;       // candidates per batch in sql verification phase
 
 // Type compatibility matrix for overlap analysis
 const TYPE_COMPAT: Record<string, string[]> = {
@@ -1310,7 +1586,7 @@ export async function inferRelationshipsFromDataAction(
             return { phase: '', progress: '', newRelationships: 0, done: true, error: 'Mappa database non trovata. Esegui prima una scansione.' };
         }
 
-        const map: DatabaseMap = JSON.parse(connector.databaseMap);
+        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
         const effectiveSampleSize = sampleSize || DATA_SAMPLE_SIZE;
 
         // Initialize dataSamplingState if not present
@@ -1354,12 +1630,14 @@ export async function inferRelationshipsFromDataAction(
             let conf: any;
             try { conf = JSON.parse(connector.config); } catch { return { phase: 'fingerprinting', progress: '', newRelationships: 0, done: true, error: 'Config non valida' }; }
 
-            const sqlConfig = buildSqlConfig(conf);
+            const sqlConfig = buildSqlConfig(conf, 30000); // 30s timeout per query
             const pool = new sql.ConnectionPool(sqlConfig);
             await pool.connect();
 
             try {
-                for (const table of batch) {
+                // Process tables in parallel (up to 5 concurrent)
+                const PARALLEL_FINGERPRINT = 5;
+                const processTable = async (table: TableInfo) => {
                     try {
                         const query = `SELECT TOP ${effectiveSampleSize} * FROM [${table.schema}].[${table.name}]`;
                         const result = await pool.request().query(query);
@@ -1367,7 +1645,7 @@ export async function inferRelationshipsFromDataAction(
 
                         if (!rows || rows.length === 0) {
                             state.fingerprintedTables.push(table.fullName);
-                            continue;
+                            return;
                         }
 
                         // Build fingerprints for each column
@@ -1400,7 +1678,7 @@ export async function inferRelationshipsFromDataAction(
                                     nullCount++;
                                     continue;
                                 }
-                                if (!seen.has(strVal) && seen.size < 500) {
+                                if (!seen.has(strVal) && seen.size < 200) {
                                     seen.add(strVal);
                                     values.push(strVal);
                                 }
@@ -1448,9 +1726,16 @@ export async function inferRelationshipsFromDataAction(
                         state.fingerprints[table.fullName] = tableFingerprints;
                         state.fingerprintedTables.push(table.fullName);
                     } catch (tableErr: any) {
-                        console.error(`[DATA-ANALYSIS] Error sampling ${table.fullName}:`, tableErr.message);
-                        state.fingerprintedTables.push(table.fullName); // skip failed tables
+                        console.error(`[DATA-ANALYSIS] Fingerprint error for ${table.fullName}:`, tableErr.message);
+                        // Mark as done to avoid retrying forever
+                        state.fingerprintedTables.push(table.fullName);
                     }
+                };
+
+                // Run in chunks of PARALLEL_FINGERPRINT
+                for (let i = 0; i < batch.length; i += PARALLEL_FINGERPRINT) {
+                    const chunk = batch.slice(i, i + PARALLEL_FINGERPRINT);
+                    await Promise.allSettled(chunk.map(t => processTable(t)));
                 }
             } finally {
                 await pool.close();
@@ -1605,8 +1890,8 @@ export async function inferRelationshipsFromDataAction(
                         // Cap score to 0-100 range
                         score = Math.min(100, Math.max(0, score));
 
-                        // Minimum score threshold (lowered - SQL verification + AI will filter)
-                        if (score < 10) continue;
+                        // Minimum score threshold
+                        if (score < 20) continue;
 
                         candidates.push({
                             sourceTable: sourceTableName,
@@ -1624,9 +1909,9 @@ export async function inferRelationshipsFromDataAction(
                 }
             }
 
-            // Sort by score descending, take top 100
+            // Sort by score descending, take top 200
             candidates.sort((a, b) => b.score - a.score);
-            const topCandidates = candidates.slice(0, 100);
+            const topCandidates = candidates.slice(0, 200);
 
             state.candidates = topCandidates;
             state.totalCandidates = topCandidates.length;
@@ -1710,27 +1995,30 @@ export async function inferRelationshipsFromDataAction(
             let conf: any;
             try { conf = JSON.parse(connector.config); } catch { return { phase: 'sql_verification', progress: '', newRelationships: 0, done: true, error: 'Config non valida' }; }
 
-            const sqlConfig = buildSqlConfig(conf);
+            const sqlConfig = buildSqlConfig(conf, 30000); // 30s per query
             const pool = new sql.ConnectionPool(sqlConfig);
             await pool.connect();
 
             try {
-                for (const candidate of batchCandidates) {
+                // Process verification queries in parallel (up to 5 concurrent)
+                const VERIFY_PARALLEL = 5;
+                const verifyCandidate = async (candidate: OverlapCandidate) => {
                     try {
                         const srcTable = map.tables.find(t => t.fullName === candidate.sourceTable);
                         const tgtTable = map.tables.find(t => t.fullName === candidate.targetTable);
-                        if (!srcTable || !tgtTable) continue;
+                        if (!srcTable || !tgtTable) return;
 
-                        // Real overlap verification via INTERSECT
+                        // Real overlap verification via INTERSECT (with TOP limit to avoid full scans on huge tables)
+                        const VERIFY_TOP = 50000;
                         const verifyQuery = `
                             SELECT
-                              (SELECT COUNT(DISTINCT [${candidate.sourceColumn}]) FROM [${srcTable.schema}].[${srcTable.name}] WHERE [${candidate.sourceColumn}] IS NOT NULL) AS src_distinct,
+                              (SELECT COUNT(*) FROM (SELECT DISTINCT TOP (${VERIFY_TOP}) [${candidate.sourceColumn}] FROM [${srcTable.schema}].[${srcTable.name}] WHERE [${candidate.sourceColumn}] IS NOT NULL) s) AS src_distinct,
                               (SELECT COUNT(*) FROM (
-                                SELECT DISTINCT [${candidate.sourceColumn}] AS val FROM [${srcTable.schema}].[${srcTable.name}] WHERE [${candidate.sourceColumn}] IS NOT NULL
+                                SELECT DISTINCT [${candidate.sourceColumn}] AS val FROM (SELECT TOP (${VERIFY_TOP}) [${candidate.sourceColumn}] FROM [${srcTable.schema}].[${srcTable.name}] WHERE [${candidate.sourceColumn}] IS NOT NULL) s1
                                 INTERSECT
-                                SELECT DISTINCT [${candidate.targetColumn}] AS val FROM [${tgtTable.schema}].[${tgtTable.name}] WHERE [${candidate.targetColumn}] IS NOT NULL
+                                SELECT DISTINCT [${candidate.targetColumn}] AS val FROM (SELECT TOP (${VERIFY_TOP}) [${candidate.targetColumn}] FROM [${tgtTable.schema}].[${tgtTable.name}] WHERE [${candidate.targetColumn}] IS NOT NULL) t1
                               ) x) AS overlap_count,
-                              (SELECT COUNT(DISTINCT [${candidate.targetColumn}]) FROM [${tgtTable.schema}].[${tgtTable.name}] WHERE [${candidate.targetColumn}] IS NOT NULL) AS tgt_distinct
+                              (SELECT COUNT(*) FROM (SELECT DISTINCT TOP (${VERIFY_TOP}) [${candidate.targetColumn}] FROM [${tgtTable.schema}].[${tgtTable.name}] WHERE [${candidate.targetColumn}] IS NOT NULL) t) AS tgt_distinct
                         `;
 
                         const result = await pool.request().query(verifyQuery);
@@ -1801,6 +2089,12 @@ export async function inferRelationshipsFromDataAction(
                         console.error(`[DATA-ANALYSIS] SQL verify error for ${candidate.sourceTable}.${candidate.sourceColumn}:`, verifyErr.message);
                         // Keep sample-based data, don't mark as verified
                     }
+                };
+
+                // Run in parallel chunks
+                for (let i = 0; i < batchCandidates.length; i += VERIFY_PARALLEL) {
+                    const chunk = batchCandidates.slice(i, i + VERIFY_PARALLEL);
+                    await Promise.allSettled(chunk.map(c => verifyCandidate(c)));
                 }
             } finally {
                 await pool.close();
@@ -1885,15 +2179,15 @@ ATTENZIONE: overlap di pochi valori interi bassi (1,2,3,4,5) tra colonne diverse
 
 Per ogni candidato rispondi con:
 - "confirmed": true/false
-- "confidence": 0-100 (quanto sei sicuro che sia una vera relazione FK)
-- "reason": spiegazione DETTAGLIATA del motivo (2-3 frasi: perche' i dati suggeriscono questa relazione, come il nome della colonna, l'overlap dei valori, la cardinalita' supportano la conclusione)
-- "evidence": un dato specifico dai campioni che conferma o smentisce (es. "I valori PRD001,PRD002 corrispondono al pattern dei codici prodotto")
+- "confidence": 0-100
+- "reason": sintetica motivazione (max 10 parole)
+- "evidence": sintesi valore chiave (max 10 parole)
 
 Rispondi SOLO in formato JSON:
 {
   "results": [
-    {"confirmed": true, "confidence": 85, "reason": "Il campo OrderDetail.ProductCode contiene il 98% dei valori presenti in Product.Code (PK). Il nome suggerisce un riferimento al prodotto e la cardinalita' e' coerente.", "evidence": "I valori PRD001,PRD002 seguono lo schema dei codici prodotto in Product.Code"},
-    {"confirmed": false, "confidence": 20, "reason": "L'overlap di 4 valori interi bassi (1,2,3,4) e' una coincidenza comune tra campi status/tipo, non una FK.", "evidence": "I 4 valori in comune (1,2,3,4) sono tipici codici status/tipo"}
+    {"confirmed": true, "confidence": 85, "reason": "Overlap del 98%, coerente", "evidence": "PRD001 compatibile"},
+    {"confirmed": false, "confidence": 20, "reason": "Valori casuali comuni, non FK", "evidence": "valori status 1,2,3"}
   ]
 }
 
@@ -1924,12 +2218,8 @@ ${candidateDescriptions}`;
                     }
                     const data = await response.json();
                     const text = data.choices?.[0]?.message?.content || '';
-                    let jsonStr = text.trim();
-                    if (jsonStr.startsWith('```')) {
-                        jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-                    }
-                    const parsed = JSON.parse(jsonStr);
-                    return { model, results: parsed.results || [] };
+                    const parsed = recoverPartialJson(text);
+                    return { model, results: parsed?.results || [] };
                 } catch (err: any) {
                     clearTimeout(timeoutId);
                     console.error(`[DATA-ANALYSIS] Model ${model} error:`, err.message);
@@ -1937,13 +2227,9 @@ ${candidateDescriptions}`;
                 }
             };
 
-            // Run all free models in parallel, plus the configured model as fallback
+            // Sospendo la cross-validation parallela su 7 modelli (genera pesanti colli di bottiglia e timeouts per modelli free)
             const configuredModel = orSettings.model || 'google/gemini-2.0-flash-001';
-            const modelsToTry = [...FREE_MODELS];
-            // Add configured model if it's different from free ones
-            if (!modelsToTry.some(m => m.replace(':free', '') === configuredModel.replace(':free', ''))) {
-                modelsToTry.push(configuredModel);
-            }
+            const modelsToTry = [configuredModel];
 
             const modelResults = await Promise.allSettled(modelsToTry.map(m => callModel(m)));
             const validResults = modelResults
@@ -2116,12 +2402,13 @@ ${candidateDescriptions}`;
     }
 }
 
-// Helper to save the map
+// Helper to save the map (also updates in-memory cache)
 async function saveDatabaseMap(connectorId: string, map: DatabaseMap) {
     await db.connector.update({
         where: { id: connectorId },
         data: { databaseMap: JSON.stringify(map) },
     });
+    setCachedParsedMap(connectorId, map);
 }
 
 // Helper to finish data analysis: cleanup state, assign confidence, save

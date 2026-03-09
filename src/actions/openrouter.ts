@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { getAuthenticatedUser } from "@/lib/session";
+import { getAgentUsageCache } from "@/lib/agent-usage-cache";
 
 async function getSession() {
     return await getServerSession(authOptions);
@@ -150,4 +151,14 @@ export async function saveOpenRouterAgentModelAction(
         console.error("Failed to save OpenRouter agent model:", error);
         return { success: false, error: "Impossibile salvare il modello" };
     }
+}
+
+/**
+ * Get and consume the last usage data for an agent (from in-memory cache).
+ * Called by clients after a streaming response completes.
+ */
+export async function getAgentLastUsageAction(
+    key: string
+): Promise<{ inputTokens: number; outputTokens: number } | null> {
+    return getAgentUsageCache(key);
 }

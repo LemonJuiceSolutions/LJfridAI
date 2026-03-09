@@ -27,6 +27,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { cn } from '@/lib/utils';
 import { DataTable } from '@/components/ui/data-table';
 import { Database, Code, LineChart } from 'lucide-react';
+import { injectIframeFetchPolyfill, applyHtmlStyleOverrides } from '@/lib/html-style-utils';
+import { generateUiElementsCss } from '@/lib/unified-style-css';
+import { useActiveUnifiedStyle } from '@/hooks/use-active-style';
 // import { useFlowExecution } from '@/ai/flows/client-executor'; // Removed broken import
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -126,7 +129,7 @@ function useFlowExecution() {
 
     const executeFlow = useCallback(async (
         mainCode: string,
-        mainOutputType: 'table' | 'variable' | 'chart',
+        mainOutputType: 'table' | 'variable' | 'chart' | 'html',
         dependencies: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string, isIgnored?: boolean }[],
         pythonConnectorId?: string,
         resultTableName?: string
@@ -291,7 +294,8 @@ function useFlowExecution() {
                     data: res.data,
                     variables: res.variables,
                     chartBase64: res.chartBase64,
-                    chartHtml: res.chartHtml
+                    chartHtml: res.chartHtml,
+                    html: res.html,
                 });
                 setSteps(prev => prev.map((s, idx) => idx === finalIdx ? { ...s, status: 'done' } : s));
             } else {
@@ -556,7 +560,7 @@ function PythonDataPreview({
     loadedSubTrees // NEW: Map of loaded sub-trees for cross-branch lazy loading
 }: {
     code: string,
-    outputType: 'table' | 'variable' | 'chart',
+    outputType: 'table' | 'variable' | 'chart' | 'html',
     selectedPipelines?: string[],
     pipelineDependencies: { tableName: string, query?: string, connectorId?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string }[],
     pythonConnectorId?: string, // HubSpot connector ID for token injection
@@ -573,6 +577,7 @@ function PythonDataPreview({
         error,
         executeFlow
     } = useFlowExecution();
+    const { activeStyle } = useActiveUnifiedStyle();
 
     // Memoize the dependencies to prevent infinite loops and apply filtering
     const stableDeps = useMemo(() => {
@@ -982,6 +987,33 @@ function PythonDataPreview({
                                 ) : (
                                     <div className="flex items-center justify-center h-full text-muted-foreground text-xs italic">Nessun grafico generato</div>
                                 )}
+                            </div>
+                        )}
+                        {finalResult.type === 'html' && finalResult.html && (
+                            <div className="w-full h-[70vh] border-none overflow-hidden">
+                                <iframe
+                                    key={finalResult.timestamp || Date.now()}
+                                    srcDoc={(() => {
+                                        let styledHtml = activeStyle?.html
+                                            ? applyHtmlStyleOverrides(finalResult.html, activeStyle.html)
+                                            : finalResult.html;
+                                        if (activeStyle?.ui) {
+                                            const uiCss = generateUiElementsCss(activeStyle.ui);
+                                            if (styledHtml.includes('</head>')) {
+                                                styledHtml = styledHtml.replace('</head>', `<style>${uiCss}</style></head>`);
+                                            } else {
+                                                styledHtml = `<html><head><style>${uiCss}</style></head><body>${styledHtml}</body></html>`;
+                                            }
+                                        }
+                                        return injectIframeFetchPolyfill(styledHtml, {
+                                            connectorId: pythonConnectorId,
+                                            baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+                                        });
+                                    })()}
+                                    className="w-full border-none h-full"
+                                    sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
+                                    title="HTML Widget"
+                                />
                             </div>
                         )}
                     </div>

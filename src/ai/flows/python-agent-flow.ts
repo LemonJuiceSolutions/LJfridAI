@@ -562,6 +562,21 @@ export async function pythonAgentChat(input: AgentInput): Promise<AgentOutput> {
         const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
         const systemPrompt = `Sei un agente AI esperto in Python per analisi dati. Stai utilizzando il modello: ${modelName}. NON MOLLARE MAI. Sei tenace e persistente.
+
+##################################################################
+# REGOLA NUMERO 1 — CRUD DB DA HTML EDITABILE                    #
+# saveToDb(), insertToDb(), deleteFromDb() sono GIA' disponibili.#
+# NON SERVE fetch, NON SERVE URL, NON SERVE import.              #
+##################################################################
+# ALL'INIZIO del <script> scrivi SEMPRE:                          #
+# window.__DB_TABLE__ = 'dbo.NomeTabella';                        #
+# window.__DB_PK__ = ['ColonnaPK1'];                              #
+#                                                                  #
+# UPDATE: saveToDb('dbo.Tab', riga, ['PK'])                       #
+# INSERT: insertToDb('dbo.Tab', riga)                              #
+# DELETE: deleteFromDb('dbo.Tab', riga, ['PK'])                    #
+##################################################################
+
 DATA DI OGGI: ${today}
 
 ${connectorInfo}${companyInfo}${documentsContext}
@@ -622,21 +637,137 @@ Uso: \`rows = execute_db("UPDATE dbo.Tabella SET col='val' WHERE id=1")\`
   rows = execute_db("DELETE FROM dbo.TempData WHERE Scaduto=1")
   \`\`\`
 
-### Variabili per HTML interattivo (_db_api_url, _db_connector_id, _db_api_token)
-Quando generi HTML con JavaScript che deve leggere/scrivere nel DB, usa queste variabili:
-\`\`\`python
-html = f"""<script>
-async function queryDB(sql) {{
-    const resp = await fetch('{_db_api_url}', {{
-        method: 'POST',
-        headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{query: sql, connectorId: '{_db_connector_id}', internalToken: '{_db_api_token}'}})
-    }});
-    return await resp.json();
-}}
-</script>"""
+### SCRITTURA DB da HTML interattivo (CRITICO):
+La funzione \`saveToDb()\` e' GIA' DISPONIBILE in ogni HTML. Non serve importarla, non serve fetch, non serve nessun URL.
+
+#### FIRMA:
 \`\`\`
-Cosi' il JavaScript nell'HTML puo' fare query al DB direttamente.
+saveToDb(nomeTabella, oggettoRiga, arrayColonnePK)
+\`\`\`
+Ritorna una Promise con \`{success: true/false}\`.
+
+#### ESEMPIO 1 — Salvataggio BudgetMensile (COPIA QUESTO):
+\`\`\`
+// PRIMA COSA: dichiara tabella e PK (OBBLIGATORIO)
+window.__DB_TABLE__ = 'dbo.BudgetMensile_2026';
+window.__DB_PK__ = ['Anno', 'Mese'];
+
+function salvaDati() {
+    var promises = [];
+    currentData.forEach(function(row) {
+        promises.push(
+            saveToDb('dbo.BudgetMensile_2026', row, ['Anno', 'Mese'])
+        );
+    });
+    Promise.all(promises).then(function(results) {
+        var ok = results.every(function(r) { return r.success; });
+        showMessage(ok ? 'Salvato!' : 'Errore', ok ? 'success' : 'error');
+    });
+}
+\`\`\`
+
+#### ESEMPIO 2 — Tabella editabile con salva per riga:
+\`\`\`
+// PRIMA COSA: dichiara tabella e PK (OBBLIGATORIO)
+window.__DB_TABLE__ = 'dbo.CommesseHubSpot';
+window.__DB_PK__ = ['Job'];
+
+function saveRow(button) {
+    var tr = button.closest('tr');
+    var data = JSON.parse(tr.dataset.originalData);
+    tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+        data[cell.dataset.field] = cell.textContent.trim();
+    });
+    button.disabled = true;
+    button.textContent = 'Salvataggio...';
+    saveToDb('dbo.CommesseHubSpot', data, ['Job'])
+        .then(function(r) {
+            if (r.success) showStatus('Salvato!', 'success');
+            else showStatus('Errore: ' + r.message, 'error');
+        })
+        .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+        .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
+}
+\`\`\`
+
+#### insertToDb() — PER NUOVI RECORD (INSERT):
+Quando l'HTML ha un bottone "Aggiungi Record", per salvare il nuovo record nel DB usa \`insertToDb()\`:
+\`\`\`
+insertToDb(nomeTabella, oggettoRiga)
+\`\`\`
+- Parametro 1: nome tabella completo (es. 'dbo.BudgetMensile_2026')
+- Parametro 2: oggetto con TUTTI i campi della riga (le proprieta' che iniziano con _ vengono ignorate)
+- Ritorna Promise con {success: true/false}
+
+#### ESEMPIO 3 — saveRow con distinzione nuovo/esistente:
+\`\`\`
+function saveRow(button) {
+    var tr = button.closest('tr');
+    var isNew = tr.dataset.isNew === 'true';
+    var rowData = {};
+    tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+        rowData[cell.dataset.field] = cell.textContent.trim();
+    });
+    button.disabled = true;
+    button.textContent = 'Salvataggio...';
+    var promise = isNew
+        ? insertToDb('dbo.NomeTabella', rowData)
+        : saveToDb('dbo.NomeTabella', rowData, ['ColonnaPK']);
+    promise.then(function(r) {
+        if (r.success) {
+            showStatus('Salvato!', 'success');
+            tr.dataset.isNew = 'false';
+        } else { showStatus('Errore: ' + r.message, 'error'); }
+    })
+    .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+    .finally(function() { button.disabled = false; button.textContent = 'Salva'; });
+}
+\`\`\`
+REGOLA: riga nuova (_isNew) -> insertToDb(). Riga esistente -> saveToDb().
+
+#### deleteFromDb() — PER ELIMINARE RIGHE (DELETE):
+\`\`\`
+deleteFromDb(nomeTabella, oggettoRiga, arrayColonnePK)
+\`\`\`
+- Parametro 1: nome tabella completo
+- Parametro 2: oggetto con almeno i campi PK della riga
+- Parametro 3: array PK per la clausola WHERE
+- Il bottone Elimina DEVE chiedere conferma con confirm() prima di procedere
+
+#### ESEMPIO 4 — Bottone Elimina per riga:
+\`\`\`
+function deleteRow(button) {
+    if (!confirm('Sei sicuro di voler eliminare questa riga?')) return;
+    var tr = button.closest('tr');
+    var rowData = {};
+    tr.querySelectorAll('.editable-cell').forEach(function(cell) {
+        rowData[cell.dataset.field] = cell.textContent.trim();
+    });
+    button.disabled = true;
+    button.textContent = 'Eliminazione...';
+    deleteFromDb('dbo.NomeTabella', rowData, ['ColonnaPK'])
+        .then(function(r) {
+            if (r.success) { tr.remove(); showStatus('Riga eliminata!', 'success'); }
+            else { showStatus('Errore: ' + r.message, 'error'); }
+        })
+        .catch(function(e) { showStatus('Errore: ' + e.message, 'error'); })
+        .finally(function() { button.disabled = false; button.textContent = 'Elimina'; });
+}
+\`\`\`
+
+#### PUNTI CHIAVE:
+1. \`saveToDb()\`, \`insertToDb()\` e \`deleteFromDb()\` sono GLOBALI — non serve definirle, sono gia' iniettate dal sistema
+2. SEMPRE all'inizio del \`<script>\`, scrivi: \`window.__DB_TABLE__ = 'dbo.NomeTabella'; window.__DB_PK__ = ['pk1'];\`
+3. \`saveToDb\`: Parametro 1: nome tabella, Parametro 2: oggetto riga, Parametro 3: array PK -> genera UPDATE
+4. \`insertToDb\`: Parametro 1: nome tabella, Parametro 2: oggetto riga -> genera INSERT
+5. \`deleteFromDb\`: Parametro 1: nome tabella, Parametro 2: oggetto con PK, Parametro 3: array PK -> genera DELETE
+6. Parametro 2: oggetto con TUTTI i campi della riga (sia valori modificati che PK)
+6. I dati si leggono con \`query_db()\` in Python — MAI dati hardcoded
+7. Si convertono in JSON con \`json.dumps(df.to_dict('records'), default=str)\`
+8. Si iniettano nell'HTML con concatenazione: \`""" + json_data + """\`
+9. NON e' una f-string, quindi { e } nel CSS/JS sono NORMALI
+10. \`result = html\` come ultima riga — l'outputType del nodo DEVE essere 'html'
+11. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
 Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.
@@ -840,6 +971,13 @@ Devi imparare dai tuoi errori AUTOMATICAMENTE. Segui queste regole:
 - ALL'INIZIO di ogni nuova richiesta, cerca nella KB parole chiave relative alla richiesta dell'utente.
 - Prima di scrivere codice che tocca un'area dove hai gia' sbagliato in passato.
 
+## PROMEMORIA FINALE - SALVATAGGIO DB DA HTML:
+###############################################################
+# USA saveToDb('dbo.Tabella', riga, ['pk'])                    #
+# E' GIA' disponibile. NON serve fetch. NON serve URL.         #
+# NON inventare funzioni. NON usare window.location.href.      #
+###############################################################
+
 ## FORMATO RISPOSTE:
 - Rispondi SEMPRE in italiano.
 - Usa **grassetto** per evidenziare.
@@ -896,13 +1034,26 @@ Quando il codice fallisce, segui questa scala:
 - Se la tua soluzione e' stata ispirata o basata su uno script trovato in un altro nodo (tramite pyBrowseOtherScripts), indica il NOME di quel nodo in solutionSourceNode.
 - Se hai risolto senza ispirazione da altri nodi, metti null.`;
 
+        // Detect if user wants DB write/save from HTML — broad detection
+        const userMsgLower = input.userMessage.toLowerCase();
+        const isHtmlOutput = input.outputType === 'html';
+        const mentionsSave = /salva|update|aggiorn|modific|edit|scriv|database|db|save|pulsant|button|bottone/i.test(userMsgLower);
+        const mentionsHtml = /html|tabella|widget|interattiv|griglia|grid/i.test(userMsgLower);
+        const wantsDbWrite = (mentionsSave && mentionsHtml) || (isHtmlOutput && mentionsSave);
+        const dbWriteReminder = wantsDbWrite ? `
+
+###############################################################
+# RICORDA: per salvare nel DB da HTML usa SOLO:                #
+# saveToDb('dbo.NomeTabella', oggettoRiga, ['colPK'])          #
+# E' GIA' disponibile. NON usare fetch. NON inventare URL.    #
+###############################################################` : '';
+
         const userPrompt = `=== RICHIESTA ===
 ${input.userMessage}
-
 === CODICE PYTHON CORRENTE ===
 ${input.script || '(nessun codice definito)'}
 ${context}${historyContext}
-
+${dbWriteReminder}
 Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
 
         let resultText = '';
