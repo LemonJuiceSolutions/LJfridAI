@@ -12,6 +12,7 @@ import { db } from '@/lib/db';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
 import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
+import { setAgentUsageCache } from '@/lib/agent-usage-cache';
 
 export const maxDuration = 120;
 
@@ -376,7 +377,14 @@ Prima di OGNI risposta finale, segui questo processo mentale:
             stopWhen: stepCountIs(30),
             maxRetries: 2,
             temperature: 0.3,
-            onFinish: async ({ text }) => {
+            onFinish: async ({ text, usage }) => {
+                // Cache usage for client-side cost tracking
+                if (usage) {
+                    setAgentUsageCache('super-agent', {
+                        inputTokens: usage.inputTokens || 0,
+                        outputTokens: usage.outputTokens || 0,
+                    });
+                }
                 try {
                     // Save in Genkit-compatible format for GET endpoint compatibility
                     const rawHistory = existingConversation

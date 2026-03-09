@@ -94,7 +94,14 @@
             text-transform: uppercase;
         }
 
-        /* ── Griglia grafici ────────────────────────────── */
+        /* ── Griglia KPI (4 colonne) ────────────────────────────── */
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            align-items: stretch;
+        }
+
         .grid-2 {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -130,55 +137,62 @@
             width: 100% !important;
         }
 
-        /* ── KPI base card (riusabile) ─────────────────────────── */
+        /* ── KPI base card (compatta) ─────────────────────────── */
         .kpi-box {
             background: #ffffff;
             border-radius: 12px;
-            padding: 32px 28px;
+            padding: 20px 18px;
             box-shadow: 0 2px 12px rgba(10,40,80,0.08);
             height: 100%;
+            border-left: 4px solid #14406e;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .kpi-box:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(10,40,80,0.12);
         }
 
         .kpi-box--green {
-            border: 3px solid #1a7a4a;
+            border-left-color: #1a7a4a;
         }
 
         .kpi-box--neutral {
-            border: 1px solid #c4d8ee;
+            border-left-color: #14406e;
         }
 
-        /* ── KPI PFN/EBITDA (interni) ─────────────────────────── */
+        /* ── KPI Value (compatto) ─────────────────────────── */
         .kpi-value {
-            font-size: 72px;
+            font-size: 42px;
             font-weight: 700;
             color: #071e38;
             line-height: 1;
-            letter-spacing: -2px;
+            letter-spacing: -1px;
         }
 
         .kpi-unit {
-            font-size: 20px;
+            font-size: 14px;
             font-weight: 400;
             color: #5c7a99;
-            margin-left: 4px;
+            margin-left: 3px;
         }
 
         .kpi-label {
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            color: #5c7a99;
+            color: #7a95b0;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-top: 10px;
+            letter-spacing: 0.8px;
+            margin-top: 8px;
         }
 
         .kpi-badge {
-            margin-top: 16px;
+            margin-top: 12px;
             background: rgba(26,122,74,0.08);
             border: 1px solid #1a7a4a;
             border-radius: 20px;
-            padding: 5px 14px;
-            font-size: 11px;
+            padding: 4px 10px;
+            font-size: 9.5px;
             font-weight: 600;
             color: #1a7a4a;
             letter-spacing: 0.3px;
@@ -467,14 +481,15 @@
     </style>
 </head>
 <body>
-
+    <div class="container">
+        <!-- ═══ KPI (4 COLONNE) ═══ -->
         <div class="section">
-            <div class="grid-2">
+            <div class="grid-4">
                 <div class="kpi-box kpi-box--neutral">
-                    <div class="kpi-value"><span id="stat-total-deals">62</span></div>
+                    <div class="kpi-value"><span id="stat-total-deals">65</span></div>
                     <div class="kpi-label">Totale Deals</div>
                 </div>
-                <div class="kpi-box kpi-box--neutral">
+                <div class="kpi-box kpi-box--green">
                     <div class="kpi-value"><span id="stat-with-products">0</span></div>
                     <div class="kpi-label">Con Prodotti</div>
                 </div>
@@ -482,13 +497,14 @@
                     <div class="kpi-value"><span id="stat-total-products">0</span></div>
                     <div class="kpi-label">Totale Prodotti</div>
                 </div>
-                <div class="kpi-box kpi-box--neutral">
-                    <div class="kpi-value"><span id="stat-total-amount">1,875,790</span><span class="kpi-unit">€</span></div>
+                <div class="kpi-box kpi-box--green">
+                    <div class="kpi-value"><span id="stat-total-amount">2,579,290</span><span class="kpi-unit">€</span></div>
                     <div class="kpi-label">Valore Totale</div>
                 </div>
             </div>
         </div>
 
+        <!-- ═══ TABELLA ═══ -->
         <div class="section">
             <div class="section-header">
                 <span class="section-num">02</span>
@@ -525,19 +541,6 @@
                 </tr>
             </thead>
             <tbody>
-            <tr data-amount="8000.0" data-products-count="0">
-                <td class="">26_INTERGEA MOVE_TEAM BUILDING</td>
-                <td class="company ">INTERGEA NORDEST</td>
-                <td class="amount ">8,000 €</td>
-                <td class="">08-03-2026</td>
-                <td class="">20-02-2026</td>
-                <td class="">1818637520</td>
-                <td class="" style="text-align: center;">0.0%</td>
-                <td class="" style="text-align: center;">0.0%</td>
-                <td class="art14-no">X</td>
-                <td class="products empty-cell">VUOTO</td>
-                <td class="empty-cell">VUOTO</td>
-            </tr>
             <tr data-amount="2000.0" data-products-count="0">
                 <td class="">26_MARSILIO ARTE_UPCYCLING BORSE INVENDUTE</td>
                 <td class="company ">MARSILIO ARTE</td>
@@ -674,6 +677,19 @@
                 <td class="amount ">20,000 €</td>
                 <td class="">11-05-2026</td>
                 <td class="">15-01-2026</td>
+                <td class="">PRESENTATIONSCHEDULED</td>
+                <td class="" style="text-align: center;">90.0%</td>
+                <td class="" style="text-align: center;">90.0%</td>
+                <td class="art14-no">X</td>
+                <td class="products empty-cell">VUOTO</td>
+                <td class="empty-cell">VUOTO</td>
+            </tr>
+            <tr data-amount="20000.0" data-products-count="0">
+                <td class="">C26_GENERALI GROUP </td>
+                <td class="company ">GENERALI</td>
+                <td class="amount ">20,000 €</td>
+                <td class="">18-05-2026</td>
+                <td class="">06-03-2026</td>
                 <td class="">PRESENTATIONSCHEDULED</td>
                 <td class="" style="text-align: center;">90.0%</td>
                 <td class="" style="text-align: center;">90.0%</td>
@@ -993,6 +1009,19 @@
                 <td class="products empty-cell">VUOTO</td>
                 <td class="empty-cell">VUOTO</td>
             </tr>
+            <tr data-amount="148500.0" data-products-count="0">
+                <td class="">C26_CDP_WELCOMEKIT </td>
+                <td class="company ">CDP</td>
+                <td class="amount ">148,500 €</td>
+                <td class="">01-09-2026</td>
+                <td class="">10-02-2026</td>
+                <td class="">PRESENTATIONSCHEDULED</td>
+                <td class="" style="text-align: center;">90.0%</td>
+                <td class="" style="text-align: center;">90.0%</td>
+                <td class="art14-no">X</td>
+                <td class="products empty-cell">VUOTO</td>
+                <td class="empty-cell">VUOTO</td>
+            </tr>
             <tr data-amount="20000.0" data-products-count="0">
                 <td class="">25_DE'LONGHI GROUP_ZAINO</td>
                 <td class="company ">DE'LONGHI GROUP</td>
@@ -1097,6 +1126,19 @@
                 <td class="products empty-cell">VUOTO</td>
                 <td class="empty-cell">VUOTO</td>
             </tr>
+            <tr data-amount="3000.0" data-products-count="0">
+                <td class="">26_GR VALUE</td>
+                <td class="company ">GR VALUE</td>
+                <td class="amount ">3,000 €</td>
+                <td class="">05-10-2026</td>
+                <td class="">26-01-2026</td>
+                <td class="">LEAD COLTIVAZIONE</td>
+                <td class="" style="text-align: center;">90.0%</td>
+                <td class="" style="text-align: center;">90.0%</td>
+                <td class="art14-no">X</td>
+                <td class="products empty-cell">VUOTO</td>
+                <td class="empty-cell">VUOTO</td>
+            </tr>
             <tr data-amount="45000.0" data-products-count="0">
                 <td class="">26_OTB_SHOPPER NATALE</td>
                 <td class="company ">OTB GROUP</td>
@@ -1158,6 +1200,19 @@
                 <td class="">LEAD COLTIVAZIONE</td>
                 <td class="" style="text-align: center;">90.0%</td>
                 <td class="" style="text-align: center;">90.0%</td>
+                <td class="light-red"></td>
+                <td class="products empty-cell">VUOTO</td>
+                <td class="empty-cell">VUOTO</td>
+            </tr>
+            <tr data-amount="540000.0" data-products-count="0">
+                <td class="">C26_UNIPOL_ZAINI_OCT</td>
+                <td class="company ">UNIPOL</td>
+                <td class="amount ">540,000 €</td>
+                <td class="">12-10-2026</td>
+                <td class="">28-05-2025</td>
+                <td class="">LEAD COLTIVAZIONE</td>
+                <td class="" style="text-align: center;">60.0%</td>
+                <td class="" style="text-align: center;">60.0%</td>
                 <td class="light-red"></td>
                 <td class="products empty-cell">VUOTO</td>
                 <td class="empty-cell">VUOTO</td>

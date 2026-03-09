@@ -51,7 +51,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
 } from 'recharts';
-import { getOpenRouterSettingsAction } from '@/actions/openrouter';
+import { getOpenRouterSettingsAction, getAgentLastUsageAction } from '@/actions/openrouter';
 import { useChartTheme } from '@/hooks/use-chart-theme';
 import { ChartStyle, resolveChartStyle } from '@/lib/chart-style';
 import { gridStrokeDasharray, lineStrokeDasharray } from '@/lib/chart-theme';
@@ -602,6 +602,22 @@ export function AgentChat({
       }]);
     },
   });
+
+  // Fetch usage from server after stream completes
+  const prevStreamStatusRef = useRef(streamStatus);
+  useEffect(() => {
+    if (prevStreamStatusRef.current === 'streaming' && streamStatus === 'ready' && nodeId) {
+      getAgentLastUsageAction(nodeId).then(usage => {
+        if (usage) {
+          setTotalUsage(prev => ({
+            tokens: prev.tokens + (usage.inputTokens || 0) + (usage.outputTokens || 0),
+            cost: prev.cost, // cost computed from pricing on display
+          }));
+        }
+      });
+    }
+    prevStreamStatusRef.current = streamStatus;
+  }, [streamStatus, nodeId]);
 
   const isStreamLoading = streamStatus === 'streaming' || streamStatus === 'submitted';
 
@@ -1262,7 +1278,7 @@ export function AgentChat({
                         <span className="flex items-center gap-0.5 ml-1.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px] font-medium cursor-default">
                           <Coins className="h-2.5 w-2.5" />
                           {totalUsage.cost > 0
-                            ? `$${totalUsage.cost.toFixed(4)}`
+                            ? `€${(totalUsage.cost * 0.92).toFixed(4)}`
                             : `${(totalUsage.tokens / 1000).toFixed(1)}k tok`
                           }
                         </span>
@@ -1270,7 +1286,7 @@ export function AgentChat({
                       <TooltipContent side="bottom" className="text-[10px]">
                         <div className="space-y-0.5">
                           <div>Token totali: {totalUsage.tokens.toLocaleString()}</div>
-                          {totalUsage.cost > 0 && <div>Costo sessione: ${totalUsage.cost.toFixed(6)}</div>}
+                          {totalUsage.cost > 0 && <div>Costo sessione: €{(totalUsage.cost * 0.92).toFixed(6)} (${totalUsage.cost.toFixed(6)})</div>}
                         </div>
                       </TooltipContent>
                     </UiTooltip>

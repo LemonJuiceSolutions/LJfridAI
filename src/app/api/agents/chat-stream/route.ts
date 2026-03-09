@@ -8,6 +8,7 @@ import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
 import { createSqlAgentTools, doTestSqlQuery } from '@/ai/tools/sql-agent-tools';
 import { createPythonAgentTools } from '@/ai/tools/python-agent-tools';
 import type { ConsultedNodeType } from '@/ai/schemas/agent-schema';
+import { setAgentUsageCache } from '@/lib/agent-usage-cache';
 
 export const maxDuration = 120; // Allow up to 2 min for agent runs
 
@@ -939,6 +940,13 @@ export async function POST(request: NextRequest) {
             },
             onFinish: async ({ text, usage }) => {
                 console.log('[chat-stream] === FINISHED === textLen:', text?.length, 'usage:', JSON.stringify(usage));
+                // Cache usage for client-side cost tracking
+                if (usage && nodeId) {
+                    setAgentUsageCache(nodeId, {
+                        inputTokens: usage.inputTokens || 0,
+                        outputTokens: usage.outputTokens || 0,
+                    });
+                }
                 try {
                     const updatedHistory = [
                         ...conversationHistory,
