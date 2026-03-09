@@ -62,7 +62,7 @@ app = Flask(__name__)
 app.json.sort_keys = False
 CORS(app)  # Allow cross-origin requests from Next.js
 
-VERSION = "1.0.4"
+VERSION = "1.0.6"  # Fix: auto-unwrap if __name__=="__main__" + file write capture
 
 # --- Premium Emerald Theme for Plotly ---
 emerald_template = go.layout.Template(
@@ -542,17 +542,26 @@ def execute_python():
         
         ns['plt'] = PltWrapper(plt)
         
-        # Disable Plotly browser renderer
-        pio.renderers.default = "json" # or None, but json is safe
+        # Disable ALL Plotly renderers — figures are captured from the namespace, not via .show()
+        # "json" renderer requires IPython, "png" writes binary to stdout — both cause issues
+        pio.renderers.default = None
 
         print(f"🐍 [v{VERSION}] Executing script...", flush=True)
         
         raw_stdout = io.StringIO()
         raw_stderr = io.StringIO()
         safe_code = code.replace('plt.show()', '# plt.show() removed')
+        safe_code = safe_code.replace('fig.show()', '# fig.show() removed')
         safe_code = safe_code.replace('sys.exit()', '# sys.exit() removed')
         safe_code = safe_code.replace('exit()', '# exit() removed')
         safe_code = safe_code.replace('quit()', '# quit() removed')
+
+        # --- Support if __name__ == "__main__": guard ---
+        # When code is exec()'d, __name__ defaults to builtins, so these blocks are skipped.
+        # Simple fix: set __name__ = "__main__" in the exec namespace so the guard passes naturally.
+        if '__name__' not in ns or ns.get('__name__') != '__main__':
+            ns['__name__'] = '__main__'
+            print(f"🔧 [EXECUTE] Set __name__ = '__main__' in exec namespace")
         
         from unittest.mock import patch
 
@@ -659,6 +668,48 @@ def execute_python():
                 try: tb.print_exc(file=sys.stderr)
                 except (BrokenPipeError, OSError): pass
 
+        # --- File write interceptor for HTML capture ---
+        # When scripts write HTML to files (e.g. open("report.html","w").write(html)),
+        # we capture the content and inject it into the namespace as 'html_result'.
+        _captured_html_writes = []
+        import builtins as _builtins_mod
+        _original_open = _builtins_mod.open
+
+        class _HtmlCapturingFile:
+            """Fake file object that captures .write() calls for HTML files."""
+            def __init__(self, filename):
+                self._filename = filename
+                self._chunks = []
+            def write(self, data):
+                self._chunks.append(data)
+                return len(data)
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                content = ''.join(self._chunks)
+                if content.strip():
+                    _captured_html_writes.append(content)
+                    print(f"📄 [EXECUTE] Captured HTML write to '{self._filename}' ({len(content)} chars)")
+            def close(self):
+                content = ''.join(self._chunks)
+                if content.strip():
+                    _captured_html_writes.append(content)
+                    print(f"📄 [EXECUTE] Captured HTML write to '{self._filename}' ({len(content)} chars)")
+
+        def _intercepted_open(filepath, mode='r', *args, **kwargs):
+            filepath_str = str(filepath)
+            # Intercept writes to .html and .csv files
+            if ('w' in mode or 'a' in mode) and filepath_str.endswith('.html'):
+                print(f"🔀 [EXECUTE] Intercepting open('{filepath_str}', '{mode}') → capturing HTML content")
+                return _HtmlCapturingFile(filepath_str)
+            # Let .csv writes through silently (just discard, avoid file system writes in sandbox)
+            if ('w' in mode or 'a' in mode) and filepath_str.endswith('.csv'):
+                print(f"🔀 [EXECUTE] Intercepting open('{filepath_str}', '{mode}') → discarding CSV write")
+                return io.StringIO()
+            return _original_open(filepath, mode, *args, **kwargs)
+
+        ns['open'] = _intercepted_open
+
         try:
             _safe_log(f"🐍 [v{VERSION}] Starting exec()...")
             with redirect_stdout(raw_stdout), redirect_stderr(raw_stderr):
@@ -666,9 +717,19 @@ def execute_python():
                 with patch.dict(os.environ, env_vars):
                     exec(safe_code, ns, ns) # Use ns for both globals and locals
             _safe_log(f"🐍 [v{VERSION}] exec() completed OK")
+
+            # If we captured HTML file writes, inject into namespace for html output detection
+            if _captured_html_writes:
+                # Use the last (most complete) write
+                ns['html_result'] = _captured_html_writes[-1]
+                _safe_log(f"📄 [EXECUTE] Injected captured HTML ({len(_captured_html_writes[-1])} chars) as 'html_result'")
         except SystemExit:
             # Catch exit()/sys.exit() calls that bypass the SysWrapper (e.g. via direct import)
             _safe_log(f"⚠️ [EXECUTE] SystemExit caught (exit()/sys.exit() in script) - ignoring")
+            # Still capture HTML writes even if script called exit()
+            if _captured_html_writes and 'html_result' not in ns:
+                ns['html_result'] = _captured_html_writes[-1]
+                _safe_log(f"📄 [EXECUTE] Injected captured HTML after SystemExit ({len(_captured_html_writes[-1])} chars)")
         except Exception as e:
             import traceback as _tb
             error_details = _tb.format_exc()

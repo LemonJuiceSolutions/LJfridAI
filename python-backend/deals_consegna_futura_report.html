@@ -94,14 +94,7 @@
             text-transform: uppercase;
         }
 
-        /* ── Griglia KPI (4 colonne) ────────────────────────────── */
-        .grid-4 {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            align-items: stretch;
-        }
-
+        /* ── Griglia grafici ────────────────────────────── */
         .grid-2 {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -137,62 +130,55 @@
             width: 100% !important;
         }
 
-        /* ── KPI base card (compatta) ─────────────────────────── */
+        /* ── KPI base card (riusabile) ─────────────────────────── */
         .kpi-box {
             background: #ffffff;
             border-radius: 12px;
-            padding: 20px 18px;
+            padding: 32px 28px;
             box-shadow: 0 2px 12px rgba(10,40,80,0.08);
             height: 100%;
-            border-left: 4px solid #14406e;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .kpi-box:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 16px rgba(10,40,80,0.12);
         }
 
         .kpi-box--green {
-            border-left-color: #1a7a4a;
+            border: 3px solid #1a7a4a;
         }
 
         .kpi-box--neutral {
-            border-left-color: #14406e;
+            border: 1px solid #c4d8ee;
         }
 
-        /* ── KPI Value (compatto) ─────────────────────────── */
+        /* ── KPI PFN/EBITDA (interni) ─────────────────────────── */
         .kpi-value {
-            font-size: 42px;
+            font-size: 72px;
             font-weight: 700;
             color: #071e38;
             line-height: 1;
-            letter-spacing: -1px;
+            letter-spacing: -2px;
         }
 
         .kpi-unit {
-            font-size: 14px;
+            font-size: 20px;
             font-weight: 400;
             color: #5c7a99;
-            margin-left: 3px;
+            margin-left: 4px;
         }
 
         .kpi-label {
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
-            color: #7a95b0;
+            color: #5c7a99;
             text-transform: uppercase;
-            letter-spacing: 0.8px;
-            margin-top: 8px;
+            letter-spacing: 1px;
+            margin-top: 10px;
         }
 
         .kpi-badge {
-            margin-top: 12px;
+            margin-top: 16px;
             background: rgba(26,122,74,0.08);
             border: 1px solid #1a7a4a;
             border-radius: 20px;
-            padding: 4px 10px;
-            font-size: 9.5px;
+            padding: 5px 14px;
+            font-size: 11px;
             font-weight: 600;
             color: #1a7a4a;
             letter-spacing: 0.3px;
@@ -481,15 +467,14 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- ═══ KPI (4 COLONNE) ═══ -->
+
         <div class="section">
-            <div class="grid-4">
+            <div class="grid-2">
                 <div class="kpi-box kpi-box--neutral">
-                    <div class="kpi-value"><span id="stat-total-deals">65</span></div>
+                    <div class="kpi-value"><span id="stat-total-deals">64</span></div>
                     <div class="kpi-label">Totale Deals</div>
                 </div>
-                <div class="kpi-box kpi-box--green">
+                <div class="kpi-box kpi-box--neutral">
                     <div class="kpi-value"><span id="stat-with-products">0</span></div>
                     <div class="kpi-label">Con Prodotti</div>
                 </div>
@@ -497,14 +482,13 @@
                     <div class="kpi-value"><span id="stat-total-products">0</span></div>
                     <div class="kpi-label">Totale Prodotti</div>
                 </div>
-                <div class="kpi-box kpi-box--green">
-                    <div class="kpi-value"><span id="stat-total-amount">2,579,290</span><span class="kpi-unit">€</span></div>
+                <div class="kpi-box kpi-box--neutral">
+                    <div class="kpi-value"><span id="stat-total-amount">2,584,290</span><span class="kpi-unit">€</span></div>
                     <div class="kpi-label">Valore Totale</div>
                 </div>
             </div>
         </div>
 
-        <!-- ═══ TABELLA ═══ -->
         <div class="section">
             <div class="section-header">
                 <span class="section-num">02</span>
@@ -541,32 +525,6 @@
                 </tr>
             </thead>
             <tbody>
-            <tr data-amount="2000.0" data-products-count="0">
-                <td class="">26_MARSILIO ARTE_UPCYCLING BORSE INVENDUTE</td>
-                <td class="company ">MARSILIO ARTE</td>
-                <td class="amount ">2,000 €</td>
-                <td class="">09-03-2026</td>
-                <td class="">03-02-2026</td>
-                <td class="">SVILUPPO CAMPIONE</td>
-                <td class="" style="text-align: center;">50.0%</td>
-                <td class="" style="text-align: center;">50.0%</td>
-                <td class="art14-no">X</td>
-                <td class="products empty-cell">VUOTO</td>
-                <td class="empty-cell">VUOTO</td>
-            </tr>
-            <tr data-amount="2000.0" data-products-count="0">
-                <td class="">26_MARSILIO ARTE_UPCYCLING SHOPPER INVENDUTE</td>
-                <td class="company ">MARSILIO ARTE</td>
-                <td class="amount ">2,000 €</td>
-                <td class="">09-03-2026</td>
-                <td class="">03-02-2026</td>
-                <td class="">SVILUPPO CAMPIONE</td>
-                <td class="" style="text-align: center;">90.0%</td>
-                <td class="" style="text-align: center;">90.0%</td>
-                <td class="art14-no">X</td>
-                <td class="products empty-cell">VUOTO</td>
-                <td class="empty-cell">VUOTO</td>
-            </tr>
             <tr data-amount="6000.0" data-products-count="0">
                 <td class="">26_FORTIMED_TSHIRT</td>
                 <td class="company ">FORTIMED</td>
@@ -1032,6 +990,19 @@
                 <td class="" style="text-align: center;">60.0%</td>
                 <td class="" style="text-align: center;">60.0%</td>
                 <td class="art14-no">X</td>
+                <td class="products empty-cell">VUOTO</td>
+                <td class="empty-cell">VUOTO</td>
+            </tr>
+            <tr data-amount="9000.0" data-products-count="0">
+                <td class="">26_AIRC_NASTRO ROSA CONTINUATIVI</td>
+                <td class="company ">AIRC - ASSOCIAZIONE ITALIANA PER LA RICERCA SUL CANCRO</td>
+                <td class="amount ">9,000 €</td>
+                <td class="">07-09-2026</td>
+                <td class="">20-01-2026</td>
+                <td class="">SVILUPPO CAMPIONE</td>
+                <td class="" style="text-align: center;">90.0%</td>
+                <td class="" style="text-align: center;">60.0%</td>
+                <td class="light-red"></td>
                 <td class="products empty-cell">VUOTO</td>
                 <td class="empty-cell">VUOTO</td>
             </tr>
