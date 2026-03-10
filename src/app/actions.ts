@@ -2548,8 +2548,8 @@ export async function executePythonPreviewAction(
 
         // Inject uploaded document paths if selected
         if (selectedDocuments && selectedDocuments.length > 0) {
-            const { join } = await import('path');
-            const docsDir = join(process.cwd(), 'public', 'documents');
+            const { getDataLakePath } = await import('@/lib/data-lake');
+            const docsDir = getDataLakePath();
             envVars['DOCUMENTS_DIR'] = docsDir;
             envVars['SELECTED_DOCUMENTS'] = selectedDocuments.join(',');
             console.log(`[Python] Injected DOCUMENTS_DIR=${docsDir}, SELECTED_DOCUMENTS=${selectedDocuments.join(',')}`);

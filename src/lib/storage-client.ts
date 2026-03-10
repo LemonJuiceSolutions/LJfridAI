@@ -5,7 +5,7 @@ export interface FileInfo {
     createdAt: string;
 }
 
-export async function uploadFile(file: File, folder: string = 'uploads', customName?: string): Promise<{ url: string; name: string } | null> {
+export async function uploadFile(file: File, folder: string = 'data_lake', customName?: string): Promise<{ url: string; name: string } | null> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('folder', folder);
@@ -30,7 +30,7 @@ export async function uploadFile(file: File, folder: string = 'uploads', customN
     }
 }
 
-export async function listFiles(folder: string = 'uploads'): Promise<FileInfo[]> {
+export async function listFiles(folder: string = 'data_lake'): Promise<FileInfo[]> {
     try {
         const res = await fetch(`/api/files?folder=${folder}`);
         if (!res.ok) throw new Error('List failed');
@@ -42,7 +42,7 @@ export async function listFiles(folder: string = 'uploads'): Promise<FileInfo[]>
     }
 }
 
-export async function deleteFile(name: string, folder: string = 'uploads'): Promise<boolean> {
+export async function deleteFile(name: string, folder: string = 'data_lake'): Promise<boolean> {
     try {
         const res = await fetch(`/api/files?name=${encodeURIComponent(name)}&folder=${folder}`, {
             method: 'DELETE'

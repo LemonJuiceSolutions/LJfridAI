@@ -24,7 +24,7 @@ export const AgentInputSchema = z.object({
   })).describe('Previous conversation messages'),
   needsClarification: z.boolean().optional().describe('Whether the agent needs clarification'),
   connectorId: z.string().optional().describe('The SQL connector ID for executing queries'),
-  selectedDocuments: z.array(z.string()).optional().describe('Selected document filenames from Settings (available in public/documents/)'),
+  selectedDocuments: z.array(z.string()).optional().describe('Selected document filenames from Settings (available in data_lake/)'),
   companyId: z.string().optional().describe('The company ID for KB and tree access'),
   openRouterConfig: z.object({
     apiKey: z.string().optional(),

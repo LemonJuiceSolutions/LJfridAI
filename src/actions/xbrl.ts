@@ -2,6 +2,7 @@
 
 import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
+import { getDataLakePath } from '@/lib/data-lake';
 import { nanoid } from 'nanoid';
 import {
   parseXbrlFile,
@@ -15,14 +16,14 @@ import { analysisTree } from '@/lib/xbrl-analysis-tree';
 import { db } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/session';
 
-const DOCUMENTS_DIR = join(process.cwd(), 'public', 'documents');
+const DOCUMENTS_DIR = getDataLakePath();
 
 export async function listXbrlFilesAction(): Promise<{ files: { name: string; url: string }[]; error?: string }> {
   try {
     const entries = await readdir(DOCUMENTS_DIR).catch(() => []);
     const xbrlFiles = (entries as string[])
       .filter(f => f.endsWith('.xbrl'))
-      .map(name => ({ name, url: `/documents/${name}` }));
+      .map(name => ({ name, url: `/api/data-lake/${name}` }));
     return { files: xbrlFiles };
   } catch (error) {
     return { files: [], error: String(error) };
@@ -34,7 +35,7 @@ export async function listAllDocumentsAction(): Promise<{ files: { name: string;
     const entries = await readdir(DOCUMENTS_DIR).catch(() => []);
     const files = (entries as string[])
       .filter(f => !f.startsWith('.'))
-      .map(name => ({ name, url: `/documents/${name}` }));
+      .map(name => ({ name, url: `/api/data-lake/${name}` }));
     return { files };
   } catch (error) {
     return { files: [], error: String(error) };
@@ -138,7 +139,7 @@ XBRL_FILES = [
 ${fileListStr}
 ]
 
-DOCUMENTS_DIR = "public/documents"
+DOCUMENTS_DIR = os.environ.get("DATA_LAKE_PATH", "data_lake")
 
 def parse_xbrl_files():
     """Legge e parsa i file XBRL dal folder documenti."""

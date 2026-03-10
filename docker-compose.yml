@@ -15,6 +15,7 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/rulesagedb
       - NEXTAUTH_URL=http://localhost:9002
       - PYTHON_BACKEND_URL=http://python-backend:5005
+      - DATA_LAKE_PATH=/data_lake
       # These will be loaded from .env file via env_file directive
     env_file:
       - .env
@@ -39,6 +40,8 @@ services:
       - app_node_modules:/app/node_modules
       # Preserve .next build cache
       - app_next_cache:/app/.next
+      # Shared data lake (also accessible by python-backend)
+      - ./data_lake:/data_lake:delegated
     networks:
       - app-network
     # healthcheck:
@@ -63,9 +66,12 @@ services:
       - FLASK_ENV=development
       - FLASK_DEBUG=1
       - PYTHONUNBUFFERED=1
+      - DATA_LAKE_PATH=/data_lake
     volumes:
       # Mount entire python-backend directory for hot reloading
       - ./python-backend:/app:delegated
+      # Shared data lake (also accessible by Next.js app)
+      - ./data_lake:/data_lake:delegated
     networks:
       - app-network
     # healthcheck:

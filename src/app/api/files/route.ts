@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readdir, unlink, stat } from 'fs/promises';
 import { join } from 'path';
+import { getDataLakePath } from '@/lib/data-lake';
 
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
-        const folder = searchParams.get('folder') || 'uploads';
+        const folder = searchParams.get('folder') || 'data_lake';
 
-        // Allow 'python-backend/EEXXCC' as a special folder outside public/
+        // Special folders outside public/
         const ALLOWED_EXTRA_DIRS: Record<string, string> = {
             'excel-etl': join(process.cwd(), 'python-backend', 'EEXXCC'),
+            'data_lake': getDataLakePath(),
         };
 
         const uploadDir = ALLOWED_EXTRA_DIRS[folder] || join(process.cwd(), 'public', folder);
@@ -43,11 +45,16 @@ export async function DELETE(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const name = searchParams.get('name');
-        const folder = searchParams.get('folder') || 'uploads';
+        const folder = searchParams.get('folder') || 'data_lake';
 
         if (!name) return NextResponse.json({ success: false, error: 'Filename required' }, { status: 400 });
 
-        const filepath = join(process.cwd(), 'public', folder, name);
+        const ALLOWED_EXTRA_DIRS: Record<string, string> = {
+            'excel-etl': join(process.cwd(), 'python-backend', 'EEXXCC'),
+            'data_lake': getDataLakePath(),
+        };
+        const baseDir = ALLOWED_EXTRA_DIRS[folder] || join(process.cwd(), 'public', folder);
+        const filepath = join(baseDir, name);
         await unlink(filepath);
 
         return NextResponse.json({ success: true });

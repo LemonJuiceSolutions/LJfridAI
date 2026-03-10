@@ -64,6 +64,15 @@ CORS(app)  # Allow cross-origin requests from Next.js
 
 VERSION = "1.0.6"  # Fix: auto-unwrap if __name__=="__main__" + file write capture
 
+# Data lake: shared folder between Python backend and Next.js.
+# Relative paths are resolved from the project root (one level up from this file).
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_DATA_LAKE_CONFIGURED = os.environ.get('DATA_LAKE_PATH', 'public/documents')
+DATA_LAKE_PATH = _DATA_LAKE_CONFIGURED if os.path.isabs(_DATA_LAKE_CONFIGURED) \
+    else os.path.join(_PROJECT_ROOT, _DATA_LAKE_CONFIGURED)
+os.makedirs(DATA_LAKE_PATH, exist_ok=True)
+print(f"✅ [INIT] Data lake path: {DATA_LAKE_PATH}")
+
 # --- Premium Emerald Theme for Plotly ---
 emerald_template = go.layout.Template(
     layout=go.Layout(
