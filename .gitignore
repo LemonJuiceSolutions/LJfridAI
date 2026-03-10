@@ -91,4 +91,12 @@ htmlcov/
 dump.sql
 *.csv
 *.html
+
+# python-backend specific
+python-backend/*.csv
+python-backend/*.html
+python-backend/**/*.csv
+python-backend/**/*.html
+
 /logs
+
