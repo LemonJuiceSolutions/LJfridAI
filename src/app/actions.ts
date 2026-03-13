@@ -4130,3 +4130,95 @@ export async function resolveAncestorResourcesAction(targetNodeId: string): Prom
         return { data: null, error: e instanceof Error ? e.message : "Errore durante la risoluzione delle risorse ancestor." };
     }
 }
+
+export async function clearPreviewDataAction(treeId: string): Promise<{ success: boolean; bytesFreed: number; error: string | null }> {
+    try {
+        const user = await getAuthenticatedUser();
+        const treeRecord = await db.tree.findFirst({
+            where: { id: treeId, companyId: user.companyId },
+            select: { id: true, jsonDecisionTree: true },
+        });
+        if (!treeRecord) throw new Error('Albero non trovato.');
+
+        const originalSize = Buffer.byteLength(treeRecord.jsonDecisionTree, 'utf8');
+
+        // Recursively strip preview/cached data from every node
+        function stripNode(node: any): any {
+            if (!node || typeof node !== 'object') return node;
+            if (Array.isArray(node)) return node.map(stripNode);
+
+            const cleaned = { ...node };
+
+            // Strip cached results from externalAgentConfig
+            if (cleaned.externalAgentConfig) {
+                const cfg = { ...cleaned.externalAgentConfig };
+                delete cfg.lastResult;
+                if (cfg.history) {
+                    cfg.history = cfg.history.map((entry: any) => {
+                        const { result, ...rest } = entry;
+                        return rest;
+                    });
+                }
+                cleaned.externalAgentConfig = cfg;
+            }
+
+            // Strip cached results from aiConfig
+            if (cleaned.aiConfig) {
+                const cfg = { ...cleaned.aiConfig };
+                delete cfg.lastResult;
+                cleaned.aiConfig = cfg;
+            }
+
+            // Strip sealed data from widgetConfig
+            if (cleaned.widgetConfig) {
+                const cfg = { ...cleaned.widgetConfig };
+                delete cfg.data;
+                cleaned.widgetConfig = cfg;
+            }
+
+            // Strip Python script preview result (table/chart/html cached data)
+            delete cleaned.pythonPreviewResult;
+
+            // Strip SQL preview data
+            delete cleaned.sqlPreviewData;
+            delete cleaned.sqlPreviewTimestamp;
+            delete cleaned.sqlPreviewLastUpdate;
+
+            // Strip preview field from chat history messages
+            if (Array.isArray(cleaned.sqlChatHistory)) {
+                cleaned.sqlChatHistory = cleaned.sqlChatHistory.map(({ preview: _p, ...msg }: any) => msg);
+            }
+            if (Array.isArray(cleaned.pythonChatHistory)) {
+                cleaned.pythonChatHistory = cleaned.pythonChatHistory.map(({ preview: _p, ...msg }: any) => msg);
+            }
+
+            // Recurse into options
+            if (cleaned.options) {
+                const newOptions: Record<string, any> = {};
+                for (const [key, value] of Object.entries(cleaned.options)) {
+                    newOptions[key] = stripNode(value);
+                }
+                cleaned.options = newOptions;
+            }
+
+            return cleaned;
+        }
+
+        const jsonTree = JSON.parse(treeRecord.jsonDecisionTree);
+        const cleanedTree = stripNode(jsonTree);
+        const cleanedJson = JSON.stringify(cleanedTree);
+        const newSize = Buffer.byteLength(cleanedJson, 'utf8');
+
+        await db.tree.update({
+            where: { id: treeId },
+            data: { jsonDecisionTree: cleanedJson },
+        });
+
+        invalidateServerTreeCache(treeId);
+
+        return { success: true, bytesFreed: originalSize - newSize, error: null };
+    } catch (e) {
+        console.error('Error in clearPreviewDataAction:', e);
+        return { success: false, bytesFreed: 0, error: e instanceof Error ? e.message : 'Errore sconosciuto' };
+    }
+}

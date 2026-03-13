@@ -1305,7 +1305,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     const getAncestorInputTables = useMemo(() => {
         return (currentPath: string): { name: string, nodeName?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart', pipelineDependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[] }[] => {
             // First, collect all ancestors with their paths for ordering
-            const ancestorItems: { path: string, nodeId?: string, nodeName?: string, name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string, pipelineDependencies?: any[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[], plotlyStyleOverrides?: any, htmlStyleOverrides?: any, aiConfig?: any, selectedDocuments?: any }[] = [];
+            const ancestorItems: { path: string, nodeId?: string, nodeName?: string, name: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: string, pipelineDependencies?: any[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, data?: any[], plotlyStyleOverrides?: any, htmlStyleOverrides?: any, aiConfig?: any, selectedDocuments?: any, externalAgentConfig?: any }[] = [];
 
             // Helper to recursively resolve dependencies
             const resolveDependencies = (node: any, visited: Set<string> = new Set()): any[] => {
@@ -1323,7 +1323,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     const sourceItem = flatTree.find((item: any) => {
                         const n = item.node;
                         return n && typeof n === 'object' &&
-                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName) || (n.aiConfig?.outputName === pName && n.aiConfig?.prompt) || (n.name === pName));
+                            ((n.pythonResultName === pName && n.pythonCode) || (n.sqlResultName === pName) || (n.aiConfig?.outputName === pName && n.aiConfig?.prompt) || (n.externalAgentConfig?.outputName === pName) || (n.name === pName));
                     });
 
                     if (sourceItem) {
@@ -1347,7 +1347,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                             pythonOutputType: sn.pythonOutputType,
                             pipelineDependencies: resolveDependencies(sn, newVisited),
                             selectedDocuments: sn.selectedDocuments,
-                            aiConfig: sn.aiConfig
+                            aiConfig: sn.aiConfig,
+                            externalAgentConfig: sn.externalAgentConfig
                         });
                     }
                 });
@@ -1464,6 +1465,27 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 });
                             }
                         }
+
+                        // Check for External Agent result
+                        if (actualNode.externalAgentConfig?.outputName) {
+                            const agentName = actualNode.externalAgentConfig.outputName;
+                            const alreadyAdded = ancestorItems.some(
+                                a => a.name === agentName && a.nodeId === actualNode.id
+                            );
+                            if (!alreadyAdded) {
+                                ancestorItems.push({
+                                    path: nodePath,
+                                    nodeId: actualNode.id,
+                                    nodeName: actualNode.question || actualNode.decision || (actualNode as any).name,
+                                    name: agentName,
+                                    isPython: false,
+                                    pythonOutputType: 'table',
+                                    pipelineDependencies: resolveDependencies(actualNode),
+                                    data: actualNode.externalAgentConfig.lastResult?.matrix,
+                                    externalAgentConfig: actualNode.externalAgentConfig
+                                });
+                            }
+                        }
                     }
                 }
             });
@@ -1480,7 +1502,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 // Use the ALREADY PROCESSED 'tables' array to ensure we get the fully populated dependencies (recursive)
                 const pipelineDeps = tables // Use the already built tables array!
                     .filter(t => t.name !== item.name) // Safety check
-                    .filter(t => t.sqlQuery || (t.isPython && t.pythonCode) || t.aiConfig?.prompt) // Filter only valid execution nodes
+                    .filter(t => t.sqlQuery || (t.isPython && t.pythonCode) || t.aiConfig?.prompt || (t as any).externalAgentConfig) // Filter only valid execution nodes
                     .map(t => ({
                         tableName: t.name,
                         nodeName: t.nodeName, // FIX: Pass display name for alias resolution (e.g. "Pipeline Prodotto" vs "PIPELINEUP")
@@ -1493,7 +1515,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                         connectorId: t.connectorId,
                         pipelineDependencies: t.pipelineDependencies,
                         selectedDocuments: (t as any).selectedDocuments,
-                        writesToDatabase: (t as any).writesToDatabase // Preserve write flag
+                        writesToDatabase: (t as any).writesToDatabase, // Preserve write flag
+                        externalAgentConfig: (t as any).externalAgentConfig
                     }));
 
                 tables.push({
@@ -1516,7 +1539,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     data: item.data,
                     plotlyStyleOverrides: item.plotlyStyleOverrides,
                     htmlStyleOverrides: item.htmlStyleOverrides,
-                    aiConfig: item.aiConfig
+                    aiConfig: item.aiConfig,
+                    externalAgentConfig: item.externalAgentConfig
                 } as any);
 
                 // console.log(`[ANCESTOR] "${item.name}" (${item.isPython ? 'Python' : 'SQL'}) has ${pipelineDeps.length} pipeline dependencies:`, pipelineDeps.map(d => d.tableName));

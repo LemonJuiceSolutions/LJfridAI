@@ -30,7 +30,7 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     // For POST requests with JSON body: detect wrong URLs and redirect to /api/update-commessa
     `if(o.method&&o.method.toUpperCase()==='POST'&&o.body){try{var b=JSON.parse(o.body);var changed=false;` +
     // Redirect: if URL is NOT /api/update-commessa and body has data fields, use saveToDb or redirect
-    `var isCorrectUrl=(typeof u==='string'&&u.indexOf('/api/update-commessa')>=0);` +
+    `var isCorrectUrl=(typeof u==='string'&&(u.indexOf('/api/update-commessa')>=0||u.indexOf('/api/external-agent/')>=0));` +
     `if(!isCorrectUrl&&typeof b==='object'&&Object.keys(b).length>0){` +
     `console.warn('[polyfill] fetch POST to wrong URL intercepted:',u);` +
     // If body has 'query', just redirect URL. Otherwise use saveToDb with __DB_TABLE__
@@ -123,6 +123,8 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     `errDiv.style.display='block';setTimeout(function(){errDiv.style.display='none'},8000);` +
     `return}` +
     `return _origPM(msg,orig)};` +
+    // --- 4. triggerPipeline: sends a postMessage to the parent to run an external agent ---
+    `window.triggerPipeline=function(data){window.parent.postMessage({type:'triggerWhatIf',data:data},'*')};` +
     `})();</script>`;
 
   if (html.includes('<head>')) {

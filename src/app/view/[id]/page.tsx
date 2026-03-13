@@ -4,11 +4,11 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, BrainCircuit, Loader2, Pencil, Check, GitMerge, Trash2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, BrainCircuit, Loader2, Pencil, Check, GitMerge, Trash2, RefreshCw, Eraser } from 'lucide-react';
 import Link from 'next/link';
 import _ from 'lodash';
 
-import { getTreeAction, executeConsolidationAction, getStandardizationDataAction, updateTreeNodeAction, regenerateNaturalLanguageAction } from '@/app/actions';
+import { getTreeAction, executeConsolidationAction, getStandardizationDataAction, updateTreeNodeAction, regenerateNaturalLanguageAction, clearPreviewDataAction } from '@/app/actions';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,6 +39,7 @@ export default function ViewTreePage() {
   const [standardizationData, setStandardizationData] = useState<{ tree: StoredTree, dbVariables: Variable[] } | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
+  const [isClearingPreview, setIsClearingPreview] = useState(false);
 
 
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -177,6 +178,23 @@ export default function ViewTreePage() {
     }
   };
 
+  const handleClearPreviewData = async () => {
+    if (!id) return;
+    setIsClearingPreview(true);
+    try {
+      const result = await clearPreviewDataAction(id);
+      if (!result.success) throw new Error(result.error || 'Errore sconosciuto');
+      const kb = Math.round(result.bytesFreed / 1024);
+      toast({ title: 'Dati di preview eliminati', description: kb > 0 ? `Liberati ${kb} KB.` : 'Nessun dato da rimuovere.' });
+      await fetchTree();
+    } catch (e) {
+      const error = e instanceof Error ? e.message : 'Errore sconosciuto';
+      toast({ variant: 'destructive', title: 'Errore', description: error });
+    } finally {
+      setIsClearingPreview(false);
+    }
+  };
+
   const handleRegenerateDescription = async () => {
     if (!id) return;
     setIsRegenerating(true);
@@ -274,9 +292,13 @@ export default function ViewTreePage() {
                       <CardDescription className="mt-2">ID: {tree.id}</CardDescription>
                     </div>
                     <div className='flex items-center gap-2'>
-                      <Button size="sm" onClick={handleSyncAndPropose} disabled={isLoadingAction}>
+                      <Button size="sm" onClick={handleSyncAndPropose} disabled={isLoadingAction || isClearingPreview}>
                         {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GitMerge className="mr-2 h-4 w-4" />}
                         Sincronizza Variabili
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={handleClearPreviewData} disabled={isLoadingAction || isClearingPreview}>
+                        {isClearingPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eraser className="mr-2 h-4 w-4" />}
+                        Elimina Dati di Preview
                       </Button>
                     </div>
                   </div>
