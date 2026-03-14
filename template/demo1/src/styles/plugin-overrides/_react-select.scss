@@ -1,0 +1,69 @@
+// Plugin: ReactQuill
+// github: https://github.com/zenoamaro/react-quill
+
+.react-select-container {
+  .react-select__control {
+    background-color: $input-bg;
+    border-color: $input-border-color;
+    &:hover {
+      border-color: $input-focus-border-color;
+    }
+    .react-select__value-container {
+      .react-select__single-value {
+        color: $input-color;
+      }
+      .react-select__multi-value {
+        background-color: $primary;
+        .react-select__multi-value__label {
+          color: $white;
+          padding: 1px 6px;
+          font-size: 100%;
+        }
+      }
+      .react-select__placeholder {
+        color: $input-placeholder-color;
+      }
+      .react-select__input-container {
+        color: $input-color;
+      }
+    }
+    .react-select__indicators {
+      color: $secondary;
+      .react-select__indicator-separator {
+        background-color: $secondary;
+      }
+      .react-select__dropdown-indicator,
+      .react-select__clear-indicator  {
+        svg {
+          color: $secondary;
+          &:hover {
+            color: $input-color;
+          }
+        }
+      }
+    }
+  }
+  .react-select__menu {
+    background-color: $dropdown-bg;
+    border: 1px solid $dropdown-border-color;
+    border-radius: $dropdown-border-radius;
+    box-shadow: $dropdown-box-shadow;
+  }
+  .react-select__option--is-focused {
+    &, &:active {
+      background-color: $component-hover-bg;
+    }
+  }
+  .react-select__option--is-selected {
+    background-color: $component-active-bg;
+  }
+  .react-select__option--is-disabled {
+    color: rgba($secondary, 0.75);
+  }
+}
+
+.Select__menu {
+  pointer-events: all !important;
+  display: block !important;
+  opacity: 1 !important;
+}

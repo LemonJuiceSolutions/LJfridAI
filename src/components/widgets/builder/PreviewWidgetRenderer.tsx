@@ -272,12 +272,10 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                             key={previewData.timestamp || Date.now()}
                             srcDoc={(() => {
                                 const htmlOverrides = previewData.htmlStyleOverrides || activeStyle?.html || {};
-                                let styledHtml = applyHtmlStyleOverrides(previewData.html, htmlOverrides);
-                                // Inject UI elements CSS from active style if available
-                                if (activeStyle?.ui) {
-                                    const uiCss = generateUiElementsCss(activeStyle.ui);
-                                    styledHtml = styledHtml.replace('</head>', `<style>${uiCss}</style></head>`);
-                                }
+                                // Merge UI overrides: per-node takes precedence over active style
+                                const uiOverrides = { ...(activeStyle?.ui || {}), ...(previewData.uiStyleOverrides || {}) };
+                                const uiCss = generateUiElementsCss(uiOverrides);
+                                let styledHtml = applyHtmlStyleOverrides(previewData.html, htmlOverrides, false, uiCss);
                                 return injectIframeFetchPolyfill(styledHtml, {
                                     connectorId: previewData.connectorId,
                                     baseUrl: typeof window !== 'undefined' ? window.location.origin : '',

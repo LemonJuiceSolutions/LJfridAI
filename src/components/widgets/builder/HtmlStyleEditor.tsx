@@ -8,13 +8,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { RotateCcw, Palette, Save, Trash2, Globe, Loader2, ChevronDown, ChevronUp, Bookmark } from 'lucide-react';
+import { RotateCcw, Palette, Save, Trash2, Globe, Loader2, ChevronDown, ChevronUp, Bookmark, Link2, Unlink2 } from 'lucide-react';
 
 // Re-export from shared utility so existing imports keep working
 export { applyHtmlStyleOverrides, generateHtmlStyleCss, HTML_STYLE_DEFAULTS } from '@/lib/html-style-utils';
 export type { HtmlStyleOverrides, HtmlInspectorZone } from '@/lib/html-style-utils';
 import type { HtmlStyleOverrides, HtmlInspectorZone, SavedHtmlStylePreset } from '@/lib/html-style-utils';
-import { HTML_STYLE_DEFAULTS, ZONE_LABELS, HTML_STYLE_PRESETS } from '@/lib/html-style-utils';
+import { HTML_STYLE_DEFAULTS, ZONE_LABELS, HTML_STYLE_PRESETS, isUiZone } from '@/lib/html-style-utils';
+import type { UiElementsOverrides } from '@/lib/unified-style-types';
+import { UI_ELEMENTS_DEFAULTS } from '@/lib/unified-style-types';
 import { getHtmlStylePresetsAction, saveHtmlStylePresetAction, deleteHtmlStylePresetAction, scrapeWebsiteStyleAction } from '@/actions/html-style-presets';
 
 // ── Inline field helpers (kept from before) ──
@@ -73,10 +75,10 @@ function SelectField({ label, value, options, onChange }: { label: string; value
 // ── Field definition types ──
 
 type FieldDef =
-  | { type: 'color'; key: keyof HtmlStyleOverrides; label: string; fallbackKey?: keyof HtmlStyleOverrides }
-  | { type: 'slider'; key: keyof HtmlStyleOverrides; label: string; min: number; max: number; step: number; unit?: string; zeroLabel?: string }
-  | { type: 'select'; key: keyof HtmlStyleOverrides; label: string; options: { value: string; label: string }[]; inheritLabel?: string }
-  | { type: 'switch'; key: keyof HtmlStyleOverrides; label: string; colorKey?: keyof HtmlStyleOverrides; colorLabel?: string };
+  | { type: 'color'; key: string; label: string; fallbackKey?: string }
+  | { type: 'slider'; key: string; label: string; min: number; max: number; step: number; unit?: string; zeroLabel?: string }
+  | { type: 'select'; key: string; label: string; options: { value: string; label: string }[]; inheritLabel?: string }
+  | { type: 'switch'; key: string; label: string; colorKey?: string; colorLabel?: string };
 
 interface CategoryGroup { category: string; fields: FieldDef[] }
 
@@ -398,12 +400,141 @@ function fieldsForZone(zone: Exclude<HtmlInspectorZone, null>): CategoryGroup[] 
         { type: 'select', key: 'body_font_weight', label: 'Peso', options: FONT_WEIGHTS },
       ]},
     ];
+    default: return [];
+  }
+}
+
+// ── UI element zone field definitions ──
+
+const BORDER_STYLES = [
+  { value: 'solid', label: 'Continuo' }, { value: 'dashed', label: 'Tratteggiato' },
+  { value: 'dotted', label: 'Puntinato' }, { value: 'none', label: 'Nessuno' },
+];
+
+function fieldsForUiZone(zone: string): CategoryGroup[] {
+  switch (zone) {
+    case 'btn': return [
+      { category: 'Colori', fields: [
+        { type: 'color', key: 'btn_bg_color', label: 'Sfondo' },
+        { type: 'color', key: 'btn_text_color', label: 'Testo' },
+        { type: 'color', key: 'btn_hover_bg_color', label: 'Sfondo hover' },
+        { type: 'color', key: 'btn_hover_text_color', label: 'Testo hover' },
+      ]},
+      { category: 'Forma', fields: [
+        { type: 'slider', key: 'btn_border_radius', label: 'Bordo arrotondato', min: 0, max: 20, step: 1, unit: 'px' },
+        { type: 'slider', key: 'btn_padding_v', label: 'Padding V', min: 2, max: 20, step: 1, unit: 'px' },
+        { type: 'slider', key: 'btn_padding_h', label: 'Padding H', min: 4, max: 32, step: 1, unit: 'px' },
+        { type: 'color', key: 'btn_border_color', label: 'Colore bordo' },
+        { type: 'slider', key: 'btn_border_width', label: 'Spessore bordo', min: 0, max: 4, step: 1, unit: 'px' },
+      ]},
+      { category: 'Testo', fields: [
+        { type: 'slider', key: 'btn_font_size', label: 'Dimensione', min: 8, max: 20, step: 1, unit: 'px' },
+        { type: 'select', key: 'btn_font_weight', label: 'Peso', options: FONT_WEIGHTS },
+        { type: 'select', key: 'btn_text_transform', label: 'Trasformazione', options: TEXT_TRANSFORMS },
+      ]},
+      { category: 'Effetti', fields: [
+        { type: 'select', key: 'btn_shadow', label: 'Ombra', options: [
+          { value: 'none', label: 'Nessuna' }, { value: 'sm', label: 'Leggera' },
+          { value: 'md', label: 'Media' }, { value: 'lg', label: 'Forte' },
+        ]},
+      ]},
+    ];
+    case 'btn-secondary': return [
+      { category: 'Colori', fields: [
+        { type: 'color', key: 'btn_secondary_bg_color', label: 'Sfondo' },
+        { type: 'color', key: 'btn_secondary_text_color', label: 'Testo' },
+        { type: 'color', key: 'btn_secondary_border_color', label: 'Bordo' },
+        { type: 'color', key: 'btn_secondary_hover_bg_color', label: 'Sfondo hover' },
+      ]},
+    ];
+    case 'input': return [
+      { category: 'Colori', fields: [
+        { type: 'color', key: 'input_bg_color', label: 'Sfondo' },
+        { type: 'color', key: 'input_text_color', label: 'Testo' },
+        { type: 'color', key: 'input_border_color', label: 'Bordo' },
+        { type: 'color', key: 'input_placeholder_color', label: 'Placeholder' },
+        { type: 'color', key: 'input_focus_border_color', label: 'Bordo focus' },
+        { type: 'color', key: 'input_focus_ring_color', label: 'Anello focus' },
+      ]},
+      { category: 'Forma', fields: [
+        { type: 'slider', key: 'input_border_radius', label: 'Bordo arrotondato', min: 0, max: 16, step: 1, unit: 'px' },
+        { type: 'slider', key: 'input_border_width', label: 'Spessore bordo', min: 0, max: 4, step: 1, unit: 'px' },
+        { type: 'slider', key: 'input_padding_v', label: 'Padding V', min: 2, max: 16, step: 1, unit: 'px' },
+        { type: 'slider', key: 'input_padding_h', label: 'Padding H', min: 4, max: 20, step: 1, unit: 'px' },
+        { type: 'slider', key: 'input_font_size', label: 'Dimensione font', min: 8, max: 20, step: 1, unit: 'px' },
+      ]},
+      { category: 'Slider / Range', fields: [
+        { type: 'color', key: 'slider_track_color', label: 'Colore traccia' },
+        { type: 'color', key: 'slider_thumb_color', label: 'Colore cursore' },
+        { type: 'slider', key: 'slider_track_height', label: 'Altezza traccia', min: 1, max: 12, step: 1, unit: 'px' },
+      ]},
+    ];
+    case 'select': return [
+      { category: 'Colori', fields: [
+        { type: 'color', key: 'select_bg_color', label: 'Sfondo' },
+        { type: 'color', key: 'select_text_color', label: 'Testo' },
+        { type: 'color', key: 'select_border_color', label: 'Bordo' },
+      ]},
+      { category: 'Forma', fields: [
+        { type: 'slider', key: 'select_border_radius', label: 'Bordo arrotondato', min: 0, max: 16, step: 1, unit: 'px' },
+      ]},
+    ];
+    case 'badge': return [
+      { category: 'Colori', fields: [
+        { type: 'color', key: 'badge_bg_color', label: 'Sfondo' },
+        { type: 'color', key: 'badge_text_color', label: 'Testo' },
+      ]},
+      { category: 'Forma', fields: [
+        { type: 'slider', key: 'badge_border_radius', label: 'Bordo arrotondato', min: 0, max: 20, step: 1, unit: 'px' },
+        { type: 'slider', key: 'badge_padding_v', label: 'Padding V', min: 0, max: 12, step: 1, unit: 'px' },
+        { type: 'slider', key: 'badge_padding_h', label: 'Padding H', min: 0, max: 20, step: 1, unit: 'px' },
+        { type: 'slider', key: 'badge_font_size', label: 'Dimensione', min: 8, max: 16, step: 1, unit: 'px' },
+        { type: 'select', key: 'badge_font_weight', label: 'Peso', options: FONT_WEIGHTS },
+      ]},
+    ];
+    case 'card': return [
+      { category: 'Colori', fields: [
+        { type: 'color', key: 'card_bg_color', label: 'Sfondo' },
+        { type: 'color', key: 'card_border_color', label: 'Bordo' },
+        { type: 'color', key: 'card_header_color', label: 'Colore titolo' },
+      ]},
+      { category: 'Forma', fields: [
+        { type: 'slider', key: 'card_border_radius', label: 'Bordo arrotondato', min: 0, max: 24, step: 1, unit: 'px' },
+        { type: 'slider', key: 'card_padding', label: 'Padding', min: 4, max: 32, step: 2, unit: 'px' },
+        { type: 'select', key: 'card_shadow', label: 'Ombra', options: [
+          { value: 'none', label: 'Nessuna' }, { value: 'sm', label: 'Leggera' },
+          { value: 'md', label: 'Media' }, { value: 'lg', label: 'Forte' },
+        ]},
+      ]},
+      { category: 'Titolo card', fields: [
+        { type: 'slider', key: 'card_header_font_size', label: 'Dimensione', min: 10, max: 24, step: 1, unit: 'px' },
+        { type: 'select', key: 'card_header_font_weight', label: 'Peso', options: FONT_WEIGHTS },
+      ]},
+    ];
+    case 'divider': return [
+      { category: 'Stile', fields: [
+        { type: 'color', key: 'divider_color', label: 'Colore' },
+        { type: 'slider', key: 'divider_width', label: 'Spessore', min: 1, max: 6, step: 1, unit: 'px' },
+        { type: 'select', key: 'divider_style', label: 'Stile', options: BORDER_STYLES },
+      ]},
+    ];
+    case 'list': return [
+      { category: 'Stile', fields: [
+        { type: 'color', key: 'list_marker_color', label: 'Colore marcatore' },
+        { type: 'slider', key: 'list_item_spacing', label: 'Spaziatura', min: 0, max: 16, step: 1, unit: 'px' },
+      ]},
+    ];
+    default: return [];
   }
 }
 
 /** Zones in display order for "show all" mode */
 const ALL_ZONES: Exclude<HtmlInspectorZone, null>[] = [
   'body', 'th', 'td', 'first-col', 'table', 'tr', 'heading', 'caption', 'link', 'value-color',
+];
+
+const ALL_UI_ZONES: Exclude<HtmlInspectorZone, null>[] = [
+  'btn', 'btn-secondary', 'input', 'select', 'badge', 'card', 'divider', 'list',
 ];
 
 // ── Props ──
@@ -415,9 +546,24 @@ interface HtmlStyleEditorProps {
   elementInfo?: string;
   onClearZone?: () => void;
   openRouterConfig?: { apiKey: string; model: string };
+  // ── Inheritance support ──
+  activeStyleHtml?: Partial<HtmlStyleOverrides>;
+  activeStyleUi?: Partial<UiElementsOverrides>;
+  overriddenHtmlKeys?: Set<string>;
+  overriddenUiKeys?: Set<string>;
+  onToggleInheritHtml?: (key: string) => void;
+  onToggleInheritUi?: (key: string) => void;
+  // ── UI element overrides ──
+  uiOverrides?: Partial<UiElementsOverrides>;
+  onUiChange?: (overrides: Partial<UiElementsOverrides>) => void;
 }
 
-export default function HtmlStyleEditor({ overrides, onChange, selectedZone, elementInfo, onClearZone, openRouterConfig }: HtmlStyleEditorProps) {
+export default function HtmlStyleEditor({
+  overrides, onChange, selectedZone, elementInfo, onClearZone, openRouterConfig,
+  activeStyleHtml, activeStyleUi, overriddenHtmlKeys, overriddenUiKeys,
+  onToggleInheritHtml, onToggleInheritUi,
+  uiOverrides, onUiChange,
+}: HtmlStyleEditorProps) {
   const [showAll, setShowAll] = useState(false);
   const [savedPresets, setSavedPresets] = useState<SavedHtmlStylePreset[]>([]);
   const [presetDropdownOpen, setPresetDropdownOpen] = useState(false);
@@ -512,91 +658,153 @@ export default function HtmlStyleEditor({ overrides, onChange, selectedZone, ele
     setIsScraping(false);
   };
 
-  const set = useCallback((key: keyof HtmlStyleOverrides, value: any) => {
+  const set = useCallback((key: string, value: any) => {
     onChange({ ...overrides, [key]: value });
   }, [overrides, onChange]);
 
-  const reset = useCallback((key: keyof HtmlStyleOverrides) => {
+  const reset = useCallback((key: string) => {
     const next = { ...overrides };
-    delete next[key];
+    delete (next as any)[key];
     onChange(next);
   }, [overrides, onChange]);
 
-  const resolve = useCallback((key: keyof HtmlStyleOverrides): any => {
-    return overrides[key] !== undefined ? overrides[key] : (HTML_STYLE_DEFAULTS as any)[key];
+  const resolve = useCallback((key: string): any => {
+    return (overrides as any)[key] !== undefined ? (overrides as any)[key] : (HTML_STYLE_DEFAULTS as any)[key];
   }, [overrides]);
 
-  // ── Render a single field ──
-  const renderField = useCallback((field: FieldDef) => {
+  // ── UI element set/reset/resolve ──
+  const setUi = useCallback((key: string, value: any) => {
+    if (!onUiChange) return;
+    onUiChange({ ...uiOverrides, [key]: value });
+  }, [uiOverrides, onUiChange]);
+
+  const resetUi = useCallback((key: string) => {
+    if (!onUiChange) return;
+    const next = { ...uiOverrides };
+    delete (next as any)[key];
+    onUiChange(next);
+  }, [uiOverrides, onUiChange]);
+
+  const resolveUi = useCallback((key: string): any => {
+    const nodeVal = uiOverrides ? (uiOverrides as any)[key] : undefined;
+    if (nodeVal !== undefined) return nodeVal;
+    if (activeStyleUi && (activeStyleUi as any)[key] !== undefined) return (activeStyleUi as any)[key];
+    return (UI_ELEMENTS_DEFAULTS as any)[key];
+  }, [uiOverrides, activeStyleUi]);
+
+  // Detect if current zone is a UI zone
+  const currentIsUi = selectedZone ? isUiZone(selectedZone) : false;
+
+  // ── Render a single field (handles both HTML and UI zones) ──
+  const renderField = useCallback((field: FieldDef, forUi = false) => {
+    const fieldResolve = forUi ? resolveUi : resolve;
+    const fieldSet = forUi ? setUi : set;
+    const fieldReset = forUi ? resetUi : reset;
+    const isOverridden = forUi
+      ? (overriddenUiKeys?.has(field.key) ?? false)
+      : (overriddenHtmlKeys?.has(field.key) ?? false);
+    const onToggle = forUi ? onToggleInheritUi : onToggleInheritHtml;
+    const hasInheritance = !!onToggle;
+
+    // Inheritance badge (small link icon)
+    const inheritBadge = hasInheritance ? (
+      <button
+        onClick={() => onToggle?.(field.key)}
+        className={`p-0.5 rounded transition-colors ${isOverridden ? 'text-violet-500 hover:text-violet-700' : 'text-muted-foreground/40 hover:text-muted-foreground'}`}
+        title={isOverridden ? 'Override locale — clicca per ereditare' : 'Ereditato da stile globale — clicca per sovrascrivere'}
+      >
+        {isOverridden ? <Unlink2 className="h-3 w-3" /> : <Link2 className="h-3 w-3" />}
+      </button>
+    ) : null;
+
+    const wrapperClass = hasInheritance && !isOverridden ? 'opacity-60' : '';
+
     switch (field.type) {
       case 'color': {
-        const val = resolve(field.key) as string;
-        const display = val || (field.fallbackKey ? resolve(field.fallbackKey) as string : '#ffffff');
+        const val = fieldResolve(field.key) as string;
+        const display = val || (field.fallbackKey ? fieldResolve(field.fallbackKey) as string : '#ffffff');
         return (
-          <ColorField
-            key={field.key}
-            label={field.label}
-            value={display}
-            onChange={v => set(field.key, v)}
-            onReset={() => reset(field.key)}
-          />
+          <div key={field.key} className={`flex items-center gap-1 ${wrapperClass}`}>
+            <div className="flex-1">
+              <ColorField
+                label={field.label}
+                value={display}
+                onChange={v => fieldSet(field.key, v)}
+                onReset={hasInheritance ? undefined : () => fieldReset(field.key)}
+              />
+            </div>
+            {inheritBadge}
+          </div>
         );
       }
       case 'slider': {
-        const val = resolve(field.key) as number;
+        const val = fieldResolve(field.key) as number;
         const unit = (field.zeroLabel && val === 0) ? field.zeroLabel : (field.unit || '');
         return (
-          <SliderField
-            key={field.key}
-            label={field.label}
-            value={val}
-            min={field.min} max={field.max} step={field.step}
-            onChange={v => set(field.key, v)}
-            onReset={() => reset(field.key)}
-            unit={unit}
-          />
+          <div key={field.key} className={wrapperClass}>
+            <div className="flex items-center gap-1">
+              <div className="flex-1">
+                <SliderField
+                  label={field.label}
+                  value={val}
+                  min={field.min} max={field.max} step={field.step}
+                  onChange={v => fieldSet(field.key, v)}
+                  onReset={hasInheritance ? undefined : () => fieldReset(field.key)}
+                  unit={unit}
+                />
+              </div>
+              {inheritBadge}
+            </div>
+          </div>
         );
       }
       case 'select': {
-        const raw = resolve(field.key) as string;
+        const raw = fieldResolve(field.key) as string;
         const val = field.inheritLabel ? (raw || '__inherit__') : raw;
         const opts = field.inheritLabel
           ? [{ value: '__inherit__', label: field.inheritLabel }, ...field.options]
           : field.options;
         return (
-          <SelectField
-            key={field.key}
-            label={field.label}
-            value={val}
-            options={opts}
-            onChange={v => set(field.key, field.inheritLabel && v === '__inherit__' ? '' : v)}
-          />
+          <div key={field.key} className={`flex items-center gap-1 ${wrapperClass}`}>
+            <div className="flex-1">
+              <SelectField
+                label={field.label}
+                value={val}
+                options={opts}
+                onChange={v => fieldSet(field.key, field.inheritLabel && v === '__inherit__' ? '' : v)}
+              />
+            </div>
+            {inheritBadge}
+          </div>
         );
       }
       case 'switch': {
-        const checked = resolve(field.key) as boolean;
+        const checked = fieldResolve(field.key) as boolean;
         return (
-          <div key={field.key} className="space-y-2">
+          <div key={field.key} className={`space-y-2 ${wrapperClass}`}>
             <div className="flex items-center justify-between">
               <Label className="text-[11px]">{field.label}</Label>
-              <Switch checked={checked} onCheckedChange={v => set(field.key, v)} />
+              <div className="flex items-center gap-1">
+                <Switch checked={checked} onCheckedChange={v => fieldSet(field.key, v)} />
+                {inheritBadge}
+              </div>
             </div>
             {field.colorKey && checked && (
               <ColorField
                 label={field.colorLabel || 'Colore'}
-                value={resolve(field.colorKey) as string}
-                onChange={v => set(field.colorKey!, v)}
-                onReset={() => reset(field.colorKey!)}
+                value={fieldResolve(field.colorKey) as string}
+                onChange={v => fieldSet(field.colorKey!, v)}
+                onReset={hasInheritance ? undefined : () => fieldReset(field.colorKey!)}
               />
             )}
           </div>
         );
       }
     }
-  }, [resolve, set, reset]);
+  }, [resolve, set, reset, resolveUi, setUi, resetUi, overriddenHtmlKeys, overriddenUiKeys, onToggleInheritHtml, onToggleInheritUi]);
 
   // ── Render category groups ──
-  const renderGroups = useCallback((groups: CategoryGroup[]) => (
+  const renderGroups = useCallback((groups: CategoryGroup[], forUi = false) => (
     <>
       {groups.map(g => (
         <div key={g.category}>
@@ -604,7 +812,7 @@ export default function HtmlStyleEditor({ overrides, onChange, selectedZone, ele
             {g.category}
           </div>
           <div className="space-y-2.5">
-            {g.fields.map(renderField)}
+            {g.fields.map(f => renderField(f, forUi))}
           </div>
         </div>
       ))}
@@ -630,210 +838,235 @@ export default function HtmlStyleEditor({ overrides, onChange, selectedZone, ele
 
   return (
     <div className="space-y-1 text-sm">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-bold">
-          {selectedZone ? ZONE_LABELS[selectedZone] : 'Stile HTML'}
-        </span>
-        <div className="flex items-center gap-2">
-          {selectedZone && onClearZone && (
-            <button
-              onClick={() => { onClearZone(); setShowAll(true); }}
-              className="text-[10px] text-violet-600 hover:text-violet-800 dark:text-violet-400 dark:hover:text-violet-200"
-            >
-              Mostra tutto
-            </button>
-          )}
-          {showAll && !selectedZone && (
-            <button
-              onClick={() => setShowAll(false)}
-              className="text-[10px] text-violet-600 hover:text-violet-800 dark:text-violet-400 dark:hover:text-violet-200"
-            >
-              Nascondi
-            </button>
-          )}
-          <button
-            onClick={() => onChange({})}
-            className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
-          >
-            <RotateCcw className="h-3 w-3" /> Ripristina
-          </button>
-        </div>
-      </div>
 
-      {/* ── Preset selector + Save ── */}
-      <div className="flex items-center gap-1.5">
-        {/* Preset dropdown — plain div, no Portal */}
-        <div ref={presetDropdownRef} className="relative flex-1">
-          <button
-            onClick={() => setPresetDropdownOpen(v => !v)}
-            className="h-7 text-xs w-full flex items-center gap-2 border rounded-md px-2 hover:bg-muted/50 transition-colors"
-          >
-            <Palette className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="text-muted-foreground truncate">Preset...</span>
-            {presetDropdownOpen
-              ? <ChevronUp className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />
-              : <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />}
-          </button>
-          {presetDropdownOpen && (
-            <div className="absolute left-0 top-full mt-1 w-72 bg-popover border rounded-md shadow-md z-50 p-1 max-h-[320px] overflow-y-auto">
-              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Built-in</div>
-              {HTML_STYLE_PRESETS.map(p => (
+      {/* ════════════════════════════════════════════════════════ */}
+      {/* ── ZONE-SELECTED VIEW: only zone controls ── */}
+      {/* ════════════════════════════════════════════════════════ */}
+      {selectedZone ? (
+        <>
+          {/* Zone badge with close / "show all" */}
+          <div className="flex items-center gap-1.5 px-2 py-1.5 rounded bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 text-[11px] text-violet-700 dark:text-violet-300">
+            <span className="font-mono text-[10px] bg-violet-100 dark:bg-violet-900 px-1 rounded">
+              {elementInfo || selectedZone}
+            </span>
+            <span className="flex-1 text-violet-500 dark:text-violet-400">{ZONE_LABELS[selectedZone]}</span>
+            {onClearZone && (
+              <button
+                onClick={() => { onClearZone(); setShowAll(true); }}
+                className="text-[10px] text-violet-600 hover:text-violet-800 dark:text-violet-400 dark:hover:text-violet-200 whitespace-nowrap"
+                title="Mostra tutte le proprietà"
+              >
+                Mostra tutto ›
+              </button>
+            )}
+          </div>
+
+          {/* Zone-specific fields ONLY */}
+          {currentIsUi && uiOverrides && onUiChange
+            ? renderGroups(fieldsForUiZone(selectedZone), true)
+            : renderGroups(fieldsForZone(selectedZone))}
+        </>
+      ) : (
+        <>
+          {/* ════════════════════════════════════════════════════════ */}
+          {/* ── GLOBAL VIEW: presets, scrape, all fields ── */}
+          {/* ════════════════════════════════════════════════════════ */}
+
+          {/* Header */}
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-bold">Stile HTML</span>
+            <div className="flex items-center gap-2">
+              {showAll && (
                 <button
-                  key={p.id}
-                  onClick={() => applyPreset(p.overrides)}
-                  className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs transition-colors"
+                  onClick={() => setShowAll(false)}
+                  className="text-[10px] text-violet-600 hover:text-violet-800 dark:text-violet-400 dark:hover:text-violet-200"
                 >
-                  <div className="font-medium">{p.label}</div>
-                  <div className="text-[10px] text-muted-foreground leading-tight">{p.description}</div>
+                  Nascondi
                 </button>
-              ))}
-              {savedPresets.length > 0 && (
-                <>
-                  <Separator className="my-1" />
-                  <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                    <Bookmark className="h-3 w-3" /> Salvati
-                  </div>
-                  {savedPresets.map(p => (
-                    <div key={p.id} className="flex items-center">
-                      <button
-                        onClick={() => applyPreset(p.overrides)}
-                        className="flex-1 text-left px-2 py-1.5 rounded hover:bg-muted text-xs transition-colors min-w-0"
-                      >
-                        <div className="font-medium truncate">{p.label}</div>
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDeletePreset(p.id); }}
-                        className="p-1 rounded hover:bg-destructive/10 shrink-0"
-                        title="Elimina preset"
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </button>
-                    </div>
+              )}
+              <button
+                onClick={() => onChange({})}
+                className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <RotateCcw className="h-3 w-3" /> Ripristina
+              </button>
+            </div>
+          </div>
+
+          {/* Preset selector + Save */}
+          <div className="flex items-center gap-1.5">
+            {/* Preset dropdown — plain div, no Portal */}
+            <div ref={presetDropdownRef} className="relative flex-1">
+              <button
+                onClick={() => setPresetDropdownOpen(v => !v)}
+                className="h-7 text-xs w-full flex items-center gap-2 border rounded-md px-2 hover:bg-muted/50 transition-colors"
+              >
+                <Palette className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground truncate">Preset...</span>
+                {presetDropdownOpen
+                  ? <ChevronUp className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />
+                  : <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />}
+              </button>
+              {presetDropdownOpen && (
+                <div className="absolute left-0 top-full mt-1 w-72 bg-popover border rounded-md shadow-md z-50 p-1 max-h-[320px] overflow-y-auto">
+                  <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Built-in</div>
+                  {HTML_STYLE_PRESETS.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => applyPreset(p.overrides)}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs transition-colors"
+                    >
+                      <div className="font-medium">{p.label}</div>
+                      <div className="text-[10px] text-muted-foreground leading-tight">{p.description}</div>
+                    </button>
                   ))}
-                </>
+                  {savedPresets.length > 0 && (
+                    <>
+                      <Separator className="my-1" />
+                      <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <Bookmark className="h-3 w-3" /> Salvati
+                      </div>
+                      {savedPresets.map(p => (
+                        <div key={p.id} className="flex items-center">
+                          <button
+                            onClick={() => applyPreset(p.overrides)}
+                            className="flex-1 text-left px-2 py-1.5 rounded hover:bg-muted text-xs transition-colors min-w-0"
+                          >
+                            <div className="font-medium truncate">{p.label}</div>
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeletePreset(p.id); }}
+                            className="p-1 rounded hover:bg-destructive/10 shrink-0"
+                            title="Elimina preset"
+                          >
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </button>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Save dropdown — plain div, no Portal */}
+            <div ref={saveDropdownRef} className="relative shrink-0">
+              <button
+                onClick={() => setSaveDropdownOpen(v => !v)}
+                className="h-7 px-2 border rounded-md hover:bg-muted/50 transition-colors flex items-center gap-1 text-xs"
+                title="Salva stile corrente"
+              >
+                <Save className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+              {saveDropdownOpen && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-popover border rounded-md shadow-md z-50 p-3 space-y-2">
+                  <div className="text-xs font-medium">Salva come preset</div>
+                  <Input
+                    value={saveName}
+                    onChange={e => setSaveName(e.target.value)}
+                    placeholder="Nome dello stile"
+                    className="h-7 text-xs"
+                    onKeyDown={e => { if (e.key === 'Enter') handleSavePreset(); }}
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSavePreset}
+                    disabled={!saveName.trim() || isSaving}
+                    className="w-full h-7 text-xs bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                  >
+                    {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                    {isSaving ? 'Salvataggio...' : 'Salva'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Scrape URL */}
+          {openRouterConfig?.apiKey && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <Input
+                  value={scrapeUrl}
+                  onChange={e => { setScrapeUrl(e.target.value); setScrapeError(''); }}
+                  placeholder="https://esempio.com"
+                  className="h-7 text-xs flex-1"
+                  onKeyDown={e => { if (e.key === 'Enter') handleScrape(); }}
+                />
+                <button
+                  onClick={handleScrape}
+                  disabled={isScraping || !scrapeUrl.trim()}
+                  className="h-7 px-2 text-xs border rounded-md hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0"
+                >
+                  {isScraping ? <Loader2 className="h-3 w-3 animate-spin" /> : <Globe className="h-3 w-3" />}
+                  {isScraping ? 'Scraping...' : 'Scrape'}
+                </button>
+              </div>
+              {scrapeError && (
+                <div className="text-[10px] text-destructive px-1">{scrapeError}</div>
               )}
             </div>
           )}
-        </div>
 
-        {/* Save dropdown — plain div, no Portal */}
-        <div ref={saveDropdownRef} className="relative shrink-0">
-          <button
-            onClick={() => setSaveDropdownOpen(v => !v)}
-            className="h-7 px-2 border rounded-md hover:bg-muted/50 transition-colors flex items-center gap-1 text-xs"
-            title="Salva stile corrente"
-          >
-            <Save className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
-          {saveDropdownOpen && (
-            <div className="absolute right-0 top-full mt-1 w-56 bg-popover border rounded-md shadow-md z-50 p-3 space-y-2">
-              <div className="text-xs font-medium">Salva come preset</div>
-              <Input
-                value={saveName}
-                onChange={e => setSaveName(e.target.value)}
-                placeholder="Nome dello stile"
-                className="h-7 text-xs"
-                onKeyDown={e => { if (e.key === 'Enter') handleSavePreset(); }}
-                autoFocus
-              />
+          {/* Content: all fields or hint */}
+          {showAll ? (
+            <>
+              {allGroupsByZone.map(({ zoneLabel, groups }) => (
+                <div key={zoneLabel}>
+                  <div className="text-[11px] font-bold text-violet-600 dark:text-violet-400 mt-4 mb-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-violet-500/50 inline-block" />
+                    {zoneLabel}
+                  </div>
+                  {renderGroups(groups)}
+                </div>
+              ))}
+              {/* UI element zones */}
+              {uiOverrides && onUiChange && ALL_UI_ZONES.map(zone => {
+                const groups = fieldsForUiZone(zone);
+                if (groups.length === 0) return null;
+                return (
+                  <div key={zone}>
+                    <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 mt-4 mb-1 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500/50 inline-block" />
+                      {ZONE_LABELS[zone]}
+                    </div>
+                    {renderGroups(groups, true)}
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            <div className="py-8 text-center">
+              <div className="text-[11px] text-muted-foreground">
+                Clicca su un elemento nell&apos;anteprima per ispezionarlo
+              </div>
               <button
-                onClick={handleSavePreset}
-                disabled={!saveName.trim() || isSaving}
-                className="w-full h-7 text-xs bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                onClick={() => setShowAll(true)}
+                className="mt-2 text-[10px] text-violet-600 hover:text-violet-800 dark:text-violet-400 dark:hover:text-violet-200"
               >
-                {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                {isSaving ? 'Salvataggio...' : 'Salva'}
+                oppure mostra tutte le proprieta&apos;
               </button>
             </div>
           )}
-        </div>
-      </div>
 
-      {/* ── Scrape URL ── */}
-      {openRouterConfig?.apiKey && (
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <Input
-              value={scrapeUrl}
-              onChange={e => { setScrapeUrl(e.target.value); setScrapeError(''); }}
-              placeholder="https://esempio.com"
-              className="h-7 text-xs flex-1"
-              onKeyDown={e => { if (e.key === 'Enter') handleScrape(); }}
-            />
-            <button
-              onClick={handleScrape}
-              disabled={isScraping || !scrapeUrl.trim()}
-              className="h-7 px-2 text-xs border rounded-md hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0"
-            >
-              {isScraping ? <Loader2 className="h-3 w-3 animate-spin" /> : <Globe className="h-3 w-3" />}
-              {isScraping ? 'Scraping...' : 'Scrape'}
-            </button>
-          </div>
-          {scrapeError && (
-            <div className="text-[10px] text-destructive px-1">{scrapeError}</div>
-          )}
-        </div>
-      )}
-
-      {/* ── Zone badge ── */}
-      {selectedZone && (
-        <div className="flex items-center gap-1.5 px-2 py-1.5 rounded bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 text-[11px] text-violet-700 dark:text-violet-300">
-          <span className="font-mono text-[10px] bg-violet-100 dark:bg-violet-900 px-1 rounded">
-            {elementInfo || selectedZone}
-          </span>
-          <span className="text-violet-500 dark:text-violet-400">{ZONE_LABELS[selectedZone]}</span>
-        </div>
-      )}
-
-      {/* ── Content ── */}
-      {selectedZone ? (
-        /* Inspector: fields for selected zone */
-        renderGroups(fieldsForZone(selectedZone))
-      ) : showAll ? (
-        /* All properties organized by zone */
-        <>
-          {allGroupsByZone.map(({ zoneLabel, groups }) => (
-            <div key={zoneLabel}>
-              <div className="text-[11px] font-bold text-violet-600 dark:text-violet-400 mt-4 mb-1 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-violet-500/50 inline-block" />
-                {zoneLabel}
-              </div>
-              {renderGroups(groups)}
+          {/* Custom CSS */}
+          <div className="mt-4">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 border-b pb-1">
+              CSS Personalizzato
             </div>
-          ))}
-        </>
-      ) : (
-        /* Hint: click to inspect */
-        <div className="py-8 text-center">
-          <div className="text-[11px] text-muted-foreground">
-            Clicca su un elemento nell&apos;anteprima per ispezionarlo
+            <Textarea
+              value={overrides.custom_css || ''}
+              onChange={e => set('custom_css', e.target.value)}
+              placeholder="/* Regole CSS personalizzate */"
+              className="font-mono text-[11px] min-h-[80px] resize-y"
+            />
+            <p className="text-[9px] text-muted-foreground mt-1">
+              Applicato dopo i controlli visuali, ha priorita&apos; su di essi.
+            </p>
           </div>
-          <button
-            onClick={() => setShowAll(true)}
-            className="mt-2 text-[10px] text-violet-600 hover:text-violet-800 dark:text-violet-400 dark:hover:text-violet-200"
-          >
-            oppure mostra tutte le proprieta&apos;
-          </button>
-        </div>
+        </>
       )}
-
-      {/* ── Custom CSS (always visible) ── */}
-      <div className="mt-4">
-        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 border-b pb-1">
-          CSS Personalizzato
-        </div>
-        <Textarea
-          value={overrides.custom_css || ''}
-          onChange={e => set('custom_css', e.target.value)}
-          placeholder="/* Regole CSS personalizzate */"
-          className="font-mono text-[11px] min-h-[80px] resize-y"
-        />
-        <p className="text-[9px] text-muted-foreground mt-1">
-          Applicato dopo i controlli visuali, ha priorita&apos; su di essi.
-        </p>
-      </div>
     </div>
   );
 }

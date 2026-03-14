@@ -456,6 +456,22 @@ export const PLOTLY_STYLE_PRESETS: PlotlyStylePreset[] = [
       margin_t: 60, margin_b: 60, margin_l: 50, margin_r: 20,
     },
   },
+  // ─── ADMIN DASHBOARD ───
+  {
+    id: 'nobleui-admin',
+    label: 'NobleUI Admin',
+    description: 'Dashboard admin moderno — viola-blu primary, clean grid',
+    overrides: {
+      paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
+      font_family: 'Roboto', font_size: 12, font_color: '#7987a1',
+      title_font_size: 14, title_font_color: '#060c17',
+      colorway: ['#6571ff', '#66d1d1', '#05a34a', '#fbbc06', '#ff3366', '#7987a1', '#4d8af0', '#e9ecef'],
+      xaxis_showgrid: false, yaxis_showgrid: true,
+      yaxis_gridcolor: 'rgba(77, 138, 240, 0.15)', yaxis_griddash: 'solid',
+      showlegend: true, legend_orientation: 'h', legend_x: 0, legend_y: -0.15,
+      margin_t: 50, margin_b: 50, margin_l: 50, margin_r: 20,
+    },
+  },
 ];
 
 /**

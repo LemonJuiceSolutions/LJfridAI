@@ -871,6 +871,28 @@ export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
       link_color: '#1a1a1a', link_decoration: 'underline', scrollbar_width: 'none',
     },
   },
+  // ─── ADMIN DASHBOARD ───
+  {
+    id: 'nobleui-admin',
+    label: 'NobleUI Admin',
+    description: 'Dashboard admin moderno — Roboto, viola-blu primary, ombre leggere',
+    overrides: {
+      page_bg_color: '#f9fafb', page_padding: 20, container_border_radius: 4, container_shadow: 'sm',
+      header_bg_color: '#f5f5f5', header_text_color: '#7987a1',
+      header_font_size: 9, header_font_weight: '700', header_text_transform: 'uppercase', header_letter_spacing: 0.8,
+      header_padding_v: 10, header_padding_h: 14, header_border_bottom_width: 1, header_border_bottom_color: '#dee2e6',
+      body_bg_color: '#ffffff', body_text_color: '#060c17', body_font_size: 12, body_line_height: 1.5,
+      font_family: '"Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      border_color: '#dee2e6', border_style: 'solid', border_width: 1, table_border_radius: 4, row_border_color: '#e9ecef',
+      cell_padding_v: 10, cell_padding_h: 14,
+      stripe_enabled: true, stripe_color: '#f8f9fa', hover_enabled: true, hover_color: '#f3f4f6',
+      positive_color: '#05a34a', negative_color: '#ff3366',
+      heading_color: '#060c17', heading_font_size: 18, heading_font_weight: '500',
+      heading_margin_top: 20, heading_margin_bottom: 8,
+      caption_color: '#7987a1', caption_text_transform: 'uppercase', caption_letter_spacing: 1,
+      link_color: '#6571ff', link_decoration: 'none', scrollbar_width: 'thin',
+    },
+  },
 ];
 
 const SHADOW_MAP: Record<string, string> = {
@@ -892,54 +914,62 @@ export function generateHtmlStyleCss(overrides: HtmlStyleOverrides): string {
   // Reset
   css += `* { box-sizing: border-box; }\n`;
 
-  // Body / Page
-  css += `body { margin: 0; padding: ${o.page_padding}px; font-family: ${o.font_family}; `;
+  // html & body fill viewport exactly — no overflow escapes
+  css += `html { height: 100%; overflow: hidden; }\n`;
+  css += `body { margin: 0; padding: 0; height: 100%; overflow: hidden; position: relative; `;
+  css += `font-family: ${o.font_family}; `;
   css += `background-color: ${o.page_bg_color}; color: ${o.body_text_color}; `;
   css += `font-size: ${o.body_font_size}px; line-height: ${o.body_line_height}; `;
   if (o.scrollbar_width !== 'auto') css += `scrollbar-width: ${o.scrollbar_width}; `;
   css += `}\n`;
 
+  // Content wrapper — absolutely fills the viewport and is the SOLE scrollable element.
+  // position:absolute + inset:0 guarantees it can never exceed the iframe viewport.
+  css += `.__cw { position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: ${o.page_padding}px; overflow: auto; }\n`;
+
   // Container (wraps table if user wants max-width / shadow / radius)
+  // Target elements INSIDE .__cw, never .__cw itself
   if (o.container_max_width > 0 || o.container_shadow !== 'none' || o.container_border_radius > 0) {
-    css += `.container, body > div, body > table { `;
+    css += `.container, .__cw > div, .__cw > table { `;
     if (o.container_max_width > 0) css += `max-width: ${o.container_max_width}px; margin-left: auto; margin-right: auto; `;
     if (o.container_border_radius > 0) css += `border-radius: ${o.container_border_radius}px; overflow: hidden; `;
     if (o.container_shadow !== 'none') css += `box-shadow: ${SHADOW_MAP[o.container_shadow] || 'none'}; `;
     css += `}\n`;
   }
 
-  // Table
-  css += `table { border-collapse: collapse; width: 100%; font-size: ${o.body_font_size}px; `;
+  // Table wrapper — horizontal scroll for nested table wrappers
+  css += `.table-wrapper, .__cw > div:has(> table) { overflow-x: auto; max-width: 100%; }\n`;
+  css += `table { border-collapse: collapse; width: 100%; max-width: 100%; font-size: ${o.body_font_size}px; `;
   css += `border: ${o.border_width}px ${o.border_style} ${o.border_color}; `;
   if (o.table_layout === 'fixed') css += `table-layout: fixed; `;
   if (o.table_border_radius > 0) css += `border-radius: ${o.table_border_radius}px; overflow: hidden; `;
   if (o.table_margin_v > 0) css += `margin-top: ${o.table_margin_v}px; margin-bottom: ${o.table_margin_v}px; `;
   css += `}\n`;
 
-  // Header (th)
+  // Header (th) — use `th, th *` to override inline styles on nested spans/divs
   const headerBg = o.header_bg_gradient_end
     ? `linear-gradient(135deg, ${o.header_bg_color} 0%, ${o.header_bg_gradient_end} 100%)`
     : o.header_bg_color;
-  css += `th { background: ${headerBg}; color: ${o.header_text_color}; `;
-  css += `font-size: ${o.header_font_size}px; font-weight: ${o.header_font_weight}; `;
+  css += `th { background: ${headerBg}; `;
   css += `padding: ${o.header_padding_v}px ${o.header_padding_h}px; `;
   css += `text-align: ${o.header_text_align}; vertical-align: ${o.header_vertical_align}; `;
-  if (o.header_text_transform !== 'none') css += `text-transform: ${o.header_text_transform}; `;
-  if (o.header_letter_spacing > 0) css += `letter-spacing: ${o.header_letter_spacing}px; `;
   css += `border: ${o.border_width}px ${o.border_style} ${o.border_color}; `;
   if (o.header_border_bottom_width > 0) {
     css += `border-bottom: ${o.header_border_bottom_width}px solid ${o.header_border_bottom_color}; `;
   }
   css += `white-space: ${o.header_white_space}; `;
   css += `}\n`;
+  // Text properties also on descendants so they override inline styles on <span>, <div>, etc.
+  css += `th, th * { color: ${o.header_text_color}; `;
+  css += `font-size: ${o.header_font_size}px; font-weight: ${o.header_font_weight}; `;
+  if (o.header_text_transform !== 'none') css += `text-transform: ${o.header_text_transform}; `;
+  if (o.header_letter_spacing > 0) css += `letter-spacing: ${o.header_letter_spacing}px; `;
+  css += `}\n`;
 
-  // Body cells (td)
-  css += `td { color: ${o.body_text_color}; font-weight: ${o.body_font_weight}; `;
-  css += `padding: ${o.cell_padding_v}px ${o.cell_padding_h}px; `;
+  // Body cells (td) — use `td, td *` for text props to override inline styles on nested elements
+  css += `td { padding: ${o.cell_padding_v}px ${o.cell_padding_h}px; `;
   css += `border: ${o.border_width}px ${o.border_style} ${o.border_color}; `;
   css += `text-align: ${o.body_text_align}; vertical-align: ${o.body_vertical_align}; `;
-  if (o.body_text_transform !== 'none') css += `text-transform: ${o.body_text_transform}; `;
-  if (o.body_letter_spacing > 0) css += `letter-spacing: ${o.body_letter_spacing}px; `;
   if (o.body_white_space === 'nowrap') css += `white-space: nowrap; `;
   if (o.cell_text_overflow === 'ellipsis') {
     css += `overflow: hidden; text-overflow: ellipsis; `;
@@ -948,6 +978,11 @@ export function generateHtmlStyleCss(overrides: HtmlStyleOverrides): string {
     css += `overflow: hidden; `;
   }
   if (o.cell_max_width > 0) css += `max-width: ${o.cell_max_width}px; `;
+  css += `}\n`;
+  // Text properties also on descendants so they override inline styles on <span>, <a>, etc.
+  css += `td, td * { color: ${o.body_text_color}; font-weight: ${o.body_font_weight}; `;
+  if (o.body_text_transform !== 'none') css += `text-transform: ${o.body_text_transform}; `;
+  if (o.body_letter_spacing > 0) css += `letter-spacing: ${o.body_letter_spacing}px; `;
   css += `}\n`;
 
   // Row min height
@@ -1055,7 +1090,14 @@ export type HtmlInspectorZone =
   | 'th' | 'td' | 'table' | 'body'
   | 'heading' | 'link' | 'caption' | 'first-col'
   | 'tr' | 'value-color'
+  // UI element zones
+  | 'btn' | 'btn-secondary' | 'input' | 'select' | 'badge' | 'card' | 'divider' | 'list'
   | null;
+
+/** Whether a zone maps to UiElementsOverrides (true) or HtmlStyleOverrides (false) */
+export function isUiZone(zone: Exclude<HtmlInspectorZone, null>): boolean {
+  return ['btn', 'btn-secondary', 'input', 'select', 'badge', 'card', 'divider', 'list'].includes(zone);
+}
 
 /** Human-readable labels for each zone */
 export const ZONE_LABELS: Record<Exclude<HtmlInspectorZone, null>, string> = {
@@ -1069,6 +1111,15 @@ export const ZONE_LABELS: Record<Exclude<HtmlInspectorZone, null>, string> = {
   'first-col': 'Prima Colonna',
   tr: 'Riga',
   'value-color': 'Colore Valore',
+  // UI element zones
+  btn: 'Bottone',
+  'btn-secondary': 'Bottone Secondario',
+  input: 'Campo Input',
+  select: 'Menu a Tendina',
+  badge: 'Badge',
+  card: 'Card',
+  divider: 'Separatore',
+  list: 'Lista',
 };
 
 
@@ -1117,6 +1168,26 @@ function generateInspectorScript(): string {
   }
 
   function detectZone(el) {
+    // Helper: prefer the exact clicked element for highlight precision,
+    // fall back to the zone container only when clicked IS the container.
+    function pick(clicked, node) { return (clicked !== node) ? clicked : node; }
+
+    // Helper: check if element looks like an interactive button (span/div with interactive class names or attributes)
+    function looksLikeButton(node) {
+      var cls = node.className ? String(node.className).toLowerCase() : '';
+      // class contains common interactive keywords
+      if (cls.indexOf('btn') !== -1 || cls.indexOf('button') !== -1 ||
+          cls.indexOf('icon') !== -1 || cls.indexOf('action') !== -1 ||
+          cls.indexOf('toggle') !== -1 || cls.indexOf('trigger') !== -1 ||
+          cls.indexOf('close') !== -1 || cls.indexOf('dismiss') !== -1) return true;
+      // role="button" or onclick attribute
+      if (node.getAttribute) {
+        if (node.getAttribute('role') === 'button') return true;
+        if (node.getAttribute('onclick')) return true;
+      }
+      return false;
+    }
+
     // 1. Check the exact element first for special classes
     if (hasClass(el, 'positive') || hasClass(el, 'negative'))
       return { zone: 'value-color', el: el, info: elementInfo(el) };
@@ -1124,41 +1195,72 @@ function generateInspectorScript(): string {
     // 2. Walk up to find the nearest meaningful zone
     var clicked = el;
     var node = el;
+    var deepestBlock = null; // track closest block element for body fallback
     while (node && node !== document.body && node !== document.documentElement) {
       var tag = node.tagName ? node.tagName.toLowerCase() : '';
 
+      // Track the deepest block-level element (skip the outer wrapper)
+      if (!deepestBlock && !hasClass(node, '__cw') &&
+          (tag === 'div' || tag === 'p' || tag === 'section' || tag === 'article' ||
+           tag === 'nav' || tag === 'aside' || tag === 'header' || tag === 'footer' ||
+           tag === 'main' || tag === 'figure' || tag === 'blockquote' || tag === 'form' ||
+           tag === 'details' || tag === 'fieldset' || tag === 'ul' || tag === 'ol'))
+        deepestBlock = node;
+
+      // ── UI element zones (checked first, innermost match wins) ──
+      if ((tag === 'button' || hasClass(node, 'btn') || looksLikeButton(node)) && !hasClass(node, 'btn-secondary'))
+        return { zone: 'btn', el: pick(clicked, node), info: elementInfo(clicked) };
+      if (hasClass(node, 'btn-secondary'))
+        return { zone: 'btn-secondary', el: pick(clicked, node), info: elementInfo(clicked) };
+      if ((tag === 'input' && node.type !== 'range') || tag === 'textarea')
+        return { zone: 'input', el: node, info: elementInfo(clicked) };
+      if (tag === 'input' && node.type === 'range')
+        return { zone: 'input', el: node, info: elementInfo(clicked) };
+      if (tag === 'select')
+        return { zone: 'select', el: node, info: elementInfo(clicked) };
+      if (hasClass(node, 'badge'))
+        return { zone: 'badge', el: pick(clicked, node), info: elementInfo(clicked) };
+      if (hasClass(node, 'card'))
+        return { zone: 'card', el: pick(clicked, node), info: elementInfo(clicked) };
+      if (tag === 'hr' || hasClass(node, 'divider'))
+        return { zone: 'divider', el: node, info: elementInfo(clicked) };
+      if (tag === 'li')
+        return { zone: 'list', el: pick(clicked, node), info: elementInfo(clicked) };
+
+      // ── Table & content zones ──
       // value-color classes at any level
       if (hasClass(node, 'positive') || hasClass(node, 'negative'))
         return { zone: 'value-color', el: node, info: elementInfo(clicked) };
 
       if (tag === 'a')
-        return { zone: 'link', el: node, info: elementInfo(clicked) };
+        return { zone: 'link', el: pick(clicked, node), info: elementInfo(clicked) };
 
       if (tag === 'h1' || tag === 'h2' || tag === 'h3')
-        return { zone: 'heading', el: node, info: elementInfo(clicked) };
+        return { zone: 'heading', el: pick(clicked, node), info: elementInfo(clicked) };
 
       if (tag === 'caption' || hasClass(node, 'caption'))
-        return { zone: 'caption', el: node, info: elementInfo(clicked) };
+        return { zone: 'caption', el: pick(clicked, node), info: elementInfo(clicked) };
 
       if (tag === 'th')
-        return { zone: 'th', el: node, info: elementInfo(clicked) };
+        return { zone: 'th', el: pick(clicked, node), info: elementInfo(clicked) };
 
       if (tag === 'td') {
         var zone = node.cellIndex === 0 ? 'first-col' : 'td';
-        // Highlight the exact clicked sub-element if it's not the td itself
-        var target = (clicked !== node) ? clicked : node;
-        return { zone: zone, el: target, info: elementInfo(clicked) };
+        return { zone: zone, el: pick(clicked, node), info: elementInfo(clicked) };
       }
 
       if (tag === 'tr')
-        return { zone: 'tr', el: node, info: elementInfo(clicked) };
+        return { zone: 'tr', el: pick(clicked, node), info: elementInfo(clicked) };
 
       if (tag === 'table')
-        return { zone: 'table', el: node, info: elementInfo(clicked) };
+        return { zone: 'table', el: pick(clicked, node), info: elementInfo(clicked) };
 
       node = node.parentElement;
     }
-    return { zone: 'body', el: document.body, info: elementInfo(clicked) };
+    // Fallback: use the deepest block element found (not the entire body)
+    var fallbackEl = deepestBlock || clicked;
+    if (fallbackEl === document.body || fallbackEl === document.documentElement) fallbackEl = document.body;
+    return { zone: 'body', el: fallbackEl, info: elementInfo(deepestBlock || clicked) };
   }
 
   document.addEventListener('click', function(e) {
@@ -1204,6 +1306,10 @@ function generateInspectorScript(): string {
       var s = document.getElementById('__dynamic-css');
       if (s) s.textContent = e.data.css;
     }
+    if (e.data && e.data.type === 'html-style-update-ui') {
+      var u = document.getElementById('__dynamic-ui-css');
+      if (u) u.textContent = e.data.css;
+    }
   });
 })();
 </script>`;
@@ -1218,8 +1324,10 @@ export function applyHtmlStyleOverrides(
   html: string,
   overrides: HtmlStyleOverrides,
   inspectorMode = false,
+  uiCss = '',
 ): string {
   const css = generateHtmlStyleCss(overrides);
   const inspector = inspectorMode ? generateInspectorScript() : '';
-  return `<html><head><style id="__dynamic-css">${css}</style></head><body>${html}${inspector}</body></html>`;
+  const uiStyleTag = uiCss ? `<style id="__dynamic-ui-css">${uiCss}</style>` : '';
+  return `<html><head><style id="__dynamic-css">${css}</style>${uiStyleTag}</head><body><div class="__cw">${html}</div>${inspector}</body></html>`;
 }

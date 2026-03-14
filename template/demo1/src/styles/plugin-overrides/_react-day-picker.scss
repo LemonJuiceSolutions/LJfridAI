@@ -1,0 +1,8 @@
+.rdp-root {
+  --rdp-accent-color: var(--bs-primary) !important;
+  --rdp-accent-background-color: rgba(var(--bs-primary-rgb), 0.2) !important;
+  
+}
+.rdp-selected {
+  font-size: unset;
+}

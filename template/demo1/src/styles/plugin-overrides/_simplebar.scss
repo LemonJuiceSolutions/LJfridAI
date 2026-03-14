@@ -1,0 +1,14 @@
+// Plugin: simplebar-react
+// github: https://github.com/Grsmto/simplebar/tree/master/packages/simplebar-react
+
+div.simplebar-track {
+  &.simplebar-vertical {
+    width: 9px;
+  }
+  .simplebar-scrollbar.simplebar-visible:before {
+    opacity: 1;
+  }
+  .simplebar-scrollbar:before {
+    background: rgba($secondary, .3);
+  }
+}
