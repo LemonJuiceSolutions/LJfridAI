@@ -63,9 +63,9 @@ export default function CreatePage() {
   }, [dbModel, isSettingsLoading]);
 
   useEffect(() => {
-    // Fetch Excel files from both public/documents and python-backend/EEXXCC
+    // Fetch Excel files from both data_lake and python-backend/EEXXCC
     Promise.all([
-      fetch('/api/files?folder=documents').then(r => r.json()).catch(() => ({ files: [] })),
+      fetch('/api/files?folder=data_lake').then(r => r.json()).catch(() => ({ files: [] })),
       fetch('/api/files?folder=excel-etl').then(r => r.json()).catch(() => ({ files: [] })),
     ]).then(([docs, eexxcc]) => {
       const allFiles = [

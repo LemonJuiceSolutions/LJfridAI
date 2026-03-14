@@ -557,7 +557,8 @@ function PythonDataPreview({
     pythonConnectorId,
     tableName,
     initialTree, // Pass full tree for lazy loading
-    loadedSubTrees // NEW: Map of loaded sub-trees for cross-branch lazy loading
+    loadedSubTrees, // NEW: Map of loaded sub-trees for cross-branch lazy loading
+    externalAgentConfig, // Optional: if set, handles triggerPipeline messages from the HTML iframe
 }: {
     code: string,
     outputType: 'table' | 'variable' | 'chart' | 'html',
@@ -566,7 +567,8 @@ function PythonDataPreview({
     pythonConnectorId?: string, // HubSpot connector ID for token injection
     tableName?: string, // Optional: if provided, we cache the FINAL result for this table name
     initialTree?: DecisionNode | null, // Optional full tree
-    loadedSubTrees?: Map<string, { tree: DecisionNode, name: string }> // NEW: Sub-trees
+    loadedSubTrees?: Map<string, { tree: DecisionNode, name: string }>, // NEW: Sub-trees
+    externalAgentConfig?: { agent: string; [key: string]: any }, // Optional external agent to trigger from HTML iframe
 }) {
     // Use the new hook
     const {
@@ -578,6 +580,46 @@ function PythonDataPreview({
         executeFlow
     } = useFlowExecution();
     const { activeStyle } = useActiveUnifiedStyle();
+
+    // Ref to the HTML iframe (used to post results back when triggerPipeline is called)
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+
+    // Listen for triggerWhatIf postMessages from the HTML iframe and run the external agent.
+    // Always attach the listener (so the iframe always gets a response), check config inside.
+    useEffect(() => {
+        const cfg = externalAgentConfig;
+        const handleMessage = async (event: MessageEvent) => {
+            if (event.data?.type !== 'triggerWhatIf') return;
+            const prompt: string = event.data?.data?.prompt;
+            if (!prompt) return;
+            if (!cfg) {
+                iframeRef.current?.contentWindow?.postMessage(
+                    { type: 'pipelineResult', success: false, error: 'External Agent non configurato su questo nodo.' },
+                    '*'
+                );
+                return;
+            }
+            try {
+                const response = await fetch('/api/external-agent/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agent: cfg.agent, input: prompt }),
+                });
+                const data = await response.json();
+                iframeRef.current?.contentWindow?.postMessage(
+                    { type: 'pipelineResult', success: data.success, result: data.result, error: data.error },
+                    '*'
+                );
+            } catch (err: any) {
+                iframeRef.current?.contentWindow?.postMessage(
+                    { type: 'pipelineResult', success: false, error: err.message },
+                    '*'
+                );
+            }
+        };
+        window.addEventListener('message', handleMessage);
+        return () => window.removeEventListener('message', handleMessage);
+    }, [externalAgentConfig]);
 
     // Memoize the dependencies to prevent infinite loops and apply filtering
     const stableDeps = useMemo(() => {
@@ -992,6 +1034,7 @@ function PythonDataPreview({
                         {finalResult.type === 'html' && finalResult.html && (
                             <div className="w-full h-[70vh] border-none overflow-hidden">
                                 <iframe
+                                    ref={iframeRef}
                                     key={finalResult.timestamp || Date.now()}
                                     srcDoc={(() => {
                                         let styledHtml = activeStyle?.html
@@ -2783,6 +2826,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                 tableName={(node as any).pythonResultName}
                                 initialTree={initialTree}
                                 loadedSubTrees={loadedSubTrees}
+                                externalAgentConfig={(node as any).externalAgentConfig}
                             />
                         )}
                         {isLeafObject && 'sqlConnectorId' in node && 'sqlQuery' in node && (node as any).sqlConnectorId && (
@@ -2903,6 +2947,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                                             tableName={(node as any).pythonResultName}
                                                             initialTree={initialTree}
                                                             loadedSubTrees={loadedSubTrees}
+                                                            externalAgentConfig={(node as any).externalAgentConfig}
                                                         />
                                                     )}
                                                     {'sqlConnectorId' in node && 'sqlQuery' in node && (node as any).sqlConnectorId && (
@@ -3092,6 +3137,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                             pipelineDependencies={getAccumulatedDependencies(nodeHistory)}
                                             pythonConnectorId={(currentNode as any).pythonConnectorId}
                                             tableName={(currentNode as any).pythonResultName}
+                                            externalAgentConfig={(currentNode as any).externalAgentConfig}
                                         />
                                     )}
                                     {'sqlConnectorId' in currentNode && 'sqlQuery' in currentNode && (currentNode as any).sqlConnectorId && (

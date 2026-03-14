@@ -2,6 +2,9 @@ version: '3'
 
 dotenv: ['.env.local', '.env']
 
+vars:
+  LOG_DIR: logs
+
 tasks:
   venv:
     desc: local bootstrap backend nextjs and python
@@ -12,9 +15,9 @@ tasks:
     cmds:
       - uv venv --clear
       - uv pip install nodeenv
-      - nodeenv --node=lts -p
+      - uv run nodeenv --node=lts -p
       - uv pip install -r python-backend/requirements.txt
-      - npm install
+      - uv run npm install
 
   start:
     desc: Start all services (DB, schema sync, Python backend, Next.js)
@@ -49,7 +52,8 @@ tasks:
     deps: [venv]
     dir: python-backend
     cmds:
-      - python app.py
+      - mkdir -p ../{{.LOG_DIR}}
+      - python app.py --log-file ../{{.LOG_DIR}}/python-backend.log
 
   python:stop:
     desc: Stop the Python/Flask backend (kills process on port 5005)
@@ -63,7 +67,8 @@ tasks:
     desc: Start the Next.js dev server on port 9002
     deps: [venv]
     cmds:
-      - npm run dev
+      - mkdir -p {{.LOG_DIR}}
+      - npm run dev 2>&1 | tee {{.LOG_DIR}}/nextjs.log
 
   dev:stop:
     desc: Stop the Next.js dev server (kills process on port 9002)
@@ -83,7 +88,11 @@ tasks:
     desc: Start all services using Docker Compose (DB, Python, Next.js)
     deps: [db:start]
     cmds:
+      - mkdir -p {{.LOG_DIR}}
       - docker compose up -d
+      - |
+        nohup docker compose logs -f app > {{.LOG_DIR}}/nextjs.log 2>&1 &
+        nohup docker compose logs -f python-backend > {{.LOG_DIR}}/python-backend.log 2>&1 &
       - echo "Waiting for services to be healthy..."
       - |
         until curl -s http://localhost:5005/health > /dev/null 2>&1; do sleep 1; done

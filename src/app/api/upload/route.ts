@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
+import { getDataLakePath } from '@/lib/data-lake';
 
 export async function POST(request: NextRequest) {
     try {
         const data = await request.formData();
         const file: File | null = data.get('file') as unknown as File;
-        const folder = (data.get('folder') as string) || 'uploads';
+        const folder = (data.get('folder') as string) || 'data_lake';
 
         if (!file) {
             return NextResponse.json({ success: false, error: 'No file uploaded' }, { status: 400 });
@@ -15,8 +16,11 @@ export async function POST(request: NextRequest) {
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
 
-        // Ensure directory exists
-        const uploadDir = join(process.cwd(), 'public', folder);
+        // Legacy public/ folders stay in public/; everything else goes to data lake
+        const isLegacyPublic = ['uploads', 'documents', 'images', 'videos'].includes(folder);
+        const uploadDir = isLegacyPublic
+            ? join(process.cwd(), 'public', folder)
+            : getDataLakePath(folder === 'data_lake' ? '' : folder);
         await mkdir(uploadDir, { recursive: true });
 
         // Sanitize filename
@@ -26,8 +30,11 @@ export async function POST(request: NextRequest) {
 
         await writeFile(filepath, buffer);
 
-        // Return the public URL
-        const url = `/${folder}/${filename}`;
+        // Legacy public folders use static URL; data lake files served via API
+        const subpath = folder === 'data_lake' ? filename : `${folder}/${filename}`;
+        const url = isLegacyPublic
+            ? `/${folder}/${filename}`
+            : `/api/data-lake/${subpath}`;
 
         return NextResponse.json({ success: true, url, name: filename });
     } catch (error) {

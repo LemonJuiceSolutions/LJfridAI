@@ -205,7 +205,7 @@ export default function SettingsPage() {
 
     const loadFiles = async () => {
         setIsFilesLoading(true);
-        const result = await listFiles('documents');
+        const result = await listFiles('data_lake');
         setFiles(result);
         setIsFilesLoading(false);
     };
@@ -222,7 +222,7 @@ export default function SettingsPage() {
             const file = selectedFiles[i];
             setUploadQueue(prev => prev.map((q, idx) => idx === i ? { ...q, progress: 50 } : q));
             try {
-                await uploadFile(file, 'documents');
+                await uploadFile(file, 'data_lake');
                 setUploadQueue(prev => prev.map((q, idx) => idx === i ? { ...q, progress: 100 } : q));
             } catch {
                 toast({ title: "Errore", description: `Upload fallito: ${file.name}`, variant: "destructive" });
@@ -236,7 +236,7 @@ export default function SettingsPage() {
     };
 
     const handleDeleteFile = async (name: string) => {
-        const ok = await deleteFile(name, 'documents');
+        const ok = await deleteFile(name, 'data_lake');
         if (ok) {
             setFiles(prev => prev.filter(f => f.name !== name));
             toast({ title: "File eliminato" });

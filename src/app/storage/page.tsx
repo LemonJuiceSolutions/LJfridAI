@@ -93,7 +93,7 @@ export default function StoragePage() {
             try {
                 const uploadPromises = validFiles.map(file => {
                     const filePath = `${Date.now()}-${file.name}`;
-                    return uploadFile(file, 'uploads', filePath);
+                    return uploadFile(file, 'data_lake', filePath);
                 });
 
                 await Promise.all(uploadPromises);

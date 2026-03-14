@@ -99,6 +99,21 @@ export interface AIConfig {
   lastRunAt?: number;          // Timestamp ultima esecuzione
 }
 
+export interface ExternalAgentRunResult {
+  request: string;             // Input inviato all'agente
+  result: any;                 // Output dell'agente (report + matrix + ...)
+  timestamp: number;           // Unix ms
+  reportFile?: string;         // Nome file .md in agents/{agent}/reports/
+}
+
+export interface ExternalAgentConfig {
+  agent: string;               // Nome agente (es. 'what-if')
+  outputName: string;          // Nome per referenziare nella pipeline
+  selectedReport?: string;     // Nome file .md selezionato (source of truth)
+  lastResult?: any;            // WhatIfResult o altro output dell'agente (cache)
+  lastRunAt?: number;          // Timestamp ultima esecuzione
+}
+
 export interface DecisionLeaf {
   id?: string;
   decision: string;
@@ -117,6 +132,7 @@ export interface DecisionLeaf {
   emailAction?: EmailActionConfig;
   widgetConfig?: WidgetConfig;
   aiConfig?: AIConfig;
+  externalAgentConfig?: ExternalAgentConfig;
   // SQL Export Config
   sqlExportTargetTableName?: string;
   sqlExportTargetConnectorId?: string;
@@ -174,6 +190,7 @@ export interface DecisionNode {
   emailAction?: EmailActionConfig;
   widgetConfig?: WidgetConfig;
   aiConfig?: AIConfig;
+  externalAgentConfig?: ExternalAgentConfig;
   // SQL Export Config
   sqlExportTargetTableName?: string;
   sqlExportTargetConnectorId?: string;

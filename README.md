@@ -62,7 +62,7 @@ For full Docker documentation, see [`docs/DOCKER-DEV.md`](docs/DOCKER-DEV.md).
 ### 1. Configure environment
 
 ```bash
-cp .env.template .env.local
+cp .env.template .env
 ```
 
 Then fill in the values — at minimum `NEXTAUTH_SECRET` and `GOOGLE_GENAI_API_KEY`.
@@ -86,6 +86,15 @@ App is available at:
 - pass: `admin`
 
 > The login form accepts plain usernames — `@demo.com` is appended automatically if no `@` is present. Override the domain with `NEXT_PUBLIC_DEFAULT_EMAIL_DOMAIN` in `.env`.
+
+### 3. Debug with logpiper
+
+Logpiper mcp is configured in **.mcp.conf**
+
+example prompt:
+```
+use logpiper to read ./logs and find tuning advices
+```
 
 
 ---

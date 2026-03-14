@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "logpiper": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "log-reader-mcp"],
+      "env": {}
+    }
+  }
+}

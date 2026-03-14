@@ -58,8 +58,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -91,3 +89,12 @@ htmlcov/
 dump.sql
 *.csv
 *.html
+
+# python-backend specific
+python-backend/*.csv
+python-backend/*.html
+python-backend/**/*.csv
+python-backend/**/*.html
+
+/logs
+

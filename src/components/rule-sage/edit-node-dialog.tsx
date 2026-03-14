@@ -4,6 +4,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback, memo } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useConnectors } from '@/hooks/use-connectors';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,9 +35,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Play, Database, FileCode, FileCode2, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info, Settings2, ChevronsUpDown, Sparkles, Coins } from 'lucide-react';
+import { Play, Database, FileCode, FileCode2, Save, X, RotateCcw, Plus, Trash2, FileJson, ChevronRight, ChevronDown, RefreshCw, Check, Loader2, GitBranch, Search, Maximize2, Minimize2, ArrowUpRight, Copy, Terminal, Layout, List, AlignJustify, ArrowRight, ExternalLink, Archive, Upload, Image as ImageIcon, Link as LinkIcon, Zap, AlertCircle, Eye, Video, Pencil, Flag, Code, Table, Variable, BarChart3, Download, LineChart, Mail, Send, Paperclip, ArrowDownToLine, Info, Settings2, ChevronsUpDown, Sparkles, Coins, Bot } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
-import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig, AIConfig } from '@/lib/types';
+import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig, AIConfig, ExternalAgentConfig } from '@/lib/types';
 import { Input } from '../ui/input';
 import _ from 'lodash';
 import { useToast } from '@/hooks/use-toast';
@@ -50,6 +51,7 @@ import { DataTable } from '../ui/data-table';
 import { EmailBodyEditor, EmailBodyEditorRef } from './email-body-editor';
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
@@ -288,7 +290,7 @@ interface EditNodeDialogProps {
   nodePath: string;
   treeId: string;
   isSaving: boolean;
-  availableInputTables?: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart' | 'html', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, plotlyStyleOverrides?: any, htmlStyleOverrides?: any }[];
+  availableInputTables?: { name: string, nodeName?: string, nodeId?: string, path?: string, connectorId?: string, sqlQuery?: string, isPython?: boolean, pythonCode?: string, pythonOutputType?: 'table' | 'variable' | 'chart' | 'html', pipelineDependencies?: { tableName: string; path?: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string }[], sqlExportTargetTableName?: string, sqlExportTargetConnectorId?: string, sqlExportSourceTables?: string[], writesToDatabase?: boolean, plotlyStyleOverrides?: any, htmlStyleOverrides?: any, externalAgentConfig?: any }[];
   availableParentMedia?: MediaItem[];
   availableParentLinks?: LinkItem[];
   availableParentTriggers?: TriggerItem[];
@@ -303,7 +305,7 @@ type FileToUpload = {
 
 type PipelineStatus = {
   name: string;
-  type: 'python' | 'sql' | 'ai' | 'export';
+  type: 'python' | 'sql' | 'ai' | 'agent' | 'export';
   status: 'pending' | 'running' | 'success' | 'error' | 'skipped';
   executionTime?: number;
   message?: string;
@@ -520,6 +522,18 @@ export default function EditNodeDialog({
   const [aiDocsPopoverOpen, setAiDocsPopoverOpen] = useState(false);
   const [aiAgentSteps, setAiAgentSteps] = useState<{ round: number; step: string; status: string; label: string }[]>([]);
   const [aiProgressStep, setAiProgressStep] = useState(0); // 0=idle, 1=ricerca, 2=formattazione, 3=verifica
+
+  // External Agent Section State
+  const [extAgentConfig, setExtAgentConfig] = useState<ExternalAgentConfig>({ agent: 'what-if', outputName: '' });
+  const [extAgentInput, setExtAgentInput] = useState('');  // local textarea, not persisted in JSON
+  const [extAgentResult, setExtAgentResult] = useState<any>(null);
+  const [extAgentResultTimestamp, setExtAgentResultTimestamp] = useState<number | null>(null);
+  const [isRunningExtAgent, setIsRunningExtAgent] = useState(false);
+  const [extAgentError, setExtAgentError] = useState<string | null>(null);
+  const [extAgentSelectedReport, setExtAgentSelectedReport] = useState<string>('');
+  const [extAgentExistingReports, setExtAgentExistingReports] = useState<string[]>([]);
+  const [extAgentReportContent, setExtAgentReportContent] = useState<string | null>(null);
+  const [isLoadingReportContent, setIsLoadingReportContent] = useState(false);
 
   // Node schedules state (loaded on dialog open)
   const [nodeSchedules, setNodeSchedules] = useState<Record<string, any>>({});
@@ -810,6 +824,71 @@ export default function EditNodeDialog({
         setAiResultTimestamp(null);
         setAiSelectedDocuments([]);
       }
+
+      // Load External Agent Config
+      const agentName = ((node as any).externalAgentConfig?.agent) || 'what-if';
+      if ((node as any).externalAgentConfig) {
+        const loaded = (node as any).externalAgentConfig;
+        setExtAgentConfig({
+          agent: loaded.agent || 'what-if',
+          outputName: loaded.outputName || '',
+          selectedReport: loaded.selectedReport,
+        });
+        setExtAgentInput(loaded.input || '');  // backwards compat
+        setExtAgentSelectedReport(loaded.selectedReport || '');
+        setExtAgentReportContent(null);
+        if (loaded.lastResult !== undefined) {
+          setExtAgentResult(loaded.lastResult);
+          setExtAgentResultTimestamp(loaded.lastRunAt || null);
+        } else {
+          setExtAgentResult(null);
+          setExtAgentResultTimestamp(null);
+        }
+        // Pre-fetch the content + matrix of the saved report
+        if (loaded.selectedReport) {
+          fetch(`/api/external-agent/run?agent=${agentName}&report=${encodeURIComponent(loaded.selectedReport)}`)
+            .then(r => r.json())
+            .then(d => {
+              if (!d.success) return;
+              setExtAgentReportContent(d.content);
+              if (d.matrix) {
+                setExtAgentResult(prev => ({ ...(prev || {}), matrix: d.matrix, report: d.content }));
+              }
+            })
+            .catch(() => {});
+        }
+      } else {
+        setExtAgentConfig({ agent: 'what-if', outputName: '' });
+        setExtAgentInput('');
+        setExtAgentResult(null);
+        setExtAgentResultTimestamp(null);
+        setExtAgentSelectedReport('');
+        setExtAgentReportContent(null);
+      }
+
+      // Fetch existing report files; auto-select the latest if none is saved
+      const savedReport = ((node as any).externalAgentConfig?.selectedReport) || '';
+      fetch(`/api/external-agent/run?agent=${agentName}`)
+        .then(r => r.json())
+        .then(d => {
+          if (!d.success) return;
+          const files: string[] = d.files;
+          setExtAgentExistingReports(files);
+          if (!savedReport && files.length > 0) {
+            const latest = [...files].sort((a, b) => b.localeCompare(a))[0];
+            setExtAgentSelectedReport(latest);
+            setExtAgentConfig(prev => ({ ...prev, selectedReport: latest }));
+            fetch(`/api/external-agent/run?agent=${agentName}&report=${encodeURIComponent(latest)}`)
+              .then(r => r.json())
+              .then(rd => {
+                if (!rd.success) return;
+                setExtAgentReportContent(rd.content);
+                if (rd.matrix) setExtAgentResult({ matrix: rd.matrix, report: rd.content });
+              })
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
 
     }
   }, [isOpen, initialNode, nodeType, availableInputTables]);
@@ -1249,6 +1328,7 @@ export default function EditNodeDialog({
               sqlExportTargetConnectorId: node.sqlExportTargetConnectorId,
               sqlExportSourceTables: node.sqlExportSourceTables,
               aiConfig: (node as any).aiConfig,
+              externalAgentConfig: (node as any).externalAgentConfig,
             });
           }
         });
@@ -1266,7 +1346,7 @@ export default function EditNodeDialog({
         type: 'execution' | 'write' | 'final';
         ancestor?: any; // The node being executed or written
         label: string;
-        pipelineType: 'python' | 'sql' | 'ai' | 'export';
+        pipelineType: 'python' | 'sql' | 'ai' | 'agent' | 'export';
         // For 'write' steps, we need to know where to get data from
         sourceAncestorName?: string;
       }
@@ -1279,7 +1359,7 @@ export default function EditNodeDialog({
         // Step A: Execution (Preview)
         const execLabel = t.nodeName ? `${t.nodeName} > ${t.name}` : t.name;
         // Determine pipeline type: AI takes priority, then Python, then SQL
-        const stepPipelineType = t.aiConfig?.prompt ? 'ai' : (t.isPython ? 'python' : 'sql');
+        const stepPipelineType = t.externalAgentConfig ? 'agent' : (t.aiConfig?.prompt ? 'ai' : (t.isPython ? 'python' : 'sql'));
         steps.push({
           id: `${t.path || t.name}_exec`,
           type: 'execution',
@@ -1557,6 +1637,41 @@ export default function EditNodeDialog({
               } catch (aiErr: any) {
                 error = `Errore AI: ${aiErr.message}`;
               }
+            } else if (ancestor.externalAgentConfig) {
+              // External Agent Execution
+              const cfg = ancestor.externalAgentConfig;
+              const storeResult = (resultObj: { data: any[] }) => {
+                ancestorResults[ancestor.name] = resultObj;
+                if (cfg.outputName) ancestorResults[cfg.outputName] = resultObj;
+                const nId = ancestor.id || ancestor.nodeId;
+                if (nId) nodeIdResults[`${nId}_agent`] = resultObj;
+              };
+              // Use lastResult if available, otherwise load the latest report from disk
+              if (cfg.lastResult?.matrix) {
+                success = true;
+                storeResult({ data: cfg.lastResult.matrix });
+              } else {
+                try {
+                  const listRes = await fetch(`/api/external-agent/run?agent=${cfg.agent}`);
+                  const listData = await listRes.json();
+                  const files: string[] = listData.success ? listData.files : [];
+                  const latest = [...files].sort((a, b) => b.localeCompare(a))[0];
+                  if (!latest) {
+                    error = `Nessun report disponibile per l'agente "${cfg.agent}". Esegui prima una analisi what-if.`;
+                  } else {
+                    const repRes = await fetch(`/api/external-agent/run?agent=${cfg.agent}&report=${encodeURIComponent(latest)}`);
+                    const repData = await repRes.json();
+                    if (repData.success && repData.matrix) {
+                      success = true;
+                      storeResult({ data: repData.matrix });
+                    } else {
+                      error = `Impossibile caricare il report "${latest}": nessuna matrice disponibile.`;
+                    }
+                  }
+                } catch (fetchErr: any) {
+                  error = `Errore caricamento report: ${fetchErr.message}`;
+                }
+              }
             } else if (ancestor.sqlQuery) {
               // SQL Execution
               const deps = Array.isArray(ancestor.pipelineDependencies) ? ancestor.pipelineDependencies : [];
@@ -1647,7 +1762,7 @@ export default function EditNodeDialog({
           if (success) {
             executionReport.push({
               name: step.label,
-              type: step.type === 'execution' ? (step.ancestor?.aiConfig?.prompt ? 'AI' : (step.ancestor?.isPython ? 'Python' : 'SQL')) : 'SQL',
+              type: step.type === 'execution' ? (step.ancestor?.externalAgentConfig ? 'agent' : (step.ancestor?.aiConfig?.prompt ? 'AI' : (step.ancestor?.isPython ? 'Python' : 'SQL'))) : 'SQL',
               status: 'success',
               timestamp: new Date().toISOString()
             });
@@ -1655,7 +1770,7 @@ export default function EditNodeDialog({
           } else {
             executionReport.push({
               name: step.label,
-              type: step.type === 'execution' ? (step.ancestor?.aiConfig?.prompt ? 'AI' : (step.ancestor?.isPython ? 'Python' : 'SQL')) : 'SQL',
+              type: step.type === 'execution' ? (step.ancestor?.externalAgentConfig ? 'agent' : (step.ancestor?.aiConfig?.prompt ? 'AI' : (step.ancestor?.isPython ? 'Python' : 'SQL'))) : 'SQL',
               status: 'error',
               error: error || 'Errore sconosciuto',
               timestamp: new Date().toISOString()
@@ -1669,7 +1784,7 @@ export default function EditNodeDialog({
         } catch (e: any) {
           executionReport.push({
             name: step.label,
-            type: step.type === 'execution' ? (step.ancestor?.aiConfig?.prompt ? 'AI' : (step.ancestor?.isPython ? 'Python' : 'SQL')) : 'SQL',
+            type: step.type === 'execution' ? (step.ancestor?.externalAgentConfig?.input ? 'agent' : (step.ancestor?.aiConfig?.prompt ? 'AI' : (step.ancestor?.isPython ? 'Python' : 'SQL'))) : 'SQL',
             status: 'error',
             error: e.message,
             timestamp: new Date().toISOString()
@@ -1901,6 +2016,44 @@ export default function EditNodeDialog({
     }
   };
 
+  // External Agent Execution Handler
+  const handleRunExtAgent = async () => {
+    if (!extAgentInput.trim()) {
+      toast({ title: 'L\'input è obbligatorio', variant: 'destructive' });
+      return;
+    }
+    setIsRunningExtAgent(true);
+    setExtAgentError(null);
+    setExtAgentResult(null);
+    try {
+      const response = await fetch('/api/external-agent/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent: extAgentConfig.agent, input: extAgentInput }),
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Errore sconosciuto');
+      const now = Date.now();
+      const reportFile: string | undefined = data.result?.reportFile;
+      if (reportFile) {
+        setExtAgentExistingReports(prev => prev.includes(reportFile) ? prev : [...prev, reportFile]);
+        setExtAgentSelectedReport(reportFile);
+      }
+      setExtAgentResult(data.result);
+      setExtAgentResultTimestamp(now);
+      // Use the report field from the result as the preview content
+      if (data.result?.report) setExtAgentReportContent(data.result.report);
+      setExtAgentConfig(prev => ({ ...prev, lastResult: data.result, lastRunAt: now, selectedReport: reportFile }));
+      const matrixLen = data.result?.matrix?.length ?? 0;
+      toast({ title: 'Agente eseguito con successo', description: matrixLen > 0 ? `Matrice: ${matrixLen} conti perturbati` : undefined });
+    } catch (err: any) {
+      setExtAgentError(err.message);
+      toast({ variant: 'destructive', title: 'Errore agente', description: err.message });
+    } finally {
+      setIsRunningExtAgent(false);
+    }
+  };
+
   const handleSaveClick = async () => {
     // Validation based on CURRENT node type, with fallback for type conversion case
     const effectiveQuestionText = questionText.trim() || decisionText.trim();
@@ -2053,6 +2206,19 @@ export default function EditNodeDialog({
         };
       } else {
         delete newNodeData.aiConfig;
+      }
+
+      // External Agent Config
+      if (extAgentConfig.outputName || extAgentSelectedReport) {
+        (newNodeData as any).externalAgentConfig = {
+          agent: extAgentConfig.agent,
+          outputName: extAgentConfig.outputName,
+          selectedReport: extAgentSelectedReport || undefined,
+          lastResult: extAgentResult,
+          lastRunAt: extAgentResultTimestamp ?? undefined,
+        };
+      } else {
+        delete (newNodeData as any).externalAgentConfig;
       }
 
       // SQL Export Action
@@ -5395,6 +5561,165 @@ export default function EditNodeDialog({
                           {aiConfig.outputType === 'chart' && aiResult && (
                             <div className="h-[300px] p-2">
                               <SmartWidgetRenderer config={aiResult} data={aiResult.data || []} />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CollapsibleSection>
+
+              {/* External Agent Section */}
+              <CollapsibleSection
+                title="External Agent"
+                count={extAgentInput.trim() || extAgentResult ? 1 : 0}
+                storageKey={`collapse-ext-agent-${treeId}-${nodePath}`}
+                icon={Bot}
+              >
+                <div className="grid gap-3 pt-3">
+                  {/* Row 1: Agent Selector */}
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-semibold">Agente</Label>
+                    <Select
+                      value={extAgentConfig.agent}
+                      onValueChange={(val) => setExtAgentConfig(prev => ({ ...prev, agent: val }))}
+                      disabled={componentIsSaving}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Seleziona agente..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="what-if">What-If Analysis</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Row 2: Input */}
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-semibold">Input (linguaggio naturale)</Label>
+                    <Textarea
+                      value={extAgentInput}
+                      onChange={(e) => setExtAgentInput(e.target.value)}
+                      placeholder="Es. Aumenta i ricavi del 10% da aprile a giugno..."
+                      className="min-h-[100px] font-mono text-sm"
+                      disabled={componentIsSaving}
+                    />
+                  </div>
+
+                  {/* Row 3: Output Name + Execute Button */}
+                  <div className="flex justify-between items-end gap-4">
+                    <div className="grid gap-1 flex-1">
+                      <Label className="text-[11px]">Nome Output (per pipeline)</Label>
+                      <Input
+                        value={extAgentConfig.outputName}
+                        onChange={(e) => setExtAgentConfig(prev => ({ ...prev, outputName: e.target.value }))}
+                        placeholder="Es. whatIfResult"
+                        disabled={componentIsSaving}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleRunExtAgent}
+                      disabled={isRunningExtAgent || !extAgentInput.trim() || componentIsSaving}
+                      className="bg-slate-100 dark:bg-slate-800 text-blue-700 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-600 transition-all duration-200 shadow-sm h-8"
+                    >
+                      {isRunningExtAgent ? (
+                        <><Loader2 className="h-4 w-4 animate-spin mr-2 text-blue-600" /> Esecuzione...</>
+                      ) : (
+                        <><Bot className="h-4 w-4 mr-2" /> Esegui</>
+                      )}
+                    </Button>
+                  </div>
+
+
+                  {/* Error */}
+                  {extAgentError && (
+                    <div className="p-2 rounded-md bg-destructive/10 border border-destructive/20 text-xs text-destructive">
+                      {extAgentError}
+                    </div>
+                  )}
+
+                  {/* Report selector (synced with agents/what-if/reports on disk) */}
+                  {extAgentExistingReports.length > 0 && (
+                    <div className="grid gap-2">
+                      <div className="grid gap-1">
+                        <Label className="text-[11px] text-muted-foreground">Report disponibili</Label>
+                        <Select
+                          value={extAgentSelectedReport}
+                          onValueChange={(v) => {
+                            setExtAgentSelectedReport(v);
+                            setExtAgentConfig(prev => ({ ...prev, selectedReport: v }));
+                            setExtAgentResult(null);
+                            setExtAgentResultTimestamp(null);
+                            setExtAgentReportContent(null);
+                            setIsLoadingReportContent(true);
+                            fetch(`/api/external-agent/run?agent=${extAgentConfig.agent}&report=${encodeURIComponent(v)}`)
+                              .then(r => r.json())
+                              .then(d => {
+                                if (!d.success) return;
+                                setExtAgentReportContent(d.content);
+                                if (d.matrix) {
+                                  setExtAgentResult({ matrix: d.matrix, report: d.content });
+                                  setExtAgentResultTimestamp(null);
+                                }
+                              })
+                              .catch(() => {})
+                              .finally(() => setIsLoadingReportContent(false));
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Seleziona report..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {[...extAgentExistingReports].sort((a, b) => b.localeCompare(a)).map((filename) => (
+                              <SelectItem key={filename} value={filename}>
+                                {filename}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Preview card: always shown when a report is selected */}
+                      {extAgentSelectedReport && (
+                        <div className="border rounded-md bg-muted/20 overflow-hidden">
+                          {isLoadingReportContent && (
+                            <div className="px-3 py-3 flex items-center gap-2 text-xs text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" /> Caricamento report...
+                            </div>
+                          )}
+                          {/* Report markdown content */}
+                          {extAgentReportContent && (
+                            <div className="px-3 py-3 border-b">
+                              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Report</p>
+                              <div className="text-xs text-foreground leading-relaxed max-h-[220px] overflow-y-auto prose prose-xs dark:prose-invert max-w-none prose-headings:text-xs prose-headings:font-semibold prose-p:my-1 prose-li:my-0 prose-ul:my-1 prose-ol:my-1">
+                                <ReactMarkdown>{extAgentReportContent}</ReactMarkdown>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Matrix DataTable (only when result is in memory for this report) */}
+                          {extAgentResult?.matrix && extAgentResult.matrix.length > 0 && (
+                            <div className="px-3 py-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                                  Matrice di perturbazione
+                                </p>
+                                <div className="flex gap-3 text-[10px] text-muted-foreground">
+                                  <span>{extAgentResult.matrix.length} conti</span>
+                                  {extAgentResult.matrix[0] && (
+                                    <span>{Object.keys(extAgentResult.matrix[0]).filter(k => k !== 'NumeroConto' && k !== 'tipo').length} periodi</span>
+                                  )}
+                                  {extAgentConfig.outputName && (
+                                    <span className="font-mono text-primary">→ df ({extAgentConfig.outputName})</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="max-h-[300px] overflow-auto rounded border">
+                                <DataTable data={extAgentResult.matrix} />
+                              </div>
                             </div>
                           )}
                         </div>

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { join } from 'path';
 import { access } from 'fs/promises';
+import { getDataLakePath } from '@/lib/data-lake';
+// join is kept for the EEXXCC path below
 
 export async function POST(request: NextRequest) {
     try {
@@ -13,7 +15,7 @@ export async function POST(request: NextRequest) {
 
         // Search in multiple folders
         const searchDirs = [
-            join(process.cwd(), 'public', 'documents'),
+            getDataLakePath(),
             join(process.cwd(), 'python-backend', 'EEXXCC'),
         ];
 
