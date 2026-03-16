@@ -186,6 +186,13 @@ function buildPythonSystemPrompt(opts: {
     companyId?: string;
     selectedDocuments?: string[];
     activeStyleName?: string | null;
+    activeStylePalette?: {
+        primary: string; secondary: string; bg: string; text: string;
+        success: string; danger: string; warning: string; info: string;
+        headerBg: string; headerText: string; borderColor: string;
+        cardBg: string; cardBorder: string; fontFamily: string;
+        borderRadius: number;
+    } | null;
 }) {
     const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const connectorInfo = opts.connectorId ? `\nConnettore DB attuale: ${opts.connectorId}` : '';
@@ -312,61 +319,119 @@ Se il CSS causa "invalid decimal literal", il codice e' SBAGLIATO: controlla che
 ## !!!! SISTEMA STILI CSS - REGOLA FONDAMENTALE (CRITICO) !!!!
 ${opts.activeStyleName ? `STILE ATTIVO: "${opts.activeStyleName}" - Lo stile CSS viene applicato AUTOMATICAMENTE dalla piattaforma.` : `NESSUNO STILE ATTIVO: Se l'utente chiede un output HTML con stile grafico, suggerisci di selezionare uno stile dalla pagina /style dell'app.`}
 
-La piattaforma ha un SISTEMA DI STILI centralizzato che applica CSS automaticamente a TUTTO l'HTML renderizzato.
-Il tuo codice NON DEVE MAI definire stili inline o CSS personalizzato per elementi standard.
+La piattaforma ha un SISTEMA DI STILI centralizzato che inietta CSS automaticamente in TUTTO l'HTML renderizzato.
+Il tuo codice NON DEVE MAI contenere tag \`<style>\`, CSS inline, o colori hardcoded.
+TUTTO il CSS arriva dalla piattaforma: colori, font, bordi, ombre, spaziatura.
 
-### REGOLA D'ORO STILI:
-1. **NON SCRIVERE MAI CSS per**: colori tabelle, font, bordi, sfondi, ombre, padding delle celle, colori header, hover, striping.
-   Il sistema di stili li applica AUTOMATICAMENTE via classi CSS predefinite.
-2. **USA SEMPRE tag HTML semantici standard**: \`<table>\`, \`<thead>\`, \`<tbody>\`, \`<tr>\`, \`<th>\`, \`<td>\`, \`<h1>\`-\`<h6>\`, \`<p>\`, \`<a>\`, \`<hr>\`, \`<ul>\`, \`<ol>\`, \`<li>\`
-3. **USA QUESTE CLASSI CSS per elementi UI**:
-   - \`.btn\` o \`.btn-primary\` → bottone primario (colore tema)
-   - \`.btn-secondary\` → bottone secondario
-   - \`.badge\` → badge/etichetta
-   - \`.card\` → contenitore card con bordo e ombra
-   - \`.positive\` → valore positivo (verde, es. +15%)
-   - \`.negative\` → valore negativo (rosso, es. -8%)
-   - \`<hr>\` → divisore orizzontale stilizzato
-   - \`<input>\`, \`<select>\`, \`<textarea>\` → form elements stilizzati automaticamente
-4. **CSS CUSTOM AMMESSO SOLO per**: layout (grid, flexbox, position), dimensioni (width, height, max-width), margini/padding del LAYOUT (non dei singoli elementi come td/th), animazioni.
-5. **MAI** scrivere colori hardcoded (#hex, rgb, hsl) per testi, sfondi, bordi. Lascia che il sistema di stili li gestisca.
-6. **MAI** impostare font-family, font-size, font-weight su elementi standard (tabelle, heading, paragrafi). Il sistema lo fa automaticamente.
+### REGOLA ZERO - NIENTE CSS:
+Il tuo HTML non deve avere NESSUN attributo \`style="..."\` e NESSUN blocco \`<style>...</style>\`.
+Usa SOLO classi CSS e tag HTML semantici. La piattaforma li stila automaticamente.
 
-### ESEMPIO HTML CORRETTO (senza stili inline):
+### ELEMENTI STANDARD (stilati automaticamente dalla piattaforma):
+\`<table>\`, \`<thead>\`, \`<tbody>\`, \`<tr>\`, \`<th>\`, \`<td>\`, \`<h1>\`-\`<h6>\`, \`<p>\`, \`<a>\`, \`<hr>\`, \`<ul>\`, \`<ol>\`, \`<li>\`,
+\`<button>\`, \`<input>\`, \`<select>\`, \`<textarea>\`
+
+### CLASSI UI (stilate automaticamente):
+- \`.btn\` o \`.btn-primary\` → bottone primario
+- \`.btn-secondary\` → bottone secondario
+- \`.badge\` → badge/etichetta
+- \`.card\` → contenitore card con bordo e ombra
+- \`.positive\` → valore positivo (verde)
+- \`.negative\` → valore negativo (rosso)
+
+### CLASSI LAYOUT (pre-stilate dalla piattaforma):
+- \`.kpi-grid\` → griglia responsive per KPI cards (auto-fit, minmax 160px)
+- \`.two-col\` / \`.three-col\` → grid a 2 o 3 colonne
+- \`.flex-row\` → flexbox orizzontale con gap e wrap
+- \`.flex-col\` → flexbox verticale con gap
+- \`.overflow-x\` → wrapper scrollabile orizzontale per tabelle larghe
+- \`.table-section\` → wrapper tabella con bordo, radius e scroll orizzontale
+- \`.mt-sm\` / \`.mt-md\` / \`.mt-lg\` → margin-top (8/16/24px)
+- \`.mb-sm\` / \`.mb-md\` → margin-bottom (8/16px)
+- \`.p-sm\` / \`.p-md\` / \`.p-lg\` → padding (8/16/24px)
+- \`.text-center\` / \`.text-right\` → allineamento testo
+- \`.text-sm\` / \`.text-lg\` / \`.text-xl\` → dimensioni testo
+- \`.font-bold\` / \`.font-medium\` → peso font
+- \`.w-full\` → width 100%
+
+### CLASSI KPI / STAT CARD:
 \`\`\`html
-<div style="max-width: 900px; margin: 0 auto; padding: 20px;">
-  <h1>Dashboard Vendite</h1>
-  <p>Riepilogo aggiornato al 2026-03-08</p>
+<div class="kpi-grid">
+  <div class="stat-card">
+    <div class="stat-label">Fatturato</div>
+    <div class="stat-value">€ 1.250.000</div>
+    <div class="stat-change up">+12.4%</div>
+  </div>
+  <div class="stat-card accent-danger">
+    <div class="stat-label">Costi</div>
+    <div class="stat-value">€ 890.000</div>
+    <div class="stat-change down">-3.1%</div>
+  </div>
+</div>
+\`\`\`
+
+### PROGRESS BAR:
+\`\`\`html
+<div class="progress-bar"><div class="progress-fill" style="width: 75%"></div></div>
+<div class="progress-bar success"><div class="progress-fill" style="width: 90%"></div></div>
+\`\`\`
+
+### STATUS DOT:
+\`\`\`html
+<span class="status-dot active"></span> Online
+<span class="status-dot warning"></span> In attesa
+\`\`\`
+
+### CLASSI COLORE (usa la palette del tema):
+- \`.text-primary\` / \`.text-secondary\` / \`.text-success\` / \`.text-danger\` / \`.text-warning\` / \`.text-info\`
+- \`.bg-primary\` / \`.bg-success\` / \`.bg-danger\` / \`.bg-warning\` / \`.bg-info\` / \`.bg-card\`
+- \`.accent-primary\` / \`.accent-success\` / \`.accent-danger\` / \`.accent-warning\` / \`.accent-info\` (bordo top colorato su card)
+
+### CSS VARIABLES (per casi eccezionali dove serve uno style inline):
+Se DEVI usare un colore inline (es. chart JS custom, SVG), usa SOLO CSS variables:
+\`var(--primary)\`, \`var(--secondary)\`, \`var(--success)\`, \`var(--danger)\`, \`var(--warning)\`, \`var(--info)\`,
+\`var(--bg)\`, \`var(--bg-card)\`, \`var(--text)\`, \`var(--border)\`, \`var(--radius)\`, \`var(--shadow-sm)\`
+MAI scrivere valori hex (#...) o rgb(...). Usa SOLO var(--nome).
+L'UNICA eccezione per \`style="..."\` e' \`width: XX%\` per progress bar fill.
+
+### ESEMPIO HTML CORRETTO:
+\`\`\`html
+<h1>Dashboard Vendite</h1>
+<p>Riepilogo aggiornato al 2026-03-08</p>
+<div class="kpi-grid">
+  <div class="stat-card accent-primary">
+    <div class="stat-label">Ricavi Totali</div>
+    <div class="stat-value">€ 5.105.000</div>
+    <div class="stat-change up">+8.2%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Margine</div>
+    <div class="stat-value">12.3%</div>
+  </div>
+</div>
+<div class="table-section mt-md">
   <table>
-    <thead><tr><th>Prodotto</th><th>Vendite</th><th>Variazione</th></tr></thead>
+    <thead><tr><th>Prodotto</th><th>Vendite</th><th>Var.</th></tr></thead>
     <tbody>
       <tr><td>Prodotto A</td><td>€ 15.000</td><td class="positive">+12%</td></tr>
       <tr><td>Prodotto B</td><td>€ 8.200</td><td class="negative">-5%</td></tr>
     </tbody>
   </table>
-  <hr>
-  <div style="display: flex; gap: 10px; margin-top: 15px;">
-    <button class="btn-primary" onclick="refresh()">Aggiorna</button>
-    <button class="btn-secondary" onclick="exportCsv()">Esporta CSV</button>
-  </div>
-  <div class="card" style="margin-top: 15px;">
-    <h3>Note</h3>
-    <p>Dati estratti dal database aziendale.</p>
-  </div>
+</div>
+<div class="flex-row mt-md">
+  <button class="btn">Aggiorna</button>
+  <button class="btn-secondary">Esporta CSV</button>
 </div>
 \`\`\`
 
-### ESEMPIO HTML SBAGLIATO (NON FARE COSI'):
+### ESEMPIO SBAGLIATO (MAI fare cosi'):
 \`\`\`html
-<!-- SBAGLIATO: stili hardcoded per tabella -->
-<table style="border-collapse: collapse; background: #fff; border-radius: 8px;">
-  <thead><tr style="background: #1a365d; color: white;"><th style="padding: 12px; font-weight: 600;">...</th></tr></thead>
-  <tbody><tr style="background: #f7fafc; border-bottom: 1px solid #e2e8f0;"><td style="padding: 10px; color: #2d3748;">...</td></tr></tbody>
+<!-- SBAGLIATO: stili inline hardcoded -->
+<table style="border-collapse: collapse; background: #fff;">
+  <thead><tr style="background: #1a365d; color: white;">...</tr></thead>
 </table>
-<!-- SBAGLIATO: colori hardcoded per valori -->
-<td style="color: #38a169; font-weight: bold;">+12%</td>
+<div style="background: #f0f0f0; color: #333; border-radius: 8px; padding: 20px;">KPI</div>
 \`\`\`
-MOTIVO: Tutti questi stili vengono sovrascritti dal sistema di stili della piattaforma. Il codice diventa piu' pulito e l'utente puo' cambiare tema da /style.
 
 ## COME ARRIVANO I DATI (DUE MODI):
 1. **Pipeline (df)**: I dati dal nodo upstream arrivano come \`df\`. Se il nodo ha piu' dipendenze, ogni dipendenza e' disponibile col suo NOME.
@@ -859,23 +924,50 @@ export async function POST(request: NextRequest) {
 
         console.log('[chat-stream] Using model:', model);
 
-        // 3b. Get active style name (for Python agent prompt)
+        // 3b. Get active style (for Python agent prompt — name + palette)
         let activeStyleName: string | null = null;
+        let activeStylePalette: Parameters<typeof buildPythonSystemPrompt>[0]['activeStylePalette'] = null;
         if (agentType === 'python' && user.company) {
             const co = user.company as any;
             if (co.activeUnifiedStyleId) {
                 // Check custom presets first
                 const customPresets = (co.unifiedStylePresets as any[] | null) || [];
                 const customMatch = customPresets.find((p: any) => p.id === co.activeUnifiedStyleId);
+                let matchedPreset: any = null;
                 if (customMatch) {
                     activeStyleName = customMatch.label || customMatch.id;
+                    matchedPreset = customMatch;
                 } else {
                     // Check built-in presets (lazy import to avoid bundle bloat)
                     try {
                         const { BUILTIN_PRESETS } = await import('@/lib/unified-style-presets');
                         const builtinMatch = BUILTIN_PRESETS.find(p => p.id === co.activeUnifiedStyleId);
                         activeStyleName = builtinMatch?.label || co.activeUnifiedStyleId;
+                        matchedPreset = builtinMatch || null;
                     } catch { activeStyleName = co.activeUnifiedStyleId; }
+                }
+                // Extract palette from matched preset for agent prompt
+                if (matchedPreset) {
+                    const html = matchedPreset.html || {};
+                    const ui = matchedPreset.ui || {};
+                    const plotly = matchedPreset.plotly || {};
+                    activeStylePalette = {
+                        primary: ui.btn_bg_color || '#2563eb',
+                        secondary: ui.btn_secondary_text_color || html.caption_color || '#7987a1',
+                        bg: html.page_bg_color || '#ffffff',
+                        text: html.body_text_color || '#374151',
+                        success: html.positive_color || '#059669',
+                        danger: html.negative_color || '#dc2626',
+                        warning: (plotly.colorway && plotly.colorway[3]) || '#fbbc06',
+                        info: (plotly.colorway && plotly.colorway[1]) || '#66d1d1',
+                        headerBg: html.header_bg_color || '#1e293b',
+                        headerText: html.header_text_color || '#f1f5f9',
+                        borderColor: html.border_color || ui.card_border_color || '#dee2e6',
+                        cardBg: ui.card_bg_color || '#ffffff',
+                        cardBorder: ui.card_border_color || '#e5e7eb',
+                        fontFamily: html.font_family || 'sans-serif',
+                        borderRadius: ui.btn_border_radius ?? html.table_border_radius ?? 4,
+                    };
                 }
             }
         }
@@ -892,7 +984,7 @@ export async function POST(request: NextRequest) {
 
         // 6. Build prompts (branched by agent type)
         const systemPrompt = agentType === 'python'
-            ? buildPythonSystemPrompt({ modelName: model, connectorId, companyId, selectedDocuments, activeStyleName })
+            ? buildPythonSystemPrompt({ modelName: model, connectorId, companyId, selectedDocuments, activeStyleName, activeStylePalette })
             : buildSystemPrompt({ modelName: model, connectorId, companyId });
 
         const userPrompt = agentType === 'python'

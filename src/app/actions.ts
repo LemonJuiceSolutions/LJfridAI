@@ -1899,7 +1899,39 @@ export async function executeSqlPreviewAction(
         // If successful, Commit the transaction (this might drop temp tables depending on driver, but we are done)
         await transaction.commit();
 
-        return { data: result.recordset, error: null };
+        // Safety cap: limit rows to prevent "Invalid string length" errors
+        // when serializing huge result sets via Server Actions
+        const MAX_PREVIEW_ROWS = 5000;
+        let data: any[] = result.recordset;
+        let truncatedWarning: string | null = null;
+        if (data && data.length > MAX_PREVIEW_ROWS) {
+            console.warn(`[PIPELINE] ⚠️ Result has ${data.length} rows, capping to ${MAX_PREVIEW_ROWS} for preview`);
+            truncatedWarning = `Risultati troncati: ${data.length} righe totali, mostrate le prime ${MAX_PREVIEW_ROWS}`;
+            data = data.slice(0, MAX_PREVIEW_ROWS);
+        }
+
+        // Additional safety: check serialized size to avoid "Invalid string length"
+        // JSON.stringify can fail on very wide rows even under 5000 rows
+        try {
+            const testSize = JSON.stringify(data).length;
+            const MAX_PAYLOAD_SIZE = 10 * 1024 * 1024; // 10MB safety limit
+            if (testSize > MAX_PAYLOAD_SIZE) {
+                // Progressively reduce rows until under limit
+                let reducedRows = Math.floor(data.length * (MAX_PAYLOAD_SIZE / testSize) * 0.8);
+                reducedRows = Math.max(reducedRows, 100); // at least 100 rows
+                console.warn(`[PIPELINE] ⚠️ Payload too large (${(testSize / 1024 / 1024).toFixed(1)}MB), reducing to ${reducedRows} rows`);
+                data = data.slice(0, reducedRows);
+                truncatedWarning = `Risultati troncati per dimensione: mostrate ${reducedRows} di ${result.recordset.length} righe`;
+            }
+        } catch (sizeCheckError) {
+            // JSON.stringify itself failed - drastically reduce
+            console.error(`[PIPELINE] ⚠️ JSON.stringify failed on result, reducing to 500 rows`);
+            data = (data || []).slice(0, 500);
+            truncatedWarning = `Risultati troncati (dati troppo grandi): mostrate 500 di ${result.recordset?.length || '?'} righe`;
+        }
+
+        if (truncatedWarning) console.warn(`[PIPELINE] ${truncatedWarning}`);
+        return { data, error: null };
 
     } catch (e) {
         const error = e instanceof Error ? e.message : "Errore durante l'esecuzione della query.";

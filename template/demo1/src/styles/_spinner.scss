@@ -1,0 +1,30 @@
+// Spinner
+
+.spinner-wrapper {
+  width: 100%;
+  height: calc(100vh - #{$navbar-height} - 100px);
+  z-index: 9999;
+  // background: var(--#{$prefix}body-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  .loader {
+    width: 55px;
+    height: 55px;
+    // background: var(--#{$prefix}body-bg);
+    border-radius: 50%;
+    position: relative;
+    animation: skLinRotate 1s ease-in-out infinite alternate;
+  }
+  .loader:after{
+    content:"";
+    position: absolute;
+    inset: 5px;
+    border-radius: 50%;
+    border: 5px solid transparent;
+    border-top-color: $primary;
+  }
+  @keyframes skLinRotate {
+    95% ,100% { transform: rotate(840deg) }
+  }
+}

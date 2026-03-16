@@ -58,9 +58,10 @@ import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import SmartWidgetRenderer from '@/components/widgets/builder/SmartWidgetRenderer';
 import ChartStyleEditor from '@/components/widgets/builder/ChartStyleEditor';
 import PlotlyStyleEditor, { PlotlyStyleOverrides, applyPlotlyOverrides, plotlyJsonToHtml } from '@/components/widgets/builder/PlotlyStyleEditor';
-import HtmlStyleEditor from '@/components/widgets/builder/HtmlStyleEditor';
-import type { HtmlStyleOverrides, HtmlInspectorZone } from '@/lib/html-style-utils';
+import VisualCssInspector from '@/components/widgets/builder/VisualCssInspector';
+import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
 import { applyHtmlStyleOverrides, injectIframeFetchPolyfill } from '@/lib/html-style-utils';
+import type { UiElementsOverrides } from '@/lib/unified-style-types';
 import { ChartStyle } from '@/lib/chart-style';
 import { useChartTheme } from '@/hooks/use-chart-theme';
 import { AgentChat } from '@/components/agents/agent-chat';
@@ -445,36 +446,7 @@ export default function EditNodeDialog({
   useEffect(() => { plotlyStyleOverridesRef.current = plotlyStyleOverrides; }, [plotlyStyleOverrides]);
   const [htmlStyleEditorOpen, setHtmlStyleEditorOpen] = useState(false);
   const [htmlStyleOverrides, setHtmlStyleOverrides] = useState<HtmlStyleOverrides>({});
-  const [htmlInspectorZone, setHtmlInspectorZone] = useState<HtmlInspectorZone>(null);
-  const [htmlInspectorElementInfo, setHtmlInspectorElementInfo] = useState('');
-  // Debounced srcDoc for the style editor fullscreen iframe.
-  // We directly recompute srcDoc with latest overrides — simple and always works.
-  const [editorSrcDoc, setEditorSrcDoc] = useState('');
-  const editorSrcDocTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!htmlStyleEditorOpen || !pythonPreviewResult?.html) {
-      setEditorSrcDoc('');
-      return;
-    }
-    // Debounce srcDoc updates (80ms) to avoid excessive iframe reloads during slider drags
-    if (editorSrcDocTimerRef.current) clearTimeout(editorSrcDocTimerRef.current);
-    editorSrcDocTimerRef.current = setTimeout(() => {
-      setEditorSrcDoc(applyHtmlStyleOverrides(pythonPreviewResult.html!, htmlStyleOverrides, true));
-    }, 80);
-    return () => { if (editorSrcDocTimerRef.current) clearTimeout(editorSrcDocTimerRef.current); };
-  }, [htmlStyleOverrides, htmlStyleEditorOpen, pythonPreviewResult?.html]);
-  // Listen for inspector messages from HTML preview iframe
-  useEffect(() => {
-    if (!htmlStyleEditorOpen) { setHtmlInspectorZone(null); setHtmlInspectorElementInfo(''); return; }
-    const handler = (e: MessageEvent) => {
-      if (e.data?.type === 'html-inspector-select') {
-        setHtmlInspectorZone(e.data.zone as HtmlInspectorZone);
-        setHtmlInspectorElementInfo(e.data.elementInfo || '');
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, [htmlStyleEditorOpen]);
+  const [uiStyleOverrides, setUiStyleOverrides] = useState<Partial<UiElementsOverrides>>({});
 
   // Listen for DB write success from HTML iframe and re-run preview
   useEffect(() => {
@@ -796,6 +768,9 @@ export default function EditNodeDialog({
       // Load saved HTML style overrides
       const savedHtmlOverrides = savedPreviewData?.htmlStyleOverrides || (node as any).htmlStyleOverrides;
       setHtmlStyleOverrides(savedHtmlOverrides || {});
+      // Load saved UI style overrides
+      const savedUiOverrides = savedPreviewData?.uiStyleOverrides;
+      setUiStyleOverrides(savedUiOverrides || {});
 
       // Load Email Action Config with safe defaults merge
       if ((node as any).emailAction) {
@@ -2273,10 +2248,12 @@ export default function EditNodeDialog({
         const overridesToSave = Object.keys(plotlyStyleOverrides).length > 0 ? plotlyStyleOverrides : undefined;
         console.log('[SAVE DEBUG] Saving pythonPreviewResult with plotlyStyleOverrides:', JSON.stringify(overridesToSave));
         const htmlOverridesToSave = Object.keys(htmlStyleOverrides).length > 0 ? htmlStyleOverrides : undefined;
+        const uiOverridesToSave = Object.keys(uiStyleOverrides).length > 0 ? uiStyleOverrides : undefined;
         newNodeData.pythonPreviewResult = {
           ...pythonPreviewResult,
           plotlyStyleOverrides: overridesToSave,
           htmlStyleOverrides: htmlOverridesToSave,
+          uiStyleOverrides: uiOverridesToSave,
         };
       } else if ((initialNode as any).pythonPreviewResult) {
         console.log('[SAVE DEBUG] Using initialNode pythonPreviewResult (no current state), hasOverrides:', !!(initialNode as any).pythonPreviewResult?.plotlyStyleOverrides);
@@ -3780,34 +3757,33 @@ export default function EditNodeDialog({
                                 sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                                 title="HTML Preview"
                               />
-                              {/* HTML Style Editor Dialog */}
-                              <Dialog open={htmlStyleEditorOpen} onOpenChange={setHtmlStyleEditorOpen}>
-                                <DialogContent className="!max-w-[95vw] !w-[95vw] !h-[93vh] flex flex-col">
-                                  <DialogHeader>
-                                    <DialogTitle className="text-sm">Personalizza Stile HTML</DialogTitle>
-                                    <p className="text-[11px] text-muted-foreground">Clicca su un elemento nell&apos;anteprima per modificare le sue proprieta&apos;</p>
-                                  </DialogHeader>
-                                  <div className="flex-1 min-h-0 grid grid-cols-[1fr_320px] gap-4 overflow-hidden">
-                                    <div className="border rounded-lg bg-muted/20 overflow-auto min-h-0">
-                                      <iframe
-                                        srcDoc={editorSrcDoc}
-                                        className="w-full h-full border-none min-h-[500px]"
-                                        title="HTML Style Preview"
-                                      />
+                              {/* HTML Visual CSS Inspector — full-screen overlay (no nested Dialog to avoid portal/focus-trap conflicts) */}
+                              {htmlStyleEditorOpen && (
+                                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
+                                  <div className="bg-background border rounded-lg shadow-xl flex flex-col overflow-hidden" style={{ width: '95vw', height: '93vh', maxWidth: '95vw', maxHeight: '93vh' }}>
+                                    <div className="flex items-center justify-between px-6 pt-5 pb-2 shrink-0">
+                                      <div>
+                                        <h3 className="text-sm font-semibold leading-none tracking-tight">Personalizza Stile HTML</h3>
+                                        <p className="text-[11px] text-muted-foreground mt-1">Clicca su un elemento nell&apos;anteprima per modificare le sue proprieta&apos; — toggle CSS per vedere il codice generato</p>
+                                      </div>
+                                      <button onClick={() => setHtmlStyleEditorOpen(false)} className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                                        <X className="h-4 w-4" />
+                                        <span className="sr-only">Close</span>
+                                      </button>
                                     </div>
-                                    <div className="overflow-y-auto pr-1">
-                                      <HtmlStyleEditor
-                                        overrides={htmlStyleOverrides}
-                                        onChange={setHtmlStyleOverrides}
-                                        selectedZone={htmlInspectorZone}
-                                        elementInfo={htmlInspectorElementInfo}
-                                        onClearZone={() => { setHtmlInspectorZone(null); setHtmlInspectorElementInfo(''); }}
+                                    <div className="flex-1 min-h-0 px-6 pb-5 flex flex-col overflow-hidden">
+                                      <VisualCssInspector
+                                        html={pythonPreviewResult.html!}
+                                        htmlOverrides={htmlStyleOverrides}
+                                        uiOverrides={uiStyleOverrides}
+                                        onHtmlOverridesChange={o => setHtmlStyleOverrides(o as HtmlStyleOverrides)}
+                                        onUiOverridesChange={setUiStyleOverrides}
                                         openRouterConfig={openRouterApiKey ? { apiKey: openRouterApiKey, model: openRouterModel } : undefined}
                                       />
                                     </div>
                                   </div>
-                                </DialogContent>
-                              </Dialog>
+                                </div>
+                              )}
                             </div>
                           )}
                           {pythonPreviewResult.type === 'chart' && (

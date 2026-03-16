@@ -156,7 +156,26 @@ export async function executeSqlPreviewAction(query: string, connectorId: string
 
         try {
             const result = await pool.request().query(query);
-            return { data: result.recordset, error: null };
+            // Safety cap: limit rows to prevent "Invalid string length" errors
+            const MAX_PREVIEW_ROWS = 5000;
+            let data: any[] = result.recordset;
+            if (data && data.length > MAX_PREVIEW_ROWS) {
+                console.warn(`[SQL Preview] ⚠️ Result has ${data.length} rows, capping to ${MAX_PREVIEW_ROWS}`);
+                data = data.slice(0, MAX_PREVIEW_ROWS);
+            }
+            // Additional safety: check serialized size
+            try {
+                const testSize = JSON.stringify(data).length;
+                if (testSize > 10 * 1024 * 1024) {
+                    const reducedRows = Math.max(Math.floor(data.length * (10 * 1024 * 1024 / testSize) * 0.8), 100);
+                    console.warn(`[SQL Preview] ⚠️ Payload too large (${(testSize / 1024 / 1024).toFixed(1)}MB), reducing to ${reducedRows} rows`);
+                    data = data.slice(0, reducedRows);
+                }
+            } catch {
+                console.error(`[SQL Preview] ⚠️ JSON.stringify failed, reducing to 500 rows`);
+                data = (data || []).slice(0, 500);
+            }
+            return { data, error: null };
         } finally {
             await pool.close();
         }

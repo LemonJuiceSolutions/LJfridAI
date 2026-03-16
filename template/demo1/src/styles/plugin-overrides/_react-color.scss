@@ -1,0 +1,47 @@
+// Plugin: React Color
+// github: https://github.com/uiwjs/react-color
+
+.w-color-sketch {
+  --sketch-background: var(--#{$prefix}body-bg) !important;
+  border: 1px solid var(--#{$prefix}border-color);
+  box-shadow: var(--#{$prefix}card-box-shadow) !important;
+  --sketch-swatch-border-top: 1px solid var(--#{$prefix}border-color) !important;
+}
+
+.w-color-swatch {
+  --sketch-swatch-border-top: 1px solid var(--#{$prefix}border-color) !important;
+}
+
+.w-color-block {
+  --block-background-color: var(--#{$prefix}body-bg) !important;
+  border: 1px solid var(--#{$prefix}border-color);
+  --block-box-shadow: var(--#{$prefix}card-box-shadow) !important;
+}
+
+.w-color-editable-input {
+  --editable-input-label-color: var(--#{$prefix}body-color) !important;
+  --editable-input-box-shadow: var(--#{$prefix}border-color) 0px 0px 0px 1px inset !important;
+  --editable-input-color: var(--#{$prefix}body-color) !important;
+}
+
+.w-color-github {
+  --github-border: 1px solid var(--#{$prefix}border-color) !important;
+  --github-background-color: var(--#{$prefix}body-bg) !important;
+  --github-box-shadow: var(--#{$prefix}card-box-shadow) !important;
+  --github-arrow-border-color: var(--#{$prefix}border-color) !important;
+}
+
+.w-color-compact {
+  --compact-background-color: var(--#{$prefix}body-bg) !important;
+  border: 1px solid var(--#{$prefix}border-color);
+}
+
+.w-color-material {
+  --material-background-color: var(--#{$prefix}body-bg) !important;
+  --material-border-bottom-color: var(--#{$prefix}border-color) !important;
+}
+
+.w-color-alpha {
+  --alpha-pointer-background-color: var(--#{$prefix}body-bg) !important;
+  --alpha-pointer-box-shadow: var(--#{$prefix}card-box-shadow) !important;
+}
