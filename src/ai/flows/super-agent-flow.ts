@@ -4,6 +4,173 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
+import type { WidgetConfig, WidgetType } from '@/lib/types';
+
+// ─── Widget creation helpers (mirrored from save-widget/route.ts) ───────────
+
+function rechartsTypeToPlotly(type: string): string {
+    switch (type) {
+        case 'line-chart': return 'line';
+        case 'area-chart': return 'area';
+        case 'pie-chart': return 'pie';
+        case 'scatter-chart': return 'scatter';
+        case 'bar-chart':
+        default: return 'bar';
+    }
+}
+
+function generatePythonChartCode(chartConfig: {
+    type: string;
+    xAxisKey?: string;
+    dataKeys?: string[];
+    title?: string;
+}): string {
+    const plotlyType = rechartsTypeToPlotly(chartConfig.type);
+    const title = (chartConfig.title || '').replace(/'/g, "\\'");
+    const xKey = chartConfig.xAxisKey || 'x';
+    const yKeys = chartConfig.dataKeys?.length ? chartConfig.dataKeys : ['y'];
+
+    if (plotlyType === 'pie') {
+        const valueKey = yKeys[0];
+        return [
+            `import plotly.express as px`,
+            ``,
+            `# df is auto-injected from the SQL step`,
+            `fig = px.pie(df, names='${xKey}', values='${valueKey}', title='${title}')`,
+            `fig.show()`,
+        ].join('\n');
+    }
+
+    if (plotlyType === 'scatter') {
+        const yKey = yKeys[0];
+        return [
+            `import plotly.express as px`,
+            ``,
+            `# df is auto-injected from the SQL step`,
+            `fig = px.scatter(df, x='${xKey}', y='${yKey}', title='${title}')`,
+            `fig.show()`,
+        ].join('\n');
+    }
+
+    if (yKeys.length === 1) {
+        return [
+            `import plotly.express as px`,
+            ``,
+            `# df is auto-injected from the SQL step`,
+            `fig = px.${plotlyType}(df, x='${xKey}', y='${yKeys[0]}', title='${title}')`,
+            `fig.show()`,
+        ].join('\n');
+    }
+
+    const yKeysStr = yKeys.map(k => `'${k}'`).join(', ');
+    return [
+        `import plotly.express as px`,
+        `import pandas as pd`,
+        ``,
+        `# df is auto-injected from the SQL step`,
+        `df_melted = df.melt(id_vars='${xKey}', value_vars=[${yKeysStr}], var_name='Serie', value_name='Valore')`,
+        `fig = px.${plotlyType}(df_melted, x='${xKey}', y='Valore', color='Serie', title='${title}')`,
+        `fig.show()`,
+    ].join('\n');
+}
+
+/**
+ * Create a PIPELINE tree with SQL → Python → Chart nodes.
+ * Shared logic used by both Genkit tool and OpenRouter tool dispatcher.
+ */
+async function createWidgetTree(args: {
+    treeName: string;
+    chartType: string;
+    sqlQuery?: string;
+    connectorId?: string;
+    pythonCode?: string;
+    xAxisKey?: string;
+    dataKeys?: string[];
+    data?: any[];
+    companyId: string;
+}): Promise<{ success: boolean; treeId?: string; treeName?: string; error?: string }> {
+    try {
+        const { treeName, chartType, sqlQuery, connectorId, pythonCode: rawPythonCode, xAxisKey, dataKeys, data, companyId } = args;
+
+        if (!treeName?.trim()) return { success: false, error: 'treeName è obbligatorio' };
+        if (sqlQuery && !connectorId) return { success: false, error: 'connectorId è OBBLIGATORIO quando passi una sqlQuery! Usa lo stesso connectorId che hai usato con executeSqlQuery.' };
+
+        const rootId = crypto.randomUUID();
+        const sqlStepId = crypto.randomUUID();
+        const pythonStepId = crypto.randomUUID();
+        const leafId = crypto.randomUUID();
+
+        const widgetType = (chartType as WidgetType) || 'bar-chart';
+        const hasSql = !!(sqlQuery && connectorId);
+        const hasPython = !!rawPythonCode;
+
+        const leafWidgetConfig: WidgetConfig = {
+            type: widgetType,
+            title: treeName,
+            data: (!hasSql && !hasPython) ? data : undefined,
+            xAxisKey: typeof xAxisKey === 'string' ? xAxisKey : undefined,
+            dataKeys: Array.isArray(dataKeys) ? dataKeys.filter((k: unknown) => typeof k === 'string') : undefined,
+            isPublished: true,
+            ...(hasSql ? { dataSourceType: 'current-sql' as const, dataSourceId: 'sql' } :
+               hasPython ? { dataSourceType: 'current-python' as const, dataSourceId: 'python' } : {}),
+        };
+
+        const leafNode = { id: leafId, decision: treeName, widgetConfig: leafWidgetConfig };
+
+        let rootNode: object;
+
+        if (hasSql) {
+            const cleanPythonCode = generatePythonChartCode({ type: chartType, xAxisKey, dataKeys, title: treeName });
+            const pythonStepNode = {
+                id: pythonStepId,
+                question: `Elaborazione Python: ${treeName}`,
+                pythonCode: cleanPythonCode,
+                pythonOutputType: 'chart' as const,
+                pythonResultName: 'grafico',
+                pythonSelectedPipelines: ['dati'],
+                pythonConnectorId: connectorId,
+                options: { 'Visualizza': leafNode },
+            };
+            const sqlStepNode = {
+                id: sqlStepId,
+                question: `Query SQL: ${treeName}`,
+                sqlQuery,
+                sqlConnectorId: connectorId,
+                sqlResultName: 'dati',
+                options: { 'Elabora': pythonStepNode },
+            };
+            rootNode = { id: rootId, question: treeName, options: { 'Calcola': sqlStepNode } };
+        } else if (hasPython) {
+            const pythonStepNode = {
+                id: pythonStepId,
+                question: `Elaborazione Python: ${treeName}`,
+                pythonCode: rawPythonCode,
+                pythonOutputType: 'chart' as const,
+                pythonResultName: 'grafico',
+                options: { 'Visualizza': leafNode },
+            };
+            rootNode = { id: rootId, question: treeName, options: { 'Genera': pythonStepNode } };
+        } else {
+            rootNode = { id: rootId, question: treeName, options: { 'Visualizza': leafNode } };
+        }
+
+        const tree = await db.tree.create({
+            data: {
+                name: treeName,
+                description: `Widget generato da FridAI Super Agent${hasSql ? ' tramite query SQL + Python (Plotly)' : hasPython ? ' tramite codice Python' : ''}`,
+                naturalLanguageDecisionTree: treeName,
+                jsonDecisionTree: JSON.stringify(rootNode),
+                questionsScript: '',
+                type: 'PIPELINE',
+                companyId,
+            },
+        });
+
+        return { success: true, treeId: tree.id, treeName: tree.name };
+    } catch (e: any) {
+        return { success: false, error: e.message || 'Errore creazione widget' };
+    }
+}
 
 // Helper: recursively collect all nodes from a tree
 function collectNodes(node: any, treeName: string, treeId: string, results: any[] = []): any[] {
@@ -379,6 +546,32 @@ const saveToKnowledgeBase = ai.defineTool(
     }
 );
 
+// Tool 8: Create Widget (decision tree with SQL → Python → Chart nodes)
+const createWidget = ai.defineTool(
+    {
+        name: 'createWidget',
+        description: `Crea un albero decisionale (widget) di tipo PIPELINE con nodi SQL → Python → Grafico gia' configurati e pronti all'uso.
+Usa questo tool quando l'utente chiede di creare un widget, un albero, o di salvare un'analisi come pipeline.
+IMPORTANTE: Passa la query SQL e il connectorId che hai gia' usato nella conversazione, insieme ai dati e la configurazione del grafico.`,
+        inputSchema: z.object({
+            treeName: z.string().describe("Nome dell'albero/widget (es. 'Ricavi Mensili 2024-2026')."),
+            chartType: z.string().describe("Tipo di grafico: 'bar-chart', 'line-chart', 'area-chart', 'pie-chart', 'scatter-chart'."),
+            sqlQuery: z.string().optional().describe('La query SQL usata per estrarre i dati. Copiala da executeSqlQuery.'),
+            connectorId: z.string().optional().describe('ID del connettore database usato per la query SQL.'),
+            pythonCode: z.string().optional().describe('Codice Python usato (opzionale, se hai usato executePythonCode).'),
+            xAxisKey: z.string().optional().describe("Nome della colonna per l'asse X del grafico."),
+            dataKeys: z.array(z.string()).optional().describe("Nomi delle colonne per l'asse Y del grafico (serie dati)."),
+            data: z.array(z.any()).optional().describe('I dati del grafico (array di oggetti). Necessario solo se non hai una query SQL.'),
+            companyId: z.string().describe("L'ID della company. Lo trovi nel system prompt."),
+        }),
+        outputSchema: z.string().describe("Risultato della creazione: JSON con success, treeId e treeName, oppure errore."),
+    },
+    async (input) => {
+        const result = await createWidgetTree(input);
+        return JSON.stringify(result);
+    }
+);
+
 // Helper: Map OpenRouter model IDs to Genkit Google AI model IDs
 function mapToGenkitModel(openRouterModel?: string): string {
     if (!openRouterModel) return 'googleai/gemini-2.5-flash';
@@ -517,6 +710,27 @@ Se l'utente chiede qualcosa di complesso (es: "confronta le vendite di quest'ann
 - Se scopri una nuova tabella, connettore o query funzionante → SALVALA nella KB automaticamente
 - La KB e' la tua MEMORIA PERMANENTE. Alimentala continuamente.
 
+## CREAZIONE WIDGET / ALBERI (TOOL createWidget):
+Quando l'utente chiede di creare un widget, un albero, una pipeline o di salvare un'analisi:
+1. PRIMA esegui la query SQL con executeSqlQuery (se non l'hai gia' fatto)
+2. Poi USA il tool createWidget passando:
+   - treeName: nome descrittivo (es. "Ricavi Mensili 2024-2026")
+   - chartType: tipo di grafico (bar-chart, line-chart, pie-chart, area-chart, scatter-chart)
+   - xAxisKey: la colonna per l'asse X
+   - dataKeys: le colonne per l'asse Y
+   - companyId: dal system prompt
+   - NON serve passare sqlQuery e connectorId: vengono recuperati AUTOMATICAMENTE dall'ultima executeSqlQuery!
+3. Il tool crea un albero PIPELINE vero con nodi SQL → Python (Plotly) → Grafico, PRONTO all'uso
+4. L'albero apparira' nella sezione Regole con query e codice gia' configurati
+5. NON salvare solo nella Knowledge Base - USA createWidget per creare l'albero vero!
+
+## PROPOSTA AUTOMATICA WIDGET (OBBLIGATORIO):
+OGNI VOLTA che mostri un grafico (recharts) o una tabella con dati estratti da SQL/Python, DEVI SEMPRE chiedere all'utente:
+"📊 Vuoi che salvi questo come widget nelle Regole? Creerò un albero PIPELINE pronto all'uso con la query SQL e il grafico già configurati."
+- Se l'utente risponde sì/ok/confermo/crea → chiama immediatamente createWidget con i dati della conversazione
+- Se l'utente risponde no/non serve → prosegui normalmente
+- NON saltare mai questa domanda dopo aver mostrato un grafico o una tabella con dati
+
 ## FORMATO RISPOSTE:
 - Rispondi SEMPRE in italiano
 - Per grafici: \`\`\`recharts {"type":"bar-chart","data":[...],"xAxisKey":"x","dataKeys":["y"],"title":"Titolo"} \`\`\`
@@ -600,6 +814,7 @@ Se l'utente chiede qualcosa di complesso (es: "confronta le vendite di quest'ann
                 executePythonCode,
                 searchKnowledgeBase,
                 saveToKnowledgeBase,
+                createWidget,
             ],
         });
         return { message: text, consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined };
@@ -734,6 +949,28 @@ const openRouterTools = [
             },
         },
     },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'createWidget',
+            description: "Crea un albero decisionale (widget) di tipo PIPELINE con nodi SQL, Python e Grafico gia' configurati e pronti all'uso. Usa quando l'utente chiede di creare un widget, un albero o salvare un'analisi come pipeline.",
+            parameters: {
+                type: 'object',
+                properties: {
+                    treeName: { type: 'string', description: "Nome dell'albero/widget." },
+                    chartType: { type: 'string', description: "Tipo di grafico: 'bar-chart', 'line-chart', 'area-chart', 'pie-chart', 'scatter-chart'." },
+                    sqlQuery: { type: 'string', description: 'La query SQL usata per estrarre i dati.' },
+                    connectorId: { type: 'string', description: 'ID del connettore database.' },
+                    pythonCode: { type: 'string', description: 'Codice Python usato (opzionale).' },
+                    xAxisKey: { type: 'string', description: "Colonna per l'asse X." },
+                    dataKeys: { type: 'array', items: { type: 'string' }, description: 'Colonne per asse Y.' },
+                    data: { type: 'array', items: { type: 'object' }, description: 'Dati del grafico (solo se non hai SQL).' },
+                    companyId: { type: 'string', description: "L'ID della company." },
+                },
+                required: ['treeName', 'chartType', 'companyId'],
+            },
+        },
+    },
 ];
 
 // Tool execution dispatcher for OpenRouter function calls
@@ -812,6 +1049,10 @@ async function executeToolCall(name: string, args: any): Promise<string> {
                 data: { question: args.question, answer: args.answer, tags: args.tags || [], category: args.category || 'Generale', companyId: args.companyId },
             });
             return JSON.stringify({ success: true, id: entry.id });
+        }
+        case 'createWidget': {
+            const result = await createWidgetTree(args);
+            return JSON.stringify(result);
         }
         default:
             return JSON.stringify({ error: `Tool sconosciuto: ${name}` });
