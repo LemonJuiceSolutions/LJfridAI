@@ -20,14 +20,13 @@ export const maxDuration = 120;
 // ─── Widget creation helpers (mirrored from super-agent-flow.ts) ────────────
 
 function rechartsTypeToPlotly(type: string): string {
-    switch (type) {
-        case 'line-chart': return 'line';
-        case 'area-chart': return 'area';
-        case 'pie-chart': return 'pie';
-        case 'scatter-chart': return 'scatter';
-        case 'bar-chart':
-        default: return 'bar';
-    }
+    const t = (type || '').toLowerCase().replace(/[-_\s]/g, '');
+    if (t.includes('line')) return 'line';
+    if (t.includes('area')) return 'area';
+    if (t.includes('pie')) return 'pie';
+    if (t.includes('scatter')) return 'scatter';
+    if (t.includes('bar')) return 'bar';
+    return 'bar'; // fallback
 }
 
 function generatePythonChartCode(chartConfig: {
@@ -184,7 +183,16 @@ async function createWidgetTree(args: {
         const pythonStepId = crypto.randomUUID();
         const leafId = crypto.randomUUID();
 
-        const widgetType = (chartType as WidgetType) || 'bar-chart';
+        // Normalize chartType: LLM may pass "line", "line-chart", "lineChart", etc.
+        const normalizedChartType = (() => {
+            const t = (chartType || '').toLowerCase().replace(/[-_\s]/g, '');
+            if (t.includes('line')) return 'line-chart';
+            if (t.includes('area')) return 'area-chart';
+            if (t.includes('pie')) return 'pie-chart';
+            if (t.includes('scatter')) return 'scatter-chart';
+            return 'bar-chart';
+        })();
+        const widgetType = normalizedChartType as WidgetType;
         const hasSql = !!(sqlQuery && connectorId);
         const hasPython = !!rawPythonCode;
         const MAX_RETRIES = 5;
@@ -220,12 +228,36 @@ async function createWidgetTree(args: {
 
         // ─── Phase 2: Test & auto-fix Python ─────────────────────────────
         let finalPythonCode = hasSql
-            ? generatePythonChartCode({ type: chartType, xAxisKey, dataKeys, title: treeName })
+            ? generatePythonChartCode({ type: normalizedChartType, xAxisKey, dataKeys, title: treeName })
             : rawPythonCode;
         let pythonOk = false;
         let lastPythonError = '';
 
+        // Get actual SQL columns for Python column name fixing
+        let actualColumns: string[] = [];
+        if (hasSql && sqlOk) {
+            const sqlTestResult = await testSql(finalSqlQuery!, connectorId!);
+            if (sqlTestResult.ok && sqlTestResult.columns) {
+                actualColumns = sqlTestResult.columns;
+            }
+        }
+
         if (finalPythonCode && (hasSql ? sqlOk : true)) {
+            // If we have actual columns, regenerate Python with correct column names
+            if (hasSql && actualColumns.length >= 2) {
+                const correctXKey = xAxisKey && actualColumns.includes(xAxisKey) ? xAxisKey : actualColumns[0];
+                const correctYKeys = dataKeys?.length && dataKeys.every(k => actualColumns.includes(k))
+                    ? dataKeys
+                    : actualColumns.slice(1);
+                finalPythonCode = generatePythonChartCode({
+                    type: normalizedChartType,
+                    xAxisKey: correctXKey,
+                    dataKeys: correctYKeys,
+                    title: treeName,
+                });
+                console.log(`[createWidget] Python code regenerated with actual columns: x=${correctXKey}, y=${JSON.stringify(correctYKeys)}`);
+            }
+
             const deps = hasSql ? [{ tableName: 'dati', query: finalSqlQuery, connectorId }] : [];
             for (let i = 0; i < MAX_RETRIES; i++) {
                 const result = await testPython(finalPythonCode!, deps, connectorId);
@@ -242,10 +274,14 @@ async function createWidgetTree(args: {
                 if (lastPythonError.includes("name 'df' is not defined")) {
                     fixed = `import pandas as pd\ndf = pd.DataFrame(dati)\n` + fixed;
                 }
-                // Column not found → try without quotes
-                if (lastPythonError.includes('KeyError')) {
-                    // Can't auto-fix column names without knowing the actual columns
-                    break;
+                // KeyError: column not found → try with actual columns from SQL
+                if (lastPythonError.includes('KeyError') && actualColumns.length >= 2) {
+                    fixed = generatePythonChartCode({
+                        type: normalizedChartType,
+                        xAxisKey: actualColumns[0],
+                        dataKeys: actualColumns.slice(1),
+                        title: treeName,
+                    });
                 }
                 if (fixed === finalPythonCode) break;
                 finalPythonCode = fixed;
@@ -263,13 +299,24 @@ async function createWidgetTree(args: {
             return { success: false, error: `Impossibile creare il widget: la query SQL non funziona dopo ${sqlAttempts} tentativi. Ultimo errore: ${lastSqlError}`, testResults, attempts: sqlAttempts };
         }
 
-        // ─── Phase 4: Build tree nodes ───────────────────────────────────
+        // If Python still fails after all retries, don't create
+        if (finalPythonCode && !pythonOk) {
+            return { success: false, error: `Impossibile creare il widget: il codice Python non funziona. Errore: ${lastPythonError}`, testResults, attempts: sqlAttempts };
+        }
+
+        // ─── Phase 4: Build tree nodes (using auto-fixed code + real columns) ─
+        // Use actual SQL columns for widget config when available
+        const finalXAxisKey = (xAxisKey && actualColumns.includes(xAxisKey)) ? xAxisKey : (actualColumns[0] || xAxisKey);
+        const finalDataKeys = (dataKeys?.length && dataKeys.every(k => actualColumns.includes(k)))
+            ? dataKeys
+            : (actualColumns.length >= 2 ? actualColumns.slice(1) : dataKeys);
+
         const leafWidgetConfig: WidgetConfig = {
             type: widgetType,
             title: treeName,
             data: (!hasSql && !hasPython) ? data : undefined,
-            xAxisKey: typeof xAxisKey === 'string' ? xAxisKey : undefined,
-            dataKeys: Array.isArray(dataKeys) ? dataKeys.filter((k: unknown) => typeof k === 'string') : undefined,
+            xAxisKey: finalXAxisKey || undefined,
+            dataKeys: finalDataKeys?.length ? finalDataKeys.filter((k: unknown) => typeof k === 'string') : undefined,
             isPublished: true,
             ...(hasSql ? { dataSourceType: 'current-sql' as const, dataSourceId: 'sql' } :
                hasPython ? { dataSourceType: 'current-python' as const, dataSourceId: 'python' } : {}),
@@ -312,7 +359,16 @@ async function createWidgetTree(args: {
             rootNode = { id: rootId, question: treeName, options: { 'Visualizza': leafNode } };
         }
 
-        // ─── Phase 5: Save ───────────────────────────────────────────────
+        // ─── Phase 5: Save (with verified & fixed code) ─────────────────
+        console.log('[createWidget] SAVING tree with:', {
+            widgetType: normalizedChartType,
+            sqlQuery: finalSqlQuery?.substring(0, 60),
+            pythonCode: finalPythonCode?.substring(0, 80),
+            xAxisKey: finalXAxisKey,
+            dataKeys: finalDataKeys,
+            sqlOk,
+            pythonOk,
+        });
         const tree = await db.tree.create({
             data: {
                 name: treeName,
