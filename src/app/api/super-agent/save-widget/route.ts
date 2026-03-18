@@ -211,10 +211,10 @@ export async function POST(request: NextRequest) {
             }
 
             if (!sqlOk) {
-                // Last resort: if we have chartConfig.data (static data from the recharts block),
-                // fall back to static widget (no SQL, just sealed data)
-                console.log(`[save-widget] SQL failed after all retries. Falling back to static data widget.`);
-                // Continue without SQL — the widget will use chartConfig.data as static data
+                return NextResponse.json({
+                    error: `Query SQL non funziona dopo ${MAX_RETRIES} tentativi di auto-fix. Correggi la query nella chat e riprova.`,
+                    sqlError: true,
+                }, { status: 400 });
             }
         }
 
@@ -255,37 +255,29 @@ export async function POST(request: NextRequest) {
             }
 
             if (!pythonOk) {
-                // Python failed but SQL worked → save as SQL-only with static data fallback
-                console.log(`[save-widget] Python failed. Falling back to static data for chart.`);
+                return NextResponse.json({
+                    error: `Codice Python non funziona dopo ${MAX_RETRIES} tentativi. Correggi e riprova.`,
+                    pythonError: true,
+                }, { status: 400 });
             }
         }
 
-        // ─── Phase 3: Build tree nodes ───────────────────────────────────
-        // Decide the effective mode: use SQL pipeline only if both SQL and Python passed
-        const useSqlPipeline = hasSql && sqlOk && pythonOk;
-        const usePythonOnly = hasPython && !useSqlPipeline;
-        const useStaticData = !useSqlPipeline && !usePythonOnly;
-
-        if (useStaticData) {
-            console.log('[save-widget] Using STATIC data (sealed from recharts). SQL/Python not available or failed.');
-        }
-
+        // ─── Phase 3: Build tree nodes (only if all tests passed) ────────
         const leafWidgetConfig: WidgetConfig = {
             type: widgetType,
             title: treeName,
-            data: useStaticData ? chartConfig.data : undefined,
-            xAxisKey: (useSqlPipeline ? finalXAxisKey : chartConfig.xAxisKey) || undefined,
-            dataKeys: (useSqlPipeline && finalDataKeys?.length ? finalDataKeys : chartConfig.dataKeys)?.filter((k: unknown) => typeof k === 'string') || undefined,
+            xAxisKey: finalXAxisKey || undefined,
+            dataKeys: finalDataKeys?.length ? finalDataKeys.filter((k: unknown) => typeof k === 'string') : undefined,
             colors: Array.isArray(chartConfig.colors) ? chartConfig.colors : undefined,
             isPublished: true,
-            ...(useSqlPipeline ? { dataSourceType: 'current-sql' as const, dataSourceId: 'sql' } :
-               usePythonOnly ? { dataSourceType: 'current-python' as const, dataSourceId: 'python' } : {}),
+            ...(hasSql ? { dataSourceType: 'current-sql' as const, dataSourceId: 'sql' } :
+               hasPython ? { dataSourceType: 'current-python' as const, dataSourceId: 'python' } : {}),
         };
 
         const leafNode = { id: leafId, decision: treeName, widgetConfig: leafWidgetConfig };
         let rootNode: object;
 
-        if (useSqlPipeline) {
+        if (hasSql) {
             const pythonStepNode = {
                 id: pythonStepId,
                 question: `Elaborazione Python: ${treeName}`,
@@ -305,7 +297,7 @@ export async function POST(request: NextRequest) {
                 options: { 'Elabora': pythonStepNode },
             };
             rootNode = { id: rootId, question: treeName, options: { 'Calcola': sqlStepNode } };
-        } else if (usePythonOnly) {
+        } else if (hasPython) {
             const pythonStepNode = {
                 id: pythonStepId,
                 question: `Elaborazione Python: ${treeName}`,
