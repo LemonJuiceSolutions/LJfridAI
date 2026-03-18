@@ -151,17 +151,70 @@ export async function POST(request: NextRequest) {
                     console.log(`[save-widget] SQL OK on attempt ${i + 1}, columns: ${actualColumns.join(', ')}`);
                     break;
                 }
-                console.log(`[save-widget] SQL attempt ${i + 1}/${MAX_RETRIES} failed: ${result.error}`);
-                const fixed = autoFixSql(currentQuery);
+                const error = result.error || '';
+                console.log(`[save-widget] SQL attempt ${i + 1}/${MAX_RETRIES} failed: ${error}`);
+
+                let fixed = autoFixSql(currentQuery);
+
+                // Schema-aware fix: Invalid object name → search for similar tables
+                const invalidTableMatch = error.match(/Invalid object name '([^']+)'/i);
+                if (invalidTableMatch && fixed === currentQuery) {
+                    const badTable = invalidTableMatch[1];
+                    console.log(`[save-widget] Table "${badTable}" not found, searching schema...`);
+                    try {
+                        const schemaResult = await executeSqlPreviewAction(
+                            `SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%${badTable.replace(/'/g, "''")}%' ORDER BY TABLE_NAME`,
+                            connectorId!, [], true
+                        );
+                        if (!schemaResult.error && schemaResult.data?.length) {
+                            const match = schemaResult.data[0];
+                            const fullName = `[${match.TABLE_SCHEMA}].[${match.TABLE_NAME}]`;
+                            console.log(`[save-widget] Found similar table: ${fullName}`);
+                            // Replace the bad table name with the real one
+                            fixed = currentQuery.replace(new RegExp(`\\b${badTable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), fullName);
+                        }
+                    } catch { /* ignore schema search errors */ }
+                }
+
+                // Schema-aware fix: Invalid column name → search for actual columns
+                const invalidColMatch = error.match(/Invalid column name '([^']+)'/i);
+                if (invalidColMatch && fixed === currentQuery) {
+                    const badCol = invalidColMatch[1];
+                    // Try to find the table from the FROM clause
+                    const fromMatch = currentQuery.match(/FROM\s+\[?(\w+)\]?/i);
+                    if (fromMatch) {
+                        const tableName = fromMatch[1];
+                        console.log(`[save-widget] Column "${badCol}" not found in "${tableName}", searching schema...`);
+                        try {
+                            const colResult = await executeSqlPreviewAction(
+                                `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '${tableName.replace(/'/g, "''")}' ORDER BY ORDINAL_POSITION`,
+                                connectorId!, [], true
+                            );
+                            if (!colResult.error && colResult.data?.length) {
+                                const colNames = colResult.data.map((r: any) => r.COLUMN_NAME);
+                                // Find closest match (case-insensitive, partial)
+                                const similar = colNames.find((c: string) =>
+                                    c.toLowerCase().includes(badCol.toLowerCase()) ||
+                                    badCol.toLowerCase().includes(c.toLowerCase())
+                                );
+                                if (similar) {
+                                    console.log(`[save-widget] Found similar column: "${similar}" for "${badCol}"`);
+                                    fixed = currentQuery.replace(new RegExp(`\\[?${badCol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]?`, 'gi'), `[${similar}]`);
+                                }
+                            }
+                        } catch { /* ignore */ }
+                    }
+                }
+
                 if (fixed === currentQuery) break; // no more fixes possible
                 currentQuery = fixed;
             }
 
             if (!sqlOk) {
-                return NextResponse.json({
-                    error: `Query SQL non funziona. Impossibile creare il widget.`,
-                    sqlError: true,
-                }, { status: 400 });
+                // Last resort: if we have chartConfig.data (static data from the recharts block),
+                // fall back to static widget (no SQL, just sealed data)
+                console.log(`[save-widget] SQL failed after all retries. Falling back to static data widget.`);
+                // Continue without SQL — the widget will use chartConfig.data as static data
             }
         }
 
@@ -202,30 +255,37 @@ export async function POST(request: NextRequest) {
             }
 
             if (!pythonOk) {
-                return NextResponse.json({
-                    error: `Codice Python non funziona. Impossibile creare il widget.`,
-                    pythonError: true,
-                }, { status: 400 });
+                // Python failed but SQL worked → save as SQL-only with static data fallback
+                console.log(`[save-widget] Python failed. Falling back to static data for chart.`);
             }
         }
 
-        // ─── Phase 3: Build tree nodes (with tested code) ────────────────
+        // ─── Phase 3: Build tree nodes ───────────────────────────────────
+        // Decide the effective mode: use SQL pipeline only if both SQL and Python passed
+        const useSqlPipeline = hasSql && sqlOk && pythonOk;
+        const usePythonOnly = hasPython && !useSqlPipeline;
+        const useStaticData = !useSqlPipeline && !usePythonOnly;
+
+        if (useStaticData) {
+            console.log('[save-widget] Using STATIC data (sealed from recharts). SQL/Python not available or failed.');
+        }
+
         const leafWidgetConfig: WidgetConfig = {
             type: widgetType,
             title: treeName,
-            data: (!hasSql && !hasPython) ? chartConfig.data : undefined,
-            xAxisKey: finalXAxisKey || undefined,
-            dataKeys: finalDataKeys?.length ? finalDataKeys.filter((k: unknown) => typeof k === 'string') : undefined,
+            data: useStaticData ? chartConfig.data : undefined,
+            xAxisKey: (useSqlPipeline ? finalXAxisKey : chartConfig.xAxisKey) || undefined,
+            dataKeys: (useSqlPipeline && finalDataKeys?.length ? finalDataKeys : chartConfig.dataKeys)?.filter((k: unknown) => typeof k === 'string') || undefined,
             colors: Array.isArray(chartConfig.colors) ? chartConfig.colors : undefined,
             isPublished: true,
-            ...(hasSql ? { dataSourceType: 'current-sql' as const, dataSourceId: 'sql' } :
-               hasPython ? { dataSourceType: 'current-python' as const, dataSourceId: 'python' } : {}),
+            ...(useSqlPipeline ? { dataSourceType: 'current-sql' as const, dataSourceId: 'sql' } :
+               usePythonOnly ? { dataSourceType: 'current-python' as const, dataSourceId: 'python' } : {}),
         };
 
         const leafNode = { id: leafId, decision: treeName, widgetConfig: leafWidgetConfig };
         let rootNode: object;
 
-        if (hasSql) {
+        if (useSqlPipeline) {
             const pythonStepNode = {
                 id: pythonStepId,
                 question: `Elaborazione Python: ${treeName}`,
@@ -245,7 +305,7 @@ export async function POST(request: NextRequest) {
                 options: { 'Elabora': pythonStepNode },
             };
             rootNode = { id: rootId, question: treeName, options: { 'Calcola': sqlStepNode } };
-        } else if (hasPython) {
+        } else if (usePythonOnly) {
             const pythonStepNode = {
                 id: pythonStepId,
                 question: `Elaborazione Python: ${treeName}`,
