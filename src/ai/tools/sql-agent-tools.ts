@@ -13,7 +13,7 @@ import { getCachedParsedMap } from '@/lib/database-map-cache';
 // ─── Tool Implementation Functions ───────────────────────────────────────────
 // These are extracted from sql-agent-flow.ts to be shared between both systems.
 
-async function doExploreDbSchema(input: { connectorId: string }) {
+export async function doExploreDbSchema(input: { connectorId: string }) {
     try {
         const connector = await db.connector.findUnique({
             where: { id: input.connectorId },
@@ -44,7 +44,7 @@ async function doExploreDbSchema(input: { connectorId: string }) {
     }
 }
 
-async function doExploreTableColumns(input: { connectorId: string; tableName: string }) {
+export async function doExploreTableColumns(input: { connectorId: string; tableName: string }) {
     try {
         const connector = await db.connector.findUnique({
             where: { id: input.connectorId },
@@ -84,7 +84,7 @@ async function doExploreTableColumns(input: { connectorId: string; tableName: st
     }
 }
 
-async function doTestSqlQuery(input: { query: string; connectorId: string }) {
+export async function doTestSqlQuery(input: { query: string; connectorId: string }) {
     try {
         const result = await executeSqlPreviewAction(input.query, input.connectorId, [], true);
         if (result.error) return JSON.stringify({ error: result.error, suggestion: 'Controlla nomi tabella e colonne. Usa exploreDbSchema e exploreTableColumns per verificare.' });
@@ -100,7 +100,7 @@ async function doTestSqlQuery(input: { query: string; connectorId: string }) {
     }
 }
 
-async function doSearchKB(input: { query: string; companyId: string }) {
+export async function doSearchKB(input: { query: string; companyId: string }) {
     try {
         const term = input.query.toLowerCase();
         const entries = await db.knowledgeBaseEntry.findMany({
@@ -122,7 +122,7 @@ async function doSearchKB(input: { query: string; companyId: string }) {
     }
 }
 
-async function doListConnectors(input: { companyId: string }) {
+export async function doListConnectors(input: { companyId: string }) {
     try {
         const connectors = await db.connector.findMany({
             where: { companyId: input.companyId, type: 'SQL' },
@@ -134,7 +134,7 @@ async function doListConnectors(input: { companyId: string }) {
     }
 }
 
-async function doSaveToKB(input: { question: string; answer: string; tags: string[]; category: string; companyId: string }) {
+export async function doSaveToKB(input: { question: string; answer: string; tags: string[]; category: string; companyId: string }) {
     try {
         await db.knowledgeBaseEntry.create({
             data: {
@@ -174,7 +174,7 @@ function collectSqlNodes(node: any, results: { nodeId: string; sqlQuery: string;
     return results;
 }
 
-async function doBrowseOtherQueries(input: { companyId: string; connectorId?: string }) {
+export async function doBrowseOtherQueries(input: { companyId: string; connectorId?: string }) {
     try {
         const queries: { source: string; name: string; query: string; connectorId?: string; sameConnector: boolean }[] = [];
 
@@ -325,5 +325,4 @@ export function createSqlAgentTools(opts: {
     return tools;
 }
 
-// Re-export doTestSqlQuery for use in pre-flight discovery
-export { doTestSqlQuery };
+// doTestSqlQuery is now exported at declaration site

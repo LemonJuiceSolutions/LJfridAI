@@ -72,6 +72,8 @@ model User {
   openRouterAgentModel String?         @default("google/gemini-2.0-flash-001")
   openRouterApiKey     String?
   openRouterModel      String?         @default("google/gemini-2.0-flash-001")
+  aiProvider           String?         @default("openrouter")
+  claudeCliModel       String?         @default("claude-sonnet-4-6")
   roleId               String?
   accounts             Account[]
   pageLayouts          PageLayout[]
@@ -402,11 +404,12 @@ model AgentConversation {
   script      String
   tableSchema Json?
   inputTables Json?
-  messages    Json
-  companyId   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  messages           Json
+  companyId          String?
+  claudeCliSessionId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  company            Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([nodeId, agentType])
   @@index([nodeId])

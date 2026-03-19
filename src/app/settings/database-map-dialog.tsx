@@ -21,6 +21,7 @@ import {
     inferRelationshipsFromDataAction,
     fetchTablePreviewAction,
 } from '../actions/database-map';
+import { getAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import type { DatabaseMap, TableInfo, ColumnInfo, RelationshipInfo } from '@/lib/database-map-types';
 import {
     Loader2, Search, RefreshCw, Sparkles, ChevronRight, ChevronDown,
@@ -638,6 +639,14 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         }
     }, [open, connectorId]);
 
+    // Load AI provider setting on mount
+    useEffect(() => {
+        getAiProviderAction().then(res => {
+            if (res.provider) setAiProvider(res.provider);
+            if (res.claudeCliModel) setClaudeCliModel(res.claudeCliModel);
+        });
+    }, []);
+
     const loadCached = async () => {
         setLoading(true);
         const res = await getCachedDatabaseMapAction(connectorId);
@@ -684,7 +693,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             while (true) {
                 if (cancelRef.current) break;
 
-                const res = await generateDescriptionBatchAction(connectorId, effectiveMode, batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+                const res = await generateDescriptionBatchAction(connectorId, effectiveMode, batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider);
                 if (res.usage) {
                     setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
                 }
@@ -753,7 +762,11 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
     const [fullAnalysisRunning, setFullAnalysisRunning] = useState(false);
     const [fullAnalysisStep, setFullAnalysisStep] = useState<string | null>(null);
 
-    // AI model selection: 'free' (auto-rotate best free models) or 'paid' (user-selected)
+    // AI provider (from settings)
+    const [aiProvider, setAiProvider] = useState<AiProvider>('openrouter');
+    const [claudeCliModel, setClaudeCliModel] = useState('claude-sonnet-4-6');
+
+    // AI model selection: 'free' (auto-rotate best free models) or 'paid' (user-selected) — OpenRouter only
     const [aiMode, setAiMode] = useState<'free' | 'paid'>('free');
     const [selectedModel, setSelectedModel] = useState('');
     const [allModelsMap, setAllModelsMap] = useState<any[]>([]);
@@ -837,7 +850,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         while (true) {
             if (cancelRef.current) break;
 
-            const res = await inferRelationshipsAIAction(connectorId, batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+            const res = await inferRelationshipsAIAction(connectorId, batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider);
             if (res.usage) {
                 setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
             }
@@ -995,7 +1008,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
 
                 while (true) {
                     if (cancelRef.current) break;
-                    const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+                    const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider);
                     if (res.usage) {
                         setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
                     }
@@ -1053,7 +1066,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             let totalFound = 0;
             while (true) {
                 if (cancelRef.current) break;
-                const res = await inferRelationshipsAIAction(connectorId, batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+                const res = await inferRelationshipsAIAction(connectorId, batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider);
                 if (res.usage) {
                     setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
                 }
@@ -1160,7 +1173,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                 let totalProcessed = 0;
                 while (true) {
                     if (cancelRef.current) break;
-                    const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+                    const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider);
                     if (res.usage) {
                         setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
                     }
@@ -1189,7 +1202,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             let totalFound = 0;
             while (true) {
                 if (cancelRef.current) break;
-                const res = await inferRelationshipsAIAction(connectorId, batchIdx, aiMode === 'paid' ? selectedModel : undefined);
+                const res = await inferRelationshipsAIAction(connectorId, batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider);
                 if (res.usage) {
                     setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
                 }
@@ -1362,8 +1375,8 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                     )}
                     {/* Row 2: AI Model selector + Action buttons + progress */}
                     <div className="flex items-center gap-2 flex-wrap">
-                        {/* AI Mode Toggle: Free / Paid */}
-                        {!fullAnalysisRunning && !generatingAI && !inferringRels && !dataSampling && (
+                        {/* AI Mode Toggle: Free / Paid (OpenRouter only) */}
+                        {aiProvider === 'openrouter' && !fullAnalysisRunning && !generatingAI && !inferringRels && !dataSampling && (
                             <div className="flex items-center gap-1 border rounded-md h-7 px-1">
                                 <button
                                     onClick={() => setAiMode('free')}
@@ -1386,8 +1399,33 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                             </div>
                         )}
 
-                        {/* Paid model selector - opens Dialog with Table */}
-                        {aiMode === 'paid' && !fullAnalysisRunning && !generatingAI && !inferringRels && !dataSampling && (
+                        {/* Claude CLI model selector */}
+                        {aiProvider === 'claude-cli' && !fullAnalysisRunning && !generatingAI && !inferringRels && !dataSampling && (
+                            <div className="flex items-center gap-1.5">
+                                <Badge variant="secondary" className="text-[10px] h-6 px-2 bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300">
+                                    Claude CLI
+                                </Badge>
+                                <select
+                                    className="h-7 text-[10px] rounded-md border bg-background px-1.5"
+                                    value={claudeCliModel}
+                                    onChange={(e) => setClaudeCliModel(e.target.value)}
+                                >
+                                    <optgroup label="Latest">
+                                        <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                                        <option value="claude-opus-4-6">Opus 4.6</option>
+                                        <option value="claude-haiku-4-5">Haiku 4.5</option>
+                                    </optgroup>
+                                    <optgroup label="Alias">
+                                        <option value="sonnet">sonnet (latest)</option>
+                                        <option value="opus">opus (latest)</option>
+                                        <option value="haiku">haiku (latest)</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                        )}
+
+                        {/* OpenRouter Paid model selector - opens Dialog with Table */}
+                        {aiProvider === 'openrouter' && aiMode === 'paid' && !fullAnalysisRunning && !generatingAI && !inferringRels && !dataSampling && (
                             <Dialog open={isModelDialogOpenMap} onOpenChange={setIsModelDialogOpenMap}>
                                 <Button
                                     variant="outline"
@@ -1483,12 +1521,12 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
 
                         {!fullAnalysisRunning && !generatingAI && !inferringRels && !dataSampling && (
                             <>
-                                <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleFullAnalysis} disabled={loading || (aiMode === 'paid' && !selectedModel)}>
+                                <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleFullAnalysis} disabled={loading || (aiProvider === 'openrouter' && aiMode === 'paid' && !selectedModel)}>
                                     {loading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
                                     {map ? 'Analisi Completa' : 'Scansiona e Analizza'}
                                 </Button>
                                 {map && (
-                                    <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleResumeAnalysis} disabled={loading || (aiMode === 'paid' && !selectedModel)}>
+                                    <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleResumeAnalysis} disabled={loading || (aiProvider === 'openrouter' && aiMode === 'paid' && !selectedModel)}>
                                         <PlayCircle className="h-3 w-3 mr-1" />
                                         Completa Mappatura
                                     </Button>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Settings, Save, PlayCircle, Loader2, CheckCircle2, XCircle, Trash2, Search, Globe, ExternalLink, Upload, FileText, File as FileIcon, X, FileImage, FileVideo, FileAudio, FileSpreadsheet, FileCode, FileArchive, Presentation } from 'lucide-react';
+import { Settings, Save, PlayCircle, Loader2, CheckCircle2, XCircle, Trash2, Search, Globe, ExternalLink, Upload, FileText, File as FileIcon, X, FileImage, FileVideo, FileAudio, FileSpreadsheet, FileCode, FileArchive, Presentation, Terminal, Radio } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { testOpenRouterConnection, fetchOpenRouterModelsAction, getOpenRouterCreditsAction } from '../actions';
 import { createInvitationAction, getInvitationsAction, revokeInvitationAction } from '../actions/invitations';
 import { getOpenRouterSettingsAction, saveOpenRouterSettingsAction } from '@/actions/openrouter';
+import { getAiProviderAction, saveAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import { ConnectorsManager } from './connectors-manager';
 import { Users, UserPlus, Copy, UserSearch } from 'lucide-react';
 import {
@@ -68,6 +69,13 @@ export default function SettingsPage() {
     const [orCredits, setOrCredits] = useState<OpenRouterCredits | null>(null);
     const [isLoadingCredits, setIsLoadingCredits] = useState(false);
 
+    // AI Provider State
+    const [aiProvider, setAiProvider] = useState<AiProvider>('openrouter');
+    const [claudeCliModel, setClaudeCliModel] = useState('claude-sonnet-4-6');
+    const [claudeCliStatus, setClaudeCliStatus] = useState<{ available: boolean; version?: string; error?: string } | null>(null);
+    const [isCheckingCli, setIsCheckingCli] = useState(false);
+    const [isSavingProvider, setIsSavingProvider] = useState(false);
+
     // OpenAPI State
     const [openApiSpec, setOpenApiSpec] = useState('');
     const [isOpenApiSaving, setIsOpenApiSaving] = useState(false);
@@ -91,6 +99,14 @@ export default function SettingsPage() {
     };
 
     useEffect(() => {
+        // Load AI provider settings
+        getAiProviderAction().then(res => {
+            if (!res.error) {
+                setAiProvider(res.provider);
+                if (res.claudeCliModel) setClaudeCliModel(res.claudeCliModel);
+            }
+        });
+
         // Load OpenRouter settings from database
         getOpenRouterSettingsAction().then(res => {
             if (!res.error) {
@@ -371,8 +387,147 @@ export default function SettingsPage() {
                         </CardContent>
                     </Card>
 
-                    {/* OpenRouter */}
+                    {/* AI Provider Selection */}
                     <Card className="flex flex-col h-full">
+                        <CardHeader className="p-3 pb-2 shrink-0">
+                            <CardTitle className="flex items-center gap-1.5 text-sm">
+                                <Radio className="h-4 w-4 text-violet-500" />
+                                AI Provider
+                            </CardTitle>
+                            <CardDescription className="text-[11px]">
+                                Scegli il backend AI per gli agenti.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-3 pt-0 space-y-3 flex-1 overflow-y-auto">
+                            {/* Provider toggle */}
+                            <div className="flex gap-1.5">
+                                <Button
+                                    variant={aiProvider === 'openrouter' ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="flex-1 h-8 text-xs"
+                                    onClick={async () => {
+                                        setAiProvider('openrouter');
+                                        setIsSavingProvider(true);
+                                        await saveAiProviderAction('openrouter');
+                                        setIsSavingProvider(false);
+                                        toast({ title: 'Provider impostato', description: 'OpenRouter attivo.' });
+                                    }}
+                                >
+                                    <Globe className="mr-1.5 h-3 w-3" />
+                                    OpenRouter
+                                </Button>
+                                <Button
+                                    variant={aiProvider === 'claude-cli' ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="flex-1 h-8 text-xs"
+                                    onClick={async () => {
+                                        setAiProvider('claude-cli');
+                                        setIsSavingProvider(true);
+                                        await saveAiProviderAction('claude-cli', claudeCliModel);
+                                        setIsSavingProvider(false);
+                                        toast({ title: 'Provider impostato', description: 'Claude Code CLI attivo.' });
+                                    }}
+                                >
+                                    <Terminal className="mr-1.5 h-3 w-3" />
+                                    Claude CLI
+                                </Button>
+                            </div>
+
+                            {aiProvider === 'claude-cli' && (
+                                <>
+                                    {/* Claude model selector */}
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Modello Claude</Label>
+                                        <select
+                                            className="w-full h-8 text-xs rounded-md border bg-background px-2"
+                                            value={claudeCliModel}
+                                            onChange={async (e) => {
+                                                const newModel = e.target.value;
+                                                setClaudeCliModel(newModel);
+                                                await saveAiProviderAction('claude-cli', newModel);
+                                            }}
+                                        >
+                                            <optgroup label="Latest">
+                                                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                                                <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                                                <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                                            </optgroup>
+                                            <optgroup label="Alias">
+                                                <option value="sonnet">sonnet (latest)</option>
+                                                <option value="opus">opus (latest)</option>
+                                                <option value="haiku">haiku (latest)</option>
+                                            </optgroup>
+                                            <optgroup label="Legacy">
+                                                <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
+                                                <option value="claude-opus-4-5-20251101">Claude Opus 4.5</option>
+                                                <option value="claude-opus-4-1-20250805">Claude Opus 4.1</option>
+                                                <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                                                <option value="claude-opus-4-20250514">Claude Opus 4</option>
+                                            </optgroup>
+                                        </select>
+                                    </div>
+
+                                    {/* CLI status check */}
+                                    <div className="flex flex-col gap-2 pt-2 border-t">
+                                        <Button
+                                            onClick={async () => {
+                                                setIsCheckingCli(true);
+                                                try {
+                                                    const res = await fetch('/api/claude-cli/status');
+                                                    const data = await res.json();
+                                                    setClaudeCliStatus(data);
+                                                } catch {
+                                                    setClaudeCliStatus({ available: false, error: 'Errore di rete' });
+                                                }
+                                                setIsCheckingCli(false);
+                                            }}
+                                            disabled={isCheckingCli}
+                                            variant="secondary"
+                                            size="sm"
+                                            className="h-8 text-xs"
+                                        >
+                                            {isCheckingCli ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Terminal className="mr-1.5 h-3 w-3" />}
+                                            Verifica CLI
+                                        </Button>
+
+                                        {claudeCliStatus && (
+                                            <div className={`p-2 rounded-md flex items-start gap-2 text-[11px] ${claudeCliStatus.available ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                                {claudeCliStatus.available ? (
+                                                    <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                                                ) : (
+                                                    <XCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                                                )}
+                                                <div>
+                                                    <p className="font-medium">{claudeCliStatus.available ? 'CLI Disponibile' : 'CLI Non Trovato'}</p>
+                                                    <p className="mt-0.5 opacity-90">{claudeCliStatus.version || claudeCliStatus.error}</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <p className="text-[9px] text-muted-foreground">
+                                        Il CLI usa le credenziali locali. Non serve API key.
+                                    </p>
+                                </>
+                            )}
+
+                            {aiProvider === 'openrouter' && (
+                                <p className="text-[9px] text-muted-foreground">
+                                    Configura API key e modello nella card OpenRouter qui sotto.
+                                </p>
+                            )}
+
+                            {isSavingProvider && (
+                                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Salvataggio...
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* OpenRouter */}
+                    <Card className={`flex flex-col h-full ${aiProvider === 'claude-cli' ? 'opacity-50' : ''}`}>
                         <CardHeader className="p-3 pb-2 shrink-0">
                             <CardTitle className="flex items-center gap-1.5 text-sm">
                                 <Settings className="h-4 w-4 text-primary" />

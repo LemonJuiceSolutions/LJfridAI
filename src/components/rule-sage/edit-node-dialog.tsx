@@ -61,6 +61,8 @@ import PlotlyStyleEditor, { PlotlyStyleOverrides, applyPlotlyOverrides, plotlyJs
 import VisualCssInspector from '@/components/widgets/builder/VisualCssInspector';
 import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
 import { applyHtmlStyleOverrides, injectIframeFetchPolyfill } from '@/lib/html-style-utils';
+import { generateUiElementsCss } from '@/lib/unified-style-css';
+import { useActiveUnifiedStyle } from '@/hooks/use-active-style';
 import type { UiElementsOverrides } from '@/lib/unified-style-types';
 import { ChartStyle } from '@/lib/chart-style';
 import { useChartTheme } from '@/hooks/use-chart-theme';
@@ -330,6 +332,7 @@ export default function EditNodeDialog({
 }: EditNodeDialogProps) {
   const { toast } = useToast();
   const { apiKey: openRouterApiKey, model: openRouterModel } = useOpenRouterSettings();
+  const { activeStyle } = useActiveUnifiedStyle();
 
   // Local state for node type switching (Question <-> Decision)
   const [currentNodeType, setCurrentNodeType] = useState<'question' | 'decision'>(nodeType);
@@ -3749,10 +3752,23 @@ export default function EditNodeDialog({
                               </button>
                               <iframe
                                 key={pythonPreviewResult.timestamp || Date.now()}
-                                srcDoc={injectIframeFetchPolyfill(
-                                  applyHtmlStyleOverrides(pythonPreviewResult.html, htmlStyleOverrides),
-                                  { connectorId: pythonConnectorId, baseUrl: typeof window !== 'undefined' ? window.location.origin : '' }
-                                )}
+                                srcDoc={(() => {
+                                  // Merge: active company style as base, node overrides on top
+                                  const mergedHtml = { ...(activeStyle?.html || {}), ...htmlStyleOverrides };
+                                  const mergedUi = { ...(activeStyle?.ui || {}), ...uiStyleOverrides };
+                                  let styledHtml = applyHtmlStyleOverrides(pythonPreviewResult.html!, mergedHtml as HtmlStyleOverrides);
+                                  // Inject UI elements CSS (buttons, cards, badges, inputs)
+                                  const uiCss = generateUiElementsCss(mergedUi);
+                                  if (styledHtml.includes('</head>')) {
+                                    styledHtml = styledHtml.replace('</head>', `<style>${uiCss}</style></head>`);
+                                  } else {
+                                    styledHtml = `<html><head><style>${uiCss}</style></head><body>${styledHtml}</body></html>`;
+                                  }
+                                  return injectIframeFetchPolyfill(styledHtml, {
+                                    connectorId: pythonConnectorId,
+                                    baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+                                  });
+                                })()}
                                 className="w-full border-none min-h-[400px]"
                                 sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                                 title="HTML Preview"

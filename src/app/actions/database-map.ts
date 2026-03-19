@@ -6,6 +6,8 @@ import sql from 'mssql';
 import type { DatabaseMap, TableInfo, ColumnInfo, RelationshipInfo, ColumnFingerprint, OverlapCandidate, DataSamplingState } from '@/lib/database-map-types';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
 import { getCachedParsedMap, setCachedParsedMap, getParsedMapCacheEntry, recoverPartialJson } from '@/lib/database-map-cache';
+import { getAiProviderAction, type AiProvider } from '@/actions/ai-settings';
+import { runClaudeCliSync } from '@/ai/providers/claude-cli-provider';
 
 // ─── Debounced save to avoid writing 30MB on every single field edit ─────────
 let _debouncedSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -119,6 +121,92 @@ async function fetchFreeModels(apiKey: string): Promise<string[]> {
             'meta-llama/llama-3.3-70b-instruct:free',
             'qwen/qwen-2.5-72b-instruct:free',
         ];
+    }
+}
+
+// ─── Helper: call LLM (OpenRouter or Claude CLI) ────────────────────────────
+interface LlmCallOptions {
+    prompt: string;
+    model: string;
+    apiKey?: string;         // Required for OpenRouter
+    provider: AiProvider;
+    temperature?: number;
+    timeoutMs?: number;
+}
+
+interface LlmCallResult {
+    text: string;
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; total_cost?: number };
+    error?: string;
+    rateLimited?: boolean;
+}
+
+async function callLlmCompletion(opts: LlmCallOptions): Promise<LlmCallResult> {
+    const timeout = opts.timeoutMs || 60000;
+
+    if (opts.provider === 'claude-cli') {
+        try {
+            const result = await runClaudeCliSync({
+                model: opts.model,
+                systemPrompt: '',
+                userPrompt: opts.prompt,
+            });
+            return {
+                text: result.text,
+                usage: {
+                    prompt_tokens: result.inputTokens || 0,
+                    completion_tokens: result.outputTokens || 0,
+                    total_tokens: (result.inputTokens || 0) + (result.outputTokens || 0),
+                    total_cost: result.cost || 0,
+                },
+            };
+        } catch (e: any) {
+            return { text: '', error: e.message };
+        }
+    }
+
+    // OpenRouter
+    if (!opts.apiKey) return { text: '', error: 'No API key' };
+    try {
+        const fetchPromise = fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${opts.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: opts.model,
+                messages: [{ role: 'user', content: opts.prompt }],
+                temperature: opts.temperature ?? 0.3,
+            }),
+            signal: AbortSignal.timeout(timeout),
+        });
+        const hardTimeout = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('HARD_TIMEOUT')), timeout + 2000)
+        );
+        const response = await Promise.race([fetchPromise, hardTimeout]);
+
+        if (!response.ok) {
+            const errBody = await response.text().catch(() => '');
+            if (response.status === 429) {
+                return { text: '', rateLimited: true, error: `429 rate limited` };
+            }
+            return { text: '', error: `HTTP ${response.status}: ${errBody.slice(0, 200)}` };
+        }
+
+        const data = await response.json();
+        const u = data.usage;
+        return {
+            text: data.choices?.[0]?.message?.content || '',
+            usage: u ? {
+                prompt_tokens: u.prompt_tokens || 0,
+                completion_tokens: u.completion_tokens || 0,
+                total_tokens: u.total_tokens || ((u.prompt_tokens || 0) + (u.completion_tokens || 0)),
+                total_cost: u.total_cost || u.cost || 0,
+            } : undefined,
+        };
+    } catch (e: any) {
+        return { text: '', error: e.message };
     }
 }
 
@@ -894,7 +982,8 @@ export async function generateDescriptionBatchAction(
     connectorId: string,
     mode: 'all' | 'missing',
     batchIndex: number,
-    aiModel?: string // if provided, use this paid model; otherwise auto-rotate free models
+    aiModel?: string, // if provided, use this paid model; otherwise auto-rotate free models
+    aiProvider?: AiProvider // 'claude-cli' | 'openrouter'
 ): Promise<{
     batchProcessed: number;
     totalToProcess: number;
@@ -907,13 +996,16 @@ export async function generateDescriptionBatchAction(
     const user = await getAuthenticatedUser();
     if (!user) return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: 'Non autorizzato' };
 
-    const orSettings = await getOpenRouterSettingsAction();
-    if (!orSettings.apiKey) return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: 'Chiave API OpenRouter non configurata.' };
+    const effectiveProvider = aiProvider || 'openrouter';
+    const isClaudeCli = effectiveProvider === 'claude-cli';
 
-    const isPaidMode = !!aiModel;
-    const freeModels = isPaidMode ? [] : await fetchFreeModels(orSettings.apiKey);
+    const orSettings = isClaudeCli ? { apiKey: '', model: '' } : await getOpenRouterSettingsAction();
+    if (!isClaudeCli && !orSettings.apiKey) return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: 'Chiave API OpenRouter non configurata.' };
+
+    const isPaidMode = isClaudeCli || !!aiModel;
+    const freeModels = isPaidMode ? [] : await fetchFreeModels(orSettings.apiKey!);
     const orModel = aiModel || freeModels[0] || orSettings.model || 'google/gemini-2.0-flash-001';
-    console.log(`[DB-MAP] Using ${isPaidMode ? 'PAID' : 'FREE'} model(s): ${isPaidMode ? orModel : freeModels.slice(0, 3).join(', ')}`);
+    console.log(`[DB-MAP] Using ${isClaudeCli ? 'CLAUDE-CLI' : isPaidMode ? 'PAID' : 'FREE'} model(s): ${isClaudeCli ? aiModel : isPaidMode ? orModel : freeModels.slice(0, 3).join(', ')}`);
 
     try {
         const connector = await db.connector.findUnique({
@@ -1028,49 +1120,34 @@ ${tablesSummary}`;
                     }
 
                     console.log(`[DB-MAP] Desc sub-batch ${subIdx}: calling AI for ${batch.length} tables, model=${currentModel}`);
-                    const fetchPromise = fetch('https://openrouter.ai/api/v1/chat/completions', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${orSettings.apiKey}`,
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            model: currentModel,
-                            messages: [{ role: 'user', content: prompt }],
-                            temperature: 0.3,
-                        }),
-                        signal: AbortSignal.timeout(AI_TIMEOUT),
+                    const llmResult = await callLlmCompletion({
+                        prompt,
+                        model: currentModel,
+                        apiKey: orSettings.apiKey,
+                        provider: effectiveProvider,
+                        temperature: 0.3,
+                        timeoutMs: AI_TIMEOUT,
                     });
-                    const timeoutPromise = new Promise<never>((_, reject) =>
-                        setTimeout(() => reject(new Error('HARD_TIMEOUT')), AI_TIMEOUT + 2000)
-                    );
-                    const response = await Promise.race([fetchPromise, timeoutPromise]);
-                    if (!response.ok) {
-                        const errBody = await response.text();
-                        if (response.status === 429) {
-                            rateLimitedModels.add(currentModel);
-                            console.warn(`[DB-MAP] Sub-batch ${subIdx}: ${currentModel} rate-limited (429), blacklisting & trying next`);
-                            continue; // try next model immediately
-                        }
-                        console.error(`[DB-MAP] Desc sub-batch ${subIdx}: HTTP ${response.status} - ${errBody.slice(0, 200)}`);
+
+                    if (llmResult.rateLimited) {
+                        rateLimitedModels.add(currentModel);
+                        console.warn(`[DB-MAP] Sub-batch ${subIdx}: ${currentModel} rate-limited, blacklisting & trying next`);
+                        continue;
+                    }
+                    if (llmResult.error && !llmResult.text) {
+                        console.error(`[DB-MAP] Desc sub-batch ${subIdx}: ${llmResult.error}`);
                         continue;
                     }
 
-                    const data = await response.json();
-                    // Track usage/cost from OpenRouter response
-                    // OpenRouter returns usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
-                    // Cost may be in usage.total_cost, usage.cost, or not present at all
-                    const u = data.usage;
+                    const u = llmResult.usage;
                     if (u) {
-                        const pt = u.prompt_tokens || 0;
-                        const ct = u.completion_tokens || 0;
-                        batchUsage.promptTokens += pt;
-                        batchUsage.completionTokens += ct;
-                        batchUsage.totalTokens += u.total_tokens || (pt + ct);
-                        batchUsage.costUsd += u.total_cost || u.cost || 0;
+                        batchUsage.promptTokens += u.prompt_tokens || 0;
+                        batchUsage.completionTokens += u.completion_tokens || 0;
+                        batchUsage.totalTokens += u.total_tokens || 0;
+                        batchUsage.costUsd += u.total_cost || 0;
                     }
-                    const text = data.choices?.[0]?.message?.content || '';
-                    console.log(`[DB-MAP] Desc sub-batch ${subIdx}: ${text.length} chars from ${currentModel}, usage: in=${u?.prompt_tokens} out=${u?.completion_tokens} cost=${u?.total_cost ?? u?.cost ?? 'N/A'}`);
+                    const text = llmResult.text;
+                    console.log(`[DB-MAP] Desc sub-batch ${subIdx}: ${text.length} chars from ${currentModel}, usage: in=${u?.prompt_tokens} out=${u?.completion_tokens} cost=${u?.total_cost ?? 'N/A'}`);
 
                     const parsed = recoverPartialJson(text);
                     if (parsed?.tables) {
@@ -1163,9 +1240,14 @@ export async function chatDatabaseMapAction(
     const user = await getAuthenticatedUser();
     if (!user) return { error: 'Non autorizzato' };
 
-    const orSettings = await getOpenRouterSettingsAction();
-    if (!orSettings.apiKey) return { error: 'Chiave API OpenRouter non configurata.' };
-    const orModel = orSettings.model || 'google/gemini-2.0-flash-001';
+    // Auto-detect provider from user settings
+    const providerSettings = await getAiProviderAction();
+    const chatProvider = providerSettings.provider || 'openrouter';
+    const isClaudeCliChat = chatProvider === 'claude-cli';
+
+    const orSettings = isClaudeCliChat ? { apiKey: '', model: '' } : await getOpenRouterSettingsAction();
+    if (!isClaudeCliChat && !orSettings.apiKey) return { error: 'Chiave API OpenRouter non configurata.' };
+    const chatModel = isClaudeCliChat ? (providerSettings.claudeCliModel || 'claude-sonnet-4-6') : (orSettings.model || 'google/gemini-2.0-flash-001');
 
     try {
         const connector = await db.connector.findUnique({
@@ -1219,6 +1301,22 @@ Statistiche: ${map.summary.totalTables} tabelle, ${map.summary.totalColumns} col
 
 Rispondi in italiano, in modo chiaro e conciso. Se ti chiedono di tabelle o colonne specifiche, fornisci dettagli precisi dalla mappa. Se ti chiedono relazioni, spiega i collegamenti FK. Puoi suggerire query SQL se utile.`;
 
+        // Build full prompt for Claude CLI or messages for OpenRouter
+        const historyText = history.map(h => `${h.role === 'user' ? 'Utente' : 'Assistente'}: ${h.content}`).join('\n');
+        const fullPrompt = `${systemPrompt}\n\n${historyText ? historyText + '\n' : ''}Utente: ${question}`;
+
+        if (isClaudeCliChat) {
+            const cliResult = await callLlmCompletion({
+                prompt: fullPrompt,
+                model: chatModel,
+                provider: 'claude-cli',
+                temperature: 0.5,
+            });
+            if (cliResult.error && !cliResult.text) return { error: cliResult.error };
+            if (!cliResult.text) return { error: 'Il modello AI non ha generato una risposta. Riprova.' };
+            return { answer: cliResult.text };
+        }
+
         const messages = [
             { role: 'system' as const, content: systemPrompt },
             ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
@@ -1232,7 +1330,7 @@ Rispondi in italiano, in modo chiaro e conciso. Se ti chiedono di tabelle o colo
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: orModel,
+                model: chatModel,
                 messages,
                 temperature: 0.5,
             }),
@@ -1272,7 +1370,8 @@ const INFER_PARALLEL = 3;            // parallel AI calls
 export async function inferRelationshipsAIAction(
     connectorId: string,
     batchIndex: number,
-    aiModel?: string // if provided, use this paid model; otherwise auto-rotate free models
+    aiModel?: string, // if provided, use this paid model; otherwise auto-rotate free models
+    aiProvider?: AiProvider // 'claude-cli' | 'openrouter'
 ): Promise<{
     newRelationships: number;
     totalProcessed: number;
@@ -1284,10 +1383,13 @@ export async function inferRelationshipsAIAction(
     const user = await getAuthenticatedUser();
     if (!user) return { newRelationships: 0, totalProcessed: 0, totalTables: 0, done: true, error: 'Non autorizzato' };
 
-    const orSettings = await getOpenRouterSettingsAction();
-    if (!orSettings.apiKey) return { newRelationships: 0, totalProcessed: 0, totalTables: 0, done: true, error: 'Chiave API OpenRouter non configurata.' };
-    const isPaidModeRel = !!aiModel;
-    const freeModelsRel = isPaidModeRel ? [] : await fetchFreeModels(orSettings.apiKey);
+    const effectiveProviderRel = aiProvider || 'openrouter';
+    const isClaudeCliRel = effectiveProviderRel === 'claude-cli';
+
+    const orSettings = isClaudeCliRel ? { apiKey: '', model: '' } : await getOpenRouterSettingsAction();
+    if (!isClaudeCliRel && !orSettings.apiKey) return { newRelationships: 0, totalProcessed: 0, totalTables: 0, done: true, error: 'Chiave API OpenRouter non configurata.' };
+    const isPaidModeRel = isClaudeCliRel || !!aiModel;
+    const freeModelsRel = isPaidModeRel ? [] : await fetchFreeModels(orSettings.apiKey!);
     const orModel = aiModel || freeModelsRel[0] || orSettings.model || 'google/gemini-2.0-flash-001';
 
     try {
@@ -1405,47 +1507,33 @@ Se nessuna: {"relationships":[]}`;
                 }
                 console.log(`[DB-MAP] Rel sub-batch ${sbIdx}: calling AI, model=${currentRelModel}`);
 
-                const fetchP = fetch('https://openrouter.ai/api/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${orSettings.apiKey}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        model: currentRelModel,
-                        messages: [{ role: 'user', content: prompt }],
-                        temperature: 0.2,
-                    }),
-                    signal: AbortSignal.timeout(REL_TIMEOUT),
+                const relLlmResult = await callLlmCompletion({
+                    prompt,
+                    model: currentRelModel,
+                    apiKey: orSettings.apiKey,
+                    provider: effectiveProviderRel,
+                    temperature: 0.2,
+                    timeoutMs: REL_TIMEOUT,
                 });
-                const hardTimeout = new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('HARD_TIMEOUT')), REL_TIMEOUT + 2000)
-                );
-                const response = await Promise.race([fetchP, hardTimeout]);
 
-                if (!response.ok) {
-                    const errBody = await response.text().catch(() => '');
-                    if (response.status === 429) {
-                        rateLimitedRel.add(currentRelModel);
-                        console.warn(`[DB-MAP] Rel sub-batch ${sbIdx}: ${currentRelModel} rate-limited (429), trying next`);
-                        continue;
-                    }
-                    console.error(`[DB-MAP] Rel sub-batch ${sbIdx}: HTTP ${response.status} - ${errBody.slice(0, 200)}`);
+                if (relLlmResult.rateLimited) {
+                    rateLimitedRel.add(currentRelModel);
+                    console.warn(`[DB-MAP] Rel sub-batch ${sbIdx}: ${currentRelModel} rate-limited, trying next`);
+                    continue;
+                }
+                if (relLlmResult.error && !relLlmResult.text) {
+                    console.error(`[DB-MAP] Rel sub-batch ${sbIdx}: ${relLlmResult.error}`);
                     continue;
                 }
 
-                const data = await response.json();
-                // Track usage/cost
-                const ru = data.usage;
+                const ru = relLlmResult.usage;
                 if (ru) {
-                    const pt = ru.prompt_tokens || 0;
-                    const ct = ru.completion_tokens || 0;
-                    relUsage.promptTokens += pt;
-                    relUsage.completionTokens += ct;
-                    relUsage.totalTokens += ru.total_tokens || (pt + ct);
-                    relUsage.costUsd += ru.total_cost || ru.cost || 0;
+                    relUsage.promptTokens += ru.prompt_tokens || 0;
+                    relUsage.completionTokens += ru.completion_tokens || 0;
+                    relUsage.totalTokens += ru.total_tokens || 0;
+                    relUsage.costUsd += ru.total_cost || 0;
                 }
-                const text = data.choices?.[0]?.message?.content || '';
+                const text = relLlmResult.text;
                 console.log(`[DB-MAP] Rel sub-batch ${sbIdx}: ${text.length} chars from ${currentRelModel}, usage: in=${ru?.prompt_tokens} out=${ru?.completion_tokens}`);
 
                 const parsed = recoverPartialJson(text);

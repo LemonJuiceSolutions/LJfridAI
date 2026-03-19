@@ -31,6 +31,7 @@ import { useToast } from '@/hooks/use-toast';
 import { fetchOpenRouterModelsAction } from '@/app/actions';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import { getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction, getAgentLastUsageAction } from '@/actions/openrouter';
+import { getAiProviderAction, saveAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import {
     Popover,
     PopoverContent,
@@ -275,6 +276,9 @@ export function ChatBotAgent() {
     const [input, setInput] = useState('');
     const [conversationId, setConversationId] = useState<string | null>(null);
 
+    // AI provider state
+    const [aiProvider, setAiProvider] = useState<AiProvider>('openrouter');
+
     // Model selector state
     const [model, setModel] = useState('google/gemini-2.0-flash-001');
     const [availableModels, setAvailableModels] = useState<any[]>([]);
@@ -419,13 +423,32 @@ export function ChatBotAgent() {
         prevStreamStatusRef.current = streamStatus;
     }, [streamStatus]);
 
-    // Load models and saved agent model on mount
+    // Load AI provider and models on mount
     useEffect(() => {
-        fetchOpenRouterModelsAction().then(result => {
-            if (result.data) setAvailableModels(result.data);
-        });
-        getOpenRouterAgentModelAction().then(result => {
-            if (result.model) setModel(result.model);
+        getAiProviderAction().then(res => {
+            if (!res.error) {
+                setAiProvider(res.provider);
+                if (res.provider === 'claude-cli' && res.claudeCliModel) {
+                    setModel(res.claudeCliModel);
+                    // Set Claude models as available
+                    setAvailableModels([
+                        { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+                        { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+                        { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+                        { id: 'sonnet', name: 'sonnet (latest)' },
+                        { id: 'opus', name: 'opus (latest)' },
+                        { id: 'haiku', name: 'haiku (latest)' },
+                    ]);
+                } else {
+                    // Load OpenRouter models
+                    fetchOpenRouterModelsAction().then(result => {
+                        if (result.data) setAvailableModels(result.data);
+                    });
+                    getOpenRouterAgentModelAction().then(result => {
+                        if (result.model) setModel(result.model);
+                    });
+                }
+            }
         });
     }, []);
 
@@ -434,7 +457,11 @@ export function ChatBotAgent() {
         setModelSelectorOpen(false);
         setIsSavingModel(true);
         try {
-            await saveOpenRouterAgentModelAction(newModel);
+            if (aiProvider === 'claude-cli') {
+                await saveAiProviderAction('claude-cli', newModel);
+            } else {
+                await saveOpenRouterAgentModelAction(newModel);
+            }
         } catch { /* ignore */ }
         setIsSavingModel(false);
     };

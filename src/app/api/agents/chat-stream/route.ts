@@ -4,11 +4,15 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
+import { getAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
+import { streamFromClaudeCli } from '@/ai/providers/claude-cli-provider';
+import { createMcpConfig } from '@/lib/mcp-config';
 import { createSqlAgentTools, doTestSqlQuery } from '@/ai/tools/sql-agent-tools';
 import { createPythonAgentTools } from '@/ai/tools/python-agent-tools';
 import type { ConsultedNodeType } from '@/ai/schemas/agent-schema';
 import { setAgentUsageCache } from '@/lib/agent-usage-cache';
+import { getHtmlDesignGuide } from '@/ai/html-design-guide';
 
 export const maxDuration = 120; // Allow up to 2 min for agent runs
 
@@ -317,7 +321,14 @@ NON usare valori CSS problematici FUORI dalle stringhe:
 Se il CSS causa "invalid decimal literal", il codice e' SBAGLIATO: controlla che le triple quotes siano bilanciate.
 
 ## !!!! SISTEMA STILI CSS - REGOLA FONDAMENTALE (CRITICO) !!!!
-${opts.activeStyleName ? `STILE ATTIVO: "${opts.activeStyleName}" - Lo stile CSS viene applicato AUTOMATICAMENTE dalla piattaforma.` : `NESSUNO STILE ATTIVO: Se l'utente chiede un output HTML con stile grafico, suggerisci di selezionare uno stile dalla pagina /style dell'app.`}
+${opts.activeStyleName
+        ? `STILE ATTIVO: "${opts.activeStyleName}" — Lo stile CSS viene applicato AUTOMATICAMENTE dalla piattaforma.
+I colori della palette attiva sono: primary=${opts.activeStylePalette?.primary}, bg=${opts.activeStylePalette?.bg}, text=${opts.activeStylePalette?.text}, success=${opts.activeStylePalette?.success}, danger=${opts.activeStylePalette?.danger}, headerBg=${opts.activeStylePalette?.headerBg}, cardBg=${opts.activeStylePalette?.cardBg}, fontFamily=${opts.activeStylePalette?.fontFamily}.
+Segui QUESTO stile per coerenza con il resto dell'app. Non serve aggiungere CSS — la piattaforma lo inietta automaticamente.`
+        : `NESSUNO STILE ATTIVO: Quando l'utente chiede un output HTML, chiedigli se vuole:
+1. Selezionare uno stile predefinito dalla pagina /style dell'app (consigliato per coerenza)
+2. Procedere senza stile (la piattaforma applichera' uno stile neutro di default)
+Suggerisci di andare in /style per scegliere uno stile, cosi' TUTTI i widget avranno lo stesso look.`}
 
 La piattaforma ha un SISTEMA DI STILI centralizzato che inietta CSS automaticamente in TUTTO l'HTML renderizzato.
 Il tuo codice NON DEVE MAI contenere tag \`<style>\`, CSS inline, o colori hardcoded.
@@ -432,6 +443,8 @@ L'UNICA eccezione per \`style="..."\` e' \`width: XX%\` per progress bar fill.
 </table>
 <div style="background: #f0f0f0; color: #333; border-radius: 8px; padding: 20px;">KPI</div>
 \`\`\`
+
+${getHtmlDesignGuide()}
 
 ## COME ARRIVANO I DATI (DUE MODI):
 1. **Pipeline (df)**: I dati dal nodo upstream arrivano come \`df\`. Se il nodo ha piu' dipendenze, ogni dipendenza e' disponibile col suo NOME.
@@ -912,17 +925,26 @@ export async function POST(request: NextRequest) {
         }
         const companyId = user.company.id;
 
-        // 3. Get OpenRouter settings
-        const settings = await getOpenRouterSettingsAction();
-        const apiKey = settings.apiKey;
-        const model = settings.model;
+        // 3. Get AI provider settings
+        const providerSettings = await getAiProviderAction();
+        const aiProvider: AiProvider = providerSettings.provider || 'openrouter';
 
-        if (!apiKey || !model) {
-            console.log('[chat-stream] No API key or model configured');
-            return new Response(JSON.stringify({ error: 'OpenRouter API key or model not configured' }), { status: 400 });
+        let apiKey: string | undefined;
+        let model: string | undefined;
+
+        if (aiProvider === 'claude-cli') {
+            model = providerSettings.claudeCliModel || 'claude-sonnet-4-6';
+            console.log('[chat-stream] Using Claude CLI, model:', model);
+        } else {
+            const settings = await getOpenRouterSettingsAction();
+            apiKey = settings.apiKey;
+            model = settings.model;
+            if (!apiKey || !model) {
+                console.log('[chat-stream] No API key or model configured');
+                return new Response(JSON.stringify({ error: 'OpenRouter API key or model not configured' }), { status: 400 });
+            }
+            console.log('[chat-stream] Using OpenRouter, model:', model);
         }
-
-        console.log('[chat-stream] Using model:', model);
 
         // 3b. Get active style (for Python agent prompt — name + palette)
         let activeStyleName: string | null = null;
@@ -997,10 +1019,7 @@ export async function POST(request: NextRequest) {
             : createSqlAgentTools({ connectorId, companyId });
         console.log('[chat-stream] Tools created:', Object.keys(tools), 'agentType:', agentType);
 
-        // 8. Get model
-        const aiModel = getOpenRouterModel(apiKey, model);
-
-        // 9. Track consulted nodes
+        // 8. Track consulted nodes
         const consultedNodes: ConsultedNodeType[] = [];
         if (nodeQueries) {
             for (const [nodeName, info] of Object.entries(nodeQueries as Record<string, { query: string; isPython: boolean; connectorId?: string }>)) {
@@ -1015,9 +1034,69 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        console.log('[chat-stream] Starting streamText...');
+        console.log('[chat-stream] Starting streaming... provider:', aiProvider);
 
-        // 10. Stream with Vercel AI SDK
+        // 10. Stream response (branch by provider)
+        if (aiProvider === 'claude-cli') {
+            // ─── Claude CLI path ───────────────────────────────────────────
+            const mcpAgentType = agentType === 'python' ? 'python' as const : 'sql' as const;
+            const { configPath, cleanup } = await createMcpConfig({
+                agentType: mcpAgentType,
+                connectorId,
+                companyId,
+            });
+
+            try {
+                const { response, sessionPromise } = streamFromClaudeCli({
+                    model: model!,
+                    systemPrompt,
+                    userPrompt,
+                    mcpConfigPath: configPath,
+                    sessionId: conversation?.claudeCliSessionId || undefined,
+                });
+
+                // Save conversation in background after CLI finishes
+                sessionPromise.then(async (info) => {
+                    try {
+                        if (info.inputTokens && nodeId) {
+                            setAgentUsageCache(nodeId, {
+                                inputTokens: info.inputTokens || 0,
+                                outputTokens: info.outputTokens || 0,
+                            });
+                        }
+                        const updatedHistory = [
+                            ...conversationHistory,
+                            { role: 'user', content: userMessage, timestamp: Date.now(), scriptSnapshot: script },
+                            { role: 'assistant', content: '(Claude CLI response)', timestamp: Date.now() },
+                        ];
+                        if (conversation) {
+                            await db.agentConversation.update({
+                                where: { id: conversation.id },
+                                data: { script, tableSchema, inputTables, messages: updatedHistory, claudeCliSessionId: info.sessionId || conversation.claudeCliSessionId, updatedAt: new Date() },
+                            });
+                        } else {
+                            await db.agentConversation.create({
+                                data: { nodeId, agentType, script, tableSchema, inputTables, messages: updatedHistory, companyId, claudeCliSessionId: info.sessionId },
+                            });
+                        }
+                        console.log('[chat-stream] Claude CLI conversation saved, sessionId:', info.sessionId);
+                    } catch (e) {
+                        console.error('[chat-stream] Failed to save Claude CLI conversation:', e);
+                    } finally {
+                        await cleanup();
+                    }
+                }).catch(async () => { await cleanup(); });
+
+                return response;
+            } catch (error) {
+                await cleanup();
+                throw error;
+            }
+        }
+
+        // ─── OpenRouter path (existing) ────────────────────────────────────
+        const aiModel = getOpenRouterModel(apiKey!, model!);
+
         const result = streamText({
             model: aiModel,
             system: systemPrompt,

@@ -5,9 +5,43 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
+import { getAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
+import { runClaudeCliSync } from '@/ai/providers/claude-cli-provider';
 
 export const maxDuration = 120;
+
+// ── Provider-aware text generation ──────────────────────
+async function generateTextAny(opts: {
+    aiProvider: AiProvider;
+    aiModel: any;
+    cliModel?: string;
+    system?: string;
+    prompt: string;
+    temperature?: number;
+    maxRetries?: number;
+}): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } }> {
+    if (opts.aiProvider === 'claude-cli') {
+        const result = await runClaudeCliSync({
+            model: opts.cliModel || 'claude-sonnet-4-6',
+            systemPrompt: opts.system || '',
+            userPrompt: opts.prompt,
+        });
+        return {
+            text: result.text,
+            usage: { inputTokens: result.inputTokens || 0, outputTokens: result.outputTokens || 0 },
+        };
+    }
+    const result = await generateText({
+        model: opts.aiModel,
+        system: opts.system,
+        prompt: opts.prompt,
+        temperature: opts.temperature ?? 0.3,
+        maxRetries: opts.maxRetries ?? 2,
+    });
+    const u = result.usage || { inputTokens: 0, outputTokens: 0 };
+    return { text: result.text || '', usage: { inputTokens: u.inputTokens || 0, outputTokens: u.outputTokens || 0 } };
+}
 
 // ── Helpers ──────────────────────────────────────────
 function stripMarkdownFences(text: string): string {
@@ -309,13 +343,22 @@ export async function POST(request: NextRequest) {
     const { prompt, model, outputType, documents } = body;
     if (!prompt || !model || !outputType) return Response.json({ success: false, error: 'Campi mancanti' }, { status: 400 });
 
-    const openRouterSettings = await getOpenRouterSettingsAction();
-    const apiKey = (user as any).openRouterApiKey || openRouterSettings.apiKey || '';
-    if (!apiKey) return Response.json({ success: false, error: 'API key OpenRouter non configurata.' }, { status: 400 });
+    const providerSettings = await getAiProviderAction();
+    const aiProvider: AiProvider = providerSettings.provider || 'openrouter';
+
+    let apiKey = '';
+    if (aiProvider !== 'claude-cli') {
+        const openRouterSettings = await getOpenRouterSettingsAction();
+        apiKey = (user as any).openRouterApiKey || openRouterSettings.apiKey || '';
+        if (!apiKey) return Response.json({ success: false, error: 'API key OpenRouter non configurata.' }, { status: 400 });
+    }
 
     const leadGenApiKeys = (user.company as any).leadGenApiKeys as any || {};
     const serpApiKey = leadGenApiKeys.serpApi || '';
-    const aiModel = getOpenRouterModel(apiKey, model);
+    // For Claude CLI, aiModel is unused (runClaudeCliSync handles it).
+    // Create a placeholder to avoid null checks throughout; the Claude CLI path
+    // in generateTextAny doesn't use it.
+    const aiModel: any = aiProvider === 'claude-cli' ? {} : getOpenRouterModel(apiKey, model);
 
     // Build prompt with docs
     let fullPrompt = prompt;

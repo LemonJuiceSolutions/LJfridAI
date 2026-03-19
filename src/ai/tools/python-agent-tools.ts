@@ -11,7 +11,7 @@ import { getCachedParsedMap } from '@/lib/database-map-cache';
 
 // ─── Tool Implementation Functions ───────────────────────────────────────────
 
-async function doPyExploreDbSchema(input: { connectorId: string }) {
+export async function doPyExploreDbSchema(input: { connectorId: string }) {
     try {
         // Python agent uses simpler schema exploration (no cached databaseMap)
         const connector = await db.connector.findUnique({
@@ -41,7 +41,7 @@ async function doPyExploreDbSchema(input: { connectorId: string }) {
     }
 }
 
-async function doPyExploreTableColumns(input: { connectorId: string; tableName: string }) {
+export async function doPyExploreTableColumns(input: { connectorId: string; tableName: string }) {
     try {
         const result = await executeSqlPreviewAction(
             `SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = '${input.tableName.replace(/'/g, "''")}' ORDER BY ordinal_position`,
@@ -54,7 +54,7 @@ async function doPyExploreTableColumns(input: { connectorId: string; tableName: 
     }
 }
 
-async function doPyTestSqlQuery(input: { query: string; connectorId: string }) {
+export async function doPyTestSqlQuery(input: { query: string; connectorId: string }) {
     try {
         const result = await executeSqlPreviewAction(input.query, input.connectorId, [], true);
         if (result.error) return JSON.stringify({ error: result.error, suggestion: 'Controlla nomi tabella e colonne.' });
@@ -70,7 +70,7 @@ async function doPyTestSqlQuery(input: { query: string; connectorId: string }) {
     }
 }
 
-async function doPyTestCode(input: { code: string; outputType: string; connectorId?: string; sqlQuery?: string }) {
+export async function doPyTestCode(input: { code: string; outputType: string; connectorId?: string; sqlQuery?: string }) {
     try {
         let inputData: Record<string, any[]> = {};
 
@@ -103,7 +103,7 @@ async function doPyTestCode(input: { code: string; outputType: string; connector
     }
 }
 
-async function doPySearchKB(input: { query: string; companyId: string }) {
+export async function doPySearchKB(input: { query: string; companyId: string }) {
     try {
         const term = input.query.toLowerCase();
         const entries = await db.knowledgeBaseEntry.findMany({
@@ -125,7 +125,7 @@ async function doPySearchKB(input: { query: string; companyId: string }) {
     }
 }
 
-async function doPyListConnectors(input: { companyId: string }) {
+export async function doPyListConnectors(input: { companyId: string }) {
     try {
         const connectors = await db.connector.findMany({
             where: { companyId: input.companyId, type: 'SQL' },
@@ -137,7 +137,7 @@ async function doPyListConnectors(input: { companyId: string }) {
     }
 }
 
-async function doPySaveToKB(input: { question: string; answer: string; tags: string[]; category: string; companyId: string }) {
+export async function doPySaveToKB(input: { question: string; answer: string; tags: string[]; category: string; companyId: string }) {
     try {
         await db.knowledgeBaseEntry.create({
             data: {
@@ -191,7 +191,7 @@ function collectScriptNodes(node: any, results: { nodeId: string; sqlQuery?: str
     return results;
 }
 
-async function doPyBrowseOtherScripts(input: { companyId: string; connectorId?: string }) {
+export async function doPyBrowseOtherScripts(input: { companyId: string; connectorId?: string }) {
     try {
         const scripts: { source: string; name: string; code: string; type: string; connectorId?: string; sameConnector: boolean }[] = [];
 

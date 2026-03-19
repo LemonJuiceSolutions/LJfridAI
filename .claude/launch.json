@@ -5,7 +5,8 @@
       "name": "nextjs-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 9002
+      "port": 9002,
+      "autoPort": false
     },
     {
       "name": "python-backend",
