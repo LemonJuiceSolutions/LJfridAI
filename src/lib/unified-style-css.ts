@@ -1,6 +1,6 @@
 import type { UiElementsOverrides, UnifiedStylePreset } from '@/lib/unified-style-types';
 import { UI_ELEMENTS_DEFAULTS } from '@/lib/unified-style-types';
-import { generateHtmlStyleCss } from '@/lib/html-style-utils';
+import { generateHtmlStyleCss, generatePlatformLayoutCss } from '@/lib/html-style-utils';
 
 function v<K extends keyof UiElementsOverrides>(ui: Partial<UiElementsOverrides>, key: K): UiElementsOverrides[K] {
     return (ui[key] ?? UI_ELEMENTS_DEFAULTS[key]) as UiElementsOverrides[K];
@@ -131,6 +131,7 @@ ${v(ui, 'ui_custom_css') || ''}
  */
 export function generateUnifiedPreviewHtml(preset: UnifiedStylePreset): string {
     const htmlCss = generateHtmlStyleCss(preset.html as Parameters<typeof generateHtmlStyleCss>[0]);
+    const layoutCss = generatePlatformLayoutCss(preset.html as Parameters<typeof generateHtmlStyleCss>[0]);
     const uiCss = generateUiElementsCss(preset.ui);
 
     return `<!DOCTYPE html>
@@ -142,33 +143,59 @@ export function generateUnifiedPreviewHtml(preset: UnifiedStylePreset): string {
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
 ${htmlCss}
+${layoutCss}
 ${uiCss}
 </style>
 </head>
 <body>
+<div class="__cw" style="position:relative;">
   <h2>Anteprima Stile</h2>
-  <p>Testo di esempio con <strong>grassetto</strong> e <em>corsivo</em>.</p>
-  <hr>
-  <table>
-    <thead><tr><th>Colonna A</th><th>Colonna B</th><th>Delta</th></tr></thead>
-    <tbody>
-      <tr><td>Valore 1</td><td>1.234</td><td class="positive">+5.2%</td></tr>
-      <tr><td>Valore 2</td><td>5.678</td><td class="negative">-2.1%</td></tr>
-    </tbody>
-  </table>
-  <p style="margin-top:12px">
+  <p class="text-secondary">Esempio completo di tutti i componenti</p>
+  <hr class="divider-gradient">
+
+  <div class="kpi-grid mt-md">
+    <div class="stat-card accent-primary">
+      <div class="stat-label">Fatturato</div>
+      <div class="stat-value">&euro; 1.250.000</div>
+      <div class="stat-change up">+12.4%</div>
+    </div>
+    <div class="stat-card accent-success">
+      <div class="stat-label">Obiettivo</div>
+      <div class="stat-value">87%</div>
+      <div class="progress-bar success" style="margin-top:6px"><div class="progress-fill" style="width:87%"></div></div>
+    </div>
+    <div class="stat-card accent-danger">
+      <div class="stat-label">Criticita</div>
+      <div class="stat-value">3</div>
+      <span class="badge bg-danger">Urgente</span>
+    </div>
+  </div>
+
+  <div class="table-section mt-lg">
+    <table>
+      <thead><tr><th>Colonna A</th><th>Colonna B</th><th>Delta</th><th>Stato</th></tr></thead>
+      <tbody>
+        <tr><td>Valore 1</td><td>1.234</td><td class="positive">+5.2%</td><td><span class="badge bg-success">OK</span></td></tr>
+        <tr><td>Valore 2</td><td>5.678</td><td class="negative">-2.1%</td><td><span class="badge bg-warning">Attenzione</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="flex-row mt-md">
     <button class="btn">Pulsante Primario</button>
-    &nbsp;
     <button class="btn-secondary">Secondario</button>
-    &nbsp;
-    <span class="badge">Badge</span>
-  </p>
-  <p><input type="text" placeholder="Campo di testo..." style="width:200px"></p>
-  <div class="card" style="margin-top:12px;max-width:280px">
-    <div class="card-header">Titolo Card</div>
+    <span class="badge bg-info">Info</span>
+    <span class="tag">Tag</span>
+  </div>
+
+  <div class="card mt-md" style="max-width:320px">
+    <h3><span class="status-dot active"></span> Stato Card</h3>
     <p style="margin:4px 0 0">Contenuto della card con informazioni.</p>
   </div>
-  <ul style="margin-top:12px"><li>Elemento lista uno</li><li>Elemento lista due</li></ul>
+
+  <p style="margin-top:12px"><input type="text" placeholder="Campo di testo..." style="width:220px"></p>
+  <ul style="margin-top:8px"><li>Elemento lista uno</li><li>Elemento lista due</li></ul>
+</div>
 </body>
 </html>`;
 }

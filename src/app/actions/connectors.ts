@@ -1449,12 +1449,11 @@ print(f"PNG generated: {len(result)} chars base64")
                         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                     });
                 } else if (pyResult.type === 'html' && pyResult.html) {
-                    // Attach HTML content as .html file - apply style overrides
-                    const attachOverrides = pyResult.htmlStyleOverrides || effectiveHtmlOverrides;
-                    const hasOverrides = attachOverrides && Object.keys(attachOverrides).length > 0;
-                    const styledHtml = hasOverrides
-                        ? applyHtmlStyleOverrides(pyResult.html, attachOverrides)
-                        : pyResult.html;
+                    // Attach HTML content as .html file - ALWAYS wrap with platform CSS
+                    // Even without custom overrides the platform layout classes
+                    // (.kpi-grid, .stat-card, .card, data-row-status colors, etc.) are needed
+                    const attachOverrides = pyResult.htmlStyleOverrides || effectiveHtmlOverrides || {};
+                    const styledHtml = applyHtmlStyleOverrides(pyResult.html, attachOverrides);
                     const buffer = Buffer.from(styledHtml, 'utf8');
                     console.log(`[EMAIL DEBUG] HTML file ${pyResult.name}.html size: ${(buffer.length / 1024).toFixed(2)} KB`);
 

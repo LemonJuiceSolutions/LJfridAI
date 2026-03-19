@@ -3721,6 +3721,28 @@ export default function EditNodeDialog({
                               <Download className="h-3 w-3" /> Scarica HTML
                             </Button>
                           )}
+                          {pythonPreviewExpanded && pythonPreviewResult.type === 'html' && pythonPreviewResult.html && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[10px] gap-1 px-2 font-bold ml-1"
+                              onClick={() => {
+                                const mergedHtml = { ...(activeStyle?.html || {}), ...htmlStyleOverrides };
+                                const mergedUi = { ...(activeStyle?.ui || {}), ...uiStyleOverrides };
+                                const uiCss = generateUiElementsCss(mergedUi);
+                                const styledHtml = applyHtmlStyleOverrides(pythonPreviewResult.html!, mergedHtml as HtmlStyleOverrides, false, uiCss);
+                                const blob = new Blob([styledHtml], { type: 'text/html;charset=utf-8' });
+                                const url = window.URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = `${pythonResultName || 'report'}.html`;
+                                link.click();
+                                window.URL.revokeObjectURL(url);
+                              }}
+                            >
+                              <Download className="h-3 w-3" /> Scarica HTML
+                            </Button>
+                          )}
                           <Button size="icon" variant="ghost" className="h-6 w-6 ml-1" onClick={() => setPythonPreviewResult(null)}><X className="h-3 w-3" /></Button>
                         </div>
                       </div>

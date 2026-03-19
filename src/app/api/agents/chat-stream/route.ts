@@ -330,40 +330,71 @@ Segui QUESTO stile per coerenza con il resto dell'app. Non serve aggiungere CSS 
 2. Procedere senza stile (la piattaforma applichera' uno stile neutro di default)
 Suggerisci di andare in /style per scegliere uno stile, cosi' TUTTI i widget avranno lo stesso look.`}
 
-La piattaforma ha un SISTEMA DI STILI centralizzato che inietta CSS automaticamente in TUTTO l'HTML renderizzato.
-Il tuo codice NON DEVE MAI contenere tag \`<style>\`, CSS inline, o colori hardcoded.
-TUTTO il CSS arriva dalla piattaforma: colori, font, bordi, ombre, spaziatura.
+##################################################################
+# REGOLA ZERO — ASSOLUTA, NON NEGOZIABILE                        #
+# NIENTE CSS INLINE. NIENTE TAG <style>. MAI. ZERO ECCEZIONI.    #
+##################################################################
 
-### REGOLA ZERO - NIENTE CSS:
-Il tuo HTML non deve avere NESSUN attributo \`style="..."\` e NESSUN blocco \`<style>...</style>\`.
-Usa SOLO classi CSS e tag HTML semantici. La piattaforma li stila automaticamente.
+La piattaforma ha un SISTEMA DI STILI PREMIUM centralizzato che inietta CSS automaticamente in TUTTO l'HTML renderizzato.
+La piattaforma fornisce oltre 50 classi CSS professionali con animazioni, glassmorphism, hover effects, gradients.
+Il tuo codice NON DEVE MAI contenere:
+- tag \`<style>...</style>\` — VIETATO
+- attributi \`style="..."\` — VIETATO (eccezione: width:XX% per progress-fill e height:XX% per mini-chart)
+- colori hex (#...) o rgb(...) — VIETATO, usa var(--primary) etc.
+- font-family, padding, margin, background, color, border inline — VIETATO
+
+Se metti ANCHE UN SOLO style="..." o <style> la piattaforma lo SOVRASCRIVE con !important e il risultato sara' ROTTO.
+Usa SOLO classi CSS della piattaforma e tag HTML semantici. La piattaforma li stila automaticamente con effetti premium.
+
+QUANDO GENERI L'HTML, CONTROLLA CHE:
+1. NON ci sia la parola "style=" nel tuo HTML (eccezione: width:XX% per progress-fill)
+2. NON ci sia il tag "<style" nel tuo HTML
+3. OGNI elemento usi classi della piattaforma (.card, .btn, .badge, .stat-card, .kpi-grid, etc.)
+4. OGNI sezione sia wrappata in .card con h3
+5. I numeri chiave siano in .stat-card dentro .kpi-grid
 
 ### ELEMENTI STANDARD (stilati automaticamente dalla piattaforma):
 \`<table>\`, \`<thead>\`, \`<tbody>\`, \`<tr>\`, \`<th>\`, \`<td>\`, \`<h1>\`-\`<h6>\`, \`<p>\`, \`<a>\`, \`<hr>\`, \`<ul>\`, \`<ol>\`, \`<li>\`,
 \`<button>\`, \`<input>\`, \`<select>\`, \`<textarea>\`
 
 ### CLASSI UI (stilate automaticamente):
-- \`.btn\` o \`.btn-primary\` → bottone primario
+- \`.btn\` o \`.btn-primary\` → bottone primario (con hover premium)
 - \`.btn-secondary\` → bottone secondario
-- \`.badge\` → badge/etichetta
-- \`.card\` → contenitore card con bordo e ombra
+- \`.badge\` → badge/etichetta (pill style)
+- \`.card\` → contenitore card con bordo, ombra e hover effect
 - \`.positive\` → valore positivo (verde)
 - \`.negative\` → valore negativo (rosso)
 
 ### CLASSI LAYOUT (pre-stilate dalla piattaforma):
-- \`.kpi-grid\` → griglia responsive per KPI cards (auto-fit, minmax 160px)
-- \`.two-col\` / \`.three-col\` → grid a 2 o 3 colonne
+- \`.kpi-grid\` → griglia responsive per KPI cards (auto-fit, minmax 180px)
+- \`.two-col\` / \`.three-col\` → grid a 2 o 3 colonne (responsive)
 - \`.flex-row\` → flexbox orizzontale con gap e wrap
 - \`.flex-col\` → flexbox verticale con gap
 - \`.overflow-x\` → wrapper scrollabile orizzontale per tabelle larghe
-- \`.table-section\` → wrapper tabella con bordo, radius e scroll orizzontale
-- \`.mt-sm\` / \`.mt-md\` / \`.mt-lg\` → margin-top (8/16/24px)
-- \`.mb-sm\` / \`.mb-md\` → margin-bottom (8/16px)
+- \`.table-section\` → wrapper tabella con bordo, radius, ombra e scroll orizzontale
+- \`.mt-sm\` / \`.mt-md\` / \`.mt-lg\` / \`.mt-xl\` → margin-top (8/16/24/32px)
+- \`.mb-sm\` / \`.mb-md\` / \`.mb-lg\` → margin-bottom (8/16/24px)
 - \`.p-sm\` / \`.p-md\` / \`.p-lg\` → padding (8/16/24px)
 - \`.text-center\` / \`.text-right\` → allineamento testo
-- \`.text-sm\` / \`.text-lg\` / \`.text-xl\` → dimensioni testo
-- \`.font-bold\` / \`.font-medium\` → peso font
+- \`.text-sm\` / \`.text-md\` / \`.text-lg\` / \`.text-xl\` / \`.text-2xl\` → dimensioni testo
+- \`.font-bold\` / \`.font-medium\` / \`.font-light\` → peso font
 - \`.w-full\` → width 100%
+- \`.truncate\` → testo troncato con ellipsis
+
+### COMPONENTI PREMIUM:
+- \`.avatar\` → cerchio con iniziali (\`.avatar.sm\`, \`.avatar.lg\` per dimensioni)
+- \`.tag\` → tag/chip grigio neutro
+- \`.metric-huge\` → numero gigante con gradiente (per il KPI hero)
+- \`.timeline\` → contenitore timeline verticale
+- \`.timeline-item\` → singolo evento (\`.completed\`, \`.warning\`, \`.danger\`)
+- \`.divider-gradient\` → \`<hr class="divider-gradient">\` linea sfumata elegante
+- \`.empty-state\` → stato vuoto centrato con icona
+- \`.mini-chart\` → sparkline manuale con \`.bar\`
+- \`.editable-cell\` → cella editabile con highlight su hover/focus
+- \`.editable-cell.modified\` → cella modificata (bordo arancione)
+- \`data-tooltip="..."\` → tooltip al hover su qualsiasi elemento
+- \`.skeleton\` → placeholder animato per loading states
+- \`.status-message\` → messaggio di stato (\`.success\` / \`.error\`)
 
 ### CLASSI KPI / STAT CARD:
 \`\`\`html
@@ -401,9 +432,12 @@ Usa SOLO classi CSS e tag HTML semantici. La piattaforma li stila automaticament
 ### CSS VARIABLES (per casi eccezionali dove serve uno style inline):
 Se DEVI usare un colore inline (es. chart JS custom, SVG), usa SOLO CSS variables:
 \`var(--primary)\`, \`var(--secondary)\`, \`var(--success)\`, \`var(--danger)\`, \`var(--warning)\`, \`var(--info)\`,
-\`var(--bg)\`, \`var(--bg-card)\`, \`var(--text)\`, \`var(--border)\`, \`var(--radius)\`, \`var(--shadow-sm)\`
+\`var(--bg)\`, \`var(--bg-card)\`, \`var(--text)\`, \`var(--text-secondary)\`, \`var(--border)\`,
+\`var(--radius)\`, \`var(--radius-sm)\`, \`var(--radius-lg)\`,
+\`var(--shadow-sm)\`, \`var(--shadow-md)\`, \`var(--shadow-lg)\`, \`var(--shadow-xl)\`,
+\`var(--transition)\`, \`var(--font)\`
 MAI scrivere valori hex (#...) o rgb(...). Usa SOLO var(--nome).
-L'UNICA eccezione per \`style="..."\` e' \`width: XX%\` per progress bar fill.
+L'UNICA eccezione per \`style="..."\` e' \`width: XX%\` per progress bar fill e \`height: XX%\` per mini-chart bar.
 
 ### ESEMPIO HTML CORRETTO:
 \`\`\`html

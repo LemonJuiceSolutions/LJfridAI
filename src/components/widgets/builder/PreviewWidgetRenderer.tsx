@@ -7,7 +7,7 @@ import SmartWidgetRenderer from './SmartWidgetRenderer';
 import { applyPlotlyOverrides, plotlyJsonToHtml } from '@/lib/plotly-utils';
 import { applyHtmlStyleOverrides, injectIframeFetchPolyfill } from '@/lib/html-style-utils';
 import { generateUiElementsCss } from '@/lib/unified-style-css';
-import { Loader2, Database, Code, AlertCircle, RefreshCw, Zap } from 'lucide-react';
+import { Loader2, Database, Code, AlertCircle, RefreshCw, Zap, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useActiveUnifiedStyle } from '@/hooks/use-active-style';
@@ -145,6 +145,23 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
         setShowExecutionDialog(true);
     };
 
+    const handleDownloadHtml = useCallback(() => {
+        if (!previewData || previewData.type !== 'html' || !previewData.html) return;
+        const htmlOverrides = previewData.htmlStyleOverrides || activeStyle?.html || {};
+        const uiOverrides = { ...(activeStyle?.ui || {}), ...(previewData.uiStyleOverrides || {}) };
+        const uiCss = generateUiElementsCss(uiOverrides);
+        const styledHtml = applyHtmlStyleOverrides(previewData.html, htmlOverrides, false, uiCss);
+        const blob = new Blob([styledHtml], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${resultName || 'report'}.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, [previewData, activeStyle, resultName]);
+
     const handleExecutionSuccess = () => {
         // Invalidate cache and notify ALL widgets sharing this treeId to refresh
         invalidateAndNotifyWidgets(treeId);
@@ -191,6 +208,17 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                             minute: '2-digit'
                         })}
                     </span>
+                )}
+                {previewData?.type === 'html' && previewData.html && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={handleDownloadHtml}
+                        title="Scarica HTML"
+                    >
+                        <Download className="h-3.5 w-3.5" />
+                    </Button>
                 )}
                 <Button
                     variant="ghost"

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { sqlAgentChat } from '@/ai/flows/sql-agent-flow';
 import { pythonAgentChat } from '@/ai/flows/python-agent-flow';
+import { getAiProviderAction } from '@/actions/ai-settings';
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,6 +31,100 @@ export async function POST(request: NextRequest) {
         { error: 'Missing required fields: nodeId, agentType, userMessage' },
         { status: 400 }
       );
+    }
+
+    // Check if user has claude-cli selected — if so, proxy to chat-stream
+    // This ensures "Correggi" / auto-retry also uses CLI when selected
+    const providerSettings = await getAiProviderAction();
+    if (providerSettings.provider === 'claude-cli') {
+      console.log('[agents/chat] Provider is claude-cli, proxying to chat-stream...');
+      const streamUrl = new URL('/api/agents/chat-stream', request.url);
+      const streamBody = {
+        messages: [{ role: 'user', content: userMessage }],
+        nodeId,
+        agentType,
+        script,
+        tableSchema,
+        inputTables,
+        nodeQueries,
+        connectorId,
+        selectedDocuments,
+        model: providerSettings.claudeCliModel || 'claude-sonnet-4-6',
+      };
+      const streamResponse = await fetch(streamUrl.toString(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: request.headers.get('cookie') || '',
+        },
+        body: JSON.stringify(streamBody),
+      });
+
+      // Read the streaming response and extract the text
+      const streamText = await streamResponse.text();
+      // Parse the streaming format to extract the agent's response text
+      // Vercel AI SDK data stream format: lines like 0:"text chunk"\n
+      let fullText = '';
+      let updatedScript: string | undefined;
+      for (const line of streamText.split('\n')) {
+        // Text chunks: 0:"..."
+        if (line.startsWith('0:')) {
+          try {
+            fullText += JSON.parse(line.slice(2));
+          } catch { /* skip non-JSON lines */ }
+        }
+        // Data annotations: 8:[{...}]
+        if (line.startsWith('8:')) {
+          try {
+            const annotations = JSON.parse(line.slice(2));
+            for (const ann of annotations) {
+              if (ann.updatedScript) updatedScript = ann.updatedScript;
+            }
+          } catch { /* skip */ }
+        }
+      }
+
+      if (!fullText && !updatedScript) {
+        return NextResponse.json({
+          success: false,
+          error: 'Claude CLI non ha restituito una risposta valida. Verifica la configurazione.',
+          message: 'Errore: nessuna risposta dal provider CLI.',
+        }, { status: 200 });
+      }
+
+      // Save to conversation history (same as non-CLI path)
+      const user = await db.user.findUnique({
+        where: { email: session.user.email },
+        include: { company: true },
+      });
+      if (user?.company) {
+        const conversation = await db.agentConversation.findUnique({
+          where: { nodeId_agentType: { nodeId, agentType } },
+        });
+        const prevHistory = conversation ? (conversation.messages as any[]) : [];
+        const updatedHistory = [
+          ...prevHistory,
+          { role: 'user', content: userMessage, timestamp: Date.now(), scriptSnapshot: script },
+          { role: 'assistant', content: fullText, timestamp: Date.now(), scriptSnapshot: updatedScript || script },
+        ];
+        if (conversation) {
+          await db.agentConversation.update({
+            where: { id: conversation.id },
+            data: { script, tableSchema, inputTables, messages: updatedHistory, updatedAt: new Date() },
+          });
+        } else {
+          await db.agentConversation.create({
+            data: { nodeId, agentType, script, tableSchema, inputTables, messages: updatedHistory, companyId: user.company.id },
+          });
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: fullText,
+        updatedScript,
+        needsClarification: false,
+      });
     }
 
     // Get user's company
