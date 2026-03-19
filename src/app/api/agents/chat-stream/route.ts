@@ -870,6 +870,7 @@ export async function POST(request: NextRequest) {
             connectorId,
             selectedDocuments,
             messages, // AI SDK v6 sends messages array, not a single userMessage
+            model: requestModel, // Optional model override from client
         } = body;
 
         console.log('[chat-stream] Body keys:', Object.keys(body));
@@ -933,12 +934,12 @@ export async function POST(request: NextRequest) {
         let model: string | undefined;
 
         if (aiProvider === 'claude-cli') {
-            model = providerSettings.claudeCliModel || 'claude-sonnet-4-6';
+            model = requestModel || providerSettings.claudeCliModel || 'claude-sonnet-4-6';
             console.log('[chat-stream] Using Claude CLI, model:', model);
         } else {
             const settings = await getOpenRouterSettingsAction();
             apiKey = settings.apiKey;
-            model = settings.model;
+            model = requestModel || settings.model;
             if (!apiKey || !model) {
                 console.log('[chat-stream] No API key or model configured');
                 return new Response(JSON.stringify({ error: 'OpenRouter API key or model not configured' }), { status: 400 });
@@ -1006,8 +1007,8 @@ export async function POST(request: NextRequest) {
 
         // 6. Build prompts (branched by agent type)
         const systemPrompt = agentType === 'python'
-            ? buildPythonSystemPrompt({ modelName: model, connectorId, companyId, selectedDocuments, activeStyleName, activeStylePalette })
-            : buildSystemPrompt({ modelName: model, connectorId, companyId });
+            ? buildPythonSystemPrompt({ modelName: model || 'unknown', connectorId, companyId, selectedDocuments, activeStyleName, activeStylePalette })
+            : buildSystemPrompt({ modelName: model || 'unknown', connectorId, companyId });
 
         const userPrompt = agentType === 'python'
             ? buildPythonUserPrompt({ userMessage, script, tableSchema, inputTables, nodeQueries, connectorId, conversationHistory })

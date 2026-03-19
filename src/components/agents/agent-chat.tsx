@@ -29,6 +29,8 @@ import {
   CheckSquare,
   Square,
   Settings2,
+  Check,
+  ChevronsUpDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,7 +53,11 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
 } from 'recharts';
-import { getOpenRouterSettingsAction, getAgentLastUsageAction } from '@/actions/openrouter';
+import { getOpenRouterSettingsAction, getAgentLastUsageAction, getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction } from '@/actions/openrouter';
+import { fetchOpenRouterModelsAction } from '@/app/actions';
+import { getAiProviderAction, saveAiProviderAction, type AiProvider } from '@/actions/ai-settings';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { useChartTheme } from '@/hooks/use-chart-theme';
 import { ChartStyle, resolveChartStyle } from '@/lib/chart-style';
 import { gridStrokeDasharray, lineStrokeDasharray } from '@/lib/chart-theme';
@@ -485,6 +491,11 @@ export function AgentChat({
   const [needsClarification, setNeedsClarification] = useState(false);
   const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
   const [modelName, setModelName] = useState<string>('Gemini 2.5 Flash');
+  const [model, setModel] = useState<string>('');
+  const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([]);
+  const [aiProvider, setAiProvider] = useState<AiProvider>('openrouter');
+  const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+  const [isSavingModel, setIsSavingModel] = useState(false);
   const [activeVersionIndex, setActiveVersionIndex] = useState<number>(-1); // -1 = auto-follow latest
   const [totalUsage, setTotalUsage] = useState<{ tokens: number; cost: number }>({ tokens: 0, cost: 0 });
   const [deleteMode, setDeleteMode] = useState(false);
@@ -509,6 +520,8 @@ export function AgentChat({
   selectedDocumentsRef.current = selectedDocuments;
   const scriptRef = useRef(script);
   scriptRef.current = script;
+  const modelRef = useRef(model);
+  modelRef.current = model;
 
   // Create transport with stable identity — all dynamic values read from refs at send time
   const streamTransport = useMemo(() => new DefaultChatTransport({
@@ -525,6 +538,7 @@ export function AgentChat({
         nodeQueries: nodeQueriesRef.current,
         selectedDocuments: selectedDocumentsRef.current,
         connectorId: connectorIdRef.current,
+        model: modelRef.current,
       },
     }),
   }), [nodeId, agentType]);
@@ -694,20 +708,74 @@ export function AgentChat({
     }
   }, [resolvedActiveIndex, scriptVersions.length]);
 
+  // Load AI provider and available models
   useEffect(() => {
-    getOpenRouterSettingsAction().then((settings) => {
-      if (settings?.model) {
-        // Simple formatter: remove provider prefix and clean up
-        const cleanName = settings.model.split('/').pop() || settings.model;
-        // Capitalize words and replace dashes with spaces
-        const formatted = cleanName
-          .split(/[-_]/)
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-          .join(' ');
-        setModelName(formatted);
+    getAiProviderAction().then(res => {
+      if (res.error) return;
+      setAiProvider(res.provider);
+
+      if (res.provider === 'claude-cli') {
+        const m = res.claudeCliModel || 'claude-sonnet-4-6';
+        setModel(m);
+        setModelName(m.split('/').pop()?.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || m);
+        setAvailableModels([
+          { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+          { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+          { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+          { id: 'sonnet', name: 'sonnet (latest)' },
+          { id: 'opus', name: 'opus (latest)' },
+          { id: 'haiku', name: 'haiku (latest)' },
+        ]);
+      } else {
+        // OpenRouter: load models list + saved agent model
+        fetchOpenRouterModelsAction().then(result => {
+          if (result.data) setAvailableModels(result.data);
+        });
+        getOpenRouterAgentModelAction().then(result => {
+          if (result.model) {
+            setModel(result.model);
+            const cleanName = result.model.split('/').pop() || result.model;
+            const formatted = cleanName
+              .split(/[-_]/)
+              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ');
+            setModelName(formatted);
+          }
+        });
+        // Fallback: load from settings if agent model not set
+        getOpenRouterSettingsAction().then((settings) => {
+          if (settings?.model && !model) {
+            setModel(settings.model);
+            const cleanName = settings.model.split('/').pop() || settings.model;
+            const formatted = cleanName
+              .split(/[-_]/)
+              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ');
+            setModelName(formatted);
+          }
+        });
       }
     });
   }, []);
+
+  // Handle model change
+  const handleModelChange = async (newModel: string) => {
+    setModel(newModel);
+    setModelSelectorOpen(false);
+    const displayName = availableModels.find(m => m.id === newModel)?.name || newModel.split('/').pop() || newModel;
+    setModelName(displayName);
+    setIsSavingModel(true);
+    try {
+      if (aiProvider === 'claude-cli') {
+        await saveAiProviderAction('claude-cli', newModel);
+      } else {
+        await saveOpenRouterAgentModelAction(newModel);
+      }
+    } catch (e) {
+      console.error('Failed to save model:', e);
+    }
+    setIsSavingModel(false);
+  };
 
   // Collapsible script preview in messages
   const [expandedScripts, setExpandedScripts] = useState<Set<number>>(new Set());
@@ -1270,7 +1338,37 @@ export function AgentChat({
               <h2 className="text-sm font-bold tracking-tight">Agente {agentName}</h2>
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                <span>{modelName}</span>
+                <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
+                  <PopoverTrigger asChild>
+                    <button className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                      <span className="truncate max-w-[160px]">
+                        {isSavingModel ? 'Salvando...' : modelName}
+                      </span>
+                      <ChevronsUpDown className="h-2.5 w-2.5 shrink-0 opacity-50" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Cerca modello..." />
+                      <CommandList>
+                        <CommandEmpty>Nessun modello trovato.</CommandEmpty>
+                        <CommandGroup heading="Modelli disponibili">
+                          {availableModels.map(m => (
+                            <CommandItem
+                              key={m.id}
+                              value={m.id}
+                              onSelect={() => handleModelChange(m.id)}
+                              className="text-xs"
+                            >
+                              <Check className={cn("mr-2 h-3 w-3", model === m.id ? "opacity-100" : "opacity-0")} />
+                              <span className="truncate">{m.name}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 {totalUsage.tokens > 0 && (
                   <TooltipProvider delayDuration={200}>
                     <UiTooltip>
