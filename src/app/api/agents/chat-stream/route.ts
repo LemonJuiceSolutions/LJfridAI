@@ -1068,7 +1068,7 @@ export async function POST(request: NextRequest) {
                         const updatedHistory = [
                             ...conversationHistory,
                             { role: 'user', content: userMessage, timestamp: Date.now(), scriptSnapshot: script },
-                            { role: 'assistant', content: '(Claude CLI response)', timestamp: Date.now() },
+                            { role: 'assistant', content: info.fullText || '(Claude CLI response)', timestamp: Date.now() },
                         ];
                         if (conversation) {
                             await db.agentConversation.update({

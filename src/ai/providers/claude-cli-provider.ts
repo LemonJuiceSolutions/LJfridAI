@@ -21,7 +21,7 @@ export interface ClaudeCliOptions {
 export interface ClaudeCliResult {
     response: Response;
     /** Promise that resolves with session info when the CLI exits */
-    sessionPromise: Promise<{ sessionId?: string; cost?: number; inputTokens?: number; outputTokens?: number }>;
+    sessionPromise: Promise<{ sessionId?: string; cost?: number; inputTokens?: number; outputTokens?: number; fullText?: string }>;
 }
 
 /**
