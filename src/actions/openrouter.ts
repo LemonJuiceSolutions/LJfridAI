@@ -87,6 +87,24 @@ export async function saveOpenRouterSettingsAction(
 }
 
 /**
+ * Save just the OpenRouter model (without changing API key).
+ * Used by the create page model selector.
+ */
+export async function saveOpenRouterModelAction(model: string): Promise<{ success: boolean; error?: string }> {
+    const session = await getSession();
+    if (!session?.user) return { success: false, error: 'Non autorizzato' };
+    const userId = (session.user as any).id;
+    if (!userId) return { success: false, error: 'Utente non trovato' };
+    try {
+        await db.user.update({ where: { id: userId }, data: { openRouterModel: model } });
+        return { success: true };
+    } catch (error) {
+        console.error('Failed to save OpenRouter model:', error);
+        return { success: false, error: 'Impossibile salvare il modello' };
+    }
+}
+
+/**
  * Get OpenRouter agent model for the current user (FridAI Agent chatbot)
  */
 export async function getOpenRouterAgentModelAction(): Promise<{

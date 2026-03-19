@@ -492,7 +492,7 @@ export function AgentChat({
   const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
   const [modelName, setModelName] = useState<string>('Gemini 2.5 Flash');
   const [model, setModel] = useState<string>('');
-  const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([]);
+  const [availableModels, setAvailableModels] = useState<{ id: string; name: string; pricing?: { prompt: string; completion: string } }[]>([]);
   const [aiProvider, setAiProvider] = useState<AiProvider>('openrouter');
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [isSavingModel, setIsSavingModel] = useState(false);
@@ -757,6 +757,41 @@ export function AgentChat({
       }
     });
   }, []);
+
+  // Handle provider toggle
+  const handleProviderToggle = async () => {
+    const CLAUDE_CLI_MODELS = [
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+      { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+      { id: 'sonnet', name: 'sonnet (latest)' },
+      { id: 'opus', name: 'opus (latest)' },
+      { id: 'haiku', name: 'haiku (latest)' },
+    ];
+    const newProvider: AiProvider = aiProvider === 'openrouter' ? 'claude-cli' : 'openrouter';
+    setAiProvider(newProvider);
+    if (newProvider === 'claude-cli') {
+      const m = 'claude-sonnet-4-6';
+      setModel(m);
+      setModelName('Claude Sonnet 4.6');
+      setAvailableModels(CLAUDE_CLI_MODELS);
+      await saveAiProviderAction('claude-cli', m);
+    } else {
+      setModel('google/gemini-2.0-flash-001');
+      setModelName('Gemini 2.0 Flash');
+      await saveAiProviderAction('openrouter');
+      fetchOpenRouterModelsAction().then(result => {
+        if (result.data) setAvailableModels(result.data);
+      });
+      getOpenRouterAgentModelAction().then(result => {
+        if (result.model) {
+          setModel(result.model);
+          const displayName = result.model.split('/').pop()?.split(/[-_]/).map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || result.model;
+          setModelName(displayName);
+        }
+      });
+    }
+  };
 
   // Handle model change
   const handleModelChange = async (newModel: string) => {
@@ -1337,31 +1372,45 @@ export function AgentChat({
             <div>
               <h2 className="text-sm font-bold tracking-tight">Agente {agentName}</h2>
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleProviderToggle(); }}
+                  className="px-1.5 py-0.5 rounded text-[9px] font-medium border hover:bg-muted transition-colors cursor-pointer"
+                  title="Cambia provider AI"
+                >
+                  {aiProvider === 'claude-cli' ? '🤖 CLI' : '🌐 OR'}
+                </button>
+                <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen} modal={false}>
                   <PopoverTrigger asChild>
-                    <button className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                    <button type="button" className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
                       <span className="truncate max-w-[160px]">
                         {isSavingModel ? 'Salvando...' : modelName}
                       </span>
                       <ChevronsUpDown className="h-2.5 w-2.5 shrink-0 opacity-50" />
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[300px] p-0" align="start">
+                  <PopoverContent className="w-[400px] p-0 z-[100]" align="start" sideOffset={8} onOpenAutoFocus={(e) => e.preventDefault()}>
                     <Command>
                       <CommandInput placeholder="Cerca modello..." />
-                      <CommandList>
+                      <CommandList className="max-h-[300px]">
                         <CommandEmpty>Nessun modello trovato.</CommandEmpty>
-                        <CommandGroup heading="Modelli disponibili">
+                        <CommandGroup heading={aiProvider === 'claude-cli' ? 'Modelli Claude' : 'Modelli OpenRouter'}>
                           {availableModels.map(m => (
                             <CommandItem
                               key={m.id}
-                              value={m.id}
+                              value={`${m.id} ${m.name}`}
                               onSelect={() => handleModelChange(m.id)}
-                              className="text-xs"
+                              className="flex items-center justify-between text-xs"
                             >
-                              <Check className={cn("mr-2 h-3 w-3", model === m.id ? "opacity-100" : "opacity-0")} />
-                              <span className="truncate">{m.name}</span>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Check className={cn("h-3 w-3 shrink-0", model === m.id ? "opacity-100" : "opacity-0")} />
+                                <span className="truncate">{m.name}</span>
+                              </div>
+                              {m.pricing && (
+                                <span className="text-[10px] text-muted-foreground shrink-0 ml-2">
+                                  ${(parseFloat(m.pricing.prompt) * 1_000_000).toFixed(2)}/M
+                                </span>
+                              )}
                             </CommandItem>
                           ))}
                         </CommandGroup>

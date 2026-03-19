@@ -17,6 +17,7 @@ import { createMcpConfig } from '@/lib/mcp-config';
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
 import { setAgentUsageCache } from '@/lib/agent-usage-cache';
 import { createWidgetTree } from '@/lib/create-widget';
+import { doExploreDbSchema } from '@/ai/tools/sql-agent-tools';
 
 export const maxDuration = 120;
 
@@ -303,6 +304,115 @@ La query SQL e il connectorId vengono recuperati AUTOMATICAMENTE dall'ultima exe
             },
         }),
 
+        createTree: tool({
+            description: `Crea un nuovo albero decisionale salvandolo direttamente nel database.
+TU devi generare la struttura dell'albero a partire dalla descrizione dell'utente.
+
+WORKFLOW:
+1. Leggi la descrizione delle regole di business dall'utente
+2. Identifica tutte le variabili decisionali e i loro possibili valori
+3. Costruisci la struttura JSON dell'albero con domande, opzioni e decisioni
+4. Scrivi una versione in linguaggio naturale
+5. Chiama questo tool con tutti i campi generati
+
+FORMATO jsonDecisionTree (JSON valido):
+{"question":"Domanda?", "options":{"Opzione1":{"question":"Sotto-domanda?", "options":{...}}, "Opzione2":{"decision":"Decisione finale"}}}
+Ogni nodo ha "question" + "options". Le foglie hanno "decision" al posto di "question"+"options".`,
+            inputSchema: z.object({
+                name: z.string().describe("Nome breve e descrittivo per l'albero (2-5 parole, in italiano). Es: 'Triage Supporto Tecnico'"),
+                description: z.string().describe("La descrizione originale delle regole di business fornita dall'utente."),
+                jsonDecisionTree: z.string().describe('JSON valido della struttura ad albero. Ogni nodo: {"question":"...", "options":{"Opt1":{...}, "Opt2":{"decision":"..."}}}'),
+                naturalLanguageDecisionTree: z.string().describe("Versione in linguaggio naturale dell'albero (in italiano)."),
+                questionsScript: z.string().optional().describe("Lista numerata di tutte le domande in ordine."),
+                type: z.enum(['RULE', 'PIPELINE']).optional().describe("Tipo: 'RULE' per regole decisionali (default), 'PIPELINE' per pipeline."),
+            }),
+            execute: async ({ name, description, jsonDecisionTree, naturalLanguageDecisionTree, questionsScript, type }) => {
+                try {
+                    // Validate JSON
+                    try {
+                        JSON.parse(jsonDecisionTree);
+                    } catch (e) {
+                        return JSON.stringify({ error: `JSON dell'albero non valido: ${(e as Error).message}. Correggi il JSON e riprova.` });
+                    }
+
+                    const createdTree = await db.tree.create({
+                        data: {
+                            name,
+                            description,
+                            jsonDecisionTree,
+                            naturalLanguageDecisionTree: naturalLanguageDecisionTree || '',
+                            questionsScript: questionsScript || '',
+                            type: type || 'RULE',
+                            companyId,
+                        },
+                    });
+
+                    return JSON.stringify({
+                        success: true,
+                        treeId: createdTree.id,
+                        treeName: createdTree.name,
+                        treeType: createdTree.type,
+                        message: `Albero "${createdTree.name}" creato con successo! Lo trovi nella sezione Regole.`,
+                    }, null, 2);
+                } catch (e: any) {
+                    return JSON.stringify({ error: `Errore creazione albero: ${e.message}` });
+                }
+            },
+        }),
+
+        exploreDbSchemaChunked: tool({
+            description: `Esplora lo schema di un database con paginazione. Utile per database con MOLTE tabelle (>50).
+Restituisce un sottoinsieme di tabelle alla volta per evitare di sovraccaricare la memoria.
+Usa 'offset' e 'limit' per navigare. Se non li specifichi, restituisce le prime 50 tabelle.
+Se il database ha poche tabelle, usa direttamente executeSqlQuery con INFORMATION_SCHEMA.`,
+            inputSchema: z.object({
+                connectorId: z.string().describe("L'ID del connettore database."),
+                offset: z.number().optional().describe("Indice di partenza (default: 0)."),
+                limit: z.number().optional().describe("Numero massimo di tabelle da restituire (default: 50, max: 100)."),
+                searchTerm: z.string().optional().describe("Filtra le tabelle il cui nome contiene questo termine (case-insensitive)."),
+            }),
+            execute: async ({ connectorId, offset = 0, limit = 50, searchTerm }) => {
+                try {
+                    const fullResult = await doExploreDbSchema({ connectorId });
+                    const parsed = JSON.parse(fullResult);
+                    if (parsed.error) return fullResult;
+
+                    let tables = parsed.tables || [];
+                    const totalTables = tables.length;
+
+                    // Apply search filter
+                    if (searchTerm) {
+                        const term = searchTerm.toLowerCase();
+                        tables = tables.filter((t: any) =>
+                            (t.table_name || '').toLowerCase().includes(term) ||
+                            (t.description || '').toLowerCase().includes(term)
+                        );
+                    }
+
+                    const filteredTotal = tables.length;
+                    const clampedLimit = Math.min(limit, 100);
+                    const chunk = tables.slice(offset, offset + clampedLimit);
+                    const hasMore = offset + clampedLimit < filteredTotal;
+
+                    return JSON.stringify({
+                        tables: chunk,
+                        pagination: {
+                            totalTables,
+                            filteredTotal: searchTerm ? filteredTotal : totalTables,
+                            offset,
+                            limit: clampedLimit,
+                            returned: chunk.length,
+                            hasMore,
+                            nextOffset: hasMore ? offset + clampedLimit : null,
+                        },
+                        source: parsed.source || 'unknown',
+                    }, null, 2);
+                } catch (e: any) {
+                    return JSON.stringify({ error: `Errore esplorazione schema: ${e.message}` });
+                }
+            },
+        }),
+
         fixWidgetNode: tool({
             description: `Corregge la query SQL o il codice Python di un nodo in un albero/widget già creato.
 Usa questo tool DOPO createWidget se i testResults mostrano errori, oppure quando l'utente ti dice che un nodo di un albero ha errori.
@@ -526,6 +636,21 @@ Quando l'utente chiede di creare un widget, un albero, una pipeline, una regola 
 7. Solo quando tutti i test passano, l'albero viene creato nella sezione Regole
 8. NON dire mai all'utente che hai creato il widget se createWidget ha ritornato success:false!
 9. CRITICO: Devi SEMPRE passare sqlQuery e connectorId, altrimenti l'albero avrà solo un nodo vuoto!
+
+## CREAZIONE ALBERI DECISIONALI (TOOL createTree):
+Quando l'utente chiede di creare un albero decisionale, una regola, un decision tree, o un processo decisionale:
+1. Chiedi all'utente di descrivere le regole in linguaggio naturale (in italiano)
+2. Usa il tool createTree passando la descrizione
+3. L'AI estrarrà automaticamente le variabili e genererà l'albero con domande, opzioni e decisioni
+4. L'albero verrà salvato nella sezione Regole
+5. Se l'utente vuole creare un albero di tipo PIPELINE (con SQL/Python/grafici), usa type='PIPELINE'
+
+## ESPLORAZIONE DATABASE CON CHUNKING (TOOL exploreDbSchemaChunked):
+Per database con MOLTE tabelle (>50), usa exploreDbSchemaChunked invece di query dirette su INFORMATION_SCHEMA.
+- Supporta paginazione con offset e limit
+- Supporta ricerca per nome tabella con searchTerm
+- Evita di caricare TUTTE le tabelle in una sola volta
+- Esempio: chiama con offset=0, limit=30 per le prime 30, poi offset=30, limit=30 per le successive
 
 ## PROPOSTA AUTOMATICA WIDGET (OBBLIGATORIO):
 OGNI VOLTA che mostri un grafico (recharts) o una tabella con dati estratti da SQL/Python, DEVI SEMPRE chiedere all'utente:

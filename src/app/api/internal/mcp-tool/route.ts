@@ -8,12 +8,13 @@ import {
     doExploreDbSchema, doExploreTableColumns, doTestSqlQuery,
     doSearchKB, doListConnectors, doSaveToKB, doBrowseOtherQueries,
 } from '@/ai/tools/sql-agent-tools';
+import { getCachedParsedMap } from '@/lib/database-map-cache';
 import {
     doPyExploreDbSchema, doPyExploreTableColumns, doPyTestSqlQuery,
     doPyTestCode, doPySearchKB, doPyListConnectors, doPySaveToKB, doPyBrowseOtherScripts,
 } from '@/ai/tools/python-agent-tools';
 import { db } from '@/lib/db';
-import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
+import { executeSqlPreviewAction, executePythonPreviewAction, processDescriptionAction } from '@/app/actions';
 import { createWidgetTree } from '@/lib/create-widget';
 
 export const maxDuration = 120;
@@ -131,6 +132,119 @@ async function doSuperCreateWidget(params: {
     return JSON.stringify(result, null, 2);
 }
 
+async function doSuperCreateTree(params: {
+    description: string; companyId: string; type?: 'RULE' | 'PIPELINE';
+}) {
+    // Fetch an OpenRouter API key: try all users in the company
+    const companyUsers = await db.user.findMany({
+        where: { companyId: params.companyId },
+        select: { openRouterApiKey: true, openRouterModel: true },
+    });
+    // Find first user with a non-empty API key
+    const companyUser = companyUsers.find(u => u.openRouterApiKey && u.openRouterApiKey.trim() !== '');
+    const openRouterConfig = companyUser?.openRouterApiKey
+        ? { apiKey: companyUser.openRouterApiKey, model: companyUser.openRouterModel || 'google/gemini-2.0-flash-001' }
+        : undefined;
+
+    if (!openRouterConfig) {
+        return JSON.stringify({ error: 'Nessuna API key OpenRouter configurata. Configura una API key nelle impostazioni utente.' });
+    }
+
+    const result = await processDescriptionAction(
+        params.description,
+        '', // name will be auto-generated
+        params.type || 'RULE',
+        openRouterConfig,
+        params.companyId, // bypass auth
+    );
+
+    if (result.error) return JSON.stringify({ error: result.error });
+    return JSON.stringify({
+        success: true,
+        treeId: result.data?.id,
+        treeName: result.data?.name,
+        treeType: result.data?.type,
+        message: `Albero "${result.data?.name}" creato con successo!`,
+    }, null, 2);
+}
+
+async function doSuperCreateTreeDirect(params: {
+    name: string;
+    description: string;
+    jsonDecisionTree: string;
+    naturalLanguageDecisionTree: string;
+    questionsScript?: string;
+    companyId: string;
+    type?: 'RULE' | 'PIPELINE';
+}) {
+    // Validate that jsonDecisionTree is valid JSON
+    try {
+        const parsed = typeof params.jsonDecisionTree === 'string'
+            ? JSON.parse(params.jsonDecisionTree)
+            : params.jsonDecisionTree;
+        // Re-stringify to ensure it's clean
+        const jsonStr = typeof params.jsonDecisionTree === 'string'
+            ? params.jsonDecisionTree
+            : JSON.stringify(params.jsonDecisionTree);
+
+        const createdTree = await db.tree.create({
+            data: {
+                name: params.name,
+                description: params.description,
+                jsonDecisionTree: jsonStr,
+                naturalLanguageDecisionTree: params.naturalLanguageDecisionTree || '',
+                questionsScript: params.questionsScript || '',
+                type: params.type || 'RULE',
+                companyId: params.companyId,
+            },
+        });
+
+        return JSON.stringify({
+            success: true,
+            treeId: createdTree.id,
+            treeName: createdTree.name,
+            treeType: createdTree.type,
+            message: `Albero "${createdTree.name}" creato con successo!`,
+        }, null, 2);
+    } catch (e: any) {
+        if (e instanceof SyntaxError) {
+            return JSON.stringify({ error: `JSON dell'albero non valido: ${e.message}` });
+        }
+        return JSON.stringify({ error: `Errore creazione albero: ${e.message}` });
+    }
+}
+
+async function doSuperExploreDbSchemaChunked(params: {
+    connectorId: string; offset?: number; limit?: number; searchTerm?: string;
+}) {
+    const fullResult = await doExploreDbSchema({ connectorId: params.connectorId });
+    const parsed = JSON.parse(fullResult);
+    if (parsed.error) return fullResult;
+
+    let tables = parsed.tables || [];
+    const totalTables = tables.length;
+    const offset = params.offset || 0;
+    const limit = Math.min(params.limit || 50, 100);
+
+    if (params.searchTerm) {
+        const term = params.searchTerm.toLowerCase();
+        tables = tables.filter((t: any) =>
+            (t.table_name || '').toLowerCase().includes(term) ||
+            (t.description || '').toLowerCase().includes(term)
+        );
+    }
+
+    const filteredTotal = tables.length;
+    const chunk = tables.slice(offset, offset + limit);
+    const hasMore = offset + limit < filteredTotal;
+
+    return JSON.stringify({
+        tables: chunk,
+        pagination: { totalTables, filteredTotal: params.searchTerm ? filteredTotal : totalTables, offset, limit, returned: chunk.length, hasMore, nextOffset: hasMore ? offset + limit : null },
+        source: parsed.source || 'unknown',
+    }, null, 2);
+}
+
 // ─── Tool map ────────────────────────────────────────────────────────────────
 
 const TOOL_MAP: Record<string, (params: any) => Promise<string>> = {
@@ -161,6 +275,9 @@ const TOOL_MAP: Record<string, (params: any) => Promise<string>> = {
     superSearchKB: doSuperSearchKB,
     superSaveToKB: doSuperSaveToKB,
     superCreateWidget: doSuperCreateWidget,
+    superCreateTree: doSuperCreateTree,
+    superCreateTreeDirect: doSuperCreateTreeDirect,
+    superExploreDbSchemaChunked: doSuperExploreDbSchemaChunked,
 };
 
 export async function POST(req: NextRequest) {

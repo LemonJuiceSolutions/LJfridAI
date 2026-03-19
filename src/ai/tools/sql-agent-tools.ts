@@ -261,6 +261,48 @@ export function createSqlAgentTools(opts: {
             execute: async ({ connectorId }) => doExploreDbSchema({ connectorId: connectorId || cid }),
         });
 
+        tools.exploreDbSchemaChunked = tool({
+            description: `Esplora lo schema del database con PAGINAZIONE. Usa questo tool al posto di exploreDbSchema quando il database ha MOLTE tabelle (>50).
+Restituisce un sottoinsieme di tabelle alla volta. Usa offset e limit per navigare, searchTerm per filtrare per nome.`,
+            inputSchema: z.object({
+                connectorId: z.string().describe("L'ID del connettore database."),
+                offset: z.number().optional().describe("Indice di partenza (default: 0)."),
+                limit: z.number().optional().describe("Numero max di tabelle (default: 50, max: 100)."),
+                searchTerm: z.string().optional().describe("Filtra tabelle il cui nome contiene questo termine."),
+            }),
+            execute: async ({ connectorId, offset = 0, limit = 50, searchTerm }) => {
+                try {
+                    const fullResult = await doExploreDbSchema({ connectorId: connectorId || cid });
+                    const parsed = JSON.parse(fullResult);
+                    if (parsed.error) return fullResult;
+
+                    let tables = parsed.tables || [];
+                    const totalTables = tables.length;
+
+                    if (searchTerm) {
+                        const term = searchTerm.toLowerCase();
+                        tables = tables.filter((t: any) =>
+                            (t.table_name || '').toLowerCase().includes(term) ||
+                            (t.description || '').toLowerCase().includes(term)
+                        );
+                    }
+
+                    const filteredTotal = tables.length;
+                    const clampedLimit = Math.min(limit, 100);
+                    const chunk = tables.slice(offset, offset + clampedLimit);
+                    const hasMore = offset + clampedLimit < filteredTotal;
+
+                    return JSON.stringify({
+                        tables: chunk,
+                        pagination: { totalTables, filteredTotal: searchTerm ? filteredTotal : totalTables, offset, limit: clampedLimit, returned: chunk.length, hasMore, nextOffset: hasMore ? offset + clampedLimit : null },
+                        source: parsed.source || 'unknown',
+                    }, null, 2);
+                } catch (e: any) {
+                    return JSON.stringify({ error: `Errore: ${e.message}` });
+                }
+            },
+        });
+
         tools.exploreTableColumns = tool({
             description: 'Esplora le colonne di una tabella specifica con tipo di dato.',
             inputSchema: z.object({

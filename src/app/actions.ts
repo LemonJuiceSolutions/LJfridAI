@@ -298,6 +298,10 @@ async function callOpenRouterJSON(apiKey: string, model: string, prompt: string,
                 throw new Error(`OpenRouter Error: ${errorData2.error?.message || response.statusText}`);
             }
         } else {
+            // Provide a clearer message for common auth errors
+            if (errMsg.toLowerCase().includes('user not found') || errMsg.toLowerCase().includes('invalid') || errMsg.toLowerCase().includes('unauthorized') || errMsg.toLowerCase().includes('401')) {
+                throw new Error(`API Key OpenRouter non valida o scaduta. Controlla la tua API key nelle impostazioni (Profilo → OpenRouter). Errore originale: ${errMsg}`);
+            }
             throw new Error(`OpenRouter Error: ${errMsg}`);
         }
     }
@@ -458,18 +462,25 @@ export async function processDescriptionAction(
     textDescription: string,
     name: string,
     type: 'RULE' | 'PIPELINE' = 'RULE',
-    openRouterConfig?: { apiKey: string, model: string }
+    openRouterConfig?: { apiKey: string, model: string },
+    _bypassCompanyId?: string
 ): Promise<{ data: any | null; error: string | null }> {
     try {
-        const sessionUser = await getAuthenticatedUser();
-        if (!sessionUser) {
-            return { data: null, error: 'Non autorizzato.' };
-        }
+        let companyId: string;
 
-        // Fetch fresh user data from DB to avoid staleness
-        const user = await db.user.findUnique({ where: { id: sessionUser.id } });
-        if (!user || !user.companyId) {
-            return { data: null, error: 'Utente non associato a nessuna azienda.' };
+        if (_bypassCompanyId) {
+            // Internal call (e.g. from MCP tool) — skip session auth
+            companyId = _bypassCompanyId;
+        } else {
+            const sessionUser = await getAuthenticatedUser();
+            if (!sessionUser) {
+                return { data: null, error: 'Non autorizzato.' };
+            }
+            const user = await db.user.findUnique({ where: { id: sessionUser.id } });
+            if (!user || !user.companyId) {
+                return { data: null, error: 'Utente non associato a nessuna azienda.' };
+            }
+            companyId = user.companyId;
         }
         let decisionTreeResult;
         let extractedVariables = [];
@@ -542,7 +553,7 @@ export async function processDescriptionAction(
             ...finalTreeData,
             createdAt: new Date(),
             type: type,
-            companyId: user.companyId
+            companyId,
         }
 
         const createdTree = await db.tree.create({

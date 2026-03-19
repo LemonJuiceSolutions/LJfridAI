@@ -137,6 +137,55 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                 required: ['question', 'answer', 'tags'],
             },
         },
+        {
+            name: 'superCreateTree',
+            description: `Create a new decision tree directly by providing ALL the required fields. YOU (Claude) must generate the tree structure yourself.
+
+REQUIRED FIELDS:
+- name: Short descriptive name for the tree (e.g. "Triage Supporto Tecnico")
+- description: The original user description of the business rules
+- jsonDecisionTree: A VALID JSON string representing the decision tree structure. Format:
+  {"question":"...", "options":{"Option1":{"question":"...", "options":{...}}, "Option2":{"decision":"Final answer"}}}
+  Each node has a "question" and "options" map. Leaf nodes have "decision" instead of "question"+"options".
+- naturalLanguageDecisionTree: A human-readable text version of the tree (in Italian)
+
+OPTIONAL:
+- questionsScript: A numbered script of all questions in order
+- type: "RULE" (default) or "PIPELINE"
+
+WORKFLOW:
+1. Read the user's business rules description carefully
+2. Identify all decision variables and their possible values
+3. Build the JSON tree structure with questions and options leading to decisions
+4. Write a natural language version
+5. Call this tool with all the generated fields`,
+            inputSchema: {
+                type: 'object' as const,
+                properties: {
+                    name: { type: 'string', description: 'Short descriptive name for the tree (2-5 words, in Italian)' },
+                    description: { type: 'string', description: 'The original natural language description of business rules' },
+                    jsonDecisionTree: { type: 'string', description: 'VALID JSON string of the decision tree. Each node: {"question":"...", "options":{"Opt1":{...}, "Opt2":{"decision":"..."}}}' },
+                    naturalLanguageDecisionTree: { type: 'string', description: 'Human-readable text version of the tree (in Italian)' },
+                    questionsScript: { type: 'string', description: 'Numbered list of all questions in order' },
+                    type: { type: 'string', description: '"RULE" (default) or "PIPELINE"' },
+                },
+                required: ['name', 'description', 'jsonDecisionTree', 'naturalLanguageDecisionTree'],
+            },
+        },
+        {
+            name: 'superExploreDbSchemaChunked',
+            description: 'Explore a database schema with pagination. Returns a subset of tables at a time to avoid memory overload on large databases. Use offset and limit to navigate.',
+            inputSchema: {
+                type: 'object' as const,
+                properties: {
+                    connectorId: { type: 'string', description: 'Database connector ID' },
+                    offset: { type: 'number', description: 'Start index (default: 0)' },
+                    limit: { type: 'number', description: 'Max tables to return (default: 50, max: 100)' },
+                    searchTerm: { type: 'string', description: 'Filter tables whose name contains this term' },
+                },
+                required: ['connectorId'],
+            },
+        },
     ],
 }));
 
@@ -145,6 +194,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
         const params: Record<string, unknown> = { ...args };
         if (companyId && !params.companyId) params.companyId = companyId;
+
+        // ─── superCreateTree: route to superCreateTreeDirect on internal API ─
+        if (name === 'superCreateTree') {
+            const result = await callTool('superCreateTreeDirect', params);
+            return { content: [{ type: 'text', text: result }] };
+        }
 
         // ─── superExecuteSql: track successful queries ───────────────────
         if (name === 'superExecuteSql') {

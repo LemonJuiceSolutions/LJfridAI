@@ -2,13 +2,13 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { BotMessageSquare, Loader2, Sparkles, Mic, MicOff, AlertCircle, RefreshCw, FileSpreadsheet, Upload, Database } from 'lucide-react';
+import { BotMessageSquare, Loader2, Sparkles, Mic, MicOff, AlertCircle, RefreshCw, FileSpreadsheet, Upload, Database, Check, ChevronsUpDown } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { processDescriptionAction, getTreeAction, regenerateNaturalLanguageAction, processExcelToPipelineAction } from '../actions';
+import { getTreeAction, regenerateNaturalLanguageAction, processExcelToPipelineAction, fetchOpenRouterModelsAction } from '../actions';
 import { getConnectorsAction } from '../actions/connectors';
 import { ExcelAnalysisSummary } from '@/components/excel-analysis-summary';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,6 +19,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
+import { getAiProviderAction, saveAiProviderAction, type AiProvider } from '@/actions/ai-settings';
+import { saveOpenRouterModelAction } from '@/actions/openrouter';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { cn } from '@/lib/utils';
 
 const processExamples = [
   // Machinery Maintenance
@@ -45,6 +50,12 @@ export default function CreatePage() {
   const [currentModel, setCurrentModel] = useState<string>('google/gemini-2.0-flash-001');
   const { apiKey: dbApiKey, model: dbModel, isLoading: isSettingsLoading } = useOpenRouterSettings();
 
+  // AI provider & model selector state
+  const [aiProvider, setAiProvider] = useState<AiProvider>('openrouter');
+  const [availableModels, setAvailableModels] = useState<{ id: string; name: string; pricing?: { prompt: string; completion: string } }[]>([]);
+  const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+  const [isSavingModel, setIsSavingModel] = useState(false);
+
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeechSupported, setIsSpeechSupported] = useState(true);
   const recognitionRef = useRef<any>(null);
@@ -56,10 +67,41 @@ export default function CreatePage() {
   const [connectors, setConnectors] = useState<Array<{ id: string; name: string; type: string }>>([]);
   const [selectedConnectorId, setSelectedConnectorId] = useState<string>('');
 
+  // Load AI provider, models, and set current model
   useEffect(() => {
-    if (!isSettingsLoading && dbModel) {
-      setCurrentModel(dbModel);
-    }
+    const CLAUDE_CLI_MODELS = [
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+      { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+      { id: 'sonnet', name: 'Sonnet (latest)' },
+      { id: 'opus', name: 'Opus (latest)' },
+      { id: 'haiku', name: 'Haiku (latest)' },
+    ];
+
+    getAiProviderAction().then(res => {
+      const provider = res.provider || 'openrouter';
+      setAiProvider(provider);
+
+      if (provider === 'claude-cli') {
+        setAvailableModels(CLAUDE_CLI_MODELS);
+        const cliModel = res.claudeCliModel || 'claude-sonnet-4-6';
+        setCurrentModel(cliModel);
+      } else {
+        // Load OpenRouter models
+        if (!isSettingsLoading && dbModel) {
+          setCurrentModel(dbModel);
+        }
+        fetchOpenRouterModelsAction().then(modelsRes => {
+          if (modelsRes.data) {
+            setAvailableModels(modelsRes.data.map((m: any) => ({
+              id: m.id,
+              name: m.name,
+              pricing: m.pricing,
+            })));
+          }
+        });
+      }
+    });
   }, [dbModel, isSettingsLoading]);
 
   useEffect(() => {
@@ -159,6 +201,55 @@ export default function CreatePage() {
   };
 
 
+  const handleProviderToggle = async () => {
+    const CLAUDE_CLI_MODELS = [
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+      { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+      { id: 'sonnet', name: 'Sonnet (latest)' },
+      { id: 'opus', name: 'Opus (latest)' },
+      { id: 'haiku', name: 'Haiku (latest)' },
+    ];
+
+    const newProvider: AiProvider = aiProvider === 'openrouter' ? 'claude-cli' : 'openrouter';
+    setAiProvider(newProvider);
+
+    if (newProvider === 'claude-cli') {
+      setAvailableModels(CLAUDE_CLI_MODELS);
+      setCurrentModel('claude-sonnet-4-6');
+      await saveAiProviderAction('claude-cli', 'claude-sonnet-4-6');
+    } else {
+      const savedModel = dbModel || 'google/gemini-2.0-flash-001';
+      setCurrentModel(savedModel);
+      await saveAiProviderAction('openrouter');
+      fetchOpenRouterModelsAction().then(modelsRes => {
+        if (modelsRes.data) {
+          setAvailableModels(modelsRes.data.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            pricing: m.pricing,
+          })));
+        }
+      });
+    }
+  };
+
+  const handleModelChange = async (newModel: string) => {
+    setCurrentModel(newModel);
+    setModelSelectorOpen(false);
+    setIsSavingModel(true);
+    try {
+      if (aiProvider === 'claude-cli') {
+        await saveAiProviderAction('claude-cli', newModel);
+      } else {
+        await saveOpenRouterModelAction(newModel);
+      }
+    } catch (e) {
+      console.error('Failed to save model:', e);
+    }
+    setIsSavingModel(false);
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!textDescription.trim()) {
@@ -177,12 +268,17 @@ export default function CreatePage() {
     setIsLoading(true);
     setAnalysisResult(null);
     try {
-      const openRouterConfig = dbApiKey ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
-
       const searchParams = new URLSearchParams(window.location.search);
       const type = searchParams.get('type') || 'RULE';
 
-      const result = await processDescriptionAction(textDescription, '', type as 'RULE' | 'PIPELINE', openRouterConfig);
+      // Use the API route which auto-detects the AI provider (Claude CLI vs OpenRouter)
+      const response = await fetch('/api/trees/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ textDescription, type, model: currentModel }),
+      });
+
+      const result = await response.json();
       if (result.error || !result.data) {
         throw new Error(result.error || 'Analisi fallita senza un errore specifico.');
       }
@@ -328,8 +424,51 @@ export default function CreatePage() {
                   <CardTitle>Crea una Nuova Regola</CardTitle>
                   <CardDescription>
                     Descrivi un processo per generare una regola decisionale.
-                    <span className="flex items-center gap-2 mt-2">
-                      Generato con: <Badge variant="secondary" className="font-mono text-xs">{currentModel}</Badge>
+                    <span className="flex items-center gap-2 mt-2 flex-wrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-xs font-medium"
+                        onClick={handleProviderToggle}
+                      >
+                        {aiProvider === 'claude-cli' ? '🤖 Claude CLI' : '🌐 OpenRouter'}
+                      </Button>
+                      <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs font-mono gap-1">
+                            {isSavingModel ? 'Salvando...' : (availableModels.find(m => m.id === currentModel)?.name || currentModel)}
+                            <ChevronsUpDown className="h-2.5 w-2.5 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[400px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Cerca modello..." />
+                            <CommandList className="max-h-[300px]">
+                              <CommandEmpty>Nessun modello trovato.</CommandEmpty>
+                              <CommandGroup heading={aiProvider === 'claude-cli' ? 'Modelli Claude' : 'Modelli OpenRouter'}>
+                                {availableModels.map(m => (
+                                  <CommandItem
+                                    key={m.id}
+                                    value={`${m.id} ${m.name}`}
+                                    onSelect={() => handleModelChange(m.id)}
+                                    className="flex items-center justify-between"
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <Check className={cn("h-3 w-3 shrink-0", currentModel === m.id ? "opacity-100" : "opacity-0")} />
+                                      <span className="truncate text-xs">{m.name}</span>
+                                    </div>
+                                    {m.pricing && (
+                                      <span className="text-[10px] text-muted-foreground shrink-0 ml-2">
+                                        ${(parseFloat(m.pricing.prompt) * 1_000_000).toFixed(2)}/M
+                                      </span>
+                                    )}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </span>
                   </CardDescription>
                 </div>
