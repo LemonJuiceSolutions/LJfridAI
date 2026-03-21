@@ -33,6 +33,7 @@ import { TaskForm } from '@/components/scheduler/task-form';
 import { TaskExecutions } from '@/components/scheduler/task-executions';
 import { SchedulerExecutionLog } from '@/components/scheduler/scheduler-execution-log';
 import { SchedulerUpcoming } from '@/components/scheduler/scheduler-upcoming';
+import { MissedTasksPanel } from '@/components/scheduler/missed-tasks-panel';
 import { toast } from '@/hooks/use-toast';
 
 interface ScheduledTask {
@@ -324,6 +325,10 @@ export default function SchedulerPage() {
             <FileText className="w-4 h-4 mr-2" />
             Registro Invii
           </TabsTrigger>
+          <TabsTrigger value="missed">
+            <AlertCircle className="w-4 h-4 mr-2" />
+            Task Persi
+          </TabsTrigger>
           <TabsTrigger value="upcoming">
             <CalendarClock className="w-4 h-4 mr-2" />
             Prossimi Invii
@@ -477,6 +482,10 @@ export default function SchedulerPage() {
 
         <TabsContent value="executions">
           <SchedulerExecutionLog />
+        </TabsContent>
+
+        <TabsContent value="missed">
+          <MissedTasksPanel />
         </TabsContent>
 
         <TabsContent value="upcoming">

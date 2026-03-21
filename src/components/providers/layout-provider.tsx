@@ -29,37 +29,35 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         setMounted(true);
-        const savedSidebar = localStorage.getItem('sidebar-open');
-        const savedChatbot = localStorage.getItem('chatbot-open');
-
-        if (savedSidebar !== null) {
-            setIsSidebarOpen(savedSidebar === 'true');
-        }
-        if (savedChatbot !== null) {
-            setIsChatbotOpen(savedChatbot === 'true');
-        }
+        if (typeof window === 'undefined') return;
+        try {
+            const savedSidebar = window.localStorage.getItem('sidebar-open');
+            const savedChatbot = window.localStorage.getItem('chatbot-open');
+            if (savedSidebar !== null) setIsSidebarOpen(savedSidebar === 'true');
+            if (savedChatbot !== null) setIsChatbotOpen(savedChatbot === 'true');
+        } catch {}
     }, []);
 
     const toggleSidebar = () => {
         const newState = !isSidebarOpen;
         setIsSidebarOpen(newState);
-        localStorage.setItem('sidebar-open', String(newState));
+        try { window.localStorage.setItem('sidebar-open', String(newState)); } catch {}
     };
 
     const toggleChatbot = () => {
         const newState = !isChatbotOpen;
         setIsChatbotOpen(newState);
-        localStorage.setItem('chatbot-open', String(newState));
+        try { window.localStorage.setItem('chatbot-open', String(newState)); } catch {}
     };
 
     const setSidebarOpenState = (open: boolean) => {
         setIsSidebarOpen(open);
-        localStorage.setItem('sidebar-open', String(open));
+        try { window.localStorage.setItem('sidebar-open', String(open)); } catch {}
     };
 
     const setChatbotOpenState = (open: boolean) => {
         setIsChatbotOpen(open);
-        localStorage.setItem('chatbot-open', String(open));
+        try { window.localStorage.setItem('chatbot-open', String(open)); } catch {}
     };
 
     // Prevent hydration mismatch by rendering simpler state or handled by consumer

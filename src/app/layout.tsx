@@ -7,6 +7,7 @@ import { AuthProvider } from '@/components/providers/auth-provider';
 import { LayoutProvider } from '@/components/providers/layout-provider';
 import { MainContentTransition } from '@/components/layout/main-content-transition';
 import { ChartThemeProvider } from '@/hooks/use-chart-theme';
+import { MissedTasksDialog } from '@/components/layout/missed-tasks-dialog';
 import { Inter } from 'next/font/google';
 
 const inter = Inter({
@@ -39,6 +40,7 @@ export default function RootLayout({
                 <ChatBotAgent />
               </div>
             </ChartThemeProvider>
+            <MissedTasksDialog />
             <Toaster />
           </AuthProvider>
         </LayoutProvider>

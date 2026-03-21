@@ -4,6 +4,7 @@
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { DateTime } from 'luxon';
+import { CronExpressionParser } from 'cron-parser';
 import { executePythonPreviewAction, exportTableToSqlAction, executeSqlPreviewAction } from '@/app/actions';
 import { sendTestEmailWithDataAction, executeSqlAction } from '@/app/actions/connectors';
 import _ from 'lodash';
@@ -47,6 +48,65 @@ export interface ScheduledTaskConfig {
 
   // Specific
   [key: string]: any;
+}
+
+export interface MissedTaskInfo {
+  id: string;
+  name: string;
+  type: string;
+  cronExpression: string | null;
+  description: string | null;
+  lastRunAt: Date | null;
+  missedSlots: Date[];
+  totalMissed: number;
+  oldestMissed: Date | null;
+  newestMissed: Date | null;
+  config: any;
+}
+
+interface ProcessMissedResult {
+  id: string;
+  name: string;
+  action: 'executed' | 'skipped';
+  executedCount?: number;
+  success?: boolean;
+  error?: string;
+}
+
+/**
+ * Enumerates all cron occurrences between `start` and `end` for the given
+ * cron expressions, respecting the timezone. Returns sorted Date array.
+ */
+function enumerateCronSlots(
+  cronExprs: string[],
+  start: Date,
+  end: Date,
+  tz: string,
+  maxSlots: number,
+): Date[] {
+  const slots: Date[] = [];
+  for (const expr of cronExprs) {
+    try {
+      const interval = CronExpressionParser.parse(expr, {
+        currentDate: start,
+        endDate: end,
+        tz,
+      });
+      while (interval.hasNext() && slots.length < maxSlots) {
+        try {
+          const nextDate = interval.next().toDate();
+          if (nextDate > end) break;
+          slots.push(nextDate);
+        } catch {
+          break;
+        }
+      }
+    } catch {
+      // invalid cron expression — skip silently
+    }
+  }
+  slots.sort((a, b) => a.getTime() - b.getTime());
+  return slots;
 }
 
 export interface TaskExecutionResult {
@@ -99,6 +159,224 @@ export class SchedulerService {
     } catch (e) {
       logger.error('Failed to load tasks from DB:', e);
     }
+  }
+
+  /**
+   * Returns missed tasks with all the cron slots that were missed.
+   *
+   * Strategy: for each active task with a computable schedule, enumerate all
+   * expected cron occurrences between `lastRunAt` and `now`, then batch-fetch
+   * actual executions and cross-reference. Slots without a matching execution
+   * (within ±2 min tolerance) are reported as missed.
+   *
+   * This works regardless of whether `nextRunAt` has already been realigned
+   * to the future (e.g. after a server restart).
+   */
+  public async getMissedTasks(companyId?: string): Promise<MissedTaskInfo[]> {
+    const now = new Date();
+    const TOLERANCE_MS = 2 * 60 * 1000; // ±2 min
+    const MAX_SLOTS_PER_TASK = 100;
+
+    // 1. Fetch all active tasks that have run at least once
+    const where: any = {
+      status: 'active',
+      lastRunAt: { not: null },
+    };
+    if (companyId) where.companyId = companyId;
+
+    const tasks = await db.scheduledTask.findMany({
+      where,
+      select: {
+        id: true, name: true, type: true, nextRunAt: true, lastRunAt: true,
+        cronExpression: true, description: true, scheduleType: true,
+        intervalMinutes: true, daysOfWeek: true, hours: true,
+        timezone: true, config: true, createdAt: true,
+      },
+    });
+
+    // 2. Pre-filter to tasks with a computable schedule and enumerate expected slots
+    type TaskWithSlots = typeof tasks[number] & { expectedSlots: Date[] };
+    const tasksWithSlots: TaskWithSlots[] = [];
+
+    for (const task of tasks) {
+      const cronExprs = this.getEffectiveCronExpressions(task);
+      if (cronExprs.length === 0) continue;
+
+      const tz = task.timezone || 'Europe/Rome';
+      const windowStart = task.lastRunAt!; // guaranteed non-null by query
+      const slots = enumerateCronSlots(cronExprs, windowStart, now, tz, MAX_SLOTS_PER_TASK);
+      if (slots.length === 0) continue;
+
+      tasksWithSlots.push({ ...task, expectedSlots: slots });
+    }
+
+    if (tasksWithSlots.length === 0) return [];
+
+    // 3. Batch-fetch all executions for candidate tasks in one query
+    const earliestWindow = tasksWithSlots.reduce(
+      (min, t) => (t.lastRunAt! < min ? t.lastRunAt! : min),
+      tasksWithSlots[0].lastRunAt!,
+    );
+    const taskIds = tasksWithSlots.map(t => t.id);
+
+    const allExecs = await db.scheduledTaskExecution.findMany({
+      where: {
+        taskId: { in: taskIds },
+        startedAt: { gte: earliestWindow, lte: now },
+      },
+      select: { taskId: true, startedAt: true },
+      orderBy: { startedAt: 'asc' },
+    });
+
+    // Group execution timestamps by taskId for O(1) lookup
+    const execsByTask = new Map<string, number[]>();
+    for (const exec of allExecs) {
+      const arr = execsByTask.get(exec.taskId);
+      const ts = exec.startedAt.getTime();
+      if (arr) arr.push(ts);
+      else execsByTask.set(exec.taskId, [ts]);
+    }
+
+    // 4. Cross-reference expected slots vs actual executions
+    const result: MissedTaskInfo[] = [];
+
+    for (const task of tasksWithSlots) {
+      const execTimes = execsByTask.get(task.id) || [];
+      const missedSlots = task.expectedSlots.filter(slot => {
+        const slotMs = slot.getTime();
+        return !execTimes.some(execMs => Math.abs(execMs - slotMs) <= TOLERANCE_MS);
+      });
+
+      if (missedSlots.length === 0) continue;
+
+      result.push({
+        id: task.id,
+        name: task.name,
+        type: task.type,
+        cronExpression: task.cronExpression,
+        description: task.description,
+        lastRunAt: task.lastRunAt,
+        missedSlots,
+        totalMissed: missedSlots.length,
+        oldestMissed: missedSlots[0],
+        newestMissed: missedSlots[missedSlots.length - 1],
+        config: task.config,
+      });
+    }
+
+    result.sort((a, b) => (a.oldestMissed?.getTime() || 0) - (b.oldestMissed?.getTime() || 0));
+    return result;
+  }
+
+  /**
+   * Derives the effective cron expression(s) for a task, covering all schedule types:
+   * - customTimes (HH:mm array from config)
+   * - explicit cronExpression
+   * - interval (every N minutes)
+   * - specific days/hours
+   */
+  private getEffectiveCronExpressions(task: {
+    cronExpression: string | null;
+    scheduleType: string;
+    intervalMinutes: number | null;
+    daysOfWeek: string | null;
+    hours: string | null;
+    config: any;
+  }): string[] {
+    const config = typeof task.config === 'string' ? JSON.parse(task.config) : task.config;
+    const customTimes = config?.customTimes as string[] | undefined;
+
+    if (customTimes && Array.isArray(customTimes) && customTimes.length > 0) {
+      const days = task.daysOfWeek || '*';
+      return customTimes
+        .map(t => { const [h, m] = t.split(':'); return h && m ? `${m} ${h} * * ${days}` : null; })
+        .filter(Boolean) as string[];
+    }
+    if (task.cronExpression) return [task.cronExpression];
+    if (task.scheduleType === 'interval' && task.intervalMinutes) return [`*/${task.intervalMinutes} * * * *`];
+    if (task.scheduleType === 'specific') return [`0 ${task.hours || '*'} * * ${task.daysOfWeek || '*'}`];
+    return [];
+  }
+
+  /**
+   * Process missed tasks: execute selected ones, realign the rest.
+   *
+   * @param executeIds  Task IDs to execute now
+   * @param skipIds     Task IDs to skip (just realign nextRunAt)
+   * @param executeAll  If true, runs each task N times (once per missed slot, capped at 50)
+   * @param missedCounts  Optional map of taskId → missed slot count (avoids re-querying)
+   */
+  public async processMissedTasks(
+    executeIds: string[],
+    skipIds: string[],
+    executeAll: boolean = false,
+    missedCounts?: Map<string, number>,
+  ) {
+    const results: ProcessMissedResult[] = [];
+
+    // If executeAll is requested but no counts provided, compute them once
+    let counts = missedCounts;
+    if (executeAll && !counts && executeIds.length > 0) {
+      const missed = await this.getMissedTasks();
+      counts = new Map(missed.map(m => [m.id, m.totalMissed]));
+    }
+
+    // Execute selected tasks
+    for (const id of executeIds) {
+      try {
+        const repetitions = executeAll ? Math.min(counts?.get(id) || 1, 50) : 1;
+        let successCount = 0;
+        let lastError: string | undefined;
+
+        for (let i = 0; i < repetitions; i++) {
+          try {
+            const r = await this.executeTask(id);
+            if (r.success) successCount++;
+            else lastError = r.error;
+          } catch (e: any) {
+            lastError = e.message;
+          }
+        }
+
+        // Realign nextRunAt to the next future slot
+        await this.realignTaskNextRun(id);
+
+        results.push({
+          id, name: '', action: 'executed',
+          executedCount: repetitions,
+          success: successCount > 0,
+          error: lastError,
+        });
+      } catch (e: any) {
+        results.push({ id, name: '', action: 'executed', success: false, error: e.message });
+      }
+    }
+
+    // Realign skipped tasks
+    for (const id of skipIds) {
+      try {
+        const name = await this.realignTaskNextRun(id);
+        results.push({ id, name: name || '', action: 'skipped' });
+      } catch (e: any) {
+        results.push({ id, name: '', action: 'skipped', error: e.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Realigns a task's nextRunAt to the next future cron slot.
+   * Returns the task name for convenience.
+   */
+  private async realignTaskNextRun(taskId: string): Promise<string | null> {
+    const task = await db.scheduledTask.findUnique({ where: { id: taskId } });
+    if (!task) return null;
+    const nextRun = calculateNextRunForTask(task, task.timezone || 'Europe/Rome');
+    if (nextRun) {
+      await db.scheduledTask.update({ where: { id: taskId }, data: { nextRunAt: nextRun } });
+    }
+    return task.name;
   }
   public stopAll() {
     this.tasks.forEach(taskOrTasks => {
@@ -1058,6 +1336,21 @@ export class SchedulerService {
     // 6. Execute ALL ancestors to refresh data (like UI's executeFullPipeline)
     const { results: ancestorResults, pipelineReport } = await this.executeAncestorChain(availableInputTables, undefined, true, treeId);
     logger.log(`[EmailSend] Ancestor chain completed with ${Object.keys(ancestorResults).length} results and ${pipelineReport.length} report entries`);
+
+    // 6b. CHECK: se il backend Python non era raggiungibile, NON inviare l'email
+    const backendErrors = pipelineReport.filter((r: any) =>
+      r.status === 'error' && r.error && (
+        r.error.includes('ECONNREFUSED') ||
+        r.error.includes('non raggiungibile') ||
+        r.error.includes('Python backend')
+      )
+    );
+    if (backendErrors.length > 0) {
+      const failedNodes = backendErrors.map((r: any) => r.name).join(', ');
+      const errorMsg = `Backend Python non avviato. Nodi falliti: ${failedNodes}. Email non inviata.`;
+      logger.error(`[EmailSend] ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
 
     // 5. PREFER saved config if available (from taskConfigProvider snapshot)
     // This is more reliable than re-discovering from tree since the UI already computed these correctly
