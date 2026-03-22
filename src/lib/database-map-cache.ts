@@ -36,11 +36,31 @@ export function getParsedMapCacheEntry(): CacheEntry | null {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function recoverPartialJson(text: string): any {
-    const trimmed = text.trim();
+    let trimmed = text.trim();
+
+    // Strip markdown code fences (```json ... ``` or ``` ... ```)
+    // Claude models often wrap JSON responses in code blocks
+    const codeFenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)(?:\n?```\s*)?$/);
+    if (codeFenceMatch) {
+        trimmed = codeFenceMatch[1].trim();
+    }
+
     // Try as-is first
     try {
         return JSON.parse(trimmed);
     } catch {}
+
+    // Try extracting JSON object from surrounding text (e.g. "Here is the JSON: {...}")
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        const extracted = trimmed.slice(firstBrace, lastBrace + 1);
+        try {
+            return JSON.parse(extracted);
+        } catch {}
+        // Also try recovery on the extracted portion
+        trimmed = extracted;
+    }
 
     // Try closing unclosed structures
     const attempts: string[] = [];

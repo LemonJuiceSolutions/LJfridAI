@@ -1,6 +1,7 @@
 'use server';
 
 import { db } from '@/lib/db';
+import { execSync } from 'child_process';
 
 // ===================== TYPES =====================
 
@@ -11,6 +12,7 @@ export interface LeadGeneratorInput {
     apiKey?: string;
     leadGenApiKeys?: { apollo?: string; hunter?: string; serpApi?: string; apify?: string };
     conversationId?: string;
+    aiProvider?: 'openrouter' | 'claude-cli';
 }
 
 // ===================== SYSTEM PROMPT =====================
@@ -848,6 +850,11 @@ export interface LeadGeneratorResult {
 }
 
 export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<LeadGeneratorResult> {
+    // Route to Claude CLI (Anthropic API) if selected
+    if (input.aiProvider === 'claude-cli') {
+        return leadGeneratorFlowClaude(input);
+    }
+
     if (!input.apiKey) {
         throw new Error('API key OpenRouter mancante. Configura la chiave nelle Impostazioni.');
     }
@@ -1066,5 +1073,198 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
         text: `Non sono riuscito a completare la ricerca dopo ${MAX_TOOL_ROUNDS} tentativi. Ultimo errore: ${lastError}. Puoi riprovare con criteri diversi.`,
         cost: accumulatedCost,
         totalTokens: accumulatedTokens,
+    };
+}
+
+// ===================== CLAUDE CODE CLI PATH =====================
+
+/**
+ * Build a tool-calling prompt for Claude CLI.
+ * The CLI doesn't have native tool_use, so we embed tool definitions in the prompt
+ * and ask Claude to respond with JSON when it wants to call a tool.
+ */
+function buildClaudeToolPrompt(systemPrompt: string, conversationHistory: string, toolDefs: string): string {
+    return `<system>
+${systemPrompt}
+
+## TOOL CALLING (OBBLIGATORIO)
+Hai accesso ai seguenti tool. Quando vuoi chiamare un tool, rispondi SOLO con un blocco JSON (senza markdown, senza testo prima/dopo):
+\`\`\`
+{"tool_calls": [{"name": "toolName", "arguments": {...}}]}
+\`\`\`
+
+Puoi chiamare PIU' tool alla volta nello stesso JSON array.
+Quando NON vuoi chiamare tool (risposta finale), rispondi normalmente con testo.
+
+### Tool disponibili:
+${toolDefs}
+</system>
+
+${conversationHistory}`;
+}
+
+function formatToolDefsForPrompt(tools: typeof leadGenTools): string {
+    return tools.map(t => {
+        const params = Object.entries(t.function.parameters.properties || {})
+            .map(([k, v]: [string, any]) => `  - ${k} (${v.type}): ${v.description || ''}`)
+            .join('\n');
+        const req = (t.function.parameters.required || []).join(', ');
+        return `**${t.function.name}**: ${t.function.description}\nParametri:\n${params}\nRequired: ${req || 'nessuno'}`;
+    }).join('\n\n');
+}
+
+async function leadGeneratorFlowClaude(input: LeadGeneratorInput): Promise<LeadGeneratorResult> {
+    const claudePath = process.env.CLAUDE_PATH || 'claude';
+    const apiKeys = input.leadGenApiKeys || {};
+    const model = input.model || 'claude-sonnet-4-6';
+    const systemPrompt = buildSystemPrompt(input.companyId);
+    const toolDefs = formatToolDefsForPrompt(leadGenTools);
+
+    // Build conversation history as text
+    const MAX_HISTORY_MESSAGES = 20;
+    const truncated = input.messages.length > MAX_HISTORY_MESSAGES
+        ? input.messages.slice(-MAX_HISTORY_MESSAGES)
+        : input.messages;
+
+    let conversationParts: string[] = truncated.map(m => {
+        const role = m.role === 'model' ? 'Assistant' : 'User';
+        const text = m.content?.map((c: any) => c.text).filter(Boolean).join('\n') || '';
+        return `${role}: ${text}`;
+    });
+
+    const MAX_TOOL_ROUNDS = 30;
+    let lastError = '';
+    let saveLeadsCalled = false;
+    const collectedLeads: any[] = [];
+
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        try {
+            const fullPrompt = buildClaudeToolPrompt(systemPrompt, conversationParts.join('\n\n'), toolDefs);
+
+            console.log(`[LeadGen-Claude] Round ${round + 1}, model=${model}, prompt ~${Math.round(fullPrompt.length / 1024)}KB`);
+
+            // Call Claude CLI in print mode (synchronous, non-streaming)
+            const result = execSync(
+                `${claudePath} -p --model ${model} --output-format text --permission-mode bypassPermissions`,
+                {
+                    input: fullPrompt,
+                    encoding: 'utf-8',
+                    timeout: 120_000, // 2 min timeout per round
+                    maxBuffer: 10 * 1024 * 1024, // 10MB
+                    env: { ...process.env, TERM: 'dumb' },
+                }
+            ).trim();
+
+            // Check if the response contains tool calls (JSON with tool_calls array)
+            let toolCalls: any[] | null = null;
+            try {
+                // Try to extract JSON from the response (might be wrapped in markdown code blocks)
+                let jsonStr = result;
+                const jsonMatch = result.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+                if (jsonMatch) jsonStr = jsonMatch[1].trim();
+                // Also try raw JSON
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
+                    toolCalls = parsed.tool_calls;
+                }
+            } catch {
+                // Not JSON — this is a final text response
+            }
+
+            if (toolCalls && toolCalls.length > 0) {
+                // Execute tool calls
+                const toolResultParts: string[] = [];
+                for (const tc of toolCalls) {
+                    const fnName = tc.name;
+                    const fnArgs = tc.arguments || {};
+                    console.log(`[LeadGen-Claude] Tool call: ${fnName}`, fnName === 'saveLeads' ? `(${fnArgs.leads?.length || 0} leads)` : '');
+
+                    if (fnName === 'saveLeads') saveLeadsCalled = true;
+
+                    let toolResult: string;
+                    try {
+                        toolResult = await executeToolCall(fnName, fnArgs, input.companyId, apiKeys, input.conversationId);
+                    } catch (e: any) {
+                        console.error(`[LeadGen-Claude] Tool error: ${fnName}:`, e.message);
+                        toolResult = JSON.stringify({ error: e.message });
+                    }
+
+                    // Collect leads from search results
+                    if (['searchPeopleApollo', 'findEmailsHunter', 'searchGoogleMaps', 'searchCompaniesApollo'].includes(fnName)) {
+                        try {
+                            const parsed = JSON.parse(toolResult);
+                            if (!parsed.error) {
+                                const people = parsed.people || parsed.emails || parsed.results || parsed.organizations || [];
+                                for (const p of people) {
+                                    if (p.email || p.companyName || p.fullName || p.companyWebsite) {
+                                        collectedLeads.push({
+                                            firstName: p.firstName || p.first_name || null,
+                                            lastName: p.lastName || p.last_name || null,
+                                            fullName: p.fullName || p.name || `${p.firstName || ''} ${p.lastName || ''}`.trim() || null,
+                                            jobTitle: p.jobTitle || p.position || p.title || null,
+                                            email: p.email || p.value || null,
+                                            phone: p.phone || null,
+                                            linkedinUrl: p.linkedinUrl || p.linkedin_url || null,
+                                            companyName: p.companyName || p.organization || null,
+                                            companyDomain: p.companyDomain || null,
+                                            companyWebsite: p.companyWebsite || p.website || null,
+                                            companySize: p.companySize || null,
+                                            companyIndustry: p.companyIndustry || p.type || null,
+                                            source: fnName.includes('Apollo') ? 'apollo' : fnName.includes('Hunter') ? 'hunter' : fnName.includes('Google') ? 'google_maps' : 'manual',
+                                        });
+                                    }
+                                }
+                            }
+                        } catch { /* ignore */ }
+                    }
+
+                    // Truncate large tool results to avoid prompt explosion
+                    const maxResultLen = 8000;
+                    const truncResult = toolResult.length > maxResultLen
+                        ? toolResult.slice(0, maxResultLen) + `\n... [troncato, ${toolResult.length} chars totali]`
+                        : toolResult;
+                    toolResultParts.push(`Tool ${fnName} result:\n${truncResult}`);
+                }
+
+                // Append assistant tool call + results to conversation
+                conversationParts.push(`Assistant: ${result}`);
+                conversationParts.push(`User: [Tool results]\n${toolResultParts.join('\n\n')}\n\nOra prosegui con il prossimo passo. Se hai tutti i dati, presenta i risultati e salva i lead con saveLeads.`);
+                continue;
+            }
+
+            // No tool calls — final text response
+            // Auto-save collected leads
+            if (!saveLeadsCalled && collectedLeads.length > 0) {
+                console.warn(`[LeadGen-Claude] Auto-saving ${collectedLeads.length} leads`);
+                try {
+                    const genericPrefixes = ['info@', 'admin@', 'support@', 'contatti@', 'hello@', 'office@', 'sales@', 'noreply@', 'contact@'];
+                    const filtered = collectedLeads.filter(l => l.email && !genericPrefixes.some(p => l.email.toLowerCase().startsWith(p)));
+                    const seen = new Set<string>();
+                    const unique = filtered.filter(l => { if (!l.email) return true; const k = l.email.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+                    if (unique.length > 0) {
+                        await executeToolCall('saveLeads', { searchName: 'Ricerca automatica', leads: unique }, input.companyId, apiKeys, input.conversationId);
+                    }
+                } catch { /* ignore */ }
+            }
+
+            return {
+                text: result || 'Nessuna risposta.',
+                cost: 0, // CLI doesn't report cost
+                totalTokens: 0,
+            };
+        } catch (e: any) {
+            lastError = e.message;
+            console.error(`[LeadGen-Claude] Round ${round + 1} error:`, e.message);
+            if (round < MAX_TOOL_ROUNDS - 1) {
+                conversationParts.push(`User: [Errore: ${e.message}]. Riprova con un approccio diverso.`);
+                continue;
+            }
+        }
+    }
+
+    return {
+        text: `Non sono riuscito a completare la ricerca dopo ${MAX_TOOL_ROUNDS} tentativi. Ultimo errore: ${lastError}`,
+        cost: 0,
+        totalTokens: 0,
     };
 }

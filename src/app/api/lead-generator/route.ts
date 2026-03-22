@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { userMessage, conversationId, model } = body;
+        const { userMessage, conversationId, model, aiProvider } = body;
 
         if (!userMessage) {
             return NextResponse.json({ error: 'Missing required field: userMessage' }, { status: 400 });
@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
             apiKey: (user as any).openRouterApiKey || undefined,
             leadGenApiKeys,
             conversationId: activeConversationId,
+            aiProvider: aiProvider || 'openrouter',
         });
 
         // Calculate total cost (accumulated from previous + this call)

@@ -866,7 +866,21 @@ function DiagramInner({ map, connectorId }: { map: DatabaseMap; connectorId: str
 }
 
 // ─── Main export ────────────────────────────────────────────────────────────
-export function DatabaseERDiagram({ map, connectorId }: { map: DatabaseMap; connectorId: string }) {
+export function DatabaseERDiagram({ map: rawMap, connectorId }: { map: DatabaseMap; connectorId: string }) {
+    // Filter out empty tables (0 rows AND 0 columns)
+    const map = useMemo(() => {
+        const emptySet = new Set(rawMap.tables.filter(t => t.rowCount === 0 && t.columns.length === 0).map(t => t.fullName));
+        if (emptySet.size === 0) return rawMap;
+        return {
+            ...rawMap,
+            tables: rawMap.tables.filter(t => !emptySet.has(t.fullName)),
+            relationships: rawMap.relationships.filter(r =>
+                !emptySet.has(`${r.sourceSchema}.${r.sourceTable}`) &&
+                !emptySet.has(`${r.targetSchema}.${r.targetTable}`)
+            ),
+        };
+    }, [rawMap]);
+
     if (map.tables.length === 0) {
         return <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Nessun dato disponibile</div>;
     }

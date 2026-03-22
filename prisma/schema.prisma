@@ -188,8 +188,9 @@ model Connector {
   name      String
   type      String
   config        String
-  databaseMap   String?
-  databaseMapAt DateTime?
+  databaseMap      String?
+  databaseMapLight String?  // Lightweight version for frontend (stripped empty tables)
+  databaseMapAt    DateTime?
   companyId     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

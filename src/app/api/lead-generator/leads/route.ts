@@ -125,19 +125,28 @@ export async function DELETE(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { leadIds, searchId } = body;
+        const { leadIds, searchId, deleteAll } = body;
 
-        if (leadIds && Array.isArray(leadIds)) {
-            await db.lead.deleteMany({
+        let deletedCount = 0;
+        if (deleteAll) {
+            // Delete ALL leads for this company (optionally filtered by searchId)
+            const where: any = { companyId: user.company.id };
+            if (searchId) where.searchId = searchId;
+            const result = await db.lead.deleteMany({ where });
+            deletedCount = result.count;
+        } else if (leadIds && Array.isArray(leadIds)) {
+            const result = await db.lead.deleteMany({
                 where: { id: { in: leadIds }, companyId: user.company.id },
             });
+            deletedCount = result.count;
         } else if (searchId) {
-            await db.lead.deleteMany({
+            const result = await db.lead.deleteMany({
                 where: { searchId, companyId: user.company.id },
             });
+            deletedCount = result.count;
         }
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, deletedCount });
     } catch (error: any) {
         console.error('Error deleting leads:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });

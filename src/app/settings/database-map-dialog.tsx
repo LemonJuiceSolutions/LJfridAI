@@ -620,9 +620,18 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
     const [map, setMap] = useState<DatabaseMap | null>(null);
     const [loading, setLoading] = useState(false);
     const [generatingAI, setGeneratingAI] = useState(false);
+    const [aiDescTarget, setAiDescTarget] = useState<'columns' | 'tables' | 'all'>('all'); // what we're currently generating
     const [aiProgress, setAiProgress] = useState<{ current: number; total: number } | null>(null);
     const [search, setSearch] = useState('');
+    const isHugeDb = map && map.tables.filter(t => t.rowCount > 0 || t.columns.length > 0).length > 2000;
     const [activeTab, setActiveTab] = useState('diagram');
+
+    // For huge DBs, auto-switch to tables tab to avoid crashing the ER diagram
+    useEffect(() => {
+        if (isHugeDb && activeTab === 'diagram') {
+            setActiveTab('tables');
+        }
+    }, [isHugeDb]); // eslint-disable-line react-hooks/exhaustive-deps
     const scrollRef = useRef<HTMLDivElement>(null);
     const cancelRef = useRef(false);
 
@@ -659,10 +668,15 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
     const handleScan = async () => {
         setLoading(true);
         startTimer();
-        const res = await getDatabaseMapAction(connectorId);
+        const res = await getDatabaseMapAction(connectorId) as any;
         stopTimer();
         if (res.error) {
             toast({ variant: 'destructive', title: 'Errore Scansione', description: res.error });
+        } else if (res.hugeDb && res.summary) {
+            // Huge DB: map was saved but not returned in full — reload from cache
+            toast({ title: 'Mappa generata', description: `${res.summary.totalTables} tabelle trovate (DB grande — caricamento dalla cache...)` });
+            const cached = await getCachedDatabaseMapAction(connectorId);
+            if (cached.data) setMap(cached.data);
         } else if (res.data) {
             setMap(res.data);
             toast({ title: 'Mappa generata', description: `${res.data.summary.totalTables} tabelle trovate` });
@@ -671,68 +685,73 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
     };
 
     const handleGenerateAI = async (mode: 'all' | 'missing') => {
-        setGeneratingAI(true);
-        setAiProgress({ current: 0, total: 0 });
         cancelRef.current = false;
         startTimer();
 
-        const MAX_RETRIES = 5;
-        let retryRound = 0;
         let lastError: string | undefined;
 
-        while (retryRound <= MAX_RETRIES) {
-            if (cancelRef.current) break;
+        // Inner helper: run one pass for a specific target with retries
+        const runPass = async (descTarget: 'columns' | 'tables') => {
+            setGeneratingAI(true);
+            setAiDescTarget(descTarget);
+            setAiProgress({ current: 0, total: 0 });
 
-            let batchIdx = 0;
-            let roundFailed = 0;
-            let roundProcessed = 0;
+            const MAX_RETRIES = 5;
+            let retryRound = 0;
 
-            // For 'all' mode first round processes everything; subsequent retries use 'missing'
-            const effectiveMode = (mode === 'all' && retryRound === 0) ? 'all' : 'missing';
-
-            while (true) {
+            while (retryRound <= MAX_RETRIES) {
                 if (cancelRef.current) break;
 
-                const res = await generateDescriptionBatchAction(connectorId, effectiveMode, batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider);
-                if (res.usage) {
-                    setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
+                let batchIdx = 0;
+                let roundFailed = 0;
+                let roundProcessed = 0;
+                const effectiveMode = (mode === 'all' && retryRound === 0) ? 'all' : 'missing';
+
+                while (true) {
+                    if (cancelRef.current) break;
+                    const res = await generateDescriptionBatchAction(connectorId, effectiveMode, batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider, descTarget);
+                    if (res.usage) {
+                        setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
+                    }
+                    if (res.error && res.done) {
+                        lastError = res.error;
+                        roundFailed = -1;
+                        break;
+                    }
+                    roundProcessed += res.batchProcessed;
+                    if (res.failedTables) roundFailed += res.failedTables;
+                    const globalProcessed = (res.totalTables - res.totalToProcess) + roundProcessed;
+                    setAiProgress({ current: globalProcessed, total: res.totalTables });
+                    if (res.done || batchIdx % 8 === 0) {
+                        const cached = await getCachedDatabaseMapAction(connectorId);
+                        if (cached.data) setMap(cached.data);
+                    }
+                    if (res.done) break;
+                    batchIdx++;
                 }
 
-                if (res.error && res.done) {
-                    lastError = res.error;
-                    roundFailed = -1;
+                if (roundFailed === -1 || cancelRef.current) break;
+                if (roundFailed === 0) break;
+
+                retryRound++;
+                if (retryRound > MAX_RETRIES) {
+                    toast({ variant: 'destructive', title: 'Descrizioni incomplete', description: `Ancora ${roundFailed} ${descTarget === 'columns' ? 'colonne' : 'tabelle'} senza descrizione dopo ${MAX_RETRIES} tentativi.` });
                     break;
                 }
-
-                roundProcessed += res.batchProcessed;
-                if (res.failedTables) roundFailed += res.failedTables;
-                const globalProcessed = (res.totalTables - res.totalToProcess) + roundProcessed;
-                setAiProgress({ current: globalProcessed, total: res.totalTables });
-
-                if (res.done || batchIdx % 8 === 0) {
-                    const cached = await getCachedDatabaseMapAction(connectorId);
-                    if (cached.data) setMap(cached.data);
-                }
-
-                if (res.done) break;
-                batchIdx++;
+                console.log(`[handleGenerateAI] ${descTarget} retry round ${retryRound}: ${roundFailed} failed, retrying...`);
+                await new Promise(r => setTimeout(r, 2000));
             }
 
-            // Fatal error or cancelled
-            if (roundFailed === -1 || cancelRef.current) break;
+            setGeneratingAI(false);
+            setAiProgress(null);
+        };
 
-            // All done
-            if (roundFailed === 0) break;
+        // Pass 1: Column descriptions first
+        await runPass('columns');
+        if (cancelRef.current) { stopTimer(); return; }
 
-            // Retry failed tables
-            retryRound++;
-            if (retryRound > MAX_RETRIES) {
-                toast({ variant: 'destructive', title: 'Descrizioni incomplete', description: `Ancora ${roundFailed} tabelle senza descrizione dopo ${MAX_RETRIES} tentativi.` });
-                break;
-            }
-            console.log(`[handleGenerateAI] Retry round ${retryRound}: ${roundFailed} tables failed, retrying...`);
-            await new Promise(r => setTimeout(r, 2000));
-        }
+        // Pass 2: Table descriptions (using column context)
+        await runPass('tables');
 
         // Final refresh
         const finalCached = await getCachedDatabaseMapAction(connectorId);
@@ -745,9 +764,6 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         } else if (!cancelRef.current) {
             toast({ title: 'Descrizioni completate' });
         }
-
-        setGeneratingAI(false);
-        setAiProgress(null);
     };
 
     const handleCancelAI = () => {
@@ -978,7 +994,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         // Step 1: Scan DB
         setFullAnalysisStep('Scansione database...');
         setLoading(true);
-        const scanRes = await getDatabaseMapAction(connectorId);
+        const scanRes = await getDatabaseMapAction(connectorId) as any;
         setLoading(false);
         if (scanRes.error) {
             toast({ variant: 'destructive', title: 'Errore Scansione', description: scanRes.error });
@@ -986,15 +1002,22 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
             setFullAnalysisStep(null);
             return;
         }
-        if (scanRes.data) setMap(scanRes.data);
+        if (scanRes.hugeDb && scanRes.summary) {
+            const cached = await getCachedDatabaseMapAction(connectorId);
+            if (cached.data) setMap(cached.data);
+        } else if (scanRes.data) {
+            setMap(scanRes.data);
+        }
         if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
 
-        // Step 2: AI descriptions (missing only) — retry until all done
-        setFullAnalysisStep('Generazione descrizioni AI...');
-        setGeneratingAI(true);
-        setAiProgress({ current: 0, total: 0 });
-        {
-            const MAX_RETRIES = 5; // max retry rounds for failed tables
+        // Helper: run description generation with retries for a specific target
+        const runDescriptionPass = async (descTarget: 'columns' | 'tables', stepLabel: string) => {
+            setFullAnalysisStep(stepLabel);
+            setGeneratingAI(true);
+            setAiDescTarget(descTarget);
+            setAiProgress({ current: 0, total: 0 });
+
+            const MAX_RETRIES = 5;
             let retryRound = 0;
             let globalProcessed = 0;
 
@@ -1008,23 +1031,22 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
 
                 while (true) {
                     if (cancelRef.current) break;
-                    const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider);
+                    const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider, descTarget);
                     if (res.usage) {
                         setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
                     }
                     if (res.error && res.done) {
-                        // Fatal error (no API key, no map, etc.) — abort entirely
                         toast({ variant: 'destructive', title: 'Errore Descrizioni AI', description: res.error });
-                        roundFailed = -1; // signal to break outer loop
+                        roundFailed = -1;
                         break;
                     }
                     roundProcessed += res.batchProcessed;
                     roundTotal = res.totalToProcess;
                     if (res.failedTables) roundFailed += res.failedTables;
-                    globalProcessed = (res.totalTables - roundTotal) + roundProcessed; // described so far
+                    globalProcessed = (res.totalTables - roundTotal) + roundProcessed;
                     setAiProgress({ current: globalProcessed, total: res.totalTables });
                     if (retryRound > 0) {
-                        setFullAnalysisStep(`Generazione descrizioni AI... (retry ${retryRound}/${MAX_RETRIES})`);
+                        setFullAnalysisStep(`${stepLabel} (retry ${retryRound}/${MAX_RETRIES})`);
                     }
                     if (res.done || batchIdx % 8 === 0) {
                         const cached = await getCachedDatabaseMapAction(connectorId);
@@ -1034,14 +1056,10 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                     batchIdx++;
                 }
 
-                // Fatal error or cancelled — stop
                 if (roundFailed === -1 || cancelRef.current) break;
-
-                // All done — no missing tables left
                 if (roundFailed === 0) break;
 
-                // There are still failed tables — retry with 'missing' mode
-                console.log(`[DB-MAP] Description retry round ${retryRound + 1}: ${roundFailed} tables failed, retrying...`);
+                console.log(`[DB-MAP] ${descTarget} description retry round ${retryRound + 1}: ${roundFailed} tables failed, retrying...`);
                 retryRound++;
 
                 if (retryRound > MAX_RETRIES) {
@@ -1049,12 +1067,19 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                     break;
                 }
 
-                // Small delay before retry to let rate limits reset
                 await new Promise(r => setTimeout(r, 2000));
             }
-        }
-        setGeneratingAI(false);
-        setAiProgress(null);
+
+            setGeneratingAI(false);
+            setAiProgress(null);
+        };
+
+        // Step 2a: Column descriptions first
+        await runDescriptionPass('columns', 'Generazione descrizioni colonne...');
+        if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+
+        // Step 2b: Table descriptions (using column descriptions as context)
+        await runDescriptionPass('tables', 'Generazione descrizioni tabelle...');
         if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
 
         // Step 3: Infer relationships AI
@@ -1163,33 +1188,46 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
 
         // Step 1: Skip scan – map already exists
 
-        // Step 2: AI descriptions (missing only) – skip if all have descriptions
-        if (descDone < totalTables) {
-            setFullAnalysisStep('Completamento descrizioni AI...');
+        // Helper: run a simple description pass (no retry, for resume)
+        const runResumeDescPass = async (descTarget: 'columns' | 'tables', stepLabel: string) => {
+            setFullAnalysisStep(stepLabel);
             setGeneratingAI(true);
+            setAiDescTarget(descTarget);
             setAiProgress({ current: 0, total: 0 });
-            {
-                let batchIdx = 0;
-                let totalProcessed = 0;
-                while (true) {
-                    if (cancelRef.current) break;
-                    const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider);
-                    if (res.usage) {
-                        setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
-                    }
-                    if (res.error && res.done) break;
-                    totalProcessed += res.batchProcessed;
-                    setAiProgress({ current: totalProcessed, total: res.totalToProcess });
-                    if (res.done || batchIdx % 8 === 0) {
-                        const cached = await getCachedDatabaseMapAction(connectorId);
-                        if (cached.data) setMap(cached.data);
-                    }
-                    if (res.done) break;
-                    batchIdx++;
+            let batchIdx = 0;
+            let totalProcessed = 0;
+            while (true) {
+                if (cancelRef.current) break;
+                const res = await generateDescriptionBatchAction(connectorId, 'missing', batchIdx, aiProvider === 'claude-cli' ? claudeCliModel : (aiMode === 'paid' ? selectedModel : undefined), aiProvider, descTarget);
+                if (res.usage) {
+                    setSessionCost(prev => ({ tokens: prev.tokens + res.usage!.totalTokens, costUsd: prev.costUsd + res.usage!.costUsd }));
                 }
+                if (res.error && res.done) break;
+                totalProcessed += res.batchProcessed;
+                setAiProgress({ current: totalProcessed, total: res.totalToProcess });
+                if (res.done || batchIdx % 8 === 0) {
+                    const cached = await getCachedDatabaseMapAction(connectorId);
+                    if (cached.data) setMap(cached.data);
+                }
+                if (res.done) break;
+                batchIdx++;
             }
             setGeneratingAI(false);
             setAiProgress(null);
+        };
+
+        // Step 2a: Column descriptions (missing only)
+        const colsDescDone = map.tables.reduce((sum, t) =>
+            sum + t.columns.filter(c => c.userDescription || c.description).length, 0);
+        const totalCols = map.tables.reduce((sum, t) => sum + t.columns.length, 0);
+        if (colsDescDone < totalCols) {
+            await runResumeDescPass('columns', 'Completamento descrizioni colonne...');
+            if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
+        }
+
+        // Step 2b: Table descriptions (missing only)
+        if (descDone < totalTables) {
+            await runResumeDescPass('tables', 'Completamento descrizioni tabelle...');
             if (cancelRef.current) { stopTimer(); setFullAnalysisRunning(false); setFullAnalysisStep(null); return; }
         }
 
@@ -1302,6 +1340,8 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
     // Filter tables
     const searchLower = search.toLowerCase();
     const filteredTables = map?.tables.filter(t => {
+        // Hide empty tables (0 rows AND 0 columns) — they're temp/system tables with no value
+        if (t.rowCount === 0 && t.columns.length === 0) return false;
         if (!search) return true;
         if (t.name.toLowerCase().includes(searchLower)) return true;
         if (t.fullName.toLowerCase().includes(searchLower)) return true;
@@ -1315,10 +1355,27 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
         return false;
     }) || [];
 
-    // Count tables with descriptions
-    const tablesWithDesc = map?.tables.filter(t => t.userDescription || t.description).length || 0;
-    const colsWithDesc = map?.tables.reduce((sum, t) =>
-        sum + t.columns.filter(c => c.userDescription || c.description).length, 0) || 0;
+    // Filter out empty tables (0 rows AND 0 columns) for all stats
+    const nonEmptyTables = map?.tables.filter(t => t.rowCount > 0 || t.columns.length > 0) || [];
+    const effectiveTotalTables = nonEmptyTables.length;
+    const effectiveTotalColumns = nonEmptyTables.reduce((sum, t) => sum + t.columns.length, 0);
+    const emptyTableSet = useMemo(() => {
+        if (!map) return new Set<string>();
+        const s = new Set<string>();
+        for (const t of map.tables) {
+            if (t.rowCount === 0 && t.columns.length === 0) s.add(t.fullName);
+        }
+        return s;
+    }, [map]);
+    const effectiveTotalRelationships = map?.relationships?.filter(r =>
+        !emptyTableSet.has(`${r.sourceSchema}.${r.sourceTable}`) &&
+        !emptyTableSet.has(`${r.targetSchema}.${r.targetTable}`)
+    ).length || 0;
+
+    // Count tables with descriptions (only non-empty)
+    const tablesWithDesc = nonEmptyTables.filter(t => t.userDescription || t.description).length;
+    const colsWithDesc = nonEmptyTables.reduce((sum, t) =>
+        sum + t.columns.filter(c => c.userDescription || c.description).length, 0);
 
     const timeAgo = (iso: string) => {
         const diff = Date.now() - new Date(iso).getTime();
@@ -1357,19 +1414,19 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                     {/* Row 1: Stats badges */}
                     {map && (
                         <div className="flex items-center gap-2 flex-wrap">
-                            <Badge variant="secondary" className="text-[10px]">{map.summary.totalTables} Tabelle</Badge>
-                            <Badge variant="secondary" className="text-[10px]">{map.summary.totalColumns} Colonne</Badge>
+                            <Badge variant="secondary" className="text-[10px]">{effectiveTotalTables} Tabelle</Badge>
+                            <Badge variant="secondary" className="text-[10px]">{effectiveTotalColumns} Colonne</Badge>
                             <Badge variant="secondary" className="text-[10px]">
                                 <Link2 className="h-2.5 w-2.5 mr-0.5" />
-                                {map.summary.totalRelationships} Relazioni
+                                {effectiveTotalRelationships} Relazioni
                             </Badge>
                             <Badge variant="outline" className="text-[10px]">
                                 <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                                {tablesWithDesc}/{map.summary.totalTables} descr. tabelle
+                                {tablesWithDesc}/{effectiveTotalTables} descr. tabelle
                             </Badge>
                             <Badge variant="outline" className="text-[10px]">
                                 <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                                {colsWithDesc}/{map.summary.totalColumns} descr. colonne
+                                {colsWithDesc}/{effectiveTotalColumns} descr. colonne
                             </Badge>
                         </div>
                     )}
@@ -1565,7 +1622,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                                 <div className="flex items-center gap-1.5 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-md px-2.5 py-1">
                                     <Loader2 className="h-3 w-3 animate-spin text-violet-500" />
                                     <span className="text-xs font-medium text-violet-700 dark:text-violet-300">
-                                        Descrizioni: {aiProgress.current}/{aiProgress.total} tabelle
+                                        Descrizioni: {aiProgress.current}/{aiProgress.total} {aiDescTarget === 'columns' ? 'colonne' : 'tabelle'}
                                     </span>
                                     {aiProgress.total > 0 && (
                                         <div className="w-16 h-1.5 bg-violet-200 dark:bg-violet-800 rounded-full overflow-hidden">
@@ -1673,13 +1730,24 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                                     </TabsTrigger>
                                     <TabsTrigger value="relations" className="text-xs h-7 gap-1.5">
                                         <GitFork className="h-3 w-3" />
-                                        Relazioni ({map.summary.totalRelationships})
+                                        Relazioni ({effectiveTotalRelationships})
                                     </TabsTrigger>
                                 </TabsList>
                             </div>
 
                             <TabsContent value="diagram" className="flex-1 overflow-hidden mt-0" style={{ height: 'calc(95vh - 200px)' }}>
-                                <DatabaseERDiagram map={map} connectorId={connectorId} />
+                                {isHugeDb ? (
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                                        <div className="text-center">
+                                            <Network className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                                            <p className="text-sm font-medium">Diagramma ER non disponibile</p>
+                                            <p className="text-xs mt-1">Il database ha {map.summary.totalTables.toLocaleString()} tabelle — troppo grande per il rendering grafico.</p>
+                                            <p className="text-xs mt-1">Usa la tab &quot;Tabelle&quot; per esplorare la struttura.</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <DatabaseERDiagram map={map} connectorId={connectorId} />
+                                )}
                             </TabsContent>
 
                             <TabsContent value="tables" className="flex-1 overflow-hidden mt-0">

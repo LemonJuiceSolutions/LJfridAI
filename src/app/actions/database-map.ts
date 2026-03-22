@@ -30,9 +30,12 @@ async function saveDatabaseMapDebounced(connectorId: string, map: DatabaseMap): 
             _debouncedSaveResolvers = [];
 
             try {
+                const nonEmpty = countNonEmptyTables(map);
+                const isHuge = nonEmpty > 2000;
+                const lightMap = isHuge ? createLightMap(map) : stripEmptyTables(map);
                 await db.connector.update({
                     where: { id: connectorId },
-                    data: { databaseMap: JSON.stringify(map), databaseMapAt: new Date() },
+                    data: { databaseMap: JSON.stringify(map), databaseMapLight: JSON.stringify(lightMap), databaseMapAt: new Date() },
                 });
             } catch (e) {
                 console.error('[DB-MAP] Debounced save error:', e);
@@ -54,9 +57,12 @@ async function flushDebouncedSave(): Promise<void> {
             const resolvers = [..._debouncedSaveResolvers];
             _debouncedSaveResolvers = [];
             try {
+                const nonEmpty = countNonEmptyTables(cacheEntry.map);
+                const isHuge = nonEmpty > 2000;
+                const lightMap = isHuge ? createLightMap(cacheEntry.map) : stripEmptyTables(cacheEntry.map);
                 await db.connector.update({
                     where: { id: cacheEntry.connectorId },
-                    data: { databaseMap: JSON.stringify(cacheEntry.map), databaseMapAt: new Date() },
+                    data: { databaseMap: JSON.stringify(cacheEntry.map), databaseMapLight: JSON.stringify(lightMap), databaseMapAt: new Date() },
                 });
             } catch (e) {
                 console.error('[DB-MAP] Flush save error:', e);
@@ -405,14 +411,24 @@ function assignConfidence(relationships: RelationshipInfo[]): void {
 }
 
 // ─── getDatabaseMapAction ───────────────────────────────────────────────────
-export async function getDatabaseMapAction(connectorId: string): Promise<{ data?: DatabaseMap; error?: string }> {
+function logMem(label: string) {
+    const mem = process.memoryUsage();
+    const fmt = (b: number) => `${(b / 1024 / 1024).toFixed(0)}MB`;
+    console.log(`[DB-MAP][MEM] ${label} — heap: ${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)}, rss: ${fmt(mem.rss)}, external: ${fmt(mem.external)}`);
+}
+
+export async function getDatabaseMapAction(connectorId: string): Promise<{ data?: DatabaseMap; error?: string; summary?: DatabaseMap['summary']; hugeDb?: boolean }> {
     const user = await getAuthenticatedUser();
     if (!user) return { error: 'Non autorizzato' };
 
     try {
+        logMem('Before connector fetch');
+        // IMPORTANT: exclude databaseMap (can be 30+ MB) — we don't need it for scanning
         const connector = await db.connector.findUnique({
             where: { id: connectorId, companyId: user.companyId },
+            select: { id: true, name: true, type: true, config: true, companyId: true, databaseMapAt: true },
         });
+        logMem('After connector fetch (without databaseMap)');
 
         if (!connector || connector.type !== 'SQL') {
             return { error: 'Connettore SQL non trovato' };
@@ -431,34 +447,20 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
         await pool.connect();
 
         try {
-            // Execute core queries first (tables, columns, FK) – these are essential
-            const [tablesResult, columnsResult, fkResult] = await Promise.all([
+            logMem('START — before queries');
+
+            // 1. Fetch tables and FK first (lightweight queries)
+            const [tablesResult, fkResult] = await Promise.all([
                 pool.request().query(TABLES_QUERY),
-                pool.request().query(COLUMNS_QUERY),
                 pool.request().query(FK_QUERY),
             ]);
 
-            // VIEW/SP parsing is optional and slow on large DBs – skip if >800 tables
             const tableCount = tablesResult.recordset.length;
-            let viewsResult: { recordset: any[] } = { recordset: [] };
-            let spResult: { recordset: any[] } = { recordset: [] };
+            const isHugeDb = tableCount > 2000;
+            console.log(`[DB-MAP] Found ${tableCount} tables, ${fkResult.recordset.length} FK${isHugeDb ? ' (HUGE DB mode)' : ''}`);
+            logMem('After tables+FK queries');
 
-            if (tableCount <= 800) {
-                // Run VIEW/SP queries with shorter timeout (60s)
-                try {
-                    const shortReq1 = pool.request();
-                    (shortReq1 as any).timeout = 60000;
-                    viewsResult = await shortReq1.query(VIEWS_QUERY).catch(() => ({ recordset: [] }));
-                } catch { /* skip views */ }
-
-                try {
-                    const shortReq2 = pool.request();
-                    (shortReq2 as any).timeout = 60000;
-                    spResult = await shortReq2.query(SP_QUERY).catch(() => ({ recordset: [] }));
-                } catch { /* skip SPs */ }
-            }
-
-            // Build relationships array
+            // Build relationships array (FK are lightweight, always load fully)
             const relationships: RelationshipInfo[] = fkResult.recordset.map((row: any) => ({
                 constraintName: row.constraint_name,
                 sourceSchema: row.source_schema,
@@ -475,25 +477,41 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
                 fkLookup.set(`${rel.sourceSchema}.${rel.sourceTable}.${rel.sourceColumn}`, rel);
             }
 
-            // Load existing map to preserve ALL descriptions (AI + user)
-            let existingMap: DatabaseMap | null = null;
-            if (connector.databaseMap) {
-                try {
-                    existingMap = JSON.parse(connector.databaseMap);
-                } catch { /* ignore parse errors */ }
-            }
+            // Load existing descriptions from cache (avoid parsing 30+ MB JSON from DB)
             const existingTableDescs = new Map<string, { ai: string | null; user: string | null }>();
             const existingColDescs = new Map<string, { ai: string | null; user: string | null }>();
-            if (existingMap) {
-                for (const t of existingMap.tables) {
+            const existingCache = getParsedMapCacheEntry();
+            if (existingCache && existingCache.connectorId === connectorId) {
+                for (const t of existingCache.map.tables) {
                     existingTableDescs.set(t.fullName, { ai: t.description, user: t.userDescription });
                     for (const c of t.columns) {
                         existingColDescs.set(`${t.fullName}.${c.name}`, { ai: c.description, user: c.userDescription });
                     }
                 }
+                console.log(`[DB-MAP] Loaded ${existingTableDescs.size} existing descriptions from cache`);
+            } else if (!isHugeDb) {
+                // For small/medium DBs, load existing map from DB to preserve descriptions
+                try {
+                    logMem('Loading existing map from DB for descriptions');
+                    const connWithMap = await db.connector.findUnique({
+                        where: { id: connectorId },
+                        select: { databaseMap: true },
+                    });
+                    if (connWithMap?.databaseMap) {
+                        const existingMap: DatabaseMap = JSON.parse(connWithMap.databaseMap);
+                        for (const t of existingMap.tables) {
+                            existingTableDescs.set(t.fullName, { ai: t.description, user: t.userDescription });
+                            for (const c of t.columns) {
+                                existingColDescs.set(`${t.fullName}.${c.name}`, { ai: c.description, user: c.userDescription });
+                            }
+                        }
+                    }
+                } catch { /* ignore parse errors */ }
             }
 
-            // Build tables map
+            logMem('After FK lookup + existing descriptions');
+
+            // Build tables map (lightweight — no columns yet)
             const tablesMap = new Map<string, TableInfo>();
             for (const row of tablesResult.recordset) {
                 const fullName = `${row.table_schema}.${row.table_name}`;
@@ -512,35 +530,121 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
                 });
             }
 
-            // Populate columns
+            // 2. Fetch columns — for huge DBs use streaming to avoid buffering 200K+ rows
+            const colQueryLightweight = `
+                SELECT s.name AS TABLE_SCHEMA, t.name AS TABLE_NAME, c.name AS COLUMN_NAME,
+                    tp.name AS DATA_TYPE, c.max_length AS CHARACTER_MAXIMUM_LENGTH,
+                    CASE WHEN c.is_nullable = 1 THEN 'YES' ELSE 'NO' END AS IS_NULLABLE,
+                    CASE WHEN ic.column_id IS NOT NULL THEN 1 ELSE 0 END AS is_primary_key
+                FROM sys.columns c
+                INNER JOIN sys.tables t ON c.object_id = t.object_id
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                INNER JOIN sys.types tp ON c.user_type_id = tp.user_type_id
+                LEFT JOIN sys.indexes i ON i.object_id = t.object_id AND i.is_primary_key = 1
+                LEFT JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.column_id = c.column_id
+                WHERE t.is_ms_shipped = 0
+                ORDER BY s.name, t.name, c.column_id`;
+
             let totalColumns = 0;
-            for (const row of columnsResult.recordset) {
-                const fullName = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`;
-                const table = tablesMap.get(fullName);
-                if (!table) continue;
+            logMem('After tablesMap built — before columns');
 
-                const fkKey = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}.${row.COLUMN_NAME}`;
-                const fkRel = fkLookup.get(fkKey);
+            if (isHugeDb) {
+                // STREAMING mode: process row-by-row without buffering the entire resultset
+                console.log(`[DB-MAP] Streaming columns for ${tableCount} tables (no buffering)...`);
+                const streamReq = pool.request();
+                streamReq.stream = true;
+                (streamReq as any).timeout = 180000;
 
-                const prevColDescs = existingColDescs.get(`${fullName}.${row.COLUMN_NAME}`);
-                const col: ColumnInfo = {
-                    name: row.COLUMN_NAME,
-                    dataType: row.DATA_TYPE,
-                    maxLength: row.CHARACTER_MAXIMUM_LENGTH,
-                    isNullable: row.IS_NULLABLE === 'YES',
-                    defaultValue: row.COLUMN_DEFAULT || null,
-                    isPrimaryKey: row.is_primary_key === 1,
-                    isForeignKey: !!fkRel,
-                    foreignKeyTarget: fkRel
-                        ? { schema: fkRel.targetSchema, table: fkRel.targetTable, column: fkRel.targetColumn }
-                        : undefined,
-                    description: row.column_description || prevColDescs?.ai || null,
-                    userDescription: prevColDescs?.user || null,
-                };
+                await new Promise<void>((resolve, reject) => {
+                    streamReq.on('row', (row: any) => {
+                        const fullName = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`;
+                        const table = tablesMap.get(fullName);
+                        if (!table) return;
 
-                table.columns.push(col);
-                if (col.isPrimaryKey) table.primaryKeyColumns.push(col.name);
-                totalColumns++;
+                        const fkKey = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}.${row.COLUMN_NAME}`;
+                        const fkRel = fkLookup.get(fkKey);
+
+                        const col: ColumnInfo = {
+                            name: row.COLUMN_NAME,
+                            dataType: row.DATA_TYPE,
+                            maxLength: row.CHARACTER_MAXIMUM_LENGTH,
+                            isNullable: row.IS_NULLABLE === 'YES',
+                            defaultValue: null,
+                            isPrimaryKey: row.is_primary_key === 1,
+                            isForeignKey: !!fkRel,
+                            foreignKeyTarget: fkRel
+                                ? { schema: fkRel.targetSchema, table: fkRel.targetTable, column: fkRel.targetColumn }
+                                : undefined,
+                            description: null,
+                            userDescription: null,
+                        };
+                        table.columns.push(col);
+                        if (col.isPrimaryKey) table.primaryKeyColumns.push(col.name);
+                        totalColumns++;
+                        if (totalColumns % 10000 === 0) {
+                            logMem(`Streaming: ${totalColumns} columns processed`);
+                        }
+                    });
+                    streamReq.on('error', reject);
+                    streamReq.on('done', () => resolve());
+                    streamReq.query(colQueryLightweight);
+                });
+            } else {
+                // Normal mode: buffered query for smaller DBs
+                console.log(`[DB-MAP] Fetching columns...`);
+                const colReq = pool.request();
+                (colReq as any).timeout = 60000;
+                const columnsResult = await colReq.query(COLUMNS_QUERY);
+                console.log(`[DB-MAP] Got ${columnsResult.recordset.length} columns — processing...`);
+
+                for (const row of columnsResult.recordset) {
+                    const fullName = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`;
+                    const table = tablesMap.get(fullName);
+                    if (!table) continue;
+
+                    const fkKey = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}.${row.COLUMN_NAME}`;
+                    const fkRel = fkLookup.get(fkKey);
+                    const prevColDescs = existingColDescs.get(`${fullName}.${row.COLUMN_NAME}`);
+
+                    const col: ColumnInfo = {
+                        name: row.COLUMN_NAME,
+                        dataType: row.DATA_TYPE,
+                        maxLength: row.CHARACTER_MAXIMUM_LENGTH,
+                        isNullable: row.IS_NULLABLE === 'YES',
+                        defaultValue: row.COLUMN_DEFAULT || null,
+                        isPrimaryKey: row.is_primary_key === 1,
+                        isForeignKey: !!fkRel,
+                        foreignKeyTarget: fkRel
+                            ? { schema: fkRel.targetSchema, table: fkRel.targetTable, column: fkRel.targetColumn }
+                            : undefined,
+                        description: row.column_description || prevColDescs?.ai || null,
+                        userDescription: prevColDescs?.user || null,
+                    };
+                    table.columns.push(col);
+                    if (col.isPrimaryKey) table.primaryKeyColumns.push(col.name);
+                    totalColumns++;
+                }
+            }
+
+            console.log(`[DB-MAP] Total columns processed: ${totalColumns}`);
+            logMem('After ALL columns processed');
+
+            // 3. VIEW/SP parsing is optional and slow on large DBs – skip if >800 tables
+            let viewsResult: { recordset: any[] } = { recordset: [] };
+            let spResult: { recordset: any[] } = { recordset: [] };
+
+            if (tableCount <= 800) {
+                try {
+                    const shortReq1 = pool.request();
+                    (shortReq1 as any).timeout = 60000;
+                    viewsResult = await shortReq1.query(VIEWS_QUERY).catch(() => ({ recordset: [] }));
+                } catch { /* skip views */ }
+
+                try {
+                    const shortReq2 = pool.request();
+                    (shortReq2 as any).timeout = 60000;
+                    spResult = await shortReq2.query(SP_QUERY).catch(() => ({ recordset: [] }));
+                } catch { /* skip SPs */ }
             }
 
             // Cross-reference FK relationships on tables
@@ -552,13 +656,17 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
             }
 
             // ── Infer relationships from column naming conventions ──────
-            // Catches cases where FK constraints aren't formally defined
-            // Patterns: CustomerID → Customer.ID, customer_id → customer.id,
-            //           IdCustomer → Customer.ID, fk_customer → customer
+            // For huge DBs (>2000 tables), skip O(n²) inference to avoid RAM crash
+            // These can be run later via the AI inference tools
+            if (isHugeDb) {
+                console.log(`[DB-MAP] Skipping naming-pattern & prefix inference for ${tableCount} tables (too many — use AI inference instead)`);
+            }
+
             const formalFKSet = new Set(relationships.map(r =>
                 `${r.sourceSchema}.${r.sourceTable}.${r.sourceColumn}`.toLowerCase()
             ));
 
+          if (!isHugeDb) {
             // Build lookup: lowercase table name → TableInfo
             const tableByName = new Map<string, TableInfo>();
             for (const t of tablesMap.values()) {
@@ -788,9 +896,12 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
                     }
                 }
             }
+          } // end if (!isHugeDb)
 
+            logMem('Before Array.from(tablesMap)');
             const tables = Array.from(tablesMap.values());
             const totalRows = tables.reduce((sum, t) => sum + t.rowCount, 0);
+            logMem(`After tables array (${tables.length} tables, ${totalRows} rows)`);
 
             // Assign confidence retroactively to all relationships
             assignConfidence(relationships);
@@ -808,12 +919,75 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
                     totalRows,
                 },
                 generatedAt: new Date().toISOString(),
-                descriptionsGeneratedAt: existingMap?.descriptionsGeneratedAt,
-                nodePositions: existingMap?.nodePositions,
-                dataSamplingState: existingMap?.dataSamplingState,
+                descriptionsGeneratedAt: existingCache?.map?.descriptionsGeneratedAt,
+                nodePositions: existingCache?.map?.nodePositions,
+                dataSamplingState: existingCache?.map?.dataSamplingState,
             };
 
-            // Save to connector
+            // For huge DBs, stream-write JSON to DB to avoid building the full string in memory
+            if (isHugeDb) {
+                logMem('Before JSON stringify (huge DB)');
+                console.log(`[DB-MAP] Huge DB: building JSON incrementally for ${tables.length} tables...`);
+
+                // Build JSON string in chunks to avoid a single massive allocation
+                const jsonParts: string[] = [];
+                const mapMeta = { ...map, tables: undefined, relationships: undefined };
+                const metaStr = JSON.stringify(mapMeta);
+                // Insert tables array and relationships inline
+                const prefix = metaStr.slice(0, -1); // remove trailing }
+                jsonParts.push(prefix);
+
+                // Stream tables array
+                jsonParts.push(',"tables":[');
+                for (let i = 0; i < tables.length; i++) {
+                    if (i > 0) jsonParts.push(',');
+                    jsonParts.push(JSON.stringify(tables[i]));
+                    // Every 500 tables, join and push to reduce array overhead
+                    if (i > 0 && i % 500 === 0) {
+                        const chunk = jsonParts.splice(0, jsonParts.length).join('');
+                        jsonParts.push(chunk);
+                        if (i % 1000 === 0) logMem(`JSON stringify: ${i}/${tables.length} tables`);
+                    }
+                }
+                jsonParts.push(']');
+
+                // Relationships
+                jsonParts.push(',"relationships":');
+                jsonParts.push(JSON.stringify(relationships));
+                jsonParts.push('}');
+
+                logMem('Before jsonParts.join');
+                const jsonStr = jsonParts.join('');
+                // Free parts array
+                jsonParts.length = 0;
+                logMem(`After JSON join — size: ${(jsonStr.length / 1024 / 1024).toFixed(1)} MB`);
+
+                console.log(`[DB-MAP] JSON size: ${(jsonStr.length / 1024 / 1024).toFixed(1)} MB — saving to DB...`);
+                await db.connector.update({
+                    where: { id: connectorId },
+                    data: { databaseMap: jsonStr, databaseMapAt: new Date() },
+                });
+                logMem('After DB save');
+                console.log(`[DB-MAP] Saved to DB successfully`);
+
+                // Cache in memory for subsequent operations (AI descriptions use this)
+                setCachedParsedMap(connectorId, map);
+
+                // Build a frontend-safe version: strip empty tables, keep columns (~7 MB instead of 39 MB)
+                const frontendMap = stripEmptyTables(map);
+                const frontendJson = JSON.stringify(frontendMap);
+                console.log(`[DB-MAP] Frontend map: ${frontendMap.tables.length} tables, ${frontendMap.summary.totalColumns} columns, ${(frontendJson.length / 1024 / 1024).toFixed(1)} MB`);
+
+                // Also save the light version for fast loading (avoids parsing 39 MB on every page load)
+                await db.connector.update({
+                    where: { id: connectorId },
+                    data: { databaseMapLight: frontendJson },
+                });
+
+                return { data: frontendMap };
+            }
+
+            // Normal-sized DBs: save and return full map
             await db.connector.update({
                 where: { id: connectorId },
                 data: {
@@ -821,8 +995,11 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
                     databaseMapAt: new Date(),
                 },
             });
+            setCachedParsedMap(connectorId, map);
 
-            return { data: map };
+            // Always strip empty tables; for huge DBs also strip columns
+            const isHuge = countNonEmptyTables(map) > 2000;
+            return { data: isHuge ? createLightMap(map) : stripEmptyTables(map) };
         } finally {
             await pool.close();
         }
@@ -834,6 +1011,62 @@ export async function getDatabaseMapAction(connectorId: string): Promise<{ data?
         }
         return { error: `Errore scansione database: ${msg}` };
     }
+}
+
+/**
+ * Strip columns from a map to create a lightweight version for the frontend.
+ * Keeps table metadata, relationships, and summary — drops all column arrays.
+ * This reduces a 30-40 MB map to ~1-2 MB for huge databases.
+ */
+/** Count non-empty tables (has rows OR has columns) */
+function countNonEmptyTables(map: DatabaseMap): number {
+    return map.tables.filter(t => t.rowCount > 0).length;
+}
+
+/**
+ * Strip tables with 0 rows and their relationships.
+ * These tables exist in the schema but contain no data — useless for the UI.
+ * For HR: reduces 9497 → 1261 tables, 39 MB → 7 MB JSON.
+ */
+function stripEmptyTables(map: DatabaseMap): DatabaseMap {
+    const emptySet = new Set<string>();
+    for (const t of map.tables) {
+        if (t.rowCount === 0) emptySet.add(t.fullName);
+    }
+    if (emptySet.size === 0) return map;
+    const tables = map.tables.filter(t => !emptySet.has(t.fullName));
+    const relationships = map.relationships.filter(r =>
+        !emptySet.has(`${r.sourceSchema}.${r.sourceTable}`) &&
+        !emptySet.has(`${r.targetSchema}.${r.targetTable}`)
+    );
+    console.log(`[DB-MAP] stripEmptyTables: ${map.tables.length} → ${tables.length} tables (removed ${emptySet.size} with 0 rows)`);
+    return {
+        ...map,
+        tables,
+        relationships,
+        summary: {
+            ...map.summary,
+            totalTables: tables.length,
+            totalColumns: tables.reduce((sum, t) => sum + t.columns.length, 0),
+            totalRelationships: relationships.length,
+            totalRows: tables.reduce((sum, t) => sum + t.rowCount, 0),
+        },
+    };
+}
+
+/**
+ * For truly huge DBs (>2000 non-empty tables), also strip columns.
+ */
+function createLightMap(map: DatabaseMap): DatabaseMap {
+    const stripped = stripEmptyTables(map);
+    return {
+        ...stripped,
+        tables: stripped.tables.map(t => ({
+            ...t,
+            columns: [], // stripped — loaded on-demand
+            primaryKeyColumns: t.primaryKeyColumns,
+        })),
+    };
 }
 
 // ─── getCachedDatabaseMapAction ─────────────────────────────────────────────
@@ -855,24 +1088,75 @@ export async function getCachedDatabaseMapAction(connectorId: string): Promise<{
             const dbTimestamp = meta.databaseMapAt.getTime();
             // If in-memory cache was updated after or at the same time as DB, use it
             if (cacheEntry.updatedAt >= dbTimestamp) {
-                return { data: cacheEntry.map, cachedAt: meta.databaseMapAt.toISOString() };
+                const fullMap = cacheEntry.map;
+                const nonEmpty = countNonEmptyTables(fullMap);
+                const isHuge = nonEmpty > 2000;
+                const result = isHuge ? createLightMap(fullMap) : stripEmptyTables(fullMap);
+                const totalCols = result.tables.reduce((s, t) => s + t.columns.length, 0);
+                console.log(`[DB-MAP] getCachedDatabaseMapAction (cache-hit): ${fullMap.tables.length} total → ${result.tables.length} tables, ${totalCols} columns, isHuge=${isHuge}`);
+                return { data: result, cachedAt: meta.databaseMapAt.toISOString() };
             }
         }
 
-        // Cache miss or stale: read full data from DB
+        // Cache miss or stale: try light version first (7 MB instead of 39 MB)
         const connector = await db.connector.findUnique({
             where: { id: connectorId, companyId: user.companyId },
-            select: { databaseMap: true, databaseMapAt: true },
+            select: { databaseMapLight: true, databaseMap: true, databaseMapAt: true },
         });
 
         if (!connector) return { error: 'Connettore non trovato' };
-        if (!connector.databaseMap) return {};
+        if (!connector.databaseMap && !connector.databaseMapLight) return {};
 
+        // Prefer lightweight version for frontend (already stripped)
+        if (connector.databaseMapLight) {
+            try {
+                const lightMap: DatabaseMap = JSON.parse(connector.databaseMapLight);
+                console.log(`[DB-MAP] getCachedDatabaseMapAction: loaded LIGHT map — ${lightMap.tables.length} tables, ${lightMap.summary.totalColumns} columns (${(connector.databaseMapLight.length / 1024 / 1024).toFixed(1)} MB)`);
+                // NOTE: full cache for AI operations is populated lazily when AI analysis starts
+                return { data: lightMap, cachedAt: connector.databaseMapAt?.toISOString() };
+            } catch {
+                console.warn('[DB-MAP] Failed to parse light map, falling back to full map');
+            }
+        }
+
+        if (!connector.databaseMap) return {};
         const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
-        return { data: map, cachedAt: connector.databaseMapAt?.toISOString() };
+        const result = stripEmptyTables(map);
+        const totalCols = result.tables.reduce((s, t) => s + t.columns.length, 0);
+        console.log(`[DB-MAP] getCachedDatabaseMapAction: ${map.tables.length} total → ${result.tables.length} tables, ${totalCols} columns (fallback to full)`);
+        return { data: result, cachedAt: connector.databaseMapAt?.toISOString() };
     } catch (e: any) {
         console.error('[DB-MAP] Cache read error:', e);
         return { error: `Errore lettura cache: ${e.message}` };
+    }
+}
+
+// ─── getTableColumnsAction ──────────────────────────────────────────────────
+// On-demand column loading for huge DBs (frontend requests columns per table)
+export async function getTableColumnsAction(connectorId: string, tableFullName: string): Promise<{ columns?: ColumnInfo[]; error?: string }> {
+    const user = await getAuthenticatedUser();
+    if (!user) return { error: 'Non autorizzato' };
+
+    try {
+        const cacheEntry = getParsedMapCacheEntry();
+        let map: DatabaseMap | null = null;
+
+        if (cacheEntry && cacheEntry.connectorId === connectorId) {
+            map = cacheEntry.map;
+        } else {
+            const connector = await db.connector.findUnique({
+                where: { id: connectorId, companyId: user.companyId },
+                select: { databaseMap: true },
+            });
+            if (!connector?.databaseMap) return { error: 'Mappa non trovata' };
+            map = getCachedParsedMap(connectorId, connector.databaseMap);
+        }
+
+        const table = map.tables.find(t => t.fullName === tableFullName);
+        if (!table) return { error: `Tabella ${tableFullName} non trovata` };
+        return { columns: table.columns };
+    } catch (e: any) {
+        return { error: e.message };
     }
 }
 
@@ -975,15 +1259,18 @@ export async function saveNodePositionsAction(
 // batchIndex: quale batch (0, 1, 2, ...)
 const DESC_BATCH_SIZE_FREE = 8;      // tables per AI call for free models (small prompt)
 const DESC_BATCH_SIZE_PAID = 25;     // tables per AI call for paid models (can handle larger prompts)
+const DESC_BATCH_SIZE_HUGE = 80;     // tables per AI call for huge DBs (table-only desc, no columns)
 const DESC_PARALLEL_CALLS = 3;       // parallel AI calls
-const DESC_SAVE_EVERY = 5;           // save to DB every N iterations
+const DESC_PARALLEL_CALLS_HUGE = 5;  // more parallelism for huge DBs (lighter prompts)
+const DESC_SAVE_EVERY = 1;           // save to DB every N iterations (was 5, but data was lost on cancel/restart)
 
 export async function generateDescriptionBatchAction(
     connectorId: string,
     mode: 'all' | 'missing',
     batchIndex: number,
     aiModel?: string, // if provided, use this paid model; otherwise auto-rotate free models
-    aiProvider?: AiProvider // 'claude-cli' | 'openrouter'
+    aiProvider?: AiProvider, // 'claude-cli' | 'openrouter'
+    target: 'columns' | 'tables' | 'all' = 'all' // what to generate: columns first, then tables, or both
 ): Promise<{
     batchProcessed: number;
     totalToProcess: number;
@@ -1008,35 +1295,65 @@ export async function generateDescriptionBatchAction(
     console.log(`[DB-MAP] Using ${isClaudeCli ? 'CLAUDE-CLI' : isPaidMode ? 'PAID' : 'FREE'} model(s): ${isClaudeCli ? aiModel : isPaidMode ? orModel : freeModels.slice(0, 3).join(', ')}`);
 
     try {
-        const connector = await db.connector.findUnique({
-            where: { id: connectorId, companyId: user.companyId },
-            select: { databaseMap: true },
-        });
-
-        if (!connector?.databaseMap) return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: 'Mappa non trovata' };
-
-        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
-        console.log(`[DB-MAP] generateDescriptionBatch: batch ${batchIndex}, mode ${mode}, ${map.tables.length} total tables`);
+        // Fast path: use in-memory cache to avoid loading 30+ MB from DB
+        const cacheEntry = getParsedMapCacheEntry();
+        let map: DatabaseMap;
+        if (cacheEntry && cacheEntry.connectorId === connectorId) {
+            map = cacheEntry.map;
+            console.log(`[DB-MAP] generateDescriptionBatch: using cached map (${map.tables.length} tables)`);
+        } else {
+            const connector = await db.connector.findUnique({
+                where: { id: connectorId, companyId: user.companyId },
+                select: { databaseMap: true },
+            });
+            if (!connector?.databaseMap) return { batchProcessed: 0, totalToProcess: 0, totalTables: 0, done: true, error: 'Mappa non trovata' };
+            map = getCachedParsedMap(connectorId, connector.databaseMap);
+        }
+        console.log(`[DB-MAP] generateDescriptionBatch: batch ${batchIndex}, mode ${mode}, target ${target}, ${map.tables.length} total tables`);
 
         // Filter tables based on mode
+        // Skip tables with 0 rows — they contain no data and aren't useful to describe
+        const nonEmptyTables = map.tables.filter(t => t.rowCount > 0);
+        const skippedEmpty = map.tables.length - nonEmptyTables.length;
+        if (skippedEmpty > 0) {
+            console.log(`[DB-MAP] Skipping ${skippedEmpty} tables with 0 rows (${nonEmptyTables.length} tables to process)`);
+        }
+
         let tablesToProcess: TableInfo[];
         if (mode === 'missing') {
-            tablesToProcess = map.tables.filter(t => {
-                const tableNeedsDesc = !t.description && !t.userDescription;
-                const someColNeedsDesc = t.columns.some(c => !c.description && !c.userDescription);
-                return tableNeedsDesc || someColNeedsDesc;
+            tablesToProcess = nonEmptyTables.filter(t => {
+                if (target === 'columns') {
+                    // Only include tables that have columns needing descriptions
+                    return t.columns.some(c => !c.description && !c.userDescription);
+                } else if (target === 'tables') {
+                    // Only include tables that need a table-level description
+                    return !t.description && !t.userDescription;
+                } else {
+                    // 'all': include if either table or any column needs description
+                    const tableNeedsDesc = !t.description && !t.userDescription;
+                    const someColNeedsDesc = t.columns.some(c => !c.description && !c.userDescription);
+                    return tableNeedsDesc || someColNeedsDesc;
+                }
             });
         } else {
-            tablesToProcess = [...map.tables];
+            tablesToProcess = [...nonEmptyTables];
         }
 
         const totalToProcess = tablesToProcess.length;
-        const batchSize = isPaidMode ? DESC_BATCH_SIZE_PAID : DESC_BATCH_SIZE_FREE;
-        const tablesPerIteration = DESC_PARALLEL_CALLS * batchSize;
+        const isHugeDb = map.tables.length > 2000;
+        const batchSize = isHugeDb ? DESC_BATCH_SIZE_HUGE : (isPaidMode ? DESC_BATCH_SIZE_PAID : DESC_BATCH_SIZE_FREE);
+        const parallelCalls = isHugeDb ? DESC_PARALLEL_CALLS_HUGE : DESC_PARALLEL_CALLS;
+        const tablesPerIteration = parallelCalls * batchSize;
         const startIdx = batchIndex * tablesPerIteration;
 
         // Check if done
         if (startIdx >= totalToProcess) {
+            // Even if nothing to process, sync databaseMapLight so the frontend shows correct counts
+            // (e.g. column descriptions may exist in the full map but not yet reflected in the light map)
+            if (batchIndex === 0) {
+                console.log(`[DB-MAP] generateDescriptionBatch: totalToProcess=0 for target=${target}, syncing databaseMapLight`);
+                await saveDatabaseMap(connectorId, map);
+            }
             return { batchProcessed: 0, totalToProcess, totalTables: map.tables.length, done: true };
         }
 
@@ -1054,29 +1371,132 @@ export async function generateDescriptionBatchAction(
         let batchUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 };
 
         async function processSubBatch(batch: TableInfo[], subIdx: number): Promise<{ ok: boolean; tables: number }> {
-            const tablesSummary = batch.map(t => {
-                const needsTableDesc = mode === 'all' || (!t.description && !t.userDescription);
-                const cols = t.columns
-                    .filter(c => mode === 'all' || (!c.description && !c.userDescription))
-                    .map(c => {
-                        let colDesc = `  - ${c.name} (${c.dataType}`;
-                        if (c.maxLength && c.maxLength > 0) colDesc += `(${c.maxLength})`;
-                        colDesc += ')';
-                        if (c.isPrimaryKey) colDesc += ' [PK]';
-                        if (c.isForeignKey && c.foreignKeyTarget) {
-                            colDesc += ` [FK → ${c.foreignKeyTarget.table}.${c.foreignKeyTarget.column}]`;
-                        }
-                        if (!c.isNullable) colDesc += ' NOT NULL';
-                        return colDesc;
+            let tablesSummary: string;
+            let prompt: string;
+
+            if (isHugeDb && target !== 'columns') {
+                // HUGE DB mode: table-level descriptions only, compact format
+                // Show only table name + PK/FK columns (skip regular columns to save tokens)
+                tablesSummary = batch.map(t => {
+                    const keyColsList = t.columns
+                        .filter(c => c.isPrimaryKey || c.isForeignKey)
+                        .map(c => {
+                            let s = c.name;
+                            if (c.isPrimaryKey) s += ' [PK]';
+                            if (c.isForeignKey && c.foreignKeyTarget) s += ` [FK→${c.foreignKeyTarget.table}]`;
+                            return s;
+                        }).join(', ');
+                    const keyCols = keyColsList ? ` | Chiavi: ${keyColsList}` : '';
+                    // Include column descriptions if available (from previous columns pass)
+                    const colDescs = t.columns
+                        .filter(c => c.description || c.userDescription)
+                        .map(c => `  ${c.name}: ${c.userDescription || c.description}`)
+                        .join('; ');
+                    const colCtx = colDescs ? `\n  Colonne: ${colDescs}` : '';
+                    return `${t.fullName} (${t.rowCount} righe, ${t.columns.length} col)${keyCols}${colCtx}`;
+                }).join('\n');
+
+                prompt = `Sei un esperto di database SQL Server. Per ciascuna tabella, genera UNA brevissima descrizione in italiano (max 10 parole) che ne spiega lo scopo.
+
+Rispondi SOLO in JSON:
+{"tables":{"schema.tabella":{"description":"..."}}}
+
+Tabelle:
+${tablesSummary}`;
+            } else if (target === 'columns') {
+                // COLUMNS-ONLY mode: generate only column descriptions
+                tablesSummary = batch.map(t => {
+                    const cols = t.columns
+                        .filter(c => mode === 'all' || (!c.description && !c.userDescription))
+                        .map(c => {
+                            let colDesc = `  - ${c.name} (${c.dataType}`;
+                            if (c.maxLength && c.maxLength > 0) colDesc += `(${c.maxLength})`;
+                            colDesc += ')';
+                            if (c.isPrimaryKey) colDesc += ' [PK]';
+                            if (c.isForeignKey && c.foreignKeyTarget) {
+                                colDesc += ` [FK → ${c.foreignKeyTarget.table}.${c.foreignKeyTarget.column}]`;
+                            }
+                            if (!c.isNullable) colDesc += ' NOT NULL';
+                            return colDesc;
+                        }).join('\n');
+                    return `TABELLA: ${t.fullName} (${t.rowCount} righe)\nColonne:\n${cols}`;
+                }).join('\n\n---\n\n');
+
+                prompt = `Sei un esperto di database SQL Server. Per ogni COLONNA, genera una descrizione SINTETICA in italiano (max 5-6 parole, es. "Identificativo univoco", "Data inserimento record").
+NON generare descrizioni per le tabelle, SOLO per le colonne.
+Generare meno testo possibile per velocizzare il processo.
+
+Rispondi SOLO in formato JSON con questa struttura esatta:
+{
+  "tables": {
+    "schema.nomeTabella": {
+      "columns": {
+        "nomeColonna": "Descrizione del campo"
+      }
+    }
+  }
+}
+
+Ecco le tabelle con le colonne da descrivere:
+
+${tablesSummary}`;
+            } else if (target === 'tables') {
+                // TABLES-ONLY mode: generate only table descriptions, using column descriptions as context
+                tablesSummary = batch.map(t => {
+                    // Include column descriptions as context to help AI understand the table
+                    const cols = t.columns.map(c => {
+                        const desc = c.userDescription || c.description;
+                        let colInfo = `  - ${c.name} (${c.dataType})`;
+                        if (c.isPrimaryKey) colInfo += ' [PK]';
+                        if (c.isForeignKey && c.foreignKeyTarget) colInfo += ` [FK → ${c.foreignKeyTarget.table}]`;
+                        if (desc) colInfo += ` — ${desc}`;
+                        return colInfo;
                     }).join('\n');
+                    return `TABELLA: ${t.fullName} (${t.rowCount} righe)\nColonne:\n${cols}`;
+                }).join('\n\n---\n\n');
 
-                let block = `TABELLA: ${t.fullName} (${t.rowCount} righe)`;
-                if (!needsTableDesc) block += ' [DESCRIZIONE GIA\' PRESENTE - genera solo colonne mancanti]';
-                block += `\nColonne:\n${cols}`;
-                return block;
-            }).join('\n\n---\n\n');
+                prompt = `Sei un esperto di database SQL Server. Per ogni TABELLA, genera UNA descrizione sintetica in italiano (1 breve frase che ne spiega lo scopo).
+NON generare descrizioni per le colonne, SOLO per le tabelle.
+Usa le descrizioni delle colonne come contesto per capire meglio lo scopo della tabella.
+Generare meno testo possibile per velocizzare il processo.
 
-            const prompt = `Sei un esperto di database SQL Server. Analizza queste tabelle e genera descrizioni SINTETICHE in italiano:
+Rispondi SOLO in formato JSON con questa struttura esatta:
+{
+  "tables": {
+    "schema.nomeTabella": {
+      "description": "Descrizione della tabella"
+    }
+  }
+}
+
+Ecco le tabelle da descrivere:
+
+${tablesSummary}`;
+            } else {
+                // ALL mode (legacy): full column + table descriptions together
+                tablesSummary = batch.map(t => {
+                    const needsTableDesc = mode === 'all' || (!t.description && !t.userDescription);
+                    const cols = t.columns
+                        .filter(c => mode === 'all' || (!c.description && !c.userDescription))
+                        .map(c => {
+                            let colDesc = `  - ${c.name} (${c.dataType}`;
+                            if (c.maxLength && c.maxLength > 0) colDesc += `(${c.maxLength})`;
+                            colDesc += ')';
+                            if (c.isPrimaryKey) colDesc += ' [PK]';
+                            if (c.isForeignKey && c.foreignKeyTarget) {
+                                colDesc += ` [FK → ${c.foreignKeyTarget.table}.${c.foreignKeyTarget.column}]`;
+                            }
+                            if (!c.isNullable) colDesc += ' NOT NULL';
+                            return colDesc;
+                        }).join('\n');
+
+                    let block = `TABELLA: ${t.fullName} (${t.rowCount} righe)`;
+                    if (!needsTableDesc) block += ' [DESCRIZIONE GIA\' PRESENTE - genera solo colonne mancanti]';
+                    block += `\nColonne:\n${cols}`;
+                    return block;
+                }).join('\n\n---\n\n');
+
+                prompt = `Sei un esperto di database SQL Server. Analizza queste tabelle e genera descrizioni SINTETICHE in italiano:
 - Per ogni TABELLA: 1 brevissima frase che ne spiega lo scopo.
 - Per ogni COLONNA: max 5-6 parole (es. "Identificativo", "Data inserimento record").
 Generare meno testo possibile per velocizzare il processo.
@@ -1096,6 +1516,7 @@ Rispondi SOLO in formato JSON con questa struttura esatta:
 Ecco le tabelle da descrivere:
 
 ${tablesSummary}`;
+            }
 
             const AI_TIMEOUT = isPaidMode ? 90000 : 60000; // paid models get more time (bigger batches possible)
             const MAX_ATTEMPTS = isPaidMode ? 2 : Math.min(freeModels.length, 5);
@@ -1155,6 +1576,13 @@ ${tablesSummary}`;
                         return { ok: true, tables: batch.length };
                     }
 
+                    // Log actual text for debugging failed JSON parsing
+                    if (text.length < 200) {
+                        console.warn(`[DB-MAP] Sub-batch ${subIdx}: full response text: ${JSON.stringify(text)}`);
+                    } else {
+                        console.warn(`[DB-MAP] Sub-batch ${subIdx}: response start: ${JSON.stringify(text.slice(0, 200))}...`);
+                    }
+
                     // JSON completely unrecoverable — try halving the batch
                     if (batch.length > 3) {
                         console.log(`[DB-MAP] Sub-batch ${subIdx}: JSON unrecoverable, splitting ${batch.length} tables in half`);
@@ -1183,12 +1611,14 @@ ${tablesSummary}`;
                 const tableDescs = tablesData[table.fullName];
                 if (!tableDescs) continue;
 
-                if (tableDescs.description) {
+                // Apply table description (skip if target is 'columns')
+                if (target !== 'columns' && tableDescs.description) {
                     if (mode === 'all' || (!table.description && !table.userDescription)) {
                         table.description = tableDescs.description;
                     }
                 }
-                if (tableDescs.columns) {
+                // Apply column descriptions (skip if target is 'tables')
+                if (target !== 'tables' && tableDescs.columns) {
                     for (const col of table.columns) {
                         if (tableDescs.columns[col.name]) {
                             if (mode === 'all' || (!col.description && !col.userDescription)) {
@@ -1209,20 +1639,13 @@ ${tablesSummary}`;
             else if (r.status === 'rejected') failedTables += batchSize;
         }
 
-        // Save to DB using debounce (or flush on last batch)
+        // Save to DB on EVERY batch — prevents data loss on cancel/restart
+        // Also update databaseMapLight so reopening dialog shows latest descriptions
         const nextDone = (startIdx + tablesPerIteration) >= totalToProcess;
         map.descriptionsGeneratedAt = new Date().toISOString();
-        if (nextDone) {
-            // Final batch: flush immediately
-            await flushDebouncedSave();
-            await db.connector.update({
-                where: { id: connectorId },
-                data: { databaseMap: JSON.stringify(map), databaseMapAt: new Date() },
-            });
-            setCachedParsedMap(connectorId, map);
-        } else {
-            await saveDatabaseMapDebounced(connectorId, map);
-        }
+        if (nextDone) await flushDebouncedSave();
+        console.log(`[DB-MAP] Persisting descriptions to DB (batch ${batchIndex}, ${nextDone ? 'FINAL' : 'checkpoint'})`);
+        await saveDatabaseMap(connectorId, map);
 
         return { batchProcessed: iterationTables.length, totalToProcess, totalTables: map.tables.length, done: nextDone, failedTables, usage: batchUsage };
     } catch (e: any) {
@@ -1250,14 +1673,22 @@ export async function chatDatabaseMapAction(
     const chatModel = isClaudeCliChat ? (providerSettings.claudeCliModel || 'claude-sonnet-4-6') : (orSettings.model || 'google/gemini-2.0-flash-001');
 
     try {
-        const connector = await db.connector.findUnique({
-            where: { id: connectorId, companyId: user.companyId },
-            select: { databaseMap: true, name: true },
-        });
-
-        if (!connector?.databaseMap) return { error: 'Mappa database non disponibile.' };
-
-        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
+        // Fast path: use in-memory cache to avoid loading 30+ MB from DB
+        const cacheEntryChat = getParsedMapCacheEntry();
+        let map: DatabaseMap;
+        let connectorName = '';
+        if (cacheEntryChat && cacheEntryChat.connectorId === connectorId) {
+            map = cacheEntryChat.map;
+            connectorName = map.connectorName || '';
+        } else {
+            const connector = await db.connector.findUnique({
+                where: { id: connectorId, companyId: user.companyId },
+                select: { databaseMap: true, name: true },
+            });
+            if (!connector?.databaseMap) return { error: 'Mappa database non disponibile.' };
+            map = getCachedParsedMap(connectorId, connector.databaseMap);
+            connectorName = connector.name;
+        }
 
         // Build a concise schema summary for the LLM context
         // Limit total size to avoid exceeding context window
@@ -1291,7 +1722,7 @@ export async function chatDatabaseMapAction(
 
         const truncNote = truncated ? `\n\n(Schema troncato per limiti di contesto. Mostrate ${schemaSummary.split('TABELLA:').length - 1} di ${map.summary.totalTables} tabelle.)` : '';
 
-        const systemPrompt = `Sei un esperto di database. L'utente sta esplorando la mappa del database "${map.databaseName}" (connettore: ${connector.name}).
+        const systemPrompt = `Sei un esperto di database. L'utente sta esplorando la mappa del database "${map.databaseName}" (connettore: ${connectorName}).
 
 Ecco la struttura del database:
 
@@ -1393,14 +1824,19 @@ export async function inferRelationshipsAIAction(
     const orModel = aiModel || freeModelsRel[0] || orSettings.model || 'google/gemini-2.0-flash-001';
 
     try {
-        const connector = await db.connector.findUnique({
-            where: { id: connectorId, companyId: user.companyId },
-            select: { databaseMap: true },
-        });
-
-        if (!connector?.databaseMap) return { newRelationships: 0, totalProcessed: 0, totalTables: 0, done: true, error: 'Mappa non trovata' };
-
-        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
+        // Fast path: use in-memory cache to avoid loading 30+ MB from DB
+        const cacheEntryRel = getParsedMapCacheEntry();
+        let map: DatabaseMap;
+        if (cacheEntryRel && cacheEntryRel.connectorId === connectorId) {
+            map = cacheEntryRel.map;
+        } else {
+            const connector = await db.connector.findUnique({
+                where: { id: connectorId, companyId: user.companyId },
+                select: { databaseMap: true },
+            });
+            if (!connector?.databaseMap) return { newRelationships: 0, totalProcessed: 0, totalTables: 0, done: true, error: 'Mappa non trovata' };
+            map = getCachedParsedMap(connectorId, connector.databaseMap);
+        }
         const startIdx = batchIndex * INFER_BATCH_SIZE;
 
         if (startIdx >= map.tables.length) {
@@ -1590,19 +2026,13 @@ Se nessuna: {"relationships":[]}`;
             } // end retry loop
         }));
 
-        // Update summary and save with debounce
+        // Update summary and save immediately (every batch, not debounced — prevents data loss on cancel)
+        // Also update databaseMapLight so reopening dialog shows latest relationships
         map.summary.totalRelationships = map.relationships.length;
         const nextDone = (startIdx + INFER_BATCH_SIZE) >= map.tables.length;
-        if (nextDone) {
-            await flushDebouncedSave();
-            await db.connector.update({
-                where: { id: connectorId },
-                data: { databaseMap: JSON.stringify(map), databaseMapAt: new Date() },
-            });
-            setCachedParsedMap(connectorId, map);
-        } else {
-            await saveDatabaseMapDebounced(connectorId, map);
-        }
+        if (nextDone) await flushDebouncedSave();
+        console.log(`[DB-MAP] Persisting relationships to DB (batch ${batchIndex}, ${nextDone ? 'FINAL' : 'checkpoint'}, ${newCount} new rels)`);
+        await saveDatabaseMap(connectorId, map);
 
         return { newRelationships: newCount, totalProcessed: startIdx + iterationTables.length, totalTables: map.tables.length, done: nextDone, usage: relUsage };
     } catch (e: any) {
@@ -1662,19 +2092,35 @@ export async function inferRelationshipsFromDataAction(
     if (!user) return { phase: '', progress: '', newRelationships: 0, done: true, error: 'Non autorizzato' };
 
     try {
-        const connector = await db.connector.findUnique({
-            where: { id: connectorId, companyId: user.companyId },
-        });
+        // Fast path: use in-memory cache to avoid loading 30+ MB from DB
+        const cacheEntryData = getParsedMapCacheEntry();
+        let map: DatabaseMap;
+        let connectorConfig: string | null = null;
 
-        if (!connector || connector.type !== 'SQL') {
-            return { phase: '', progress: '', newRelationships: 0, done: true, error: 'Connettore non trovato' };
+        if (cacheEntryData && cacheEntryData.connectorId === connectorId) {
+            map = cacheEntryData.map;
+            // Still need connector config for SQL queries
+            const connMeta = await db.connector.findUnique({
+                where: { id: connectorId, companyId: user.companyId },
+                select: { config: true, type: true },
+            });
+            if (!connMeta || connMeta.type !== 'SQL') {
+                return { phase: '', progress: '', newRelationships: 0, done: true, error: 'Connettore non trovato' };
+            }
+            connectorConfig = connMeta.config;
+        } else {
+            const connector = await db.connector.findUnique({
+                where: { id: connectorId, companyId: user.companyId },
+            });
+            if (!connector || connector.type !== 'SQL') {
+                return { phase: '', progress: '', newRelationships: 0, done: true, error: 'Connettore non trovato' };
+            }
+            if (!connector.databaseMap) {
+                return { phase: '', progress: '', newRelationships: 0, done: true, error: 'Mappa database non trovata. Esegui prima una scansione.' };
+            }
+            map = getCachedParsedMap(connectorId, connector.databaseMap);
+            connectorConfig = connector.config;
         }
-
-        if (!connector.databaseMap) {
-            return { phase: '', progress: '', newRelationships: 0, done: true, error: 'Mappa database non trovata. Esegui prima una scansione.' };
-        }
-
-        const map: DatabaseMap = getCachedParsedMap(connectorId, connector.databaseMap);
         const effectiveSampleSize = sampleSize || DATA_SAMPLE_SIZE;
 
         // Initialize dataSamplingState if not present
@@ -1715,8 +2161,9 @@ export async function inferRelationshipsFromDataAction(
             const batch = remainingTables.slice(0, DATA_FINGERPRINT_BATCH);
 
             // Connect to SQL Server and sample data
+            // connectorConfig is set from either the cache path or the full connector load
             let conf: any;
-            try { conf = JSON.parse(connector.config); } catch { return { phase: 'fingerprinting', progress: '', newRelationships: 0, done: true, error: 'Config non valida' }; }
+            try { conf = JSON.parse(connectorConfig!); } catch { return { phase: 'fingerprinting', progress: '', newRelationships: 0, done: true, error: 'Config non valida' }; }
 
             const sqlConfig = buildSqlConfig(conf, 30000); // 30s timeout per query
             const pool = new sql.ConnectionPool(sqlConfig);
@@ -2081,7 +2528,7 @@ export async function inferRelationshipsFromDataAction(
 
             // Connect to SQL Server for verification queries
             let conf: any;
-            try { conf = JSON.parse(connector.config); } catch { return { phase: 'sql_verification', progress: '', newRelationships: 0, done: true, error: 'Config non valida' }; }
+            try { conf = JSON.parse(connectorConfig!); } catch { return { phase: 'sql_verification', progress: '', newRelationships: 0, done: true, error: 'Config non valida' }; }
 
             const sqlConfig = buildSqlConfig(conf, 30000); // 30s per query
             const pool = new sql.ConnectionPool(sqlConfig);
@@ -2492,9 +2939,16 @@ ${candidateDescriptions}`;
 
 // Helper to save the map (also updates in-memory cache)
 async function saveDatabaseMap(connectorId: string, map: DatabaseMap) {
+    const nonEmpty = countNonEmptyTables(map);
+    const isHuge = nonEmpty > 2000;
+    const lightMap = isHuge ? createLightMap(map) : stripEmptyTables(map);
     await db.connector.update({
         where: { id: connectorId },
-        data: { databaseMap: JSON.stringify(map) },
+        data: {
+            databaseMap: JSON.stringify(map),
+            databaseMapLight: JSON.stringify(lightMap),
+            databaseMapAt: new Date(),
+        },
     });
     setCachedParsedMap(connectorId, map);
 }

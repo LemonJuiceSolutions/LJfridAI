@@ -30,6 +30,17 @@ export async function getConnectorsAction() {
     try {
         const connectors = await db.connector.findMany({
             where: { companyId: user.companyId },
+            select: {
+                id: true,
+                name: true,
+                type: true,
+                config: true,
+                companyId: true,
+                databaseMapAt: true,
+                createdAt: true,
+                updatedAt: true,
+                // ❌ NOT including databaseMap — can be 30-40 MB for huge DBs
+            },
             orderBy: { createdAt: 'desc' }
         });
         return { data: connectors };

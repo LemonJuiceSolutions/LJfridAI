@@ -19,7 +19,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { fetchOpenRouterModelsAction } from '@/app/actions';
 import { getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction } from '@/actions/openrouter';
+import { getAiProviderAction, saveAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import { sendLeadEmailAction, generateLeadEmailAction } from '@/actions/lead-generator';
+
+const CLAUDE_CLI_MODELS = [
+    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+    { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+    { id: 'sonnet', name: 'Sonnet (latest)' },
+    { id: 'opus', name: 'Opus (latest)' },
+    { id: 'haiku', name: 'Haiku (latest)' },
+];
 import {
     Popover,
     PopoverContent,
@@ -731,8 +741,10 @@ function LeadDetailDialog({
 export default function LeadGeneratorPage() {
     const { toast } = useToast();
 
-    // Model selector state
+    // AI Provider & Model selector state
+    const [aiProvider, setAiProvider] = useState<AiProvider>('openrouter');
     const [model, setModel] = useState('google/gemini-2.0-flash-001');
+    const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6');
     const [availableModels, setAvailableModels] = useState<any[]>([]);
     const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
     const [isSavingModel, setIsSavingModel] = useState(false);
@@ -761,6 +773,8 @@ export default function LeadGeneratorPage() {
     const [isLeadDialogOpen, setIsLeadDialogOpen] = useState(false);
     const [deleteSearchTarget, setDeleteSearchTarget] = useState<any>(null);
     const [leadsTab, setLeadsTab] = useState('leads');
+    const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
+    const [isDeletingLeads, setIsDeletingLeads] = useState(false);
     const activeSearchIdRef = useRef<string | null>(null);
     const loadLeadsAbortRef = useRef<AbortController | null>(null);
 
@@ -774,8 +788,12 @@ export default function LeadGeneratorPage() {
         scrollToBottom();
     }, [messages, scrollToBottom]);
 
-    // Load models and saved model on mount
+    // Load AI provider and models on mount
     useEffect(() => {
+        getAiProviderAction().then(res => {
+            if (res.provider) setAiProvider(res.provider);
+            if (res.claudeCliModel) setClaudeModel(res.claudeCliModel);
+        });
         fetchOpenRouterModelsAction().then(result => {
             if (result.data) setAvailableModels(result.data);
         });
@@ -785,14 +803,24 @@ export default function LeadGeneratorPage() {
     }, []);
 
     const handleModelChange = async (newModel: string) => {
-        setModel(newModel);
         setModelSelectorOpen(false);
         setIsSavingModel(true);
         try {
-            await saveOpenRouterAgentModelAction(newModel);
+            if (aiProvider === 'claude-cli') {
+                setClaudeModel(newModel);
+                await saveAiProviderAction('claude-cli', newModel);
+            } else {
+                setModel(newModel);
+                await saveOpenRouterAgentModelAction(newModel);
+            }
         } catch { /* ignore */ }
         setIsSavingModel(false);
     };
+
+    const activeModel = aiProvider === 'claude-cli' ? claudeModel : model;
+    const activeModelName = aiProvider === 'claude-cli'
+        ? CLAUDE_CLI_MODELS.find(m => m.id === claudeModel)?.name || claudeModel
+        : availableModels.find(m => m.id === model)?.name || model.split('/').pop();
 
     // Load data on mount
     useEffect(() => {
@@ -996,6 +1024,62 @@ export default function LeadGeneratorPage() {
         setDeleteSearchTarget(null);
     };
 
+    const toggleLeadSelection = (id: string) => {
+        setSelectedLeadIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const selectAllLeads = () => {
+        if (selectedLeadIds.size === leads.length) {
+            setSelectedLeadIds(new Set());
+        } else {
+            setSelectedLeadIds(new Set(leads.map(l => l.id)));
+        }
+    };
+
+    const handleDeleteSelectedLeads = async () => {
+        if (selectedLeadIds.size === 0) return;
+        setIsDeletingLeads(true);
+        try {
+            await fetch('/api/lead-generator/leads', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ leadIds: [...selectedLeadIds] }),
+            });
+            setLeads(prev => prev.filter(l => !selectedLeadIds.has(l.id)));
+            toast({ title: `${selectedLeadIds.size} lead eliminati` });
+            setSelectedLeadIds(new Set());
+        } catch (e) {
+            console.error('Failed to delete leads:', e);
+            toast({ variant: 'destructive', title: 'Errore', description: 'Impossibile eliminare i lead' });
+        }
+        setIsDeletingLeads(false);
+    };
+
+    const handleDeleteAllLeads = async () => {
+        if (leads.length === 0) return;
+        setIsDeletingLeads(true);
+        try {
+            // Delete ALL leads in DB (not just the visible page), optionally filtered by active search
+            const res = await fetch('/api/lead-generator/leads', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ deleteAll: true, searchId: activeSearchId || undefined }),
+            });
+            const data = await res.json();
+            setLeads([]);
+            toast({ title: `${data.deletedCount || 'Tutti i'} lead eliminati` });
+            setSelectedLeadIds(new Set());
+        } catch (e) {
+            console.error('Failed to delete all leads:', e);
+            toast({ variant: 'destructive', title: 'Errore', description: 'Impossibile eliminare i lead' });
+        }
+        setIsDeletingLeads(false);
+    };
+
     const handleSendEmail = async (to: string, subject: string, htmlBody: string) => {
         try {
             const result = await sendLeadEmailAction({ to, subject, htmlBody });
@@ -1033,7 +1117,8 @@ export default function LeadGeneratorPage() {
                 body: JSON.stringify({
                     userMessage: userMessage.content,
                     conversationId,
-                    model,
+                    model: activeModel,
+                    aiProvider,
                 }),
             });
 
@@ -1161,38 +1246,55 @@ export default function LeadGeneratorPage() {
                     </div>
                     <div>
                         <h1 className="text-xl font-bold">Lead Generator</h1>
-                        <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
-                            <PopoverTrigger asChild>
-                                <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                                    <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                                    <span className="truncate max-w-[200px]">
-                                        {isSavingModel ? 'Salvando...' : (availableModels.find(m => m.id === model)?.name || model.split('/').pop())}
-                                    </span>
-                                    <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
-                                </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[300px] p-0" align="start">
-                                <Command>
-                                    <CommandInput placeholder="Cerca modello..." />
-                                    <CommandList>
-                                        <CommandEmpty>Nessun modello trovato.</CommandEmpty>
-                                        <CommandGroup heading="Modelli disponibili">
-                                            {availableModels.map(m => (
-                                                <CommandItem
-                                                    key={m.id}
-                                                    value={m.id}
-                                                    onSelect={() => handleModelChange(m.id)}
-                                                    className="text-xs"
-                                                >
-                                                    <Check className={cn("mr-2 h-3 w-3", model === m.id ? "opacity-100" : "opacity-0")} />
-                                                    <span className="truncate">{m.name}</span>
-                                                </CommandItem>
-                                            ))}
-                                        </CommandGroup>
-                                    </CommandList>
-                                </Command>
-                            </PopoverContent>
-                        </Popover>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => {
+                                    const next = aiProvider === 'claude-cli' ? 'openrouter' : 'claude-cli';
+                                    setAiProvider(next);
+                                    saveAiProviderAction(next, claudeModel).catch(() => {});
+                                }}
+                                className={cn(
+                                    "text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors",
+                                    aiProvider === 'claude-cli'
+                                        ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+                                        : "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200"
+                                )}
+                            >
+                                {aiProvider === 'claude-cli' ? 'Claude CLI' : 'OpenRouter'}
+                            </button>
+                            <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
+                                <PopoverTrigger asChild>
+                                    <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                                        <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                                        <span className="truncate max-w-[200px]">
+                                            {isSavingModel ? 'Salvando...' : activeModelName}
+                                        </span>
+                                        <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+                                    </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[300px] p-0" align="start">
+                                    <Command>
+                                        <CommandInput placeholder="Cerca modello..." />
+                                        <CommandList>
+                                            <CommandEmpty>Nessun modello trovato.</CommandEmpty>
+                                            <CommandGroup heading={aiProvider === 'claude-cli' ? 'Modelli Claude' : 'Modelli OpenRouter'}>
+                                                {(aiProvider === 'claude-cli' ? CLAUDE_CLI_MODELS : availableModels).map(m => (
+                                                    <CommandItem
+                                                        key={m.id}
+                                                        value={m.id}
+                                                        onSelect={() => handleModelChange(m.id)}
+                                                        className="text-xs"
+                                                    >
+                                                        <Check className={cn("mr-2 h-3 w-3", activeModel === m.id ? "opacity-100" : "opacity-0")} />
+                                                        <span className="truncate">{m.name}</span>
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
+                        </div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1458,13 +1560,44 @@ export default function LeadGeneratorPage() {
                                             </button>
                                         </div>
                                     )}
-                                    <div className="mb-2">
+                                    <div className="mb-2 space-y-1.5">
                                         <Input
                                             placeholder="Cerca lead..."
                                             value={leadsSearch}
                                             onChange={(e) => setLeadsSearch(e.target.value)}
                                             className="h-7 text-xs"
                                         />
+                                        {leads.length > 0 && (
+                                            <div className="flex items-center gap-1 flex-wrap">
+                                                <button
+                                                    onClick={selectAllLeads}
+                                                    className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted transition-colors"
+                                                >
+                                                    {selectedLeadIds.size === leads.length ? 'Deseleziona' : 'Seleziona tutti'}
+                                                </button>
+                                                {selectedLeadIds.size > 0 && (
+                                                    <button
+                                                        onClick={handleDeleteSelectedLeads}
+                                                        disabled={isDeletingLeads}
+                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 transition-colors flex items-center gap-0.5"
+                                                    >
+                                                        {isDeletingLeads ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Trash2 className="h-2.5 w-2.5" />}
+                                                        Elimina {selectedLeadIds.size} selezionati
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => {
+                                                        if (confirm(`Eliminare tutti i ${leads.length} lead? Questa azione non può essere annullata.`)) {
+                                                            handleDeleteAllLeads();
+                                                        }
+                                                    }}
+                                                    disabled={isDeletingLeads}
+                                                    className="text-[10px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ml-auto"
+                                                >
+                                                    Elimina tutti
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                     <ScrollArea className="h-[calc(100%-2.5rem)]">
                                         {leadsLoading ? (
@@ -1485,9 +1618,21 @@ export default function LeadGeneratorPage() {
                                                     return (
                                                     <div
                                                         key={lead.id}
-                                                        className="border rounded-lg p-2 text-xs hover:bg-muted/30 transition-colors cursor-pointer"
+                                                        className={cn("border rounded-lg p-2 text-xs hover:bg-muted/30 transition-colors cursor-pointer", selectedLeadIds.has(lead.id) && "ring-1 ring-violet-400 bg-violet-50/50 dark:bg-violet-900/20")}
                                                         onClick={() => { setSelectedLead(lead); setIsLeadDialogOpen(true); }}
                                                     >
+                                                        <div className="flex items-center gap-1.5 mb-0.5">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedLeadIds.has(lead.id)}
+                                                                onChange={(e) => { e.stopPropagation(); toggleLeadSelection(lead.id); }}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className="h-3 w-3 rounded border-gray-300 accent-violet-500 shrink-0 cursor-pointer"
+                                                            />
+                                                            <span className="text-[10px] text-muted-foreground flex-1 truncate">
+                                                                {lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || lead.companyName || 'Lead'}
+                                                            </span>
+                                                        </div>
                                                         {lead.companyName && (
                                                             <div className="flex items-center gap-1">
                                                                 <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
