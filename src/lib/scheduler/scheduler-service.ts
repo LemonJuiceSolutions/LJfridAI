@@ -355,7 +355,7 @@ export class SchedulerService {
     // Realign skipped tasks
     for (const id of skipIds) {
       try {
-        const name = await this.realignTaskNextRun(id);
+        const name = await this.realignTaskNextRun(id, true); // Update lastRunAt to 'now' so skipped slots are cleared
         results.push({ id, name: name || '', action: 'skipped' });
       } catch (e: any) {
         results.push({ id, name: '', action: 'skipped', error: e.message });
@@ -368,13 +368,23 @@ export class SchedulerService {
   /**
    * Realigns a task's nextRunAt to the next future cron slot.
    * Returns the task name for convenience.
+   *
+   * @param updateLastRun If true, also sets lastRunAt to the current time.
+   *                      This is important when skipping missed slots to move
+   *                       the "missed" window forward.
    */
-  private async realignTaskNextRun(taskId: string): Promise<string | null> {
+  private async realignTaskNextRun(taskId: string, updateLastRun: boolean = false): Promise<string | null> {
     const task = await db.scheduledTask.findUnique({ where: { id: taskId } });
     if (!task) return null;
     const nextRun = calculateNextRunForTask(task, task.timezone || 'Europe/Rome');
     if (nextRun) {
-      await db.scheduledTask.update({ where: { id: taskId }, data: { nextRunAt: nextRun } });
+      await db.scheduledTask.update({
+        where: { id: taskId },
+        data: {
+          nextRunAt: nextRun,
+          lastRunAt: updateLastRun ? new Date() : undefined
+        }
+      });
     }
     return task.name;
   }

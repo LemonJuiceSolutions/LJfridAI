@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
@@ -43,6 +43,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
 import { useEditMode } from '@/hooks/use-edit-mode';
+import { Badge } from '@/components/ui/badge';
 
 // Original FridAI nav items (Static)
 const fridaiNavItems = [
@@ -66,6 +67,27 @@ export function SidebarNav() {
     const { editMode, setEditMode } = useEditMode();
     const { navItems, settingsNavItems, isLoading } = useNavigation();
     const { isSidebarOpen, toggleSidebar } = useLayout();
+    const [missedTasksCount, setMissedTasksCount] = useState<number>(0);
+
+    useEffect(() => {
+        if (!session?.user) return;
+
+        const fetchMissedCount = async () => {
+            try {
+                const res = await fetch('/api/scheduler/missed-tasks');
+                if (res.ok) {
+                    const data = await res.json();
+                    setMissedTasksCount(data.length || 0);
+                }
+            } catch (err) {
+                console.error('Failed to fetch missed tasks count:', err);
+            }
+        };
+
+        fetchMissedCount();
+        const interval = setInterval(fetchMissedCount, 60000); // Check every minute
+        return () => clearInterval(interval);
+    }, [session]);
 
     if (!isSidebarOpen) {
         return (
@@ -165,7 +187,12 @@ export function SidebarNav() {
                                         "h-4 w-4",
                                         isActive ? "text-violet-600 dark:text-violet-400" : "text-slate-400 dark:text-slate-500"
                                     )} />
-                                    <span>{item.name}</span>
+                                    <span className="flex-1">{item.name}</span>
+                                    {item.href === '/scheduler' && missedTasksCount > 0 && (
+                                        <Badge variant="destructive" className="h-4 min-w-[16px] px-1 flex items-center justify-center rounded-full text-[9px]">
+                                            {missedTasksCount}
+                                        </Badge>
+                                    )}
                                 </Link>
                             );
                         })}
