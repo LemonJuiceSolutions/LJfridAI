@@ -178,6 +178,23 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
         fetchData(false, false); // Use cache, no fallback
     }, [status, fetchData]);
 
+    // Listen for page-level queue trigger: open this widget's PipelineExecutionDialog
+    const isQueuedRef = useRef(false);
+    useEffect(() => {
+        const widgetId = `pipeline-${pipelineId}-${nodeId}`;
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (detail?.widgetId === widgetId) {
+                isQueuedRef.current = true;
+                // ACK immediately so the queue doesn't skip us
+                window.dispatchEvent(new CustomEvent('widget-update-started', { detail: { widgetId } }));
+                setShowExecutionDialog(true);
+            }
+        };
+        window.addEventListener('trigger-widget-update', handler);
+        return () => window.removeEventListener('trigger-widget-update', handler);
+    }, [pipelineId, nodeId]);
+
     const handleRefresh = () => {
         // Refresh button: skip cache, re-read from DB, run pipeline only if no DB result
         fetchData(true, true);
@@ -192,6 +209,15 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
         const cacheKey = `${pipelineId}-${nodeId}`;
         pipelineResultCache.delete(cacheKey);
         fetchData(true, false);
+
+        // If triggered by page-level queue, auto-close dialog and advance queue
+        if (isQueuedRef.current) {
+            isQueuedRef.current = false;
+            setShowExecutionDialog(false);
+            window.dispatchEvent(new CustomEvent('widget-update-complete', {
+                detail: { widgetId: `pipeline-${pipelineId}-${nodeId}`, success: true }
+            }));
+        }
     };
 
     if (isLoading || status === 'loading') {
@@ -239,7 +265,16 @@ export default function PipelineOutputWidget({ pipelineId, nodeId }: PipelineOut
 
             <PipelineExecutionDialog
                 isOpen={showExecutionDialog}
-                onClose={() => setShowExecutionDialog(false)}
+                onClose={() => {
+                    setShowExecutionDialog(false);
+                    // If triggered by page-level queue and closed without onSuccess, notify as error
+                    if (isQueuedRef.current) {
+                        isQueuedRef.current = false;
+                        window.dispatchEvent(new CustomEvent('widget-update-complete', {
+                            detail: { widgetId: `pipeline-${pipelineId}-${nodeId}`, success: false }
+                        }));
+                    }
+                }}
                 treeId={pipelineId}
                 nodeId={nodeId}
                 onSuccess={handleExecutionSuccess}

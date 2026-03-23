@@ -6,7 +6,7 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { useEditMode } from '@/hooks/use-edit-mode';
 import { cn } from '@/lib/utils';
-import { GripVertical, Plus, Trash2, LayoutGrid, Loader2, X, Search } from 'lucide-react';
+import { GripVertical, Plus, Trash2, LayoutGrid, Loader2, X, Search, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TextWidget from '@/components/dashboard/text-widget';
 import {
@@ -129,6 +129,107 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     // Track whether the initial layout has been loaded from DB to skip the first
     // handleLayoutChange call (which fires on grid mount, not from user interaction)
     const hasUserInteractedRef = useRef(false);
+
+    // ── Page-level widget update queue ──
+    const pageUpdateQueueRef = useRef<string[]>([]);
+    const pageUpdateCurrentIdxRef = useRef(-1);
+    const pageUpdateSkipTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const [isPageUpdating, setIsPageUpdating] = useState(false);
+
+    // Advance the queue to the next widget (defined first so startPageUpdate can use it)
+    const advanceQueue = useCallback(() => {
+        // Clear any pending skip timer
+        if (pageUpdateSkipTimerRef.current) {
+            clearTimeout(pageUpdateSkipTimerRef.current);
+            pageUpdateSkipTimerRef.current = null;
+        }
+
+        const queue = pageUpdateQueueRef.current;
+        const nextIdx = pageUpdateCurrentIdxRef.current + 1;
+
+        if (nextIdx >= queue.length) {
+            // All done
+            pageUpdateQueueRef.current = [];
+            pageUpdateCurrentIdxRef.current = -1;
+            setIsPageUpdating(false);
+            toast({ title: 'Aggiornamento completato', description: 'Tutti i widget della pagina sono stati aggiornati.' });
+            return;
+        }
+
+        pageUpdateCurrentIdxRef.current = nextIdx;
+        const nextWidgetId = queue[nextIdx];
+        console.log('[PAGE-UPDATE] Triggering widget', nextIdx + 1, '/', queue.length, ':', nextWidgetId);
+
+        // Small delay to let previous dialog close
+        setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('trigger-widget-update', {
+                detail: { widgetId: nextWidgetId }
+            }));
+
+            // Safety timeout: if widget doesn't ACK in 60s (no listener at all), skip it
+            pageUpdateSkipTimerRef.current = setTimeout(() => {
+                if (pageUpdateCurrentIdxRef.current === nextIdx && pageUpdateQueueRef.current.length > 0) {
+                    console.log('[PAGE-UPDATE] Widget did not respond, skipping:', nextWidgetId);
+                    advanceQueue();
+                }
+            }, 300000);
+        }, 300);
+    }, [toast]);
+
+    const startPageUpdate = useCallback(() => {
+        // Collect ALL non-text widget IDs on the page
+        const widgetIds = items
+            .filter(item => !item.isText)
+            .map(item => item.id);
+
+        console.log('[PAGE-UPDATE] All items:', items.map(i => i.id));
+        console.log('[PAGE-UPDATE] Executable widgets:', widgetIds);
+
+        if (widgetIds.length === 0) {
+            toast({ title: 'Nessun widget da aggiornare', description: 'Non ci sono widget eseguibili in questa pagina.' });
+            return;
+        }
+
+        pageUpdateQueueRef.current = widgetIds;
+        pageUpdateCurrentIdxRef.current = -1;
+        setIsPageUpdating(true);
+        advanceQueue();
+    }, [items, toast, advanceQueue]);
+
+    // Listen for widget-update-started: widget ACKed the trigger, cancel skip timer
+    // Listen for widget-update-complete: widget finished, advance queue
+    useEffect(() => {
+        const handleStarted = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (!detail?.widgetId || pageUpdateQueueRef.current.length === 0) return;
+            const currentIdx = pageUpdateCurrentIdxRef.current;
+            if (currentIdx < 0 || pageUpdateQueueRef.current[currentIdx] !== detail.widgetId) return;
+
+            // Widget acknowledged — cancel the skip timer, execution is in progress
+            console.log('[PAGE-UPDATE] Widget started:', detail.widgetId);
+            if (pageUpdateSkipTimerRef.current) {
+                clearTimeout(pageUpdateSkipTimerRef.current);
+                pageUpdateSkipTimerRef.current = null;
+            }
+        };
+
+        const handleComplete = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (!detail?.widgetId || pageUpdateQueueRef.current.length === 0) return;
+            const currentIdx = pageUpdateCurrentIdxRef.current;
+            if (currentIdx < 0 || pageUpdateQueueRef.current[currentIdx] !== detail.widgetId) return;
+
+            console.log('[PAGE-UPDATE] Widget completed:', detail.widgetId, 'success:', detail.success);
+            advanceQueue();
+        };
+
+        window.addEventListener('widget-update-started', handleStarted);
+        window.addEventListener('widget-update-complete', handleComplete);
+        return () => {
+            window.removeEventListener('widget-update-started', handleStarted);
+            window.removeEventListener('widget-update-complete', handleComplete);
+        };
+    }, [advanceQueue]);
 
     // Update state when layout data changes from hook
     useEffect(() => {
@@ -427,8 +528,19 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
 
     return (
         <div className='flex flex-col gap-4'>
-            {editMode && (
-                <div className='flex justify-end gap-2 flex-wrap'>
+            <div className='flex justify-end gap-2 flex-wrap'>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={startPageUpdate}
+                    disabled={isPageUpdating}
+                    title="Aggiorna tutti i widget della pagina"
+                >
+                    <Zap className="h-4 w-4 mr-2 text-amber-500" />
+                    Aggiorna Pagina
+                </Button>
+                {editMode && (
+                    <>
                     <DropdownMenu onOpenChange={(open) => { if (open) refreshWidgets(); }}>
                         <DropdownMenuTrigger asChild>
                             <Button size="sm">
@@ -494,8 +606,9 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
                         <Plus className="h-4 w-4 mr-2" />
                         Aggiungi Testo
                     </Button>
-                </div>
-            )}
+                    </>
+                )}
+            </div>
             <div ref={containerRef} className="w-full">
                 <Responsive
                     width={width} // Explicit width from ResizeObserver
@@ -553,6 +666,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
                         </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
+
             </div>
         </div>
     );

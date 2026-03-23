@@ -82,6 +82,22 @@ export function NodeWidgetRenderer({ treeId, nodeId }: NodeWidgetRendererProps) 
         return () => window.removeEventListener('tree-cache-invalidated', handler);
     }, [treeId, loadWidget]);
 
+    // Listen for page-level queue trigger: open this widget's PipelineExecutionDialog
+    const isQueuedRef = useRef(false);
+    useEffect(() => {
+        const widgetId = `tree-${treeId}-${nodeId}`;
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (detail?.widgetId === widgetId) {
+                isQueuedRef.current = true;
+                window.dispatchEvent(new CustomEvent('widget-update-started', { detail: { widgetId } }));
+                setShowExecutionDialog(true);
+            }
+        };
+        window.addEventListener('trigger-widget-update', handler);
+        return () => window.removeEventListener('trigger-widget-update', handler);
+    }, [treeId, nodeId]);
+
     const handleRefresh = () => {
         loadWidget(false);
     };
@@ -93,6 +109,15 @@ export function NodeWidgetRenderer({ treeId, nodeId }: NodeWidgetRendererProps) 
     const handleExecutionSuccess = () => {
         invalidateAndNotifyWidgets(treeId);
         loadWidget(false);
+
+        // If triggered by page-level queue, auto-close dialog and advance queue
+        if (isQueuedRef.current) {
+            isQueuedRef.current = false;
+            setShowExecutionDialog(false);
+            window.dispatchEvent(new CustomEvent('widget-update-complete', {
+                detail: { widgetId: `tree-${treeId}-${nodeId}`, success: true }
+            }));
+        }
     };
 
     if (loading) {
@@ -125,7 +150,15 @@ export function NodeWidgetRenderer({ treeId, nodeId }: NodeWidgetRendererProps) 
 
             <PipelineExecutionDialog
                 isOpen={showExecutionDialog}
-                onClose={() => setShowExecutionDialog(false)}
+                onClose={() => {
+                    setShowExecutionDialog(false);
+                    if (isQueuedRef.current) {
+                        isQueuedRef.current = false;
+                        window.dispatchEvent(new CustomEvent('widget-update-complete', {
+                            detail: { widgetId: `tree-${treeId}-${nodeId}`, success: false }
+                        }));
+                    }
+                }}
                 treeId={treeId}
                 nodeId={nodeId}
                 onSuccess={handleExecutionSuccess}
