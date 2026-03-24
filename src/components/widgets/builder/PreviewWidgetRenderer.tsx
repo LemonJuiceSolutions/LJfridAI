@@ -7,11 +7,13 @@ import SmartWidgetRenderer from './SmartWidgetRenderer';
 import { applyPlotlyOverrides, plotlyJsonToHtml } from '@/lib/plotly-utils';
 import { applyHtmlStyleOverrides, injectIframeFetchPolyfill } from '@/lib/html-style-utils';
 import { generateUiElementsCss } from '@/lib/unified-style-css';
-import { Loader2, Database, Code, AlertCircle, RefreshCw, Zap, Download } from 'lucide-react';
+import { Loader2, Database, Code, AlertCircle, RefreshCw, Zap, Download, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useActiveUnifiedStyle } from '@/hooks/use-active-style';
 import { PipelineExecutionDialog } from '@/components/widgets/builder/PipelineExecutionDialog';
+import Link from 'next/link';
+import _ from 'lodash';
 
 interface PreviewWidgetRendererProps {
     treeId: string;
@@ -26,6 +28,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [showExecutionDialog, setShowExecutionDialog] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [nodePath, setNodePath] = useState<string | null>(null);
     const { toast } = useToast();
     const { activeStyle } = useActiveUnifiedStyle();
     const isLoadingRef = useRef(false);
@@ -44,6 +47,31 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
             // fall back to full tree hydration only if cache misses.
             let node: any = null;
 
+            // Helper: find the lodash-style path for a node by its ID within a tree JSON
+            const findPathById = (root: any, targetId: string): string | null => {
+                const search = (n: any, path: string): string | null => {
+                    if (!n || typeof n !== 'object') return null;
+                    if (n.id === targetId) return path;
+                    if (n.options) {
+                        for (const [key, child] of Object.entries(n.options)) {
+                            const escapedKey = key.includes("'") ? key.replace(/'/g, "\\'") : key;
+                            const childPath = `${path}.options['${escapedKey}']`;
+                            if (Array.isArray(child)) {
+                                for (let i = 0; i < (child as any[]).length; i++) {
+                                    const found = search((child as any[])[i], `${childPath}[${i}]`);
+                                    if (found) return found;
+                                }
+                            } else if (typeof child === 'object') {
+                                const found = search(child, childPath);
+                                if (found) return found;
+                            }
+                        }
+                    }
+                    return null;
+                };
+                return search(root, 'root');
+            };
+
             // 1. Try loading directly from NodePreviewCache (avoids serializing entire tree)
             try {
                 const { getNodePreviewAction } = await import('@/app/actions');
@@ -51,35 +79,42 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                 console.log(`[PreviewWidget] getNodePreviewAction(${treeId.slice(-6)}, ${nodeId}):`, cached ? `keys=${Object.keys(cached).join(',')}` : 'null');
                 if (cached) {
                     node = cached; // cached has sqlPreviewData, pythonPreviewResult, etc.
+                    // Also resolve the path for deep-linking (non-blocking)
+                    getCachedTree(treeId, true).then(r => {
+                        if (r.data) {
+                            const jsonTree = typeof r.data.jsonDecisionTree === 'string'
+                                ? JSON.parse(r.data.jsonDecisionTree) : r.data.jsonDecisionTree;
+                            const p = findPathById(jsonTree, nodeId);
+                            if (p) setNodePath(p);
+                        }
+                    }).catch(() => {});
                 }
             } catch (cacheErr: any) {
                 console.warn(`[PreviewWidget] Cache load failed for ${nodeId}:`, cacheErr.message);
             }
 
-            // 2. Fallback: load tree + find node inline (for data still embedded in tree JSON)
-            if (!node) {
+            // 2. Fallback / merge: load tree + find node inline
+            // Also runs when cache hit is incomplete (e.g. cache has SQL data but tree JSON has pythonPreviewResult)
+            const cacheIncomplete = node && (
+                (previewType === 'python' && !node.pythonPreviewResult) ||
+                (previewType === 'sql' && !node.sqlPreviewData && !node.pythonPreviewResult)
+            );
+            if (!node || cacheIncomplete) {
                 const result = await getCachedTree(treeId, !showLoading);
                 if (result.data) {
-                    let jsonTree = typeof result.data.jsonDecisionTree === 'string'
+                    const jsonTree = typeof result.data.jsonDecisionTree === 'string'
                         ? JSON.parse(result.data.jsonDecisionTree)
                         : result.data.jsonDecisionTree;
 
-                    const findNode = (n: any): any => {
-                        if (!n) return null;
-                        if (n.id === nodeId) return n;
-                        if (n.options) {
-                            for (const child of Object.values(n.options)) {
-                                if (typeof child === 'object') {
-                                    const found = Array.isArray(child)
-                                        ? child.map(findNode).find(Boolean)
-                                        : findNode(child);
-                                    if (found) return found;
-                                }
-                            }
-                        }
-                        return null;
-                    };
-                    node = findNode(jsonTree);
+                    // Reuse findPathById to locate the node and its path simultaneously
+                    const foundPath = findPathById(jsonTree, nodeId);
+                    if (foundPath) {
+                        const lodashPath = foundPath.replace(/^root\.?/, '');
+                        const treeNode = lodashPath ? _.get(jsonTree, lodashPath) : jsonTree;
+                        // Merge: cache data takes priority, tree JSON fills gaps
+                        node = node ? { ...treeNode, ...node } : treeNode;
+                        setNodePath(foundPath);
+                    }
                 }
             }
 
@@ -224,12 +259,45 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
         />
     );
 
+    // Compact header shown in loading/error/empty states so the user always knows which widget this is
+    const renderCompactHeader = () => (
+        <div className="flex items-center gap-2 px-4 py-2 border-b bg-muted/30">
+            {previewType === 'sql' ? <Database className="h-4 w-4 text-primary" /> : <Code className="h-4 w-4 text-primary" />}
+            <span className="text-sm font-medium truncate">{resultName || nodeId}</span>
+            <div className="ml-auto flex items-center gap-1">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    asChild
+                    title="Apri nodo nell'editor"
+                >
+                    <Link href={`/view/${treeId}${nodePath ? `?node=${encodeURIComponent(nodePath)}` : ''}`}>
+                        <ExternalLink className="h-3.5 w-3.5" />
+                    </Link>
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-amber-500 hover:text-amber-600"
+                    onClick={handleUpdateHierarchyClick}
+                    title="Aggiorna Intera Gerarchia"
+                >
+                    <Zap className="h-3.5 w-3.5" />
+                </Button>
+            </div>
+        </div>
+    );
+
     if (loading) {
         return (
             <>
                 {executionDialog}
-                <div className="flex items-center justify-center h-full p-4">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <div className="h-full flex flex-col">
+                    {renderCompactHeader()}
+                    <div className="flex items-center justify-center flex-1 p-4">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
                 </div>
             </>
         );
@@ -239,9 +307,12 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
         return (
             <>
                 {executionDialog}
-                <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-                    <AlertCircle className="h-8 w-8 text-destructive mb-2" />
-                    <p className="text-sm text-destructive">{error}</p>
+                <div className="h-full flex flex-col">
+                    {renderCompactHeader()}
+                    <div className="flex flex-col items-center justify-center flex-1 p-4 text-center">
+                        <AlertCircle className="h-8 w-8 text-destructive mb-2" />
+                        <p className="text-sm text-destructive">{error}</p>
+                    </div>
                 </div>
             </>
         );
@@ -251,9 +322,12 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
         return (
             <>
                 {executionDialog}
-                <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-                    <Database className="h-8 w-8 text-muted-foreground mb-2" />
-                    <p className="text-sm text-muted-foreground">Nessun dato disponibile</p>
+                <div className="h-full flex flex-col">
+                    {renderCompactHeader()}
+                    <div className="flex flex-col items-center justify-center flex-1 p-4 text-center">
+                        <Database className="h-8 w-8 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">Nessun dato disponibile</p>
+                    </div>
                 </div>
             </>
         );
@@ -274,6 +348,17 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                         })}
                     </span>
                 )}
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    asChild
+                    title="Apri nodo nell'editor"
+                >
+                    <Link href={`/view/${treeId}${nodePath ? `?node=${encodeURIComponent(nodePath)}` : ''}`}>
+                        <ExternalLink className="h-3.5 w-3.5" />
+                    </Link>
+                </Button>
                 {previewData?.type === 'html' && previewData.html && (
                     <Button
                         variant="ghost"
