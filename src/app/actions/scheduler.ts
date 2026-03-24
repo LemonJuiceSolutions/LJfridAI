@@ -400,80 +400,29 @@ export async function saveAncestorPreviewsBatchAction(
             return { success: true, savedCount: 0 };
         }
 
-        // Auth: try user first, fall back to tree-based company lookup
-        let companyId: string | undefined;
-        try {
-            const user = await getAuthenticatedUser();
-            companyId = user?.companyId;
-        } catch { /* scheduler context - no session */ }
-
-        // 1. Load tree JSON once
-        const tree = await db.tree.findUnique({ where: { id: treeId } });
-        if (!tree || !tree.jsonDecisionTree) {
-            return { success: false, savedCount: 0 };
-        }
-
-        if (!companyId) {
-            companyId = tree.companyId ?? undefined;
-        }
-
-        const json = JSON.parse(tree.jsonDecisionTree);
-
-        // Recursive findNodeById (same logic as scheduler-service.ts)
-        const findNodeById = (node: any, targetId: string): any => {
-            if (!node || typeof node !== 'object') return null;
-            if (node.id === targetId) return node;
-            if (node.options && typeof node.options === 'object') {
-                for (const key in node.options) {
-                    const val = node.options[key];
-                    if (Array.isArray(val)) {
-                        for (const item of val) {
-                            const found = findNodeById(item, targetId);
-                            if (found) return found;
-                        }
-                    } else {
-                        const found = findNodeById(val, targetId);
-                        if (found) return found;
-                    }
-                }
-            }
-            // Also search in children arrays (alternative tree structure)
-            if (node.children && Array.isArray(node.children)) {
-                for (const child of node.children) {
-                    const found = findNodeById(child, targetId);
-                    if (found) return found;
-                }
-            }
-            return null;
-        };
-
-        // 2. Update each ancestor's preview in the parsed JSON
+        const nowMs = Date.now();
         let savedCount = 0;
-        const nowMs = Date.now(); // Epoch ms, same format as UI's Date.now()
+
+        // ─── For each preview, build the cache entry and upsert to NodePreviewCache ───
+        // This avoids loading the entire tree JSON into memory (OOM fix).
+        // We still need node metadata (sqlQuery, pythonCode) for hybrid-node detection,
+        // so we load a LIGHTWEIGHT tree (only node IDs + flags, NOT preview data).
+        // But to keep it simple and robust, we load existing cache entries instead.
 
         for (const preview of ancestorPreviews) {
             if (!preview.nodeId || preview.result == null) continue;
 
-            const node = findNodeById(json, preview.nodeId);
-            if (!node) continue;
-
-            let nodeUpdated = false;
             const res = preview.result;
 
-            // 0. AI Result: update aiConfig.lastResult
-            if ((preview as any).isAi && node.aiConfig) {
-                node.aiConfig.lastResult = (preview as any).aiResult;
-                node.aiConfig.lastRunAt = nowMs;
-                nodeUpdated = true;
-            }
+            // Load existing cache entry for this node (to preserve style overrides etc.)
+            const existingCache = await db.nodePreviewCache.findUnique({
+                where: { treeId_nodeId: { treeId, nodeId: preview.nodeId } },
+            });
+            const existing = (existingCache?.data as any) || {};
 
-            // 1. SQL Preview Data (Check for array data)
-            // FIX: Only write to sqlPreviewData when this is NOT a Python result on a hybrid node.
-            // On hybrid nodes (both sqlQuery and pythonCode), the Python result must NOT overwrite
-            // the SQL preview data, otherwise both previews show identical data.
-            const isHybridNode = !!(node.sqlQuery && node.pythonCode);
-            const shouldWriteSqlPreview = !preview.isPython || !isHybridNode;
+            const cacheData: any = { ...existing };
 
+            // 1. SQL Preview Data
             const sqlData = Array.isArray(res)
                 ? res
                 : (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data))
@@ -482,28 +431,31 @@ export async function saveAncestorPreviewsBatchAction(
                         ? res.rechartsData
                         : null;
 
+            // For hybrid node detection: if this is a Python result AND existing cache already has sqlPreviewData,
+            // don't overwrite it (same logic as before).
+            const existingHasSql = !!existing.sqlPreviewData;
+            const shouldWriteSqlPreview = !preview.isPython || !existingHasSql;
+
             if (sqlData && shouldWriteSqlPreview) {
-                node.sqlPreviewData = sqlData;
-                node.sqlPreviewTimestamp = nowMs;
-                nodeUpdated = true;
+                cacheData.sqlPreviewData = sqlData;
+                cacheData.sqlPreviewTimestamp = nowMs;
             }
 
-            // 2. Python Preview Result (Check for chart, variable, or isPython flag)
+            // 2. Python Preview Result
             const hasPythonChart = res && typeof res === 'object' && (res.chartBase64 || res.chartHtml || res.rechartsConfig);
             const hasPythonVariables = res && typeof res === 'object' && res.variables;
 
             if (preview.isPython || hasPythonChart || hasPythonVariables) {
                 const outputType = preview.pythonOutputType || 'table';
-                // Preserve existing plotlyStyleOverrides and plotlyJson from current node
-                const existingPreview = node.pythonPreviewResult;
+                const existingPythonPreview = existing.pythonPreviewResult;
                 const preservedFields = {
-                    ...(existingPreview?.plotlyStyleOverrides ? { plotlyStyleOverrides: existingPreview.plotlyStyleOverrides } : {}),
-                    ...(existingPreview?.plotlyJson && !res.plotlyJson ? { plotlyJson: existingPreview.plotlyJson } : {}),
-                    ...(existingPreview?.htmlStyleOverrides ? { htmlStyleOverrides: existingPreview.htmlStyleOverrides } : {}),
+                    ...(existingPythonPreview?.plotlyStyleOverrides ? { plotlyStyleOverrides: existingPythonPreview.plotlyStyleOverrides } : {}),
+                    ...(existingPythonPreview?.plotlyJson && !res.plotlyJson ? { plotlyJson: existingPythonPreview.plotlyJson } : {}),
+                    ...(existingPythonPreview?.htmlStyleOverrides ? { htmlStyleOverrides: existingPythonPreview.htmlStyleOverrides } : {}),
                 };
 
                 if (hasPythonChart || outputType === 'chart') {
-                    node.pythonPreviewResult = {
+                    cacheData.pythonPreviewResult = {
                         type: 'chart',
                         chartBase64: res.chartBase64,
                         chartHtml: res.chartHtml,
@@ -515,63 +467,63 @@ export async function saveAncestorPreviewsBatchAction(
                         timestamp: nowMs,
                         ...preservedFields,
                     };
-                    nodeUpdated = true;
                 } else if (outputType === 'html' && res.html) {
-                    node.pythonPreviewResult = {
+                    cacheData.pythonPreviewResult = {
                         type: 'html',
                         html: res.html,
                         data: res.data,
                         timestamp: nowMs,
                         ...preservedFields,
                     };
-                    nodeUpdated = true;
                 } else if (hasPythonVariables || outputType === 'variable') {
-                    node.pythonPreviewResult = {
+                    cacheData.pythonPreviewResult = {
                         type: 'variable',
                         variables: res.variables || res,
                         timestamp: nowMs,
                         ...preservedFields,
                     };
-                    nodeUpdated = true;
                 } else if (preview.isPython) {
-                    // Pure Python table
                     const data = res?.data || (Array.isArray(res) ? res : null);
                     if (data) {
-                        node.pythonPreviewResult = {
+                        cacheData.pythonPreviewResult = {
                             type: 'table',
                             data: Array.isArray(data) ? data : undefined,
                             timestamp: nowMs,
                             ...preservedFields,
                         };
-                        nodeUpdated = true;
                     }
                 }
             }
 
-            // 3. Generic Execution Result (for Email, SharePoint, HubSpot, etc.)
-            if (!nodeUpdated && res != null) {
-                // If not already updated by SQL or Python logic, save as generic execution result
-                node.executionPreviewResult = {
+            // 3. AI Result
+            if ((preview as any).isAi) {
+                cacheData.aiResult = (preview as any).aiResult;
+                cacheData.aiResultTimestamp = nowMs;
+            }
+
+            // 4. Generic Execution Result (for Email, SharePoint, HubSpot, etc.)
+            const hasSpecificData = cacheData.sqlPreviewData !== existing.sqlPreviewData
+                || cacheData.pythonPreviewResult !== existing.pythonPreviewResult
+                || cacheData.aiResult !== existing.aiResult;
+            if (!hasSpecificData && res != null) {
+                cacheData.executionPreviewResult = {
                     data: res,
                     timestamp: nowMs,
                 };
-                nodeUpdated = true;
             }
 
-            if (nodeUpdated) savedCount++;
+            // ─── Save via hybrid strategy (Parquet for tabular data, DB for metadata) ───
+            const { saveNodePreview } = await import('@/lib/preview-cache');
+            await saveNodePreview(treeId, preview.nodeId, cacheData);
+            savedCount++;
         }
 
-        // 3. Save tree JSON once (only if we actually updated something)
         if (savedCount > 0) {
-            await db.tree.update({
-                where: { id: treeId },
-                data: { jsonDecisionTree: JSON.stringify(json) }
-            });
             // Invalidate server-side cache so widgets get fresh data
             invalidateServerTreeCache(treeId);
         }
 
-        // 4. Save to ScheduledTaskExecution for each ancestor (for PipelineOutputWidget)
+        // Save to ScheduledTaskExecution for each ancestor (for PipelineOutputWidget)
         for (const preview of ancestorPreviews) {
             if (!preview.nodeId || preview.result == null) continue;
             try {

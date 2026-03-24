@@ -346,6 +346,27 @@ export async function testConnectorAction(type: string, config: string) {
             return result;
         }
 
+        if (type === 'WHATSAPP') {
+            try {
+                if (!conf.phoneNumberId || !conf.accessToken) {
+                    return { success: false, message: 'Phone Number ID e Access Token sono obbligatori' };
+                }
+                const res = await fetch(
+                    `https://graph.facebook.com/v19.0/${conf.phoneNumberId}`,
+                    { headers: { 'Authorization': `Bearer ${conf.accessToken}` } }
+                );
+                if (res.ok) {
+                    const data = await res.json();
+                    return { success: true, message: `Connessione WhatsApp valida! Numero: ${data.display_phone_number || conf.phoneNumberId}` };
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    return { success: false, message: `Errore Meta API: ${err?.error?.message || res.statusText}` };
+                }
+            } catch (err: any) {
+                return { success: false, message: `Errore Network: ${err.message}` };
+            }
+        }
+
         return { success: false, message: 'Tipo connettore non supportato per il test' };
 
     } catch (e: any) {
@@ -1564,5 +1585,74 @@ print(f"PNG generated: {len(result)} chars base64")
     } catch (e: any) {
         console.error('Send Test Email With Data Error:', e);
         return { success: false, error: `Errore: ${e.message}` };
+    }
+}
+
+// ─── WhatsApp: Send test message ─────────────────────────────────────────────
+export async function sendWhatsAppTestMessageAction(
+    connectorId: string,
+    phoneNumber: string,
+    message: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+    const user = await getAuthenticatedUser();
+    if (!user) return { success: false, error: 'Non autorizzato' };
+
+    try {
+        const connector = await db.connector.findFirst({
+            where: { id: connectorId, companyId: user.companyId, type: 'WHATSAPP' },
+        });
+        if (!connector) return { success: false, error: 'Connettore WhatsApp non trovato' };
+
+        const conf = JSON.parse(connector.config);
+        if (!conf.phoneNumberId || !conf.accessToken) {
+            return { success: false, error: 'Phone Number ID e Access Token mancanti nella configurazione' };
+        }
+
+        // Clean phone number: remove spaces, dashes, leading +
+        const cleanPhone = phoneNumber.replace(/[\s\-+]/g, '');
+        if (!cleanPhone || cleanPhone.length < 8) {
+            return { success: false, error: 'Numero di telefono non valido' };
+        }
+
+        const { sendWhatsAppMessage } = await import('@/lib/whatsapp-send');
+        await sendWhatsAppMessage(conf.phoneNumberId, conf.accessToken, cleanPhone, message);
+
+        return { success: true, message: `Messaggio inviato a ${phoneNumber}` };
+    } catch (e: any) {
+        return { success: false, error: `Errore invio: ${e.message}` };
+    }
+}
+
+// ─── WhatsApp: Get recent sessions/logs ──────────────────────────────────────
+export async function getWhatsAppSessionsAction(
+    connectorId: string
+): Promise<{ success: boolean; sessions?: any[]; error?: string }> {
+    const user = await getAuthenticatedUser();
+    if (!user) return { success: false, error: 'Non autorizzato' };
+
+    try {
+        const connector = await db.connector.findFirst({
+            where: { id: connectorId, companyId: user.companyId, type: 'WHATSAPP' },
+        });
+        if (!connector) return { success: false, error: 'Connettore WhatsApp non trovato' };
+
+        const sessions = await db.whatsAppSession.findMany({
+            where: { connectorId, companyId: user.companyId },
+            orderBy: { updatedAt: 'desc' },
+            take: 20,
+            select: {
+                id: true,
+                phoneNumber: true,
+                status: true,
+                messages: true,
+                collectedData: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+
+        return { success: true, sessions };
+    } catch (e: any) {
+        return { success: false, error: `Errore caricamento log: ${e.message}` };
     }
 }

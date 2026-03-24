@@ -241,6 +241,8 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         }
     }, [layoutData]);
 
+    // Auto-recalculate removed — use "Aggiorna Pagina" button instead.
+
     // Robust ResizeObserver to handle container width changes
     useLayoutEffect(() => {
         if (!containerRef.current) return;

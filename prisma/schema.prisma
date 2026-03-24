@@ -43,6 +43,7 @@ model Company {
   leadGenApiKeys           Json?
   unifiedStylePresets      Json?
   activeUnifiedStyleId     String?
+  whatsAppSessions         WhatsAppSession[]
 }
 
 model Department {
@@ -144,8 +145,21 @@ model Tree {
   companyId                   String?
   type                        String   @default("RULE")
   company                     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  previewCache                NodePreviewCache[]
 
   @@index([companyId])
+}
+
+model NodePreviewCache {
+  id        String   @id @default(cuid())
+  treeId    String
+  nodeId    String
+  data      Json     // { sqlPreviewData?, sqlPreviewTimestamp?, pythonPreviewResult?, pythonPreviewTimestamp? }
+  updatedAt DateTime @updatedAt
+  tree      Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
+  @@unique([treeId, nodeId])
+  @@index([treeId])
 }
 
 model Variable {
@@ -556,6 +570,23 @@ model Lead {
   @@index([searchId])
   @@index([email])
   @@index([companyName])
+}
+
+model WhatsAppSession {
+  id            String   @id @default(cuid())
+  phoneNumber   String
+  companyId     String
+  connectorId   String
+  messages      Json     @default("[]")
+  collectedData Json     @default("{}")
+  status        String   @default("collecting")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([phoneNumber, connectorId])
+  @@index([companyId])
+  @@index([connectorId])
 }
 
 model LeadGeneratorConversation {

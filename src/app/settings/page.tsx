@@ -20,7 +20,7 @@ import { ConnectorsManager } from './connectors-manager';
 import { Users, UserPlus, Copy, UserSearch } from 'lucide-react';
 import {
     getLeadGenApiKeysAction, saveLeadGenApiKeysAction,
-    testApolloApiKeyAction, testHunterApiKeyAction, testSerpApiKeyAction, testApifyApiKeyAction,
+    testApolloApiKeyAction, testHunterApiKeyAction, testSerpApiKeyAction, testApifyApiKeyAction, testGroqApiKeyAction, testWhatsAppAction
 } from '@/actions/lead-generator';
 import { Badge } from '@/components/ui/badge';
 import { uploadFile, listFiles, deleteFile, type FileInfo } from '@/lib/storage-client';
@@ -51,6 +51,7 @@ export default function SettingsPage() {
     const [leadGenHunter, setLeadGenHunter] = useState('');
     const [leadGenSerpApi, setLeadGenSerpApi] = useState('');
     const [leadGenApify, setLeadGenApify] = useState('');
+    const [leadGenGroq, setLeadGenGroq] = useState('');
     const [isLeadGenSaving, setIsLeadGenSaving] = useState(false);
 
     // Provider API Test State
@@ -59,10 +60,17 @@ export default function SettingsPage() {
     const [hunterTest, setHunterTest] = useState<ApiTestResult | null>(null);
     const [serpApiTest, setSerpApiTest] = useState<ApiTestResult | null>(null);
     const [apifyTest, setApifyTest] = useState<ApiTestResult | null>(null);
+    const [groqTest, setGroqTest] = useState<ApiTestResult | null>(null);
     const [isTestingApollo, setIsTestingApollo] = useState(false);
     const [isTestingHunter, setIsTestingHunter] = useState(false);
     const [isTestingSerpApi, setIsTestingSerpApi] = useState(false);
     const [isTestingApify, setIsTestingApify] = useState(false);
+    const [isTestingGroq, setIsTestingGroq] = useState(false);
+
+    // WABA Test State
+    const [testWABANumber, setTestWABANumber] = useState('');
+    const [isTestingWABA, setIsTestingWABA] = useState(false);
+    const [wabaTest, setWABATest] = useState<{ success: boolean; message: string } | null>(null);
 
     // OpenRouter Credits State
     type OpenRouterCredits = { totalCredits: number; totalUsage: number; remaining: number };
@@ -133,6 +141,7 @@ export default function SettingsPage() {
                 if (res.keys.hunter) setLeadGenHunter(res.keys.hunter);
                 if (res.keys.serpApi) setLeadGenSerpApi(res.keys.serpApi);
                 if (res.keys.apify) setLeadGenApify(res.keys.apify);
+                if (res.keys.groq) setLeadGenGroq(res.keys.groq);
             }
         });
     }, []);
@@ -879,189 +888,189 @@ export default function SettingsPage() {
                         </CardHeader>
                         <CardContent className="p-3 pt-0 flex-1 overflow-y-auto">
                             <div className="grid grid-cols-1 gap-2">
+
                             {/* Apollo.io */}
                             <div className="space-y-1.5 p-2.5 border rounded-lg">
-                                <Label htmlFor="apollo-key" className="text-xs">Apollo.io</Label>
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="apollo-key" className="text-xs">Apollo.io</Label>
+                                    <a href="https://app.apollo.io/#/settings/keys/create" target="_blank" rel="noopener noreferrer" className="text-[9px] text-muted-foreground hover:underline flex items-center gap-0.5">apollo.io <ExternalLink className="h-2.5 w-2.5" /></a>
+                                </div>
                                 <div className="flex gap-1.5">
-                                    <Input
-                                        id="apollo-key"
-                                        type="password"
-                                        placeholder="API key..."
-                                        value={leadGenApollo}
-                                        onChange={(e) => { setLeadGenApollo(e.target.value); setApolloTest(null); }}
-                                        className="flex-1 h-7 text-xs"
-                                    />
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        className="h-7 px-2"
-                                        disabled={!leadGenApollo || isTestingApollo}
-                                        onClick={async () => {
-                                            setIsTestingApollo(true); setApolloTest(null);
-                                            try { setApolloTest(await testApolloApiKeyAction(leadGenApollo)); }
-                                            catch { setApolloTest({ success: false, message: 'Errore di connessione' }); }
-                                            setIsTestingApollo(false);
-                                        }}
-                                    >
-                                        {isTestingApollo ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}
-                                        <span className="ml-1 text-[10px]">Test</span>
+                                    <Input id="apollo-key" type="password" placeholder="API key..." value={leadGenApollo} onChange={(e) => { setLeadGenApollo(e.target.value); setApolloTest(null); }} className="flex-1 h-7 text-xs" />
+                                    <Button variant="secondary" size="sm" className="h-7 px-2" disabled={!leadGenApollo || isTestingApollo} onClick={async () => { setIsTestingApollo(true); setApolloTest(null); try { setApolloTest(await testApolloApiKeyAction(leadGenApollo)); } catch { setApolloTest({ success: false, message: 'Errore di connessione' }); } setIsTestingApollo(false); }}>
+                                        {isTestingApollo ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}<span className="ml-1 text-[10px]">Test</span>
                                     </Button>
                                 </div>
                                 {apolloTest && (
                                     <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${apolloTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
                                         {apolloTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
-                                        <div>
-                                            <p className="font-medium">{apolloTest.message}</p>
-                                            {apolloTest.quota && (
-                                                <div className="mt-0.5 flex flex-wrap gap-1">
-                                                    <Badge variant="outline" className="text-[8px] h-4">{apolloTest.quota.plan}</Badge>
-                                                    {apolloTest.quota.extra && <Badge variant="secondary" className="text-[8px] h-4">{apolloTest.quota.extra}</Badge>}
-                                                </div>
-                                            )}
-                                        </div>
+                                        <div><p className="font-medium">{apolloTest.message}</p>{apolloTest.quota && (<div className="mt-0.5 flex flex-wrap gap-1"><Badge variant="outline" className="text-[8px] h-4">{apolloTest.quota.plan}</Badge>{apolloTest.quota.extra && <Badge variant="secondary" className="text-[8px] h-4">{apolloTest.quota.extra}</Badge>}</div>)}</div>
                                     </div>
                                 )}
+                                <ol className="text-[9px] text-muted-foreground list-decimal list-inside space-y-0.5 pt-0.5">
+                                    <li>Registrati su <span className="font-medium text-foreground">app.apollo.io</span></li>
+                                    <li>Vai in <span className="font-medium text-foreground">Settings → API Keys → Create</span></li>
+                                    <li>Incolla la chiave qui sopra e salva</li>
+                                </ol>
                                 <p className="text-[9px] text-muted-foreground">220M+ profili. Free: 10k crediti/mese.</p>
                             </div>
 
                             {/* Hunter.io */}
                             <div className="space-y-1.5 p-2.5 border rounded-lg">
-                                <Label htmlFor="hunter-key" className="text-xs">Hunter.io</Label>
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="hunter-key" className="text-xs">Hunter.io</Label>
+                                    <a href="https://hunter.io/api-keys" target="_blank" rel="noopener noreferrer" className="text-[9px] text-muted-foreground hover:underline flex items-center gap-0.5">hunter.io <ExternalLink className="h-2.5 w-2.5" /></a>
+                                </div>
                                 <div className="flex gap-1.5">
-                                    <Input
-                                        id="hunter-key"
-                                        type="password"
-                                        placeholder="API key..."
-                                        value={leadGenHunter}
-                                        onChange={(e) => { setLeadGenHunter(e.target.value); setHunterTest(null); }}
-                                        className="flex-1 h-7 text-xs"
-                                    />
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        className="h-7 px-2"
-                                        disabled={!leadGenHunter || isTestingHunter}
-                                        onClick={async () => {
-                                            setIsTestingHunter(true); setHunterTest(null);
-                                            try { setHunterTest(await testHunterApiKeyAction(leadGenHunter)); }
-                                            catch { setHunterTest({ success: false, message: 'Errore di connessione' }); }
-                                            setIsTestingHunter(false);
-                                        }}
-                                    >
-                                        {isTestingHunter ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}
-                                        <span className="ml-1 text-[10px]">Test</span>
+                                    <Input id="hunter-key" type="password" placeholder="API key..." value={leadGenHunter} onChange={(e) => { setLeadGenHunter(e.target.value); setHunterTest(null); }} className="flex-1 h-7 text-xs" />
+                                    <Button variant="secondary" size="sm" className="h-7 px-2" disabled={!leadGenHunter || isTestingHunter} onClick={async () => { setIsTestingHunter(true); setHunterTest(null); try { setHunterTest(await testHunterApiKeyAction(leadGenHunter)); } catch { setHunterTest({ success: false, message: 'Errore di connessione' }); } setIsTestingHunter(false); }}>
+                                        {isTestingHunter ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}<span className="ml-1 text-[10px]">Test</span>
                                     </Button>
                                 </div>
                                 {hunterTest && (
                                     <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${hunterTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
                                         {hunterTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
-                                        <div>
-                                            <p className="font-medium">{hunterTest.message}</p>
-                                            {hunterTest.quota && (
-                                                <div className="mt-0.5 flex flex-wrap gap-1">
-                                                    <Badge variant="outline" className="text-[8px] h-4">{hunterTest.quota.plan}</Badge>
-                                                    <Badge variant="secondary" className="text-[8px] h-4">Ricerche: {hunterTest.quota.used}/{hunterTest.quota.used + hunterTest.quota.available}</Badge>
-                                                    {hunterTest.quota.extra && <Badge variant="secondary" className="text-[8px] h-4">{hunterTest.quota.extra}</Badge>}
-                                                    {hunterTest.quota.resetDate && <Badge variant="outline" className="text-[8px] h-4">Reset: {new Date(hunterTest.quota.resetDate).toLocaleDateString('it-IT')}</Badge>}
-                                                </div>
-                                            )}
-                                        </div>
+                                        <div><p className="font-medium">{hunterTest.message}</p>{hunterTest.quota && (<div className="mt-0.5 flex flex-wrap gap-1"><Badge variant="outline" className="text-[8px] h-4">{hunterTest.quota.plan}</Badge><Badge variant="secondary" className="text-[8px] h-4">Ricerche: {hunterTest.quota.used}/{hunterTest.quota.used + hunterTest.quota.available}</Badge>{hunterTest.quota.extra && <Badge variant="secondary" className="text-[8px] h-4">{hunterTest.quota.extra}</Badge>}{hunterTest.quota.resetDate && <Badge variant="outline" className="text-[8px] h-4">Reset: {new Date(hunterTest.quota.resetDate).toLocaleDateString('it-IT')}</Badge>}</div>)}</div>
                                     </div>
                                 )}
+                                <ol className="text-[9px] text-muted-foreground list-decimal list-inside space-y-0.5 pt-0.5">
+                                    <li>Registrati su <span className="font-medium text-foreground">hunter.io</span></li>
+                                    <li>Vai in <span className="font-medium text-foreground">Dashboard → API Keys</span></li>
+                                    <li>Incolla la chiave qui sopra e salva</li>
+                                </ol>
                                 <p className="text-[9px] text-muted-foreground">Email aziendali. Free: 25 ricerche/mese.</p>
                             </div>
 
                             {/* SerpApi */}
                             <div className="space-y-1.5 p-2.5 border rounded-lg">
-                                <Label htmlFor="serpapi-key" className="text-xs">SerpApi</Label>
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="serpapi-key" className="text-xs">SerpApi</Label>
+                                    <a href="https://serpapi.com/manage-api-key" target="_blank" rel="noopener noreferrer" className="text-[9px] text-muted-foreground hover:underline flex items-center gap-0.5">serpapi.com <ExternalLink className="h-2.5 w-2.5" /></a>
+                                </div>
                                 <div className="flex gap-1.5">
-                                    <Input
-                                        id="serpapi-key"
-                                        type="password"
-                                        placeholder="API key..."
-                                        value={leadGenSerpApi}
-                                        onChange={(e) => { setLeadGenSerpApi(e.target.value); setSerpApiTest(null); }}
-                                        className="flex-1 h-7 text-xs"
-                                    />
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        className="h-7 px-2"
-                                        disabled={!leadGenSerpApi || isTestingSerpApi}
-                                        onClick={async () => {
-                                            setIsTestingSerpApi(true); setSerpApiTest(null);
-                                            try { setSerpApiTest(await testSerpApiKeyAction(leadGenSerpApi)); }
-                                            catch { setSerpApiTest({ success: false, message: 'Errore di connessione' }); }
-                                            setIsTestingSerpApi(false);
-                                        }}
-                                    >
-                                        {isTestingSerpApi ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}
-                                        <span className="ml-1 text-[10px]">Test</span>
+                                    <Input id="serpapi-key" type="password" placeholder="API key..." value={leadGenSerpApi} onChange={(e) => { setLeadGenSerpApi(e.target.value); setSerpApiTest(null); }} className="flex-1 h-7 text-xs" />
+                                    <Button variant="secondary" size="sm" className="h-7 px-2" disabled={!leadGenSerpApi || isTestingSerpApi} onClick={async () => { setIsTestingSerpApi(true); setSerpApiTest(null); try { setSerpApiTest(await testSerpApiKeyAction(leadGenSerpApi)); } catch { setSerpApiTest({ success: false, message: 'Errore di connessione' }); } setIsTestingSerpApi(false); }}>
+                                        {isTestingSerpApi ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}<span className="ml-1 text-[10px]">Test</span>
                                     </Button>
                                 </div>
                                 {serpApiTest && (
                                     <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${serpApiTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
                                         {serpApiTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
-                                        <div>
-                                            <p className="font-medium">{serpApiTest.message}</p>
-                                            {serpApiTest.quota && (
-                                                <div className="mt-0.5 flex flex-wrap gap-1">
-                                                    <Badge variant="outline" className="text-[8px] h-4">{serpApiTest.quota.plan}</Badge>
-                                                    <Badge variant="secondary" className="text-[8px] h-4">{serpApiTest.quota.available} rimaste</Badge>
-                                                    {serpApiTest.quota.used > 0 && <Badge variant="secondary" className="text-[8px] h-4">{serpApiTest.quota.used} usate</Badge>}
-                                                </div>
-                                            )}
-                                        </div>
+                                        <div><p className="font-medium">{serpApiTest.message}</p>{serpApiTest.quota && (<div className="mt-0.5 flex flex-wrap gap-1"><Badge variant="outline" className="text-[8px] h-4">{serpApiTest.quota.plan}</Badge><Badge variant="secondary" className="text-[8px] h-4">{serpApiTest.quota.available} rimaste</Badge>{serpApiTest.quota.used > 0 && <Badge variant="secondary" className="text-[8px] h-4">{serpApiTest.quota.used} usate</Badge>}</div>)}</div>
                                     </div>
                                 )}
+                                <ol className="text-[9px] text-muted-foreground list-decimal list-inside space-y-0.5 pt-0.5">
+                                    <li>Registrati su <span className="font-medium text-foreground">serpapi.com</span></li>
+                                    <li>Vai in <span className="font-medium text-foreground">Dashboard → API Key</span></li>
+                                    <li>Incolla la chiave qui sopra e salva</li>
+                                </ol>
                                 <p className="text-[9px] text-muted-foreground">Google Maps/Search. Free: 100/mese.</p>
                             </div>
 
                             {/* Apify */}
                             <div className="space-y-1.5 p-2.5 border rounded-lg">
-                                <Label htmlFor="apify-key" className="text-xs">Apify</Label>
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="apify-key" className="text-xs">Apify</Label>
+                                    <a href="https://console.apify.com/account/integrations" target="_blank" rel="noopener noreferrer" className="text-[9px] text-muted-foreground hover:underline flex items-center gap-0.5">apify.com <ExternalLink className="h-2.5 w-2.5" /></a>
+                                </div>
                                 <div className="flex gap-1.5">
-                                    <Input
-                                        id="apify-key"
-                                        type="password"
-                                        placeholder="API token..."
-                                        value={leadGenApify}
-                                        onChange={(e) => { setLeadGenApify(e.target.value); setApifyTest(null); }}
-                                        className="flex-1 h-7 text-xs"
-                                    />
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        className="h-7 px-2"
-                                        disabled={!leadGenApify || isTestingApify}
-                                        onClick={async () => {
-                                            setIsTestingApify(true); setApifyTest(null);
-                                            try { setApifyTest(await testApifyApiKeyAction(leadGenApify)); }
-                                            catch { setApifyTest({ success: false, message: 'Errore di connessione' }); }
-                                            setIsTestingApify(false);
-                                        }}
-                                    >
-                                        {isTestingApify ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}
-                                        <span className="ml-1 text-[10px]">Test</span>
+                                    <Input id="apify-key" type="password" placeholder="API token..." value={leadGenApify} onChange={(e) => { setLeadGenApify(e.target.value); setApifyTest(null); }} className="flex-1 h-7 text-xs" />
+                                    <Button variant="secondary" size="sm" className="h-7 px-2" disabled={!leadGenApify || isTestingApify} onClick={async () => { setIsTestingApify(true); setApifyTest(null); try { setApifyTest(await testApifyApiKeyAction(leadGenApify)); } catch { setApifyTest({ success: false, message: 'Errore di connessione' }); } setIsTestingApify(false); }}>
+                                        {isTestingApify ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}<span className="ml-1 text-[10px]">Test</span>
                                     </Button>
                                 </div>
                                 {apifyTest && (
                                     <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${apifyTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
                                         {apifyTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
-                                        <div>
-                                            <p className="font-medium">{apifyTest.message}</p>
-                                            {apifyTest.quota && (
-                                                <div className="mt-0.5 flex flex-wrap gap-1">
-                                                    <Badge variant="outline" className="text-[8px] h-4">{apifyTest.quota.plan}</Badge>
-                                                    <Badge variant="secondary" className="text-[8px] h-4">{apifyTest.quota.extra}</Badge>
-                                                </div>
-                                            )}
-                                        </div>
+                                        <div><p className="font-medium">{apifyTest.message}</p>{apifyTest.quota && (<div className="mt-0.5 flex flex-wrap gap-1"><Badge variant="outline" className="text-[8px] h-4">{apifyTest.quota.plan}</Badge><Badge variant="secondary" className="text-[8px] h-4">{apifyTest.quota.extra}</Badge></div>)}</div>
                                     </div>
                                 )}
+                                <ol className="text-[9px] text-muted-foreground list-decimal list-inside space-y-0.5 pt-0.5">
+                                    <li>Registrati su <span className="font-medium text-foreground">apify.com</span></li>
+                                    <li>Vai in <span className="font-medium text-foreground">Settings → Integrations → API tokens</span></li>
+                                    <li>Incolla il token qui sopra e salva</li>
+                                </ol>
                                 <p className="text-[9px] text-muted-foreground">Web scraping. Free: $5/mese crediti.</p>
                             </div>
+
+                            {/* Groq */}
+                            <div className="space-y-1.5 p-2.5 border rounded-lg">
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="groq-key" className="text-xs">🎙️ Groq (WhatsApp Audio)</Label>
+                                    <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="text-[9px] text-muted-foreground hover:underline flex items-center gap-0.5">console.groq.com <ExternalLink className="h-2.5 w-2.5" /></a>
+                                </div>
+                                <div className="flex gap-1.5">
+                                    <Input id="groq-key" type="password" placeholder="gsk_xxxxxxxxxxxxxxxxxxxx" value={leadGenGroq} onChange={(e) => { setLeadGenGroq(e.target.value); setGroqTest(null); }} className="flex-1 h-7 text-xs" />
+                                    <Button variant="secondary" size="sm" className="h-7 px-2" disabled={!leadGenGroq || isTestingGroq} onClick={async () => { setIsTestingGroq(true); setGroqTest(null); try { setGroqTest(await testGroqApiKeyAction(leadGenGroq)); } catch { setGroqTest({ success: false, message: 'Errore di connessione' }); } setIsTestingGroq(false); }}>
+                                        {isTestingGroq ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}<span className="ml-1 text-[10px]">Test</span>
+                                    </Button>
+                                </div>
+                                {groqTest && (
+                                    <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${groqTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {groqTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
+                                        <p className="font-medium">{groqTest.message}</p>
+                                    </div>
+                                )}
+                                <ol className="text-[9px] text-muted-foreground list-decimal list-inside space-y-0.5 pt-0.5">
+                                    <li>Registrati su <span className="font-medium text-foreground">console.groq.com</span></li>
+                                    <li>Vai in <span className="font-medium text-foreground">API Keys → Create API Key</span></li>
+                                    <li>Incolla la chiave qui sopra e salva</li>
+                                </ol>
+                                <p className="text-[9px] text-muted-foreground">Tras. audio WhatsApp. Free: 2.000 min/giorno.</p>
                             </div>
+
+                            {/* WhatsApp / Meta Setup Guide */}
+                            <div className="space-y-1.5 p-2.5 border rounded-lg">
+                                <div className="flex items-center justify-between">
+                                    <Label className="text-xs">📋 WhatsApp Business (Meta)</Label>
+                                    <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="text-[9px] text-muted-foreground hover:underline flex items-center gap-0.5">developers.facebook.com <ExternalLink className="h-2.5 w-2.5" /></a>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Input
+                                        value={testWABANumber}
+                                        onChange={(e) => setTestWABANumber(e.target.value)}
+                                        placeholder="Tuo num. test (es. 39333...)"
+                                        className="h-8 text-xs font-mono bg-muted/50"
+                                    />
+                                    <Button
+                                        onClick={async () => {
+                                            if (!testWABANumber) return;
+                                            setIsTestingWABA(true);
+                                            setWABATest(null);
+                                            try {
+                                                const res = await testWhatsAppAction(testWABANumber);
+                                                setWABATest({ success: res.success, message: res.message || '' });
+                                            } catch (err: any) {
+                                                setWABATest({ success: false, message: 'Errore di rete.' });
+                                            }
+                                            setIsTestingWABA(false);
+                                        }}
+                                        disabled={!testWABANumber || isTestingWABA}
+                                        variant="secondary"
+                                        size="sm"
+                                        className="h-8 shrink-0"
+                                    >
+                                        {isTestingWABA ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}<span className="ml-1 text-[10px]">Test (hello_world)</span>
+                                    </Button>
+                                </div>
+                                {wabaTest && (
+                                    <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${wabaTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {wabaTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
+                                        <p className="font-medium">{wabaTest.message}</p>
+                                    </div>
+                                )}
+                                <ol className="text-[9px] text-muted-foreground list-decimal list-inside space-y-0.5 pt-0.5">
+                                    <li>Su <span className="font-medium text-foreground">developers.facebook.com</span> clicca su <span className="font-medium text-foreground">Crea un'app</span></li>
+                                    <li>Scegli <b>Azienda</b> e collega (o crea) un <b>Portfolio Business</b> per sbloccare l'uso di WhatsApp</li>
+                                    <li>Nella dashboard espandi <span className="font-medium text-foreground">WhatsApp → Configurazione API</span></li>
+                                    <li>Incolla ID e Token nel <b>Connettore WhatsApp Business</b> (sezione Connettori). Salva.</li>
+                                    <li>Aggiungi il tuo numero (+39) come <span className="font-medium text-foreground">recipient di test</span> su Meta e fai il TEST qui sopra.</li>
+                                </ol>
+                                <p className="text-[9px] text-muted-foreground">La guida copre il tier gratuito per i test (nessuna carta richiesta).</p>
+                            </div>
+
+                            </div>
+
                             <Button
                                 onClick={async () => {
                                     setIsLeadGenSaving(true);
@@ -1071,6 +1080,7 @@ export default function SettingsPage() {
                                             hunter: leadGenHunter || undefined,
                                             serpApi: leadGenSerpApi || undefined,
                                             apify: leadGenApify || undefined,
+                                            groq: leadGenGroq || undefined,
                                         });
                                         if (result.success) {
                                             toast({ title: "Salvato", description: "Chiavi API Provider salvate." });
@@ -1089,6 +1099,7 @@ export default function SettingsPage() {
                                 {isLeadGenSaving ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Save className="mr-1.5 h-3 w-3" />}
                                 {isLeadGenSaving ? 'Salvataggio...' : 'Salva Chiavi API'}
                             </Button>
+
                         </CardContent>
                     </Card>
 

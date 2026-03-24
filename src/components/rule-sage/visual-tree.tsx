@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import { ToastAction } from '@/components/ui/toast';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { updateVariableAction, updateTreeNodeAction, getTreeAction } from '@/app/actions';
+import { updateVariableAction, updateTreeNodeAction, getTreeAction, hydrateTreePreviewsAction } from '@/app/actions';
 import { invalidateAndNotifyWidgets } from '@/lib/tree-cache';
 import { getTreeSchedulesAction } from '@/app/actions/scheduler';
 import { useTrees } from '@/hooks/use-trees';
@@ -465,7 +465,12 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                     }
                 }
 
-                setTree(treeWithIds as DecisionNode);
+                // Hydrate with preview data from NodePreviewCache
+                hydrateTreePreviewsAction(treeData.id, treeWithIds).then((hydrated) => {
+                    setTree(hydrated as DecisionNode);
+                }).catch(() => {
+                    setTree(treeWithIds as DecisionNode);
+                });
             }
         } catch (e) {
             console.error("Failed to parse tree JSON:", e);

@@ -40,76 +40,87 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
         // Clear previous error so a successful refresh can show data
         setError(null);
         try {
-            const result = await getCachedTree(treeId, !showLoading);
-            if (result.data) {
-                const jsonTree = typeof result.data.jsonDecisionTree === 'string'
-                    ? JSON.parse(result.data.jsonDecisionTree)
-                    : result.data.jsonDecisionTree;
+            // Strategy: try direct cache lookup first (fast, lightweight),
+            // fall back to full tree hydration only if cache misses.
+            let node: any = null;
 
-                // Find node by ID (recursive search)
-                const findNode = (node: any): any => {
-                    if (!node) return null;
-                    if (node.id === nodeId) return node;
+            // 1. Try loading directly from NodePreviewCache (avoids serializing entire tree)
+            try {
+                const { getNodePreviewAction } = await import('@/app/actions');
+                const cached = await getNodePreviewAction(treeId, nodeId);
+                console.log(`[PreviewWidget] getNodePreviewAction(${treeId.slice(-6)}, ${nodeId}):`, cached ? `keys=${Object.keys(cached).join(',')}` : 'null');
+                if (cached) {
+                    node = cached; // cached has sqlPreviewData, pythonPreviewResult, etc.
+                }
+            } catch (cacheErr: any) {
+                console.warn(`[PreviewWidget] Cache load failed for ${nodeId}:`, cacheErr.message);
+            }
 
-                    if (node.options) {
-                        for (const child of Object.values(node.options)) {
-                            if (typeof child === 'object') {
-                                const found = Array.isArray(child)
-                                    ? child.map(findNode).find(Boolean)
-                                    : findNode(child);
-                                if (found) return found;
+            // 2. Fallback: load tree + find node inline (for data still embedded in tree JSON)
+            if (!node) {
+                const result = await getCachedTree(treeId, !showLoading);
+                if (result.data) {
+                    let jsonTree = typeof result.data.jsonDecisionTree === 'string'
+                        ? JSON.parse(result.data.jsonDecisionTree)
+                        : result.data.jsonDecisionTree;
+
+                    const findNode = (n: any): any => {
+                        if (!n) return null;
+                        if (n.id === nodeId) return n;
+                        if (n.options) {
+                            for (const child of Object.values(n.options)) {
+                                if (typeof child === 'object') {
+                                    const found = Array.isArray(child)
+                                        ? child.map(findNode).find(Boolean)
+                                        : findNode(child);
+                                    if (found) return found;
+                                }
                             }
                         }
-                    }
-                    return null;
-                };
+                        return null;
+                    };
+                    node = findNode(jsonTree);
+                }
+            }
 
-                const node = findNode(jsonTree);
-                if (node) {
-                    if (previewType === 'sql') {
-                        // Primary: sqlPreviewData. Fallback: pythonPreviewResult with table data
-                        // Skip pythonPreviewResult.data fallback when the Python result is HTML
-                        // (the data is the raw input, not SQL output)
-                        const isHtmlPreview = node.pythonPreviewResult?.type === 'html';
-                        const sqlData = node.sqlPreviewData
-                            || (!isHtmlPreview && node.pythonPreviewResult?.data && Array.isArray(node.pythonPreviewResult.data)
-                                ? node.pythonPreviewResult.data : null)
-                            || (!isHtmlPreview && node.pythonPreviewResult?.rechartsData && Array.isArray(node.pythonPreviewResult.rechartsData)
-                                ? node.pythonPreviewResult.rechartsData : null);
+            if (node) {
+                if (previewType === 'sql') {
+                    const isHtmlPreview = node.pythonPreviewResult?.type === 'html';
+                    const sqlData = node.sqlPreviewData
+                        || (!isHtmlPreview && node.pythonPreviewResult?.data && Array.isArray(node.pythonPreviewResult.data)
+                            ? node.pythonPreviewResult.data : null)
+                        || (!isHtmlPreview && node.pythonPreviewResult?.rechartsData && Array.isArray(node.pythonPreviewResult.rechartsData)
+                            ? node.pythonPreviewResult.rechartsData : null);
 
-                        // If no tabular data but a Python preview exists (e.g. chart),
-                        // show the Python result instead of an error
-                        const pythonTs = node.pythonPreviewResult?.timestamp || 0;
-                        const sqlTs = node.sqlPreviewTimestamp || 0;
+                    const pythonTs = node.pythonPreviewResult?.timestamp || 0;
+                    const sqlTs = node.sqlPreviewTimestamp || 0;
 
-                        if (sqlData) {
-                            setPreviewData({
-                                type: 'table',
-                                data: sqlData,
-                                timestamp: Math.max(sqlTs, pythonTs) || sqlTs
-                            });
-                        } else if (node.pythonPreviewResult) {
-                            // Fallback: show Python preview (chart/html/variable)
-                            setPreviewData({
-                                ...node.pythonPreviewResult,
-                                timestamp: pythonTs,
-                                connectorId: node.pythonConnectorId,
-                            });
-                        } else {
-                            setError('Nessuna anteprima trovata per questo nodo');
-                        }
-                    } else if (previewType === 'python' && node.pythonPreviewResult) {
+                    if (sqlData) {
+                        setPreviewData({
+                            type: 'table',
+                            data: sqlData,
+                            timestamp: Math.max(sqlTs, pythonTs) || sqlTs
+                        });
+                    } else if (node.pythonPreviewResult) {
                         setPreviewData({
                             ...node.pythonPreviewResult,
-                            timestamp: node.pythonPreviewResult?.timestamp,
+                            timestamp: pythonTs,
                             connectorId: node.pythonConnectorId,
                         });
                     } else {
-                        setError(`Nessuna anteprima ${previewType.toUpperCase()} trovata per questo nodo`);
+                        setError('Nessuna anteprima trovata per questo nodo');
                     }
+                } else if (previewType === 'python' && node.pythonPreviewResult) {
+                    setPreviewData({
+                        ...node.pythonPreviewResult,
+                        timestamp: node.pythonPreviewResult?.timestamp,
+                        connectorId: node.pythonConnectorId,
+                    });
                 } else {
-                    setError('Nodo non trovato');
+                    setError(`Nessuna anteprima ${previewType.toUpperCase()} trovata per questo nodo`);
                 }
+            } else {
+                setError('Nodo non trovato');
             }
         } catch (err) {
             console.error('Error loading preview widget:', err);
@@ -193,29 +204,58 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
         }
     };
 
+    // PipelineExecutionDialog must always be in the DOM so page-level queue
+    // ("Aggiorna Pagina") can trigger executions even when no data exists yet.
+    const executionDialog = (
+        <PipelineExecutionDialog
+            isOpen={showExecutionDialog}
+            onClose={() => {
+                setShowExecutionDialog(false);
+                if (isQueuedRef.current) {
+                    isQueuedRef.current = false;
+                    window.dispatchEvent(new CustomEvent('widget-update-complete', {
+                        detail: { widgetId: `${previewType}-preview-${treeId}-${nodeId}`, success: false }
+                    }));
+                }
+            }}
+            treeId={treeId}
+            nodeId={nodeId}
+            onSuccess={handleExecutionSuccess}
+        />
+    );
+
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-full p-4">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
+            <>
+                {executionDialog}
+                <div className="flex items-center justify-center h-full p-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+            </>
         );
     }
 
     if (error) {
         return (
-            <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-                <AlertCircle className="h-8 w-8 text-destructive mb-2" />
-                <p className="text-sm text-destructive">{error}</p>
-            </div>
+            <>
+                {executionDialog}
+                <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+                    <AlertCircle className="h-8 w-8 text-destructive mb-2" />
+                    <p className="text-sm text-destructive">{error}</p>
+                </div>
+            </>
         );
     }
 
     if (!previewData) {
         return (
-            <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-                <Database className="h-8 w-8 text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">Nessun dato disponibile</p>
-            </div>
+            <>
+                {executionDialog}
+                <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+                    <Database className="h-8 w-8 text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">Nessun dato disponibile</p>
+                </div>
+            </>
         );
     }
 
@@ -351,22 +391,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                     </div>
                 )}
             </div>
-
-            <PipelineExecutionDialog
-                isOpen={showExecutionDialog}
-                onClose={() => {
-                    setShowExecutionDialog(false);
-                    if (isQueuedRef.current) {
-                        isQueuedRef.current = false;
-                        window.dispatchEvent(new CustomEvent('widget-update-complete', {
-                            detail: { widgetId: `${previewType}-preview-${treeId}-${nodeId}`, success: false }
-                        }));
-                    }
-                }}
-                treeId={treeId}
-                nodeId={nodeId}
-                onSuccess={handleExecutionSuccess}
-            />
+            {executionDialog}
         </div>
     );
 }

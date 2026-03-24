@@ -1283,6 +1283,14 @@ export class SchedulerService {
 
     const treeJson = JSON.parse(tree.jsonDecisionTree);
 
+    // Hydrate with preview data from NodePreviewCache (style overrides, etc.)
+    try {
+      const { hydrateTreeWithPreviews } = await import('@/lib/preview-cache');
+      await hydrateTreeWithPreviews(treeId, treeJson);
+    } catch (e: any) {
+      logger.warn(`[EmailSend] Failed to hydrate preview cache: ${e.message}`);
+    }
+
     // 2. Find the email node (Test) match
     let emailNode = this.findNodeByPath(treeJson, nodePath || '');
     if (!emailNode && nodeId) {
@@ -1551,12 +1559,25 @@ export class SchedulerService {
 
     const data = result.data; // Array of rows
 
-    // 4. Update Node Preview in Tree (Save Result)
-    if (treeId && nodePath && sqlResultName) {
-      await this.saveNodePreviewData(treeId, nodePath, {
-        sqlPreviewData: data,
-        sqlPreviewLastUpdate: new Date().toISOString()
-      });
+    // 4. Save SQL Preview to NodePreviewCache (avoids OOM from tree JSON load/stringify)
+    if (treeId && nodeId && sqlResultName) {
+      try {
+        const existingCacheEntry = await db.nodePreviewCache.findUnique({
+          where: { treeId_nodeId: { treeId, nodeId } },
+        });
+        const existingCacheData = (existingCacheEntry?.data as any) || {};
+        const cacheData = {
+          ...existingCacheData,
+          sqlPreviewData: data,
+          sqlPreviewTimestamp: Date.now(),
+        };
+        const { saveNodePreview } = await import('@/lib/preview-cache');
+        await saveNodePreview(treeId, nodeId, cacheData);
+        const { invalidateServerTreeCache } = await import('@/lib/server-cache');
+        invalidateServerTreeCache(treeId);
+      } catch (saveErr: any) {
+        logger.error(`[SqlNode] Failed to save SQL preview to cache: ${saveErr.message}`);
+      }
     }
 
     // 5. Export if configured
@@ -1628,58 +1649,60 @@ export class SchedulerService {
 
     if (!result.success) throw new Error(result.error);
 
-    // 3. Save Preview (preserve existing plotlyStyleOverrides and plotlyJson)
-    if (treeId && nodePath) {
-      // Load existing node to preserve user-set style overrides
-      let existingPreview: any = null;
+    // 3. Save Preview to NodePreviewCache (preserve existing style overrides)
+    if (treeId && nodeId) {
       try {
-        const existingTree = await db.tree.findUnique({ where: { id: treeId } });
-        if (existingTree?.jsonDecisionTree) {
-          const existingJson = JSON.parse(existingTree.jsonDecisionTree);
-          const existingPath = nodePath.replace(/^root\.?/, '');
-          const existingNode = existingPath ? _.get(existingJson, existingPath) : existingJson;
-          existingPreview = existingNode?.pythonPreviewResult;
+        // Load existing cache entry (lightweight, no tree JSON load)
+        const existingCacheEntry = await db.nodePreviewCache.findUnique({
+          where: { treeId_nodeId: { treeId, nodeId } },
+        });
+        const existingCacheData = (existingCacheEntry?.data as any) || {};
+        const existingPreview = existingCacheData.pythonPreviewResult;
+
+        const preservedFields = {
+          ...(existingPreview?.plotlyStyleOverrides ? { plotlyStyleOverrides: existingPreview.plotlyStyleOverrides } : {}),
+          ...(existingPreview?.plotlyJson && !result.plotlyJson ? { plotlyJson: existingPreview.plotlyJson } : {}),
+          ...(existingPreview?.htmlStyleOverrides ? { htmlStyleOverrides: existingPreview.htmlStyleOverrides } : {}),
+        };
+
+        let pythonPreviewResult: any;
+        if (runType === 'table') {
+          pythonPreviewResult = { type: 'table', data: result.data, timestamp: Date.now(), ...preservedFields };
+        } else if (runType === 'chart') {
+          pythonPreviewResult = {
+            type: 'chart',
+            chartBase64: result.chartBase64,
+            chartHtml: result.chartHtml,
+            rechartsConfig: (result as any).rechartsConfig,
+            rechartsData: (result as any).rechartsData,
+            rechartsStyle: (result as any).rechartsStyle,
+            plotlyJson: result.plotlyJson,
+            widgetConfig: (result as any).widgetConfig,
+            timestamp: Date.now(),
+            ...preservedFields,
+          };
+        } else if (runType === 'html') {
+          pythonPreviewResult = {
+            type: 'html',
+            html: (result as any).html,
+            data: result.data,
+            timestamp: Date.now(),
+            ...preservedFields,
+          };
+        } else {
+          pythonPreviewResult = { type: 'variable', variables: result.variables, timestamp: Date.now(), ...preservedFields };
         }
-      } catch { /* non-critical */ }
 
-      const preservedFields = {
-        ...(existingPreview?.plotlyStyleOverrides ? { plotlyStyleOverrides: existingPreview.plotlyStyleOverrides } : {}),
-        ...(existingPreview?.plotlyJson && !result.plotlyJson ? { plotlyJson: existingPreview.plotlyJson } : {}),
-        ...(existingPreview?.htmlStyleOverrides ? { htmlStyleOverrides: existingPreview.htmlStyleOverrides } : {}),
-      };
+        const cacheData = { ...existingCacheData, pythonPreviewResult };
 
-      const updatePayload: any = {
-        pythonPreviewLastUpdate: new Date().toISOString()
-      };
-      if (runType === 'table') {
-        updatePayload.pythonPreviewResult = { type: 'table', data: result.data, timestamp: Date.now(), ...preservedFields };
-      } else if (runType === 'chart') {
-        updatePayload.pythonPreviewResult = {
-          type: 'chart',
-          chartBase64: result.chartBase64,
-          chartHtml: result.chartHtml,
-          rechartsConfig: (result as any).rechartsConfig,
-          rechartsData: (result as any).rechartsData,
-          rechartsStyle: (result as any).rechartsStyle,
-          plotlyJson: result.plotlyJson,
-          widgetConfig: (result as any).widgetConfig,
-          timestamp: Date.now(),
-          ...preservedFields,
-        };
-      } else if (runType === 'html') {
-        updatePayload.pythonPreviewResult = {
-          type: 'html',
-          html: (result as any).html,
-          data: result.data,
-          timestamp: Date.now(),
-          ...preservedFields,
-        };
-      } else {
-        // Variable
-        updatePayload.pythonPreviewResult = { type: 'variable', variables: result.variables, timestamp: Date.now(), ...preservedFields };
+        const { saveNodePreview } = await import('@/lib/preview-cache');
+        await saveNodePreview(treeId, nodeId, cacheData);
+
+        const { invalidateServerTreeCache } = await import('@/lib/server-cache');
+        invalidateServerTreeCache(treeId);
+      } catch (saveErr: any) {
+        logger.error(`[PythonPreview] Failed to save to cache: ${saveErr.message}`);
       }
-
-      await this.saveNodePreviewData(treeId, nodePath, updatePayload);
     }
 
     // 4. Export if configured (only if table data available)

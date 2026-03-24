@@ -4235,3 +4235,69 @@ export async function clearPreviewDataAction(treeId: string): Promise<{ success:
         return { success: false, bytesFreed: 0, error: e instanceof Error ? e.message : 'Errore sconosciuto' };
     }
 }
+
+/**
+ * Server action to hydrate a parsed tree with preview data from NodePreviewCache.
+ * Call this from client components after parsing jsonDecisionTree.
+ */
+export async function hydrateTreePreviewsAction(treeId: string, parsedTree: any): Promise<any> {
+    try {
+        const { hydrateTreeWithPreviews } = await import('@/lib/preview-cache');
+        return await hydrateTreeWithPreviews(treeId, parsedTree);
+    } catch (err: any) {
+        console.warn('[hydrateTreePreviewsAction] Error:', err.message);
+        return parsedTree;
+    }
+}
+
+/**
+ * Load preview data for a SINGLE node from NodePreviewCache.
+ * Much lighter than hydrateTreePreviewsAction — avoids serializing the entire tree.
+ * Used by PreviewWidgetRenderer for efficient per-widget loading.
+ */
+export async function getNodePreviewAction(treeId: string, nodeId: string, maxRows?: number): Promise<any | null> {
+    try {
+        const { db } = await import('@/lib/db');
+        const entry = await db.nodePreviewCache.findUnique({
+            where: { treeId_nodeId: { treeId, nodeId } },
+        });
+        if (!entry) return null;
+
+        const cached = entry.data as any;
+        const limit = maxRows || 2000; // Cap rows to avoid server action serialization limits
+
+        // Resolve __parquet__ markers by reading from disk
+        if (cached.sqlPreviewData === '__parquet__') {
+            const { readParquet } = await import('@/lib/parquet-cache');
+            const rows = await readParquet(treeId, `${nodeId}_sql`);
+            if (rows) {
+                cached.sqlPreviewData = rows.length > limit ? rows.slice(0, limit) : rows;
+                cached._sqlTotalRows = rows.length;
+            } else {
+                delete cached.sqlPreviewData;
+            }
+        } else if (Array.isArray(cached.sqlPreviewData) && cached.sqlPreviewData.length > limit) {
+            cached._sqlTotalRows = cached.sqlPreviewData.length;
+            cached.sqlPreviewData = cached.sqlPreviewData.slice(0, limit);
+        }
+
+        if (cached.pythonPreviewResult?.data === '__parquet__') {
+            const { readParquet } = await import('@/lib/parquet-cache');
+            const rows = await readParquet(treeId, `${nodeId}_python`);
+            if (rows) {
+                cached.pythonPreviewResult.data = rows.length > limit ? rows.slice(0, limit) : rows;
+                cached.pythonPreviewResult._totalRows = rows.length;
+            } else {
+                delete cached.pythonPreviewResult.data;
+            }
+        } else if (Array.isArray(cached.pythonPreviewResult?.data) && cached.pythonPreviewResult.data.length > limit) {
+            cached.pythonPreviewResult._totalRows = cached.pythonPreviewResult.data.length;
+            cached.pythonPreviewResult.data = cached.pythonPreviewResult.data.slice(0, limit);
+        }
+
+        return cached;
+    } catch (err: any) {
+        console.warn('[getNodePreviewAction] Error:', err.message);
+        return null;
+    }
+}

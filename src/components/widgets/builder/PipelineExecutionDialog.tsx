@@ -725,11 +725,18 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                         setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'success', executionTime: Date.now() - startTime, message: stepMessage || undefined } : p));
                     } else {
                         setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'error', message: stepError || 'Errore' } : p));
-                        throw new Error(stepError || "Pipeline failed");
+                        // WRITE/EXPORT errors are non-blocking — continue pipeline so previews still generate
+                        if (step.type !== 'write') {
+                            throw new Error(stepError || "Pipeline failed");
+                        } else {
+                            console.warn(`[PIPELINE] Write step "${step.label}" failed (non-blocking): ${stepError}`);
+                        }
                     }
                 } catch (e: any) {
                     setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'error', message: e.message } : p));
-                    throw e;
+                    // Write steps: continue. Data steps: abort.
+                    if (step.type !== 'write') throw e;
+                    else console.warn(`[PIPELINE] Write step "${step.label}" exception (non-blocking):`, e.message);
                 }
             }
 

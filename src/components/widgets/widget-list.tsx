@@ -100,10 +100,22 @@ export const useAvailableWidgets = () => {
                     if (!isMountedRef.current || currentFetchId !== fetchCountRef.current) return;
 
                     if (treesResult.data) {
+                        // Hydrate all trees with preview data from NodePreviewCache (via server action)
+                        const { hydrateTreePreviewsAction } = await import('@/app/actions');
+                        for (const tree of treesResult.data) {
+                            try {
+                                const parsed = typeof tree.jsonDecisionTree === 'string'
+                                    ? JSON.parse(tree.jsonDecisionTree)
+                                    : tree.jsonDecisionTree;
+                                const hydrated = await hydrateTreePreviewsAction(tree.id, parsed);
+                                (tree as any)._hydratedJson = hydrated || parsed;
+                            } catch { /* fallback to inline data */ }
+                        }
+
                         treesResult.data.forEach((tree: any) => {
-                            const jsonTree = typeof tree.jsonDecisionTree === 'string'
+                            const jsonTree = tree._hydratedJson || (typeof tree.jsonDecisionTree === 'string'
                                 ? JSON.parse(tree.jsonDecisionTree)
-                                : tree.jsonDecisionTree;
+                                : tree.jsonDecisionTree);
 
                             const visitedSubTrees = new Set<string>();
                             const scanNode = (node: any, path: string[] = []) => {

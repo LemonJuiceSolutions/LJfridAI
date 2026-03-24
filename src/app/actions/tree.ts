@@ -22,6 +22,12 @@ export async function deleteTreeAction(id: string): Promise<{ success: boolean, 
 
         await db.tree.delete({ where: { id } });
 
+        // Clean up preview cache (Parquet files + DB entries)
+        try {
+            const { deleteTreePreviewCache } = await import('@/lib/preview-cache');
+            await deleteTreePreviewCache(id);
+        } catch { /* non-critical */ }
+
         revalidatePath('/');
         revalidatePath('/pipeline');
 

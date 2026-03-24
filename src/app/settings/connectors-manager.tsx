@@ -7,9 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { getConnectorsAction, createConnectorAction, deleteConnectorAction, testConnectorAction, updateConnectorAction } from '../actions/connectors';
+import { getConnectorsAction, createConnectorAction, deleteConnectorAction, testConnectorAction, updateConnectorAction, sendWhatsAppTestMessageAction, getWhatsAppSessionsAction } from '../actions/connectors';
 import { generateDeviceCodeAction, pollForTokenAction, listSharePointDrivesAction, listSharePointFilesAction, listExcelSheetsAction } from '../actions/sharepoint';
-import { Loader2, Trash2, Database, Mail, FileSpreadsheet, Layers, Plus, Wifi, CheckCircle2, XCircle, Pencil, ExternalLink, Copy, FolderOpen, Folder, ChevronRight, ArrowLeft, Download, Upload, Map } from 'lucide-react';
+import { Loader2, Trash2, Database, Mail, FileSpreadsheet, Layers, Plus, Wifi, CheckCircle2, XCircle, Pencil, ExternalLink, Copy, FolderOpen, Folder, ChevronRight, ChevronDown, ChevronUp, ArrowLeft, Download, Upload, Map, MessageSquare, Send, ScrollText, Phone } from 'lucide-react';
 import { DatabaseMapDialog } from './database-map-dialog';
 import { exportSettingsAction, importSettingsAction } from '../actions/backup-restore';
 import {
@@ -27,6 +27,7 @@ const CONNECTOR_TYPES = [
     { value: 'HUBSPOT', label: 'HubSpot', icon: Layers },
     { value: 'SHAREPOINT', label: 'Excel / SharePoint', icon: FileSpreadsheet },
     { value: 'SMTP', label: 'Email SMTP', icon: Mail },
+    { value: 'WHATSAPP', label: 'WhatsApp Business', icon: MessageSquare },
 ];
 
 // Default Azure AD credentials for SharePoint integration
@@ -82,6 +83,14 @@ export function ConnectorsManager() {
     // Backup/Restore State
     const [isExporting, setIsExporting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
+
+    // WhatsApp Test & Log State
+    const [waTestPhone, setWaTestPhone] = useState('');
+    const [waTestMsg, setWaTestMsg] = useState('Ciao! Questo è un messaggio di test da FridAI');
+    const [isSendingWaTest, setIsSendingWaTest] = useState(false);
+    const [waSessions, setWaSessions] = useState<any[]>([]);
+    const [isLoadingWaSessions, setIsLoadingWaSessions] = useState(false);
+    const [expandedWaSession, setExpandedWaSession] = useState<string | null>(null);
 
     useEffect(() => {
         loadConnectors();
@@ -583,6 +592,158 @@ export function ConnectorsManager() {
                                 <li>Abilita "Allow public client flows" nelle impostazioni</li>
                             </ul>
                         </div>
+                    </>
+                );
+            case 'WHATSAPP':
+                return (
+                    <>
+                        <div className="space-y-2">
+                            <Label>Phone Number ID *</Label>
+                            <Input value={configData.phoneNumberId || ''} onChange={e => setConfigData({ ...configData, phoneNumberId: e.target.value })} placeholder="123456789012345" />
+                            <p className="text-xs text-muted-foreground">Da Meta for Developers → WhatsApp → API Setup</p>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Access Token (Permanente) *</Label>
+                            <Input type="password" value={configData.accessToken || ''} onChange={e => setConfigData({ ...configData, accessToken: e.target.value })} placeholder="EAAxxxxxxx..." />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Verify Token *</Label>
+                            <Input value={configData.verifyToken || ''} onChange={e => setConfigData({ ...configData, verifyToken: e.target.value })} placeholder="fridai_secret_xyz" />
+                            <p className="text-xs text-muted-foreground">Stringa segreta che scegli tu per verificare il webhook su Meta</p>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>HubSpot Connector ID (opzionale)</Label>
+                            <Input value={configData.hubspotConnectorId || ''} onChange={e => setConfigData({ ...configData, hubspotConnectorId: e.target.value })} placeholder="ID del connettore HubSpot per creare i lead" />
+                        </div>
+                        <div className="p-3 rounded-md bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-200 text-xs">
+                            <p className="font-medium mb-1">📋 Setup Webhook su Meta for Developers:</p>
+                            <ul className="list-disc list-inside space-y-0.5">
+                                <li>URL Callback: <code className="bg-green-100 dark:bg-green-900 px-1 rounded">https://tuodominio.com/api/whatsapp/webhook</code></li>
+                                <li>Verify Token: uguale a quello inserito sopra</li>
+                                <li>Iscriviti all&apos;evento: <code>messages</code></li>
+                            </ul>
+                        </div>
+
+                        {/* ─── Invia messaggio di prova ─── */}
+                        {editingId && (
+                            <div className="border rounded-md p-3 space-y-3 mt-2">
+                                <p className="text-sm font-medium flex items-center gap-2"><Send className="h-4 w-4" /> Invia messaggio di prova</p>
+                                <div className="space-y-2">
+                                    <Label>Numero destinatario</Label>
+                                    <Input value={waTestPhone} onChange={e => setWaTestPhone(e.target.value)} placeholder="+39 333 1234567" />
+                                    <p className="text-xs text-muted-foreground">Formato internazionale (es. +39...)</p>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Messaggio</Label>
+                                    <Input value={waTestMsg} onChange={e => setWaTestMsg(e.target.value)} placeholder="Testo del messaggio..." />
+                                </div>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={isSendingWaTest || !waTestPhone.trim()}
+                                    onClick={async () => {
+                                        setIsSendingWaTest(true);
+                                        try {
+                                            const res = await sendWhatsAppTestMessageAction(editingId, waTestPhone, waTestMsg);
+                                            toast({
+                                                title: res.success ? 'Messaggio inviato!' : 'Errore',
+                                                description: res.success ? res.message : res.error,
+                                                variant: res.success ? 'default' : 'destructive',
+                                            });
+                                        } catch (e: any) {
+                                            toast({ title: 'Errore', description: e.message, variant: 'destructive' });
+                                        } finally {
+                                            setIsSendingWaTest(false);
+                                        }
+                                    }}
+                                >
+                                    {isSendingWaTest ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+                                    Invia Test
+                                </Button>
+                            </div>
+                        )}
+
+                        {/* ─── Log messaggi recenti ─── */}
+                        {editingId && (
+                            <div className="border rounded-md p-3 space-y-3 mt-2">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-sm font-medium flex items-center gap-2"><ScrollText className="h-4 w-4" /> Log messaggi recenti</p>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={isLoadingWaSessions}
+                                        onClick={async () => {
+                                            setIsLoadingWaSessions(true);
+                                            try {
+                                                const res = await getWhatsAppSessionsAction(editingId);
+                                                if (res.success && res.sessions) {
+                                                    setWaSessions(res.sessions);
+                                                } else {
+                                                    toast({ title: 'Errore', description: res.error, variant: 'destructive' });
+                                                }
+                                            } catch (e: any) {
+                                                toast({ title: 'Errore', description: e.message, variant: 'destructive' });
+                                            } finally {
+                                                setIsLoadingWaSessions(false);
+                                            }
+                                        }}
+                                    >
+                                        {isLoadingWaSessions ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ScrollText className="h-4 w-4 mr-2" />}
+                                        Carica log
+                                    </Button>
+                                </div>
+
+                                {waSessions.length > 0 && (
+                                    <div className="space-y-2 max-h-80 overflow-y-auto">
+                                        {waSessions.map((s: any) => (
+                                            <div key={s.id} className="border rounded p-2 text-xs">
+                                                <div
+                                                    className="flex items-center justify-between cursor-pointer"
+                                                    onClick={() => setExpandedWaSession(expandedWaSession === s.id ? null : s.id)}
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <Phone className="h-3 w-3" />
+                                                        <span className="font-mono">{s.phoneNumber}</span>
+                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${s.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300'}`}>
+                                                            {s.status === 'completed' ? 'Completato' : 'In corso'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                                        <span>{new Date(s.updatedAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                                                        {expandedWaSession === s.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                                    </div>
+                                                </div>
+                                                {expandedWaSession === s.id && (
+                                                    <div className="mt-2 space-y-1 border-t pt-2">
+                                                        {(Array.isArray(s.messages) ? s.messages : []).map((m: any, i: number) => (
+                                                            <div key={i} className={`flex gap-2 ${m.role === 'user' ? '' : 'pl-4'}`}>
+                                                                <span className={`font-semibold ${m.role === 'user' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`}>
+                                                                    {m.role === 'user' ? 'Utente' : 'Bot'}:
+                                                                </span>
+                                                                <span className="flex-1">{m.content}</span>
+                                                                {m.timestamp && <span className="text-muted-foreground text-[10px] shrink-0">{new Date(m.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</span>}
+                                                            </div>
+                                                        ))}
+                                                        {s.collectedData && Object.keys(s.collectedData).length > 0 && (
+                                                            <div className="mt-1 pt-1 border-t text-muted-foreground">
+                                                                <span className="font-medium">Dati raccolti: </span>
+                                                                {Object.entries(s.collectedData).filter(([,v]) => v).map(([k,v]) => `${k}=${v}`).join(', ')}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {waSessions.length === 0 && !isLoadingWaSessions && (
+                                    <p className="text-xs text-muted-foreground text-center py-2">Nessuna sessione trovata. Clicca &quot;Carica log&quot; per aggiornare.</p>
+                                )}
+                            </div>
+                        )}
                     </>
                 );
             default:

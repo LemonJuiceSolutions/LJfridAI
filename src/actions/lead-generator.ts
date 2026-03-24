@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import nodemailer from 'nodemailer';
+import { sendWhatsAppTemplateMessage } from "@/lib/whatsapp-send";
 
 async function getSession() {
     return await getServerSession(authOptions);
@@ -27,7 +28,7 @@ async function getAuthUser() {
  * Save Lead Generator API keys (Apollo, Hunter, SerpApi, Apify) - per company
  */
 export async function saveLeadGenApiKeysAction(
-    keys: { apollo?: string; hunter?: string; serpApi?: string; apify?: string }
+    keys: { apollo?: string; hunter?: string; serpApi?: string; apify?: string; groq?: string }
 ): Promise<{ success: boolean; error?: string }> {
     const user = await getAuthUser();
     if (!user) return { success: false, error: "Non autorizzato" };
@@ -49,7 +50,7 @@ export async function saveLeadGenApiKeysAction(
  * Get Lead Generator API keys - per company
  */
 export async function getLeadGenApiKeysAction(): Promise<{
-    keys?: { apollo?: string; hunter?: string; serpApi?: string; apify?: string };
+    keys?: { apollo?: string; hunter?: string; serpApi?: string; apify?: string; groq?: string };
     error?: string;
 }> {
     const user = await getAuthUser();
@@ -64,6 +65,28 @@ export async function getLeadGenApiKeysAction(): Promise<{
     } catch (error) {
         console.error("Failed to get lead gen API keys:", error);
         return { error: "Impossibile caricare le chiavi API" };
+    }
+}
+
+/**
+ * Test Groq API key and get available models
+ */
+export async function testGroqApiKeyAction(apiKey: string): Promise<ApiTestResult> {
+    if (!apiKey?.trim()) return { success: false, message: 'API key mancante' };
+    try {
+        const res = await fetch('https://api.groq.com/openai/v1/models', {
+            headers: { 'Authorization': `Bearer ${apiKey.trim()}` },
+        });
+        if (res.status === 401) return { success: false, message: 'API key non valida.' };
+        if (!res.ok) return { success: false, message: `Errore Groq: ${res.statusText}` };
+        const data = await res.json();
+        const whisperModel = data.data?.find((m: any) => m.id?.includes('whisper'));
+        return {
+            success: true,
+            message: `Connessione Groq riuscita! Whisper: ${whisperModel?.id || 'whisper-large-v3'} disponibile. Piano gratuito: 2000 min/giorno.`,
+        };
+    } catch (error: any) {
+        return { success: false, message: error.message || 'Errore di connessione.' };
     }
 }
 
@@ -131,6 +154,46 @@ export async function deleteLeadAction(leadId: string): Promise<{ success: boole
     } catch (error) {
         console.error("Failed to delete lead:", error);
         return { success: false, error: "Impossibile eliminare il lead" };
+    }
+}
+
+/**
+ * Test WhatsApp Business explicitly via a hello_world template message
+ */
+export async function testWhatsAppAction(toPhoneNumber: string): Promise<{ success: boolean; message?: string }> {
+    const user = await getAuthUser();
+    if (!user) return { success: false, message: "Non autorizzato" };
+
+    try {
+        const connector = await db.connector.findFirst({
+            where: { companyId: user.company!.id, type: 'WHATSAPP' },
+        });
+
+        if (!connector || !connector.config) {
+            return { success: false, message: "Nessun connettore WhatsApp configurato in Connettori." };
+        }
+
+        const config = connector.config as { phoneNumberId?: string; accessToken?: string };
+        
+        if (!config.phoneNumberId || !config.accessToken) {
+            return { success: false, message: "Connettore WhatsApp configurato in modo errato (mancano token/id). " };
+        }
+
+        // Clean phone number (remove +, spaces, dashes)
+        const cleanNumber = toPhoneNumber.replace(/[\+\s\-]/g, '');
+
+        await sendWhatsAppTemplateMessage(
+            config.phoneNumberId,
+            config.accessToken,
+            cleanNumber,
+            'hello_world', // standard pre-approved template for testing
+            'en_US'
+        );
+
+        return { success: true, message: "Messaggio hello_world inviato con successo! Controlla lo smartphone." };
+    } catch (error: any) {
+        console.error("Failed to test WhatsApp:", error);
+        return { success: false, message:  error.message || "Errore sconosciuto durante l'invio." };
     }
 }
 
