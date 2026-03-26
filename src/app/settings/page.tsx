@@ -1019,56 +1019,6 @@ export default function SettingsPage() {
                                 <p className="text-[9px] text-muted-foreground">Tras. audio WhatsApp. Free: 2.000 min/giorno.</p>
                             </div>
 
-                            {/* WhatsApp / Meta Setup Guide */}
-                            <div className="space-y-1.5 p-2.5 border rounded-lg">
-                                <div className="flex items-center justify-between">
-                                    <Label className="text-xs">📋 WhatsApp Business (Meta)</Label>
-                                    <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="text-[9px] text-muted-foreground hover:underline flex items-center gap-0.5">developers.facebook.com <ExternalLink className="h-2.5 w-2.5" /></a>
-                                </div>
-                                <div className="flex gap-2">
-                                    <Input
-                                        value={testWABANumber}
-                                        onChange={(e) => setTestWABANumber(e.target.value)}
-                                        placeholder="Tuo num. test (es. 39333...)"
-                                        className="h-8 text-xs font-mono bg-muted/50"
-                                    />
-                                    <Button
-                                        onClick={async () => {
-                                            if (!testWABANumber) return;
-                                            setIsTestingWABA(true);
-                                            setWABATest(null);
-                                            try {
-                                                const res = await testWhatsAppAction(testWABANumber);
-                                                setWABATest({ success: res.success, message: res.message || '' });
-                                            } catch (err: any) {
-                                                setWABATest({ success: false, message: 'Errore di rete.' });
-                                            }
-                                            setIsTestingWABA(false);
-                                        }}
-                                        disabled={!testWABANumber || isTestingWABA}
-                                        variant="secondary"
-                                        size="sm"
-                                        className="h-8 shrink-0"
-                                    >
-                                        {isTestingWABA ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}<span className="ml-1 text-[10px]">Test (hello_world)</span>
-                                    </Button>
-                                </div>
-                                {wabaTest && (
-                                    <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${wabaTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
-                                        {wabaTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
-                                        <p className="font-medium">{wabaTest.message}</p>
-                                    </div>
-                                )}
-                                <ol className="text-[9px] text-muted-foreground list-decimal list-inside space-y-0.5 pt-0.5">
-                                    <li>Su <span className="font-medium text-foreground">developers.facebook.com</span> clicca su <span className="font-medium text-foreground">Crea un'app</span></li>
-                                    <li>Scegli <b>Azienda</b> e collega (o crea) un <b>Portfolio Business</b> per sbloccare l'uso di WhatsApp</li>
-                                    <li>Nella dashboard espandi <span className="font-medium text-foreground">WhatsApp → Configurazione API</span></li>
-                                    <li>Incolla ID e Token nel <b>Connettore WhatsApp Business</b> (sezione Connettori). Salva.</li>
-                                    <li>Aggiungi il tuo numero (+39) come <span className="font-medium text-foreground">recipient di test</span> su Meta e fai il TEST qui sopra.</li>
-                                </ol>
-                                <p className="text-[9px] text-muted-foreground">La guida copre il tier gratuito per i test (nessuna carta richiesta).</p>
-                            </div>
-
                             </div>
 
                             <Button

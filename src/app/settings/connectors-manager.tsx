@@ -615,13 +615,121 @@ export function ConnectorsManager() {
                             <Label>HubSpot Connector ID (opzionale)</Label>
                             <Input value={configData.hubspotConnectorId || ''} onChange={e => setConfigData({ ...configData, hubspotConnectorId: e.target.value })} placeholder="ID del connettore HubSpot per creare i lead" />
                         </div>
-                        <div className="p-3 rounded-md bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-200 text-xs">
-                            <p className="font-medium mb-1">📋 Setup Webhook su Meta for Developers:</p>
-                            <ul className="list-disc list-inside space-y-0.5">
-                                <li>URL Callback: <code className="bg-green-100 dark:bg-green-900 px-1 rounded">https://tuodominio.com/api/whatsapp/webhook</code></li>
-                                <li>Verify Token: uguale a quello inserito sopra</li>
-                                <li>Iscriviti all&apos;evento: <code>messages</code></li>
-                            </ul>
+                        <div className="p-3 rounded-md bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-200 text-xs space-y-3">
+                            <p className="font-bold text-sm">📋 Guida Setup WhatsApp Business</p>
+
+                            {/* ── SEZIONE A: INVIO ── */}
+                            <div className="p-2.5 rounded-md bg-green-100/50 dark:bg-green-900/50 space-y-2">
+                                <p className="font-bold text-green-900 dark:text-green-100 flex items-center gap-1.5">📤 Setup Invio Messaggi</p>
+
+                                <div className="space-y-0.5">
+                                    <p className="font-semibold">1. Crea App su Meta for Developers</p>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                        <li><a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">developers.facebook.com</a> → Le mie app → <strong>Crea app</strong></li>
+                                        <li>Tipo: <strong>Business</strong> → seleziona (o crea) il tuo Business Portfolio</li>
+                                        <li>Nella dashboard dell&apos;app, clicca <strong>Aggiungi prodotto</strong> → <strong>WhatsApp</strong></li>
+                                    </ul>
+                                </div>
+
+                                <div className="space-y-0.5">
+                                    <p className="font-semibold">2. Trova Phone Number ID</p>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                        <li>App → WhatsApp → <strong>Configurazione API</strong> (API Setup)</li>
+                                        <li>Sotto &quot;Da&quot; c&apos;è l&apos;<strong>ID del numero di telefono</strong> → copialo nel campo qui sopra</li>
+                                    </ul>
+                                </div>
+
+                                <div className="space-y-0.5">
+                                    <p className="font-semibold">3. Aggiungi numeri alla whitelist (modalità sviluppo)</p>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                        <li>Sempre in Configurazione API, sotto &quot;A&quot; → <strong>Gestisci elenco numeri di telefono</strong></li>
+                                        <li>Aggiungi il numero destinatario (es. +39 333...) → riceverai un <strong>codice di verifica</strong> su WhatsApp</li>
+                                        <li>Inserisci il codice per confermare — ora puoi inviare a quel numero</li>
+                                        <li className="text-amber-700 dark:text-amber-400">In sviluppo puoi aggiungere max 5 numeri. In produzione (app Live) nessun limite</li>
+                                    </ul>
+                                </div>
+
+                                <div className="space-y-0.5">
+                                    <p className="font-semibold">4. Copia il Token di accesso</p>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                        <li><strong>Per testare subito:</strong> nella pagina Configurazione API, in alto c&apos;è il token temporaneo → clicca <strong>Copia</strong></li>
+                                        <li className="text-amber-700 dark:text-amber-400">Il token temporaneo scade ogni 24h!</li>
+                                        <li><strong>Per produzione (non scade):</strong> crea un token permanente via System User:</li>
+                                        <li className="ml-3">Vai su <a href="https://business.facebook.com/settings" target="_blank" rel="noopener noreferrer" className="underline font-medium">business.facebook.com/settings</a> → <strong>Utenti di sistema</strong></li>
+                                        <li className="ml-3">Aggiungi un System User (tipo <strong>Admin</strong>)</li>
+                                        <li className="ml-3">Clicca sul System User → <strong>Assegna risorse</strong> → seleziona la tua App → attiva tutti i permessi → Salva</li>
+                                        <li className="ml-3">Poi clicca <strong>Genera token</strong> → seleziona la tua App → permessi: <code className="bg-green-100 dark:bg-green-900 px-1 rounded">whatsapp_business_messaging</code> + <code className="bg-green-100 dark:bg-green-900 px-1 rounded">whatsapp_business_management</code></li>
+                                        <li className="ml-3 text-green-700 dark:text-green-300 font-medium">Questo token non scade!</li>
+                                    </ul>
+                                </div>
+
+                                <div className="space-y-0.5">
+                                    <p className="font-semibold">5. Compila e testa</p>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                        <li>Incolla <strong>Phone Number ID</strong> e <strong>Access Token</strong> nei campi qui sopra → clicca <strong>Aggiorna</strong></li>
+                                        <li>Usa il bottone <strong>Invia Template</strong> qui sotto per mandare il primo messaggio (hello_world)</li>
+                                        <li className="text-amber-700 dark:text-amber-400">Il testo libero NON viene consegnato se non invii prima un template!</li>
+                                        <li>Dopo che il destinatario risponde al template, si apre una <strong>finestra di 24h</strong> per inviare testo libero</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* ── SEZIONE B: RICEZIONE ── */}
+                            <div className="p-2.5 rounded-md bg-blue-50/80 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100 space-y-2">
+                                <p className="font-bold flex items-center gap-1.5">📥 Setup Ricezione Messaggi (Webhook)</p>
+                                <p className="text-[11px] opacity-80">Per ricevere messaggi in FridAI quando qualcuno scrive al tuo numero WhatsApp, devi configurare un webhook.</p>
+
+                                <div className="space-y-0.5">
+                                    <p className="font-semibold">1. Esponi FridAI su internet</p>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                        <li><strong>In produzione:</strong> usa il tuo dominio HTTPS (es. <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">https://tuodominio.com</code>)</li>
+                                        <li><strong>In sviluppo (localhost):</strong> usa <a href="https://ngrok.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">ngrok</a> per creare un tunnel:</li>
+                                        <li className="ml-3">Installa ngrok → nel terminale esegui: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">ngrok http 9002</code></li>
+                                        <li className="ml-3">Copia l&apos;URL HTTPS che ngrok genera (es. <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">https://abc123.ngrok-free.app</code>)</li>
+                                    </ul>
+                                </div>
+
+                                <div className="space-y-0.5">
+                                    <p className="font-semibold">2. Configura il Webhook su Meta</p>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                        <li>App → WhatsApp → <strong>Configurazione</strong> (nel menu sinistro)</li>
+                                        <li>Sezione Webhook → clicca <strong>Modifica</strong></li>
+                                        <li><strong>URL Callback:</strong> <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">https://tuodominio.com/api/whatsapp/webhook</code></li>
+                                        <li>(o in dev: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">https://abc123.ngrok-free.app/api/whatsapp/webhook</code>)</li>
+                                        <li><strong>Verify Token:</strong> uguale al campo &quot;Verify Token&quot; qui sopra</li>
+                                        <li>Clicca <strong>Verifica e salva</strong></li>
+                                    </ul>
+                                </div>
+
+                                <div className="space-y-0.5">
+                                    <p className="font-semibold">3. Iscriviti agli eventi</p>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                        <li>Nella tabella dei campi webhook, attiva il toggle su <strong>messages</strong></li>
+                                        <li>Questo abilita la ricezione di testo, immagini e <strong>note vocali</strong></li>
+                                    </ul>
+                                </div>
+
+                                <div className="space-y-0.5">
+                                    <p className="font-semibold">4. Testa la ricezione</p>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                        <li>Invia un messaggio WhatsApp al numero dell&apos;app (es. +1 555 171 5639)</li>
+                                        <li>FridAI riceverà il messaggio, l&apos;agente AI risponderà automaticamente</li>
+                                        <li>Clicca <strong>Carica log</strong> qui sotto per vedere la conversazione</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* ── RIEPILOGO ── */}
+                            <div className="p-2 rounded bg-green-100 dark:bg-green-900">
+                                <p className="font-semibold">Come funziona WhatsApp Business API:</p>
+                                <ul className="list-disc list-inside space-y-0.5 ml-1 mt-1">
+                                    <li>Per <strong>iniziare</strong> una conversazione devi inviare un <strong>template</strong> (es. hello_world)</li>
+                                    <li>Quando il destinatario <strong>risponde</strong>, si apre una finestra di <strong>24 ore</strong> per inviare testo libero</li>
+                                    <li>In <strong>modalità sviluppo</strong>: puoi inviare solo a numeri nella whitelist (max 5)</li>
+                                    <li>In <strong>produzione</strong> (app Live): puoi inviare a chiunque, servono verifiche Business</li>
+                                    <li>Le <strong>note vocali</strong> vengono trascritte automaticamente (serve API key Groq nella sezione Provider)</li>
+                                </ul>
+                            </div>
                         </div>
 
                         {/* ─── Invia messaggio di prova ─── */}
@@ -634,33 +742,60 @@ export function ConnectorsManager() {
                                     <p className="text-xs text-muted-foreground">Formato internazionale (es. +39...)</p>
                                 </div>
                                 <div className="space-y-2">
-                                    <Label>Messaggio</Label>
+                                    <Label>Messaggio (per testo libero)</Label>
                                     <Input value={waTestMsg} onChange={e => setWaTestMsg(e.target.value)} placeholder="Testo del messaggio..." />
                                 </div>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={isSendingWaTest || !waTestPhone.trim()}
-                                    onClick={async () => {
-                                        setIsSendingWaTest(true);
-                                        try {
-                                            const res = await sendWhatsAppTestMessageAction(editingId, waTestPhone, waTestMsg);
-                                            toast({
-                                                title: res.success ? 'Messaggio inviato!' : 'Errore',
-                                                description: res.success ? res.message : res.error,
-                                                variant: res.success ? 'default' : 'destructive',
-                                            });
-                                        } catch (e: any) {
-                                            toast({ title: 'Errore', description: e.message, variant: 'destructive' });
-                                        } finally {
-                                            setIsSendingWaTest(false);
-                                        }
-                                    }}
-                                >
-                                    {isSendingWaTest ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
-                                    Invia Test
-                                </Button>
+                                <div className="flex gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="default"
+                                        size="sm"
+                                        disabled={isSendingWaTest || !waTestPhone.trim()}
+                                        onClick={async () => {
+                                            setIsSendingWaTest(true);
+                                            try {
+                                                const res = await sendWhatsAppTestMessageAction(editingId!, waTestPhone, '', true);
+                                                toast({
+                                                    title: res.success ? 'Template inviato!' : 'Errore',
+                                                    description: res.success ? res.message : res.error,
+                                                    variant: res.success ? 'default' : 'destructive',
+                                                });
+                                            } catch (e: any) {
+                                                toast({ title: 'Errore', description: e.message, variant: 'destructive' });
+                                            } finally {
+                                                setIsSendingWaTest(false);
+                                            }
+                                        }}
+                                    >
+                                        {isSendingWaTest ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <MessageSquare className="h-4 w-4 mr-2" />}
+                                        Invia Template
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={isSendingWaTest || !waTestPhone.trim()}
+                                        onClick={async () => {
+                                            setIsSendingWaTest(true);
+                                            try {
+                                                const res = await sendWhatsAppTestMessageAction(editingId!, waTestPhone, waTestMsg, false);
+                                                toast({
+                                                    title: res.success ? 'Messaggio inviato!' : 'Errore',
+                                                    description: res.success ? res.message : res.error,
+                                                    variant: res.success ? 'default' : 'destructive',
+                                                });
+                                            } catch (e: any) {
+                                                toast({ title: 'Errore', description: e.message, variant: 'destructive' });
+                                            } finally {
+                                                setIsSendingWaTest(false);
+                                            }
+                                        }}
+                                    >
+                                        {isSendingWaTest ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+                                        Invia Testo
+                                    </Button>
+                                </div>
+                                <p className="text-xs text-muted-foreground">💡 In modalità sviluppo usa <strong>Invia Template</strong> (hello_world) per il primo messaggio. Il testo libero funziona solo dopo che il destinatario ha risposto (finestra 24h).</p>
                             </div>
                         )}
 

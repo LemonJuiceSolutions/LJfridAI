@@ -1,9 +1,9 @@
 /**
  * WhatsApp Business API messaging helper.
- * Sends text messages via Meta Graph API v19.
+ * Sends text messages via Meta Graph API v22.
  */
 
-const GRAPH_API_VERSION = 'v19.0';
+const GRAPH_API_VERSION = 'v22.0';
 
 export async function sendWhatsAppMessage(
     phoneNumberId: string,

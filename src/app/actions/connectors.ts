@@ -352,7 +352,7 @@ export async function testConnectorAction(type: string, config: string) {
                     return { success: false, message: 'Phone Number ID e Access Token sono obbligatori' };
                 }
                 const res = await fetch(
-                    `https://graph.facebook.com/v19.0/${conf.phoneNumberId}`,
+                    `https://graph.facebook.com/v22.0/${conf.phoneNumberId}`,
                     { headers: { 'Authorization': `Bearer ${conf.accessToken}` } }
                 );
                 if (res.ok) {
@@ -1592,7 +1592,8 @@ print(f"PNG generated: {len(result)} chars base64")
 export async function sendWhatsAppTestMessageAction(
     connectorId: string,
     phoneNumber: string,
-    message: string
+    message: string,
+    useTemplate: boolean = false
 ): Promise<{ success: boolean; message?: string; error?: string }> {
     const user = await getAuthenticatedUser();
     if (!user) return { success: false, error: 'Non autorizzato' };
@@ -1614,12 +1615,58 @@ export async function sendWhatsAppTestMessageAction(
             return { success: false, error: 'Numero di telefono non valido' };
         }
 
-        const { sendWhatsAppMessage } = await import('@/lib/whatsapp-send');
-        await sendWhatsAppMessage(conf.phoneNumberId, conf.accessToken, cleanPhone, message);
-
-        return { success: true, message: `Messaggio inviato a ${phoneNumber}` };
+        if (useTemplate) {
+            // Send template message (hello_world) — required to initiate conversations
+            // in development mode or outside the 24h window
+            const { sendWhatsAppTemplateMessage } = await import('@/lib/whatsapp-send');
+            await sendWhatsAppTemplateMessage(conf.phoneNumberId, conf.accessToken, cleanPhone);
+            // Log the sent template in the session
+            await logTestMessage(connectorId, user.companyId, cleanPhone, '[Template: hello_world]', 'assistant');
+            return { success: true, message: `Template "hello_world" inviato a ${phoneNumber}` };
+        } else {
+            const { sendWhatsAppMessage } = await import('@/lib/whatsapp-send');
+            await sendWhatsAppMessage(conf.phoneNumberId, conf.accessToken, cleanPhone, message);
+            // Log the sent message in the session
+            await logTestMessage(connectorId, user.companyId, cleanPhone, message, 'assistant');
+            return { success: true, message: `Messaggio inviato a ${phoneNumber}` };
+        }
     } catch (e: any) {
         return { success: false, error: `Errore invio: ${e.message}` };
+    }
+}
+
+// ─── WhatsApp: Log test message to session ───────────────────────────────────
+async function logTestMessage(connectorId: string, companyId: string, phone: string, content: string, role: 'user' | 'assistant') {
+    try {
+        // Find or create session for this phone number
+        let session = await db.whatsAppSession.findUnique({
+            where: { phoneNumber_connectorId: { phoneNumber: phone, connectorId } },
+        });
+
+        const msgEntry = { role, content, timestamp: new Date().toISOString() };
+
+        if (session) {
+            const messages: any[] = Array.isArray(session.messages) ? session.messages : [];
+            messages.push(msgEntry);
+            await db.whatsAppSession.update({
+                where: { id: session.id },
+                data: { messages },
+            });
+        } else {
+            await db.whatsAppSession.create({
+                data: {
+                    phoneNumber: phone,
+                    connectorId,
+                    companyId,
+                    messages: [msgEntry],
+                    collectedData: {},
+                    status: 'collecting',
+                },
+            });
+        }
+    } catch (err) {
+        // Don't fail the send if logging fails
+        console.error('[WhatsApp] Failed to log test message:', err);
     }
 }
 
