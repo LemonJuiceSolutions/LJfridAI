@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
                 console.log('[WhatsApp Webhook] Downloading audio media:', mediaId);
                 const { buffer, mimeType, filename } = await downloadWhatsAppMedia(mediaId, accessToken);
                 console.log('[WhatsApp Webhook] Transcribing audio with Groq Whisper...');
-                userText = await transcribeAudioWithGroq(buffer, filename);
+                userText = await transcribeAudioWithGroq(buffer, filename, 'it', groqApiKey);
                 console.log('[WhatsApp Webhook] Transcription:', userText);
             } else {
                 userText = '[Nota vocale ricevuta]';

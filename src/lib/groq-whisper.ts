@@ -7,11 +7,12 @@
 export async function transcribeAudioWithGroq(
     audioBuffer: Buffer,
     filename: string = 'audio.ogg',
-    language: string = 'it'
+    language: string = 'it',
+    groqKey?: string
 ): Promise<string> {
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = groqKey || process.env.GROQ_API_KEY;
     if (!apiKey) {
-        throw new Error('GROQ_API_KEY non configurata. Aggiungila al tuo .env.local (console.groq.com).');
+        throw new Error('GROQ_API_KEY non configurata. Aggiungila nelle impostazioni Provider o nel .env.local.');
     }
 
     const formData = new FormData();
