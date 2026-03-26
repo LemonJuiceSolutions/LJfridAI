@@ -2,7 +2,7 @@
 import type { DecisionNode, StoredTree, DecisionLeaf, Variable, VariableOption, LinkItem, TriggerItem } from '@/lib/types';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Mail, AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code, FileCode, Upload, Clock, Sparkles } from 'lucide-react';
+import { Mail, AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code, FileCode, Upload, Clock, Sparkles, Loader2 } from 'lucide-react';
 import _ from 'lodash';
 import EditNodeDialog from './edit-node-dialog';
 import AddNodeDialog from './add-node-dialog';
@@ -309,6 +309,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     }, [treeData?.id]);
 
     const [tree, setTree] = useState<DecisionNode | null>(null);
+    const [treeLoading, setTreeLoading] = useState(true);
     const autoCorrectAttempted = useRef(false);
 
     const [internalSaving, setInternalSaving] = useState(false);
@@ -434,9 +435,38 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
 
     useEffect(() => {
+        setTreeLoading(true);
         try {
             if (treeData?.jsonDecisionTree) {
-                let parsedTree = JSON.parse(treeData.jsonDecisionTree);
+                let parsedTree: any;
+                // Handle both string and already-parsed JSON
+                if (typeof treeData.jsonDecisionTree === 'string') {
+                    const trimmed = treeData.jsonDecisionTree.trim();
+                    if (!trimmed || trimmed === '{}' || trimmed === '""' || trimmed === 'null') {
+                        // Empty or trivial JSON - create a default empty node
+                        console.warn("Tree has empty/trivial JSON, creating default node structure");
+                        parsedTree = {
+                            question: treeData.name || 'Nodo Radice',
+                            options: {},
+                            id: nanoid(8)
+                        };
+                    } else {
+                        parsedTree = JSON.parse(trimmed);
+                    }
+                } else {
+                    parsedTree = treeData.jsonDecisionTree;
+                }
+
+                // If parsed result is not a valid object, create a default
+                if (!parsedTree || typeof parsedTree !== 'object') {
+                    console.warn("Parsed tree is not a valid object, creating default node structure");
+                    parsedTree = {
+                        question: treeData.name || 'Nodo Radice',
+                        options: {},
+                        id: nanoid(8)
+                    };
+                }
+
                 const treeWithIds = ensureNodeIds(parsedTree);
 
                 // Check if IDs were added (structure changed)
@@ -466,15 +496,42 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                 }
 
                 // Hydrate with preview data from NodePreviewCache
-                hydrateTreePreviewsAction(treeData.id, treeWithIds).then((hydrated) => {
-                    setTree(hydrated as DecisionNode);
-                }).catch(() => {
+                // Skip hydration for very large trees (>10MB) to avoid server action serialization limits
+                const jsonSize = treeData.jsonDecisionTree.length || 0;
+                if (jsonSize > 10_000_000) {
+                    console.warn(`[VisualTree] Tree JSON is ${(jsonSize / 1_000_000).toFixed(1)}MB - skipping full hydration to avoid serialization limits`);
                     setTree(treeWithIds as DecisionNode);
-                });
+                    setTreeLoading(false);
+                } else {
+                    hydrateTreePreviewsAction(treeData.id, treeWithIds).then((hydrated) => {
+                        setTree(hydrated as DecisionNode);
+                    }).catch(() => {
+                        setTree(treeWithIds as DecisionNode);
+                    }).finally(() => {
+                        setTreeLoading(false);
+                    });
+                }
+            } else {
+                // No jsonDecisionTree at all - create a default empty node
+                console.warn("Tree has no jsonDecisionTree field, creating default node structure");
+                const defaultTree = {
+                    question: treeData?.name || 'Nodo Radice',
+                    options: {},
+                    id: nanoid(8)
+                };
+                setTree(defaultTree as DecisionNode);
+                setTreeLoading(false);
             }
         } catch (e) {
             console.error("Failed to parse tree JSON:", e);
-            setTree(null);
+            // Instead of null, create a fallback default node so the UI still renders
+            const fallbackTree = {
+                question: treeData?.name || 'Errore nel JSON',
+                options: {},
+                id: nanoid(8)
+            };
+            setTree(fallbackTree as DecisionNode);
+            setTreeLoading(false);
         }
     }, [treeData, onDataRefresh]);
 
@@ -1750,12 +1807,18 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         };
     }, [flatTree]);
 
-    if (!tree) {
+    if (treeLoading || !tree) {
         return (
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><AlertCircle className="text-destructive" /> Albero Non Valido</CardTitle>
-                    <CardDescription>Il JSON per l'albero decisionale è malformato e non può essere visualizzato.</CardDescription>
+                    <CardTitle className="flex items-center gap-2">
+                        {treeLoading ? (
+                            <><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> Caricamento albero...</>
+                        ) : (
+                            <><AlertCircle className="text-destructive" /> Albero Non Valido</>
+                        )}
+                    </CardTitle>
+                    {!treeLoading && <CardDescription>Il JSON per l'albero decisionale è malformato e non può essere visualizzato.</CardDescription>}
                 </CardHeader>
             </Card>
         );

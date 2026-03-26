@@ -1686,7 +1686,6 @@ export async function getWhatsAppSessionsAction(
         const sessions = await db.whatsAppSession.findMany({
             where: { connectorId, companyId: user.companyId },
             orderBy: { updatedAt: 'desc' },
-            take: 20,
             select: {
                 id: true,
                 phoneNumber: true,
@@ -1698,8 +1697,79 @@ export async function getWhatsAppSessionsAction(
             },
         });
 
-        return { success: true, sessions };
+        // Load contacts to map phone -> name
+        const contacts = await db.whatsAppContact.findMany({
+            where: { companyId: user.companyId },
+            select: { phoneNumber: true, name: true },
+        });
+        const contactMap = Object.fromEntries(contacts.map(c => [c.phoneNumber, c.name]));
+
+        // Enrich sessions with contact names
+        const enriched = sessions.map(s => ({
+            ...s,
+            contactName: contactMap[s.phoneNumber] || null,
+        }));
+
+        return { success: true, sessions: enriched };
     } catch (e: any) {
         return { success: false, error: `Errore caricamento log: ${e.message}` };
+    }
+}
+
+// ─── WhatsApp: Rubrica contatti ───────────────────────────────────────────────
+
+export async function getWhatsAppContactsAction(): Promise<{ success: boolean; contacts?: any[]; error?: string }> {
+    const user = await getAuthenticatedUser();
+    if (!user) return { success: false, error: 'Non autorizzato' };
+
+    try {
+        const contacts = await db.whatsAppContact.findMany({
+            where: { companyId: user.companyId },
+            orderBy: { name: 'asc' },
+        });
+        return { success: true, contacts };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function saveWhatsAppContactAction(
+    phoneNumber: string,
+    name: string,
+    notes?: string
+): Promise<{ success: boolean; error?: string }> {
+    const user = await getAuthenticatedUser();
+    if (!user) return { success: false, error: 'Non autorizzato' };
+
+    if (!phoneNumber.trim() || !name.trim()) return { success: false, error: 'Nome e numero sono obbligatori' };
+
+    // Normalize: remove spaces, dashes
+    const normalized = phoneNumber.replace(/[\s\-()]/g, '');
+
+    try {
+        await db.whatsAppContact.upsert({
+            where: { phoneNumber_companyId: { phoneNumber: normalized, companyId: user.companyId } },
+            update: { name: name.trim(), notes: notes?.trim() || null },
+            create: { phoneNumber: normalized, name: name.trim(), notes: notes?.trim() || null, companyId: user.companyId },
+        });
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function deleteWhatsAppContactAction(
+    phoneNumber: string
+): Promise<{ success: boolean; error?: string }> {
+    const user = await getAuthenticatedUser();
+    if (!user) return { success: false, error: 'Non autorizzato' };
+
+    try {
+        await db.whatsAppContact.delete({
+            where: { phoneNumber_companyId: { phoneNumber, companyId: user.companyId } },
+        });
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message };
     }
 }

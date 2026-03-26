@@ -44,6 +44,7 @@ model Company {
   unifiedStylePresets      Json?
   activeUnifiedStyleId     String?
   whatsAppSessions         WhatsAppSession[]
+  whatsAppContacts         WhatsAppContact[]
 }
 
 model Department {
@@ -587,6 +588,20 @@ model WhatsAppSession {
   @@unique([phoneNumber, connectorId])
   @@index([companyId])
   @@index([connectorId])
+}
+
+model WhatsAppContact {
+  id          String   @id @default(cuid())
+  name        String
+  phoneNumber String
+  notes       String?
+  companyId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([phoneNumber, companyId])
+  @@index([companyId])
 }
 
 model LeadGeneratorConversation {

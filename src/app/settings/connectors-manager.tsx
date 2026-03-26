@@ -7,9 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { getConnectorsAction, createConnectorAction, deleteConnectorAction, testConnectorAction, updateConnectorAction, sendWhatsAppTestMessageAction, getWhatsAppSessionsAction } from '../actions/connectors';
+import { getConnectorsAction, createConnectorAction, deleteConnectorAction, testConnectorAction, updateConnectorAction, sendWhatsAppTestMessageAction, getWhatsAppSessionsAction, getWhatsAppContactsAction, saveWhatsAppContactAction, deleteWhatsAppContactAction } from '../actions/connectors';
 import { generateDeviceCodeAction, pollForTokenAction, listSharePointDrivesAction, listSharePointFilesAction, listExcelSheetsAction } from '../actions/sharepoint';
-import { Loader2, Trash2, Database, Mail, FileSpreadsheet, Layers, Plus, Wifi, CheckCircle2, XCircle, Pencil, ExternalLink, Copy, FolderOpen, Folder, ChevronRight, ChevronDown, ChevronUp, ArrowLeft, Download, Upload, Map, MessageSquare, Send, ScrollText, Phone } from 'lucide-react';
+import { Loader2, Trash2, Database, Mail, FileSpreadsheet, Layers, Plus, Wifi, CheckCircle2, XCircle, Pencil, ExternalLink, Copy, FolderOpen, Folder, ChevronRight, ChevronDown, ChevronUp, ArrowLeft, Download, Upload, Map, MessageSquare, Send, ScrollText, Phone, UserPlus, Users, X } from 'lucide-react';
 import { DatabaseMapDialog } from './database-map-dialog';
 import { exportSettingsAction, importSettingsAction } from '../actions/backup-restore';
 import {
@@ -92,6 +92,78 @@ export function ConnectorsManager() {
     const [isLoadingWaSessions, setIsLoadingWaSessions] = useState(false);
     const [expandedWaSession, setExpandedWaSession] = useState<string | null>(null);
 
+    // WhatsApp Rubrica (Contacts)
+    const [waContacts, setWaContacts] = useState<any[]>([]);
+    const [isLoadingContacts, setIsLoadingContacts] = useState(false);
+    const [newContactName, setNewContactName] = useState('');
+    const [newContactPhone, setNewContactPhone] = useState('');
+    const [showAddContact, setShowAddContact] = useState(false);
+
+    const loadWaContacts = async () => {
+        setIsLoadingContacts(true);
+        try {
+            const res = await getWhatsAppContactsAction();
+            if (res.success && res.contacts) setWaContacts(res.contacts);
+        } catch {}
+        setIsLoadingContacts(false);
+    };
+
+    const handleSaveContact = async () => {
+        if (!newContactName.trim() || !newContactPhone.trim()) return;
+        const res = await saveWhatsAppContactAction(newContactPhone, newContactName);
+        if (res.success) {
+            toast({ title: 'Contatto salvato' });
+            setNewContactName('');
+            setNewContactPhone('');
+            setShowAddContact(false);
+            loadWaContacts();
+        } else {
+            toast({ title: 'Errore', description: res.error, variant: 'destructive' });
+        }
+    };
+
+    const handleDeleteContact = async (phone: string) => {
+        const res = await deleteWhatsAppContactAction(phone);
+        if (res.success) {
+            toast({ title: 'Contatto rimosso' });
+            loadWaContacts();
+        }
+    };
+
+    const [waFilterPhone, setWaFilterPhone] = useState<string | null>(null);
+
+    // Build a map phone -> name for quick lookup
+    const contactNameMap = Object.fromEntries(waContacts.map((c: any) => [c.phoneNumber, c.name]));
+
+    // Load logs and optionally filter by phone
+    const loadLogsForPhone = async (phone?: string) => {
+        if (!editingId) return;
+        setIsLoadingWaSessions(true);
+        setWaFilterPhone(phone || null);
+        try {
+            const res = await getWhatsAppSessionsAction(editingId);
+            if (res.success && res.sessions) {
+                setWaSessions(res.sessions);
+                // If filtering by phone, auto-expand matching session
+                if (phone) {
+                    const match = res.sessions.find((s: any) => s.phoneNumber === phone);
+                    if (match) setExpandedWaSession(match.id);
+                }
+            } else {
+                toast({ title: 'Errore', description: res.error, variant: 'destructive' });
+            }
+        } catch (e: any) {
+            toast({ title: 'Errore', description: e.message, variant: 'destructive' });
+        } finally {
+            setIsLoadingWaSessions(false);
+        }
+    };
+
+    // Filtered sessions
+    const filteredSessions = waFilterPhone
+        ? waSessions.filter((s: any) => s.phoneNumber === waFilterPhone)
+        : waSessions;
+
     useEffect(() => {
         loadConnectors();
     }, []);
@@ -133,6 +205,8 @@ export function ConnectorsManager() {
         }
         setTestStatus(null);
         setIsDialogOpen(true);
+        // Auto-load contacts for WhatsApp connectors
+        if (connector.type === 'WHATSAPP') loadWaContacts();
     };
 
     const handleSave = async () => {
@@ -650,16 +724,18 @@ export function ConnectorsManager() {
                                 </div>
 
                                 <div className="space-y-0.5">
-                                    <p className="font-semibold">4. Copia il Token di accesso</p>
+                                    <p className="font-semibold">4. Crea il Token di accesso (⚠️ IMPORTANTE)</p>
                                     <ul className="list-disc list-inside space-y-0.5 ml-1">
-                                        <li><strong>Per testare subito:</strong> nella pagina Configurazione API, in alto c&apos;è il token temporaneo → clicca <strong>Copia</strong></li>
-                                        <li className="text-amber-700 dark:text-amber-400">Il token temporaneo scade ogni 24h!</li>
-                                        <li><strong>Per produzione (non scade):</strong> crea un token permanente via System User:</li>
-                                        <li className="ml-3">Vai su <a href="https://business.facebook.com/settings" target="_blank" rel="noopener noreferrer" className="underline font-medium">business.facebook.com/settings</a> → <strong>Utenti di sistema</strong></li>
-                                        <li className="ml-3">Aggiungi un System User (tipo <strong>Admin</strong>)</li>
-                                        <li className="ml-3">Clicca sul System User → <strong>Assegna risorse</strong> → seleziona la tua App → attiva tutti i permessi → Salva</li>
-                                        <li className="ml-3">Poi clicca <strong>Genera token</strong> → seleziona la tua App → permessi: <code className="bg-green-100 dark:bg-green-900 px-1 rounded">whatsapp_business_messaging</code> + <code className="bg-green-100 dark:bg-green-900 px-1 rounded">whatsapp_business_management</code></li>
-                                        <li className="ml-3 text-green-700 dark:text-green-300 font-medium">Questo token non scade!</li>
+                                        <li className="text-red-700 dark:text-red-400 font-medium">⚠️ NON usare il token temporaneo dalla pagina API Setup — scade ogni 24h!</li>
+                                        <li><strong>Crea un token permanente (consigliato):</strong></li>
+                                        <li className="ml-3">1. Vai su <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className="underline font-medium">business.facebook.com → Impostazioni → Utenti di sistema</a></li>
+                                        <li className="ml-3">2. Clicca <strong>Aggiungi</strong> → nome a piacere → ruolo <strong>Admin</strong> → Crea</li>
+                                        <li className="ml-3">3. Clicca sul System User appena creato → <strong>Assegna risorse</strong> → tipo <strong>App</strong> → seleziona la tua App WhatsApp → attiva <strong>tutti i permessi</strong> → Salva</li>
+                                        <li className="ml-3">4. Torna al System User → clicca <strong>Genera token</strong></li>
+                                        <li className="ml-3">5. Seleziona la tua <strong>App</strong> → Scadenza: <strong>Mai</strong></li>
+                                        <li className="ml-3">6. Permessi da selezionare: <code className="bg-green-100 dark:bg-green-900 px-1 rounded">whatsapp_business_messaging</code> e <code className="bg-green-100 dark:bg-green-900 px-1 rounded">whatsapp_business_management</code></li>
+                                        <li className="ml-3">7. Clicca <strong>Genera token</strong> → copia il token (inizia con <code className="bg-green-100 dark:bg-green-900 px-1 rounded">EAA...</code>)</li>
+                                        <li className="ml-3 text-green-700 dark:text-green-300 font-bold">✅ Questo token NON scade mai!</li>
                                     </ul>
                                 </div>
 
@@ -713,7 +789,8 @@ export function ConnectorsManager() {
                                     <p className="font-semibold">4. Testa la ricezione</p>
                                     <ul className="list-disc list-inside space-y-0.5 ml-1">
                                         <li>Invia un messaggio WhatsApp al numero dell&apos;app (es. +1 555 171 5639)</li>
-                                        <li>FridAI riceverà il messaggio, l&apos;agente AI risponderà automaticamente</li>
+                                        <li>FridAI salverà automaticamente il messaggio nel log</li>
+                                        <li>Le <strong>note vocali</strong> vengono trascritte in testo (serve API key Groq nella sezione Provider)</li>
                                         <li>Clicca <strong>Carica log</strong> qui sotto per vedere la conversazione</li>
                                     </ul>
                                 </div>
@@ -799,40 +876,95 @@ export function ConnectorsManager() {
                             </div>
                         )}
 
-                        {/* ─── Log messaggi recenti ─── */}
+                        {/* ─── Rubrica Contatti WhatsApp ─── */}
                         {editingId && (
                             <div className="border rounded-md p-3 space-y-3 mt-2">
                                 <div className="flex items-center justify-between">
-                                    <p className="text-sm font-medium flex items-center gap-2"><ScrollText className="h-4 w-4" /> Log messaggi recenti</p>
+                                    <p className="text-sm font-medium flex items-center gap-2"><Users className="h-4 w-4" /> Rubrica Contatti</p>
+                                    <Button type="button" variant="outline" size="sm" onClick={() => setShowAddContact(!showAddContact)}>
+                                        {showAddContact ? <X className="h-4 w-4 mr-1" /> : <UserPlus className="h-4 w-4 mr-1" />}
+                                        {showAddContact ? 'Chiudi' : 'Aggiungi'}
+                                    </Button>
+                                </div>
+
+                                {showAddContact && (
+                                    <div className="flex gap-2 items-end">
+                                        <div className="flex-1 space-y-1">
+                                            <Label className="text-xs">Nome</Label>
+                                            <Input value={newContactName} onChange={e => setNewContactName(e.target.value)} placeholder="Mario Rossi" className="h-8 text-sm" />
+                                        </div>
+                                        <div className="flex-1 space-y-1">
+                                            <Label className="text-xs">Numero</Label>
+                                            <Input value={newContactPhone} onChange={e => setNewContactPhone(e.target.value)} placeholder="+39 333 1234567" className="h-8 text-sm" />
+                                        </div>
+                                        <Button type="button" size="sm" className="h-8" onClick={handleSaveContact} disabled={!newContactName.trim() || !newContactPhone.trim()}>
+                                            Salva
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {waContacts.length > 0 && (
+                                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                                        {waContacts.map((c: any) => (
+                                            <div
+                                                key={c.id}
+                                                className={`flex items-center justify-between text-xs border rounded px-2 py-1.5 cursor-pointer transition-colors hover:bg-accent ${waFilterPhone === c.phoneNumber ? 'bg-accent border-primary' : ''}`}
+                                                onClick={() => loadLogsForPhone(c.phoneNumber)}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <Users className="h-3 w-3 text-muted-foreground" />
+                                                    <span className="font-medium">{c.name}</span>
+                                                    <span className="text-muted-foreground font-mono">{c.phoneNumber}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <Button type="button" variant="ghost" size="sm" className="h-5 px-1 text-[10px]" onClick={(e) => { e.stopPropagation(); setWaTestPhone(c.phoneNumber); }}>
+                                                        <Send className="h-3 w-3" />
+                                                    </Button>
+                                                    <Button type="button" variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={(e) => { e.stopPropagation(); handleDeleteContact(c.phoneNumber); }}>
+                                                        <Trash2 className="h-3 w-3 text-red-500" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {waContacts.length === 0 && !isLoadingContacts && (
+                                    <p className="text-xs text-muted-foreground text-center py-1">Nessun contatto salvato. I numeri dai log verranno mostrati solo come numero.</p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ─── Log messaggi ─── */}
+                        {editingId && (
+                            <div className="border rounded-md p-3 space-y-3 mt-2">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-sm font-medium flex items-center gap-2"><ScrollText className="h-4 w-4" /> Log messaggi</p>
+                                        {waFilterPhone && (
+                                            <span className="flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                                                {contactNameMap[waFilterPhone] || waFilterPhone}
+                                                <button onClick={() => { setWaFilterPhone(null); setExpandedWaSession(null); }} className="hover:text-red-500">
+                                                    <X className="h-3 w-3" />
+                                                </button>
+                                            </span>
+                                        )}
+                                    </div>
                                     <Button
                                         type="button"
                                         variant="outline"
                                         size="sm"
                                         disabled={isLoadingWaSessions}
-                                        onClick={async () => {
-                                            setIsLoadingWaSessions(true);
-                                            try {
-                                                const res = await getWhatsAppSessionsAction(editingId);
-                                                if (res.success && res.sessions) {
-                                                    setWaSessions(res.sessions);
-                                                } else {
-                                                    toast({ title: 'Errore', description: res.error, variant: 'destructive' });
-                                                }
-                                            } catch (e: any) {
-                                                toast({ title: 'Errore', description: e.message, variant: 'destructive' });
-                                            } finally {
-                                                setIsLoadingWaSessions(false);
-                                            }
-                                        }}
+                                        onClick={() => loadLogsForPhone()}
                                     >
                                         {isLoadingWaSessions ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ScrollText className="h-4 w-4 mr-2" />}
                                         Carica log
                                     </Button>
                                 </div>
 
-                                {waSessions.length > 0 && (
-                                    <div className="space-y-2 max-h-80 overflow-y-auto">
-                                        {waSessions.map((s: any) => (
+                                {filteredSessions.length > 0 && (
+                                    <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                                        {filteredSessions.map((s: any) => (
                                             <div key={s.id} className="border rounded p-2 text-xs">
                                                 <div
                                                     className="flex items-center justify-between cursor-pointer"
@@ -840,10 +972,32 @@ export function ConnectorsManager() {
                                                 >
                                                     <div className="flex items-center gap-2">
                                                         <Phone className="h-3 w-3" />
-                                                        <span className="font-mono">{s.phoneNumber}</span>
+                                                        {(s.contactName || contactNameMap[s.phoneNumber]) ? (
+                                                            <>
+                                                                <span className="font-medium">{s.contactName || contactNameMap[s.phoneNumber]}</span>
+                                                                <span className="text-muted-foreground font-mono text-[10px]">{s.phoneNumber}</span>
+                                                            </>
+                                                        ) : (
+                                                            <span className="font-mono">{s.phoneNumber}</span>
+                                                        )}
                                                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${s.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300'}`}>
                                                             {s.status === 'completed' ? 'Completato' : 'In corso'}
                                                         </span>
+                                                        {!s.contactName && !contactNameMap[s.phoneNumber] && (
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-5 px-1 text-[10px] text-blue-600"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setNewContactPhone(s.phoneNumber);
+                                                                    setShowAddContact(true);
+                                                                }}
+                                                            >
+                                                                <UserPlus className="h-3 w-3 mr-0.5" /> Salva
+                                                            </Button>
+                                                        )}
                                                     </div>
                                                     <div className="flex items-center gap-2 text-muted-foreground">
                                                         <span>{new Date(s.updatedAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
@@ -872,6 +1026,10 @@ export function ConnectorsManager() {
                                             </div>
                                         ))}
                                     </div>
+                                )}
+
+                                {filteredSessions.length === 0 && waSessions.length > 0 && waFilterPhone && (
+                                    <p className="text-xs text-muted-foreground text-center py-2">Nessun messaggio trovato per questo contatto.</p>
                                 )}
 
                                 {waSessions.length === 0 && !isLoadingWaSessions && (
