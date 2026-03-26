@@ -395,6 +395,7 @@ export default function EditNodeDialog({
   const sqlPreviewRef = useRef<HTMLDivElement>(null);
   const pythonPreviewRef = useRef<HTMLDivElement>(null);
   const pythonPreviewBtnRef = useRef<HTMLButtonElement>(null);
+  const pyFileInputRef = useRef<HTMLInputElement>(null);
 
   const [sqlPreviewData, setSqlPreviewData] = useState<any[] | null>(null);
   const [sqlPreviewTimestamp, setSqlPreviewTimestamp] = useState<number | null>(null);
@@ -3036,6 +3037,7 @@ export default function EditNodeDialog({
                         inputTables={getInputTables(selectedPipelines, availableInputTables)}
                         nodeQueries={getNodeQueries(availableInputTables)}
                         connectorId={sqlConnectorId || undefined}
+                        treeId={treeId}
                         onScriptUpdate={(newScript) => {
                           setSqlQuery(newScript);
                           toast({ title: "Query Aggiornata", description: "L'editor SQL è stato aggiornato." });
@@ -3363,7 +3365,46 @@ export default function EditNodeDialog({
                     <div className="flex flex-col order-2 lg:order-1 h-full">
                       {/* Python Code Editor */}
                       <div className="flex flex-col gap-2 flex-1">
-                        <Label>Codice Python</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Codice Python</Label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              ref={pyFileInputRef}
+                              type="file"
+                              accept=".py,.txt,.sql"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                if (file.size > 500 * 1024) {
+                                  toast({ variant: 'destructive', title: 'File troppo grande', description: `Max 500KB. Il file selezionato è ${Math.round(file.size / 1024)}KB.` });
+                                  return;
+                                }
+                                const reader = new FileReader();
+                                reader.onload = (ev) => {
+                                  const content = ev.target?.result as string;
+                                  if (content) {
+                                    setPythonCode(content);
+                                    toast({ title: 'Script importato', description: `${file.name} (${content.split('\n').length} righe, ${Math.round(file.size / 1024)}KB)` });
+                                  }
+                                };
+                                reader.readAsText(file);
+                                // Reset input so same file can be re-selected
+                                e.target.value = '';
+                              }}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs gap-1"
+                              onClick={() => pyFileInputRef.current?.click()}
+                            >
+                              <Upload className="h-3 w-3" />
+                              Importa .py
+                            </Button>
+                          </div>
+                        </div>
                         <Textarea
                           value={pythonCode}
                           onChange={(e) => setPythonCode(e.target.value)}
@@ -3550,9 +3591,16 @@ export default function EditNodeDialog({
                         nodeQueries={getNodeQueries(availableInputTables)}
                         connectorId={pythonConnectorId || undefined}
                         selectedDocuments={selectedDocuments}
+                        treeId={treeId}
                         onScriptUpdate={(newScript) => {
                           setPythonCode(newScript);
                           toast({ title: "Codice Aggiornato", description: "Lo script Python è stato aggiornato." });
+                        }}
+                        onOutputTypeChange={(newType) => {
+                          if (newType !== pythonOutputType) {
+                            setPythonOutputType(newType);
+                            console.log('[edit-node-dialog] Auto-switched pythonOutputType to:', newType);
+                          }
                         }}
                         onPreviewReady={() => pythonPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                         onAutoExecutePreview={async (scriptToExecute) => {
@@ -3574,8 +3622,10 @@ export default function EditNodeDialog({
                             });
                             const res = await executePythonPreviewAction(scriptToExecute, pythonOutputType, inputData, deps, pythonConnectorId, undefined, selectedDocuments.length > 0 ? selectedDocuments : undefined);
                             if (res.success) {
+                              // Auto-switch: if outputType was 'table' but backend returned html, treat as html
+                              const effectiveType = (pythonOutputType === 'table' && !res.data && res.html) ? 'html' : pythonOutputType;
                               setPythonPreviewResult({
-                                type: pythonOutputType,
+                                type: effectiveType,
                                 data: res.data,
                                 variables: res.variables,
                                 chartBase64: res.chartBase64,

@@ -461,8 +461,11 @@ interface AgentChatProps {
   nodeQueries?: Record<string, { query: string; isPython: boolean; connectorId?: string }>;
   connectorId?: string;
   selectedDocuments?: string[];
+  /** Tree ID in the database — needed for Claude CLI to update the node directly */
+  treeId?: string;
   onScriptUpdate?: (newScript: string) => void;
   onAutoExecutePreview?: (script: string) => Promise<{ success: boolean; error?: string }>;
+  onOutputTypeChange?: (newType: 'table' | 'variable' | 'chart' | 'html') => void;
   onPreviewReady?: () => void;
   onClose?: () => void;
   onGoBack?: (messageIndex: number) => void;
@@ -477,8 +480,10 @@ export function AgentChat({
   nodeQueries,
   connectorId,
   selectedDocuments,
+  treeId,
   onScriptUpdate,
   onAutoExecutePreview,
+  onOutputTypeChange,
   onPreviewReady,
   onClose,
   onGoBack,
@@ -526,7 +531,7 @@ export function AgentChat({
   // Create transport with stable identity — all dynamic values read from refs at send time
   const streamTransport = useMemo(() => new DefaultChatTransport({
     api: '/api/agents/chat-stream',
-    body: { nodeId, agentType },
+    body: { nodeId, agentType, treeId },
     prepareSendMessagesRequest: ({ body, messages, ...rest }) => ({
       ...rest,
       body: {
@@ -561,6 +566,37 @@ export function AgentChat({
 
       console.log('[stream] onFinish - textContent length:', textContent.length, 'parts:', message.parts.length);
 
+      // Check for loadScriptFromFile / editScript / pyTestCode tool results in message parts
+      let loadedFileScript: string | undefined;
+      let editedScript: string | undefined;
+      let detectedOutputType: 'table' | 'variable' | 'chart' | 'html' | undefined;
+      for (const part of message.parts) {
+        if (part.type !== 'tool-invocation') continue;
+        const toolName = (part as any).toolName;
+        const toolArgs = (part as any).args || (part as any).input;
+        const resultStr = (part as any).result;
+        try {
+          const result = typeof resultStr === 'string' ? JSON.parse(resultStr) : resultStr;
+          if (toolName === 'loadScriptFromFile' && result?.success && result?.content) {
+            loadedFileScript = result.content;
+            console.log('[stream] loadScriptFromFile: loaded', result.fileName, result.lineCount, 'lines,', result.sizeKB, 'KB');
+          } else if (toolName === 'editScript' && result?.success && result?.updatedScript) {
+            editedScript = result.updatedScript;
+            console.log('[stream] editScript: updated,', result.lineCount, 'lines,', result.sizeKB, 'KB,', result.replacements, 'replacements');
+          } else if (toolName === 'pyTestCode' && result?.success && toolArgs?.outputType) {
+            // Track the outputType the agent used for the last successful test
+            detectedOutputType = toolArgs.outputType;
+            console.log('[stream] pyTestCode: successful test with outputType=', detectedOutputType);
+          }
+        } catch { /* ignore parse errors */ }
+      }
+
+      // Auto-switch outputType if agent tested with a different type than the node's current type
+      if (detectedOutputType && onOutputTypeChange) {
+        onOutputTypeChange(detectedOutputType);
+        console.log('[stream] Auto-switching node outputType to:', detectedOutputType);
+      }
+
       // Try to extract SQL or Python code from code blocks in the response
       let extractedScript: string | undefined;
       const sqlBlockMatch = textContent.match(/```sql\s*\n([\s\S]*?)```/i);
@@ -575,7 +611,8 @@ export function AgentChat({
       const parsed = parseAgentJsonFromStream(textContent);
 
       const finalMessage = parsed?.message || textContent;
-      const finalScript = parsed?.updatedScript || extractedScript;
+      // Priority: loadedFileScript (full import) > editedScript (partial edit) > parsed > extracted from code block
+      const finalScript = loadedFileScript || editedScript || parsed?.updatedScript || extractedScript;
 
       // Add to our local messages state
       setMessages(prev => [...prev, {
@@ -914,7 +951,7 @@ export function AgentChat({
         }
 
         // Execution failed - send error to agent for auto-correction
-        const errorMessage = `ERRORE ESECUZIONE AUTOMATICA (tentativo ${retryAttempt + 1}/${MAX_AUTO_RETRIES}): ${result.error}\n\nCORREGGI il codice e restituisci il codice COMPLETO corretto in updatedScript. E' OBBLIGATORIO includere updatedScript nella risposta, altrimenti il sistema non puo' riprovare.`;
+        const errorMessage = `ERRORE ESECUZIONE AUTOMATICA (tentativo ${retryAttempt + 1}/${MAX_AUTO_RETRIES}): ${result.error}\n\nCORREGGI il codice e restituisci il codice COMPLETO corretto in un blocco \`\`\`python nel messaggio. E' OBBLIGATORIO includere il blocco di codice python, altrimenti il sistema non puo' aggiornare lo script e riprovare.`;
 
         setMessages(prev => [...prev, {
           role: 'user' as const,
@@ -982,7 +1019,7 @@ export function AgentChat({
                 timestamp: Date.now(),
               }]);
 
-              const insistMessage = `NON hai incluso updatedScript nella risposta precedente. DEVI restituire il codice COMPLETO corretto in updatedScript. Riprova ora - correggi l'errore e includi il codice completo.`;
+              const insistMessage = `NON hai incluso il codice nella risposta precedente. DEVI restituire il codice COMPLETO corretto in un blocco \`\`\`python nel messaggio. Riprova ora - correggi l'errore e includi il codice completo nel blocco python.`;
 
               const retryResponse = await fetch('/api/agents/chat', {
                 method: 'POST',

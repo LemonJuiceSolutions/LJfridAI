@@ -290,7 +290,8 @@ function useFlowExecution() {
                 }
 
                 setFinalResult({
-                    type: mainOutputType,
+                    // Auto-switch: if outputType was 'table' but backend returned html, treat as html
+                    type: (mainOutputType === 'table' && !res.data && res.html) ? 'html' : mainOutputType,
                     data: res.data,
                     variables: res.variables,
                     chartBase64: res.chartBase64,

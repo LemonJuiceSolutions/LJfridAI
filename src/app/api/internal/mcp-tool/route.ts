@@ -98,7 +98,7 @@ async function doSuperExecuteSql(params: { query: string; connectorId: string })
 async function doSuperExecutePython(params: { code: string; outputType: string; connectorId?: string }) {
     const result = await executePythonPreviewAction(params.code, params.outputType as any, {}, [], params.connectorId, true);
     if (!result.success) return JSON.stringify({ error: result.error || 'Errore esecuzione Python' });
-    return JSON.stringify({ data: result.data?.slice(0, 100), variables: result.variables, columns: result.columns, rowCount: result.rowCount, stdout: result.stdout }, null, 2);
+    return JSON.stringify({ data: result.data?.slice(0, 100), variables: result.variables, columns: result.columns, rowCount: result.rowCount, html: result.html ? `(HTML output, ${result.html.length} chars)` : undefined, stdout: result.stdout }, null, 2);
 }
 
 async function doSuperSearchKB(params: { query: string; companyId: string }) {
@@ -265,6 +265,52 @@ const TOOL_MAP: Record<string, (params: any) => Promise<string>> = {
     pyListSqlConnectors: doPyListConnectors,
     pySaveToKnowledgeBase: doPySaveToKB,
     pyBrowseOtherScripts: doPyBrowseOtherScripts,
+    // Python agent — updateNodeScript (writes script directly to the node in the tree)
+    updateNodeScript: async (params: { script: string; outputType?: string; nodeId?: string; treeId?: string }) => {
+        // This tool is called by Claude CLI to sync edited code back to the node's pythonCode field.
+        // It needs nodeId and treeId from the MCP context (injected by CallToolRequestSchema handler).
+        const { script, outputType, nodeId, treeId } = params;
+        if (!nodeId || !treeId) {
+            return JSON.stringify({ error: 'nodeId e treeId richiesti per aggiornare il nodo.' });
+        }
+        try {
+            const tree = await db.tree.findUnique({ where: { id: treeId }, select: { jsonDecisionTree: true } });
+            if (!tree) return JSON.stringify({ error: 'Albero non trovato.' });
+
+            const json = JSON.parse(tree.jsonDecisionTree);
+            // Navigate to the node using the nodeId path (e.g. "root.options['xls']")
+            const _ = await import('lodash');
+            const node = _.default.get(json, nodeId.replace('root.', ''));
+            if (!node || typeof node !== 'object') {
+                return JSON.stringify({ error: `Nodo "${nodeId}" non trovato nell'albero.` });
+            }
+
+            node.pythonCode = script;
+            if (outputType) node.pythonOutputType = outputType;
+
+            await db.tree.update({
+                where: { id: treeId },
+                data: { jsonDecisionTree: JSON.stringify(json) },
+            });
+
+            // Also update the AgentConversation script
+            const conv = await db.agentConversation.findFirst({
+                where: { nodeId, agentType: 'python' },
+            });
+            if (conv) {
+                await db.agentConversation.update({
+                    where: { id: conv.id },
+                    data: { script },
+                });
+            }
+
+            const lineCount = script.split('\n').length;
+            const sizeKB = Math.round(Buffer.byteLength(script, 'utf-8') / 1024);
+            return JSON.stringify({ success: true, lineCount, sizeKB, message: `Script aggiornato nel nodo (${lineCount} righe, ${sizeKB}KB).` });
+        } catch (e: any) {
+            return JSON.stringify({ error: e.message });
+        }
+    },
     // Super-agent tools
     superListConnectors: doSuperListConnectors,
     superListTrees: doSuperListTrees,

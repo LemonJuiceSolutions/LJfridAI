@@ -291,6 +291,15 @@ La variabile DEVE essere del tipo giusto per l'outputType del nodo:
 - Assegna una stringa HTML a \`result\`: result = "<h1>Titolo</h1>"
 - Per NaN/None: usa SEMPRE pd.isna(val) con applymap, MAI .astype(str).replace('nan',...)
 
+### REGOLA SCELTA outputType (FONDAMENTALE):
+SCEGLI SEMPRE l'outputType GIUSTO quando chiami pyTestCode:
+- Se il codice Python fa \`result = df\` (DataFrame) -> usa outputType='table'
+- Se il codice Python fa \`result = "<html>..."\` (stringa HTML) -> usa outputType='html'
+- Se il codice Python crea un grafico Plotly -> usa outputType='chart'
+- Se il codice Python fa \`result = {...}\` (dizionario) -> usa outputType='variable'
+NON usare MAI outputType='table' quando il codice produce HTML. Se l'utente chiede filtri, opzioni interattive, dashboard con JS, o qualsiasi interfaccia ricca -> il risultato e' HTML, usa outputType='html'.
+Il sistema ha un fallback automatico (se mandi table ma il risultato e' HTML lo converte), ma DEVI scegliere il tipo corretto fin dall'inizio.
+
 ## !!!! REGOLE GENERAZIONE HTML (CRITICO - LEGGI BENE) !!!!
 Quando generi codice Python che produce HTML (outputType='html'), segui QUESTE REGOLE TASSATIVE:
 
@@ -757,9 +766,30 @@ function deleteRow(button) {
 \`\`\`
 REGOLA: Il bottone Elimina DEVE chiedere conferma con confirm() prima di procedere. Dopo l'eliminazione, la riga viene rimossa dal DOM con tr.remove().
 
+## GESTIONE SCRIPT GRANDI (CRITICO):
+Hai 3 tool per lavorare con script di qualsiasi dimensione:
+
+1. **loadScriptFromFile(filePath)**: Carica un file .py dal disco nel nodo. Usa quando l'utente dice "carica/importa/usa il file X".
+   NON ripetere il contenuto — puo' essere 200KB+. Di' solo "Script caricato da [nome] (X righe, YKB)".
+
+2. **readScriptLines(startLine?, endLine?, searchPattern?)**: Leggi sezioni specifiche dello script corrente.
+   Usa PRIMA di editScript per trovare il codice esatto da modificare.
+   - Con searchPattern: cerca righe che matchano (es. "def calculate_kpi")
+   - Con startLine/endLine: leggi un range specifico (es. righe 100-150)
+
+3. **editScript(oldString, newString, replaceAll?)**: Modifica lo script con find-and-replace.
+   - oldString DEVE corrispondere ESATTAMENTE al testo nello script (spazi e indentazione inclusi)
+   - Usa readScriptLines prima per copiare il testo esatto
+   - Per modifiche multiple, chiama editScript piu' volte (le edit si accumulano)
+   - NON riscrivere mai tutto lo script — modifica solo le parti necessarie
+
+WORKFLOW PER SCRIPT GRANDI:
+- **Per modificare**: readScriptLines(searchPattern="...") -> editScript(old, new)
+- NON includere lo script completo nel messaggio se lo hai modificato via editScript (la piattaforma aggiorna automaticamente)
+
 ## CORREZIONE ERRORI AUTOMATICA (CRITICO):
-- Se ricevi "ERRORE ESECUZIONE AUTOMATICA", DEVI restituire il codice corretto.
-- Analizza l'errore, correggi il codice, e restituisci la versione corretta.
+- Se ricevi "ERRORE ESECUZIONE AUTOMATICA", DEVI restituire il codice corretto IN UN BLOCCO \`\`\`python nel messaggio.
+- Analizza l'errore, correggi il codice, e restituisci la versione corretta COMPLETA nel blocco \`\`\`python.
 - ERRORI COMUNI E SOLUZIONI RAPIDE:
   * "invalid decimal literal" -> I valori CSS decimali (0.3, 0.06) sono fuori dalle virgolette. Controlla che le triple quotes siano bilanciate.
   * "invalid syntax (<string>, line 1)" -> Hai scritto SQL raw o HTML fuori da una stringa. Tutto deve essere dentro triple quotes.
@@ -776,14 +806,23 @@ REGOLA: Il bottone Elimina DEVE chiedere conferma con confirm() prima di procede
 - Usa **grassetto** per evidenziare dati importanti
 - Sii CONCISO
 
-## COME RISPONDERE (IMPORTANTE):
+## COME RISPONDERE — REGOLA FONDAMENTALE (OBBLIGATORIO):
 Usa i tool per esplorare i dati e testare il codice.
 Alla fine, rispondi con un testo che spiega brevemente cosa hai fatto.
-Includi il codice Python finale nel tuo messaggio racchiuso in un blocco di codice:
+
+### !!! REGOLA CRITICA: INCLUDI SEMPRE IL CODICE NEL MESSAGGIO !!!
+DEVI SEMPRE includere il codice Python COMPLETO nel tuo messaggio finale racchiuso in un blocco di codice:
 \`\`\`python
-# ... codice ...
+# ... codice completo ...
 \`\`\`
-Indica chiaramente il codice come "CODICE FINALE" o "Ecco il codice".`;
+Il sistema ESTRAE AUTOMATICAMENTE il codice dal blocco \`\`\`python e lo salva nel nodo.
+Se NON includi il blocco di codice, il nodo NON viene aggiornato e l'utente vede ancora il vecchio script.
+NON dire MAI "incolla il codice", "riesegui il nodo manualmente", "ho aggiornato lo script" SENZA includere il blocco \`\`\`python.
+NON usare MAI "updateNodeScript" — NON ESISTE come tool disponibile. L'UNICO modo per aggiornare lo script e':
+1. Includere il codice in un blocco \`\`\`python nel messaggio (il sistema lo estrae automaticamente)
+2. Oppure usare editScript (per modifiche parziali a script grandi)
+DOPO che il codice viene estratto, il sistema lo salva nel nodo e lo ESEGUE AUTOMATICAMENTE.
+Se l'esecuzione fallisce, riceverai l'errore e dovrai restituire il codice corretto (sempre in un blocco \`\`\`python).`;
 }
 
 // ─── Python Context Builder ─────────────────────────────────────────────────
@@ -832,11 +871,38 @@ function buildPythonUserPrompt(opts: {
         historyContext = '\nCRONOLOGIA:\n' + recent.map(m => `${m.role === 'user' ? 'Utente' : 'Agente'}: ${m.content}`).join('\n');
     }
 
+    // For large scripts (>200 lines), send only a summary to avoid filling the context window.
+    // The agent can use readScriptLines to read specific sections.
+    let scriptSection = '';
+    const scriptContent = opts.script || '';
+    const scriptLines = scriptContent.split('\n');
+    const LARGE_SCRIPT_THRESHOLD = 200;
+
+    if (!scriptContent) {
+        scriptSection = '(nessun codice definito)';
+    } else if (scriptLines.length <= LARGE_SCRIPT_THRESHOLD) {
+        scriptSection = scriptContent;
+    } else {
+        // Large script: show summary + first 30 lines + last 10 lines
+        const first30 = scriptLines.slice(0, 30).join('\n');
+        const last10 = scriptLines.slice(-10).join('\n');
+        const sizeKB = Math.round(Buffer.byteLength(scriptContent, 'utf-8') / 1024);
+        scriptSection = `[SCRIPT GRANDE: ${scriptLines.length} righe, ${sizeKB}KB — usa readScriptLines per leggere sezioni specifiche, editScript per modificare]
+
+--- PRIME 30 RIGHE ---
+${first30}
+
+--- ... (${scriptLines.length - 40} righe omesse) ... ---
+
+--- ULTIME 10 RIGHE ---
+${last10}`;
+    }
+
     return `=== RICHIESTA ===
 ${opts.userMessage}
 
 === CODICE PYTHON CORRENTE ===
-${opts.script || '(nessun codice definito)'}
+${scriptSection}
 ${context}${historyContext}
 
 Usa i tool a tua disposizione per esplorare i dati se necessario, poi rispondi con il codice Python finale.`;
@@ -921,6 +987,7 @@ export async function POST(request: NextRequest) {
             nodeQueries,
             connectorId,
             selectedDocuments,
+            treeId, // Tree ID for Claude CLI to update node directly
             messages, // AI SDK v6 sends messages array, not a single userMessage
             model: requestModel, // Optional model override from client
         } = body;
@@ -1068,7 +1135,7 @@ export async function POST(request: NextRequest) {
 
         // 7. Create tools (branched by agent type)
         const tools = agentType === 'python'
-            ? createPythonAgentTools({ connectorId, companyId })
+            ? createPythonAgentTools({ connectorId, companyId, currentScript: script })
             : createSqlAgentTools({ connectorId, companyId });
         console.log('[chat-stream] Tools created:', Object.keys(tools), 'agentType:', agentType);
 
@@ -1097,6 +1164,8 @@ export async function POST(request: NextRequest) {
                 agentType: mcpAgentType,
                 connectorId,
                 companyId,
+                nodeId,
+                treeId,
             });
 
             try {

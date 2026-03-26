@@ -96,6 +96,7 @@ export async function doPyTestCode(input: { code: string; outputType: string; co
             variables: result.variables,
             columns: result.columns,
             rowCount: result.rowCount,
+            html: result.html ? `(HTML output, ${result.html.length} chars)` : undefined,
             stdout: result.stdout,
         }, null, 2);
     } catch (e: any) {
@@ -150,6 +151,159 @@ export async function doPySaveToKB(input: { question: string; answer: string; ta
         });
         return JSON.stringify({ success: true, message: 'Salvato nella Knowledge Base!' });
     } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+// ─── Edit Script (find-and-replace) ─────────────────────────────────────────
+
+export async function doEditScript(input: { oldString: string; newString: string; currentScript: string; replaceAll?: boolean }) {
+    try {
+        const { oldString, newString, currentScript, replaceAll } = input;
+
+        if (!currentScript) {
+            return JSON.stringify({ error: 'Nessuno script corrente da modificare. Carica prima uno script con loadScriptFromFile o scrivine uno.' });
+        }
+
+        if (!currentScript.includes(oldString)) {
+            // Try to find a close match for helpful error
+            const lines = oldString.split('\n');
+            const firstLine = lines[0].trim();
+            const matchingLines = currentScript.split('\n')
+                .map((l, i) => ({ line: l, num: i + 1 }))
+                .filter(({ line }) => line.includes(firstLine));
+
+            let hint = '';
+            if (matchingLines.length > 0) {
+                hint = ` Trovate righe simili a: ${matchingLines.slice(0, 3).map(m => `riga ${m.num}`).join(', ')}. Usa readScriptLines per vedere il contesto esatto.`;
+            }
+            return JSON.stringify({ error: `Stringa da sostituire non trovata nello script corrente.${hint}` });
+        }
+
+        const occurrences = currentScript.split(oldString).length - 1;
+        if (occurrences > 1 && !replaceAll) {
+            return JSON.stringify({
+                error: `Trovate ${occurrences} occorrenze di oldString. Usa replaceAll=true per sostituirle tutte, oppure fornisci più contesto per rendere la stringa unica.`,
+                occurrences,
+            });
+        }
+
+        const updatedScript = replaceAll
+            ? currentScript.split(oldString).join(newString)
+            : currentScript.replace(oldString, newString);
+
+        const lineCount = updatedScript.split('\n').length;
+        const sizeKB = Math.round(Buffer.byteLength(updatedScript, 'utf-8') / 1024);
+
+        return JSON.stringify({
+            success: true,
+            updatedScript,
+            lineCount,
+            sizeKB,
+            replacements: replaceAll ? occurrences : 1,
+        });
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+// ─── Read Script Lines ──────────────────────────────────────────────────────
+
+export async function doReadScriptLines(input: { currentScript: string; startLine?: number; endLine?: number; searchPattern?: string }) {
+    try {
+        const { currentScript, startLine, endLine, searchPattern } = input;
+
+        if (!currentScript) {
+            return JSON.stringify({ error: 'Nessuno script corrente.' });
+        }
+
+        const allLines = currentScript.split('\n');
+        const totalLines = allLines.length;
+
+        // If searchPattern, find matching lines with context
+        if (searchPattern) {
+            const matches: { lineNum: number; line: string; context: string[] }[] = [];
+            const regex = new RegExp(searchPattern, 'gi');
+            for (let i = 0; i < allLines.length; i++) {
+                if (regex.test(allLines[i])) {
+                    const ctxStart = Math.max(0, i - 2);
+                    const ctxEnd = Math.min(allLines.length, i + 3);
+                    matches.push({
+                        lineNum: i + 1,
+                        line: allLines[i],
+                        context: allLines.slice(ctxStart, ctxEnd).map((l, j) => `${ctxStart + j + 1}: ${l}`),
+                    });
+                }
+                if (matches.length >= 20) break;
+            }
+            return JSON.stringify({ totalLines, matchCount: matches.length, matches });
+        }
+
+        // Read specific range
+        const start = Math.max(1, startLine || 1);
+        const end = Math.min(totalLines, endLine || Math.min(start + 99, totalLines));
+        const lines = allLines.slice(start - 1, end).map((l, i) => `${start + i}: ${l}`);
+
+        return JSON.stringify({ totalLines, range: `${start}-${end}`, lines });
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+// ─── Load Script From File ──────────────────────────────────────────────────
+
+const ALLOWED_EXTENSIONS = ['.py', '.txt', '.sql', '.json', '.csv', '.js', '.ts'];
+const MAX_FILE_SIZE_KB = 500;
+
+export async function doLoadScriptFromFile(input: { filePath: string }) {
+    try {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+
+        const resolved = path.resolve(input.filePath);
+
+        // Security: only allow files under project root or common data directories
+        const projectRoot = process.cwd();
+        const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+        const allowedPrefixes = [projectRoot];
+        if (homeDir) {
+            allowedPrefixes.push(path.join(homeDir, 'Desktop'));
+            allowedPrefixes.push(path.join(homeDir, 'Documents'));
+            allowedPrefixes.push(path.join(homeDir, 'Downloads'));
+        }
+
+        const isAllowed = allowedPrefixes.some(prefix => resolved.startsWith(prefix));
+        if (!isAllowed) {
+            return JSON.stringify({ error: `Percorso non consentito. File consentiti solo sotto: ${allowedPrefixes.join(', ')}` });
+        }
+
+        // Check extension
+        const ext = path.extname(resolved).toLowerCase();
+        if (!ALLOWED_EXTENSIONS.includes(ext)) {
+            return JSON.stringify({ error: `Estensione "${ext}" non consentita. Estensioni valide: ${ALLOWED_EXTENSIONS.join(', ')}` });
+        }
+
+        // Check existence and size
+        const stat = await fs.stat(resolved);
+        const sizeKB = Math.round(stat.size / 1024);
+        if (sizeKB > MAX_FILE_SIZE_KB) {
+            return JSON.stringify({ error: `File troppo grande: ${sizeKB}KB (max ${MAX_FILE_SIZE_KB}KB)` });
+        }
+
+        const content = await (fs.readFile as any)(resolved, 'utf-8');
+        const lineCount = content.split('\n').length;
+
+        return JSON.stringify({
+            success: true,
+            content,
+            fileName: path.basename(resolved),
+            sizeKB,
+            lineCount,
+        });
+    } catch (e: any) {
+        if (e.code === 'ENOENT') {
+            return JSON.stringify({ error: `File non trovato: ${input.filePath}` });
+        }
         return JSON.stringify({ error: e.message });
     }
 }
@@ -264,9 +418,13 @@ export async function doPyBrowseOtherScripts(input: { companyId: string; connect
 export function createPythonAgentTools(opts: {
     connectorId?: string;
     companyId?: string;
+    /** Current script in the node editor — used by editScript/readScriptLines tools */
+    currentScript?: string;
 }) {
     const cid = opts.connectorId || '';
     const cpid = opts.companyId || '';
+    // Mutable ref so editScript can chain multiple edits on the latest version
+    let liveScript = opts.currentScript || '';
 
     const tools: Record<string, any> = {};
 
@@ -348,6 +506,58 @@ export function createPythonAgentTools(opts: {
             execute: async ({ companyId, connectorId }) => doPyBrowseOtherScripts({ companyId: companyId || cpid, connectorId: connectorId || cid || undefined }),
         });
     }
+
+    // editScript — find-and-replace on the current script (works like Claude Code's Edit tool)
+    tools.editScript = tool({
+        description: "Modifica lo script corrente con find-and-replace. Usa QUESTO tool per modificare script grandi invece di riscriverli. Fornisci la stringa esatta da trovare (oldString) e la sostituzione (newString). Se oldString non e' unica, fornisci piu' contesto o usa replaceAll. Il risultato include lo script aggiornato che viene automaticamente applicato al nodo.",
+        inputSchema: z.object({
+            oldString: z.string().describe("La stringa ESATTA da trovare nello script corrente. Deve corrispondere carattere per carattere, inclusi spazi e indentazione."),
+            newString: z.string().describe("La stringa sostitutiva."),
+            replaceAll: z.boolean().optional().describe("Se true, sostituisce TUTTE le occorrenze. Default: false (sostituisce solo la prima)."),
+        }),
+        execute: async ({ oldString, newString, replaceAll }) => {
+            const result = await doEditScript({ oldString, newString, currentScript: liveScript, replaceAll });
+            // Update liveScript if edit succeeded, so chained edits work
+            try {
+                const parsed = JSON.parse(result);
+                if (parsed.success && parsed.updatedScript) {
+                    liveScript = parsed.updatedScript;
+                }
+            } catch { /* ignore */ }
+            return result;
+        },
+    });
+
+    // readScriptLines — read specific lines or search within the current script
+    tools.readScriptLines = tool({
+        description: "Leggi righe specifiche o cerca pattern nello script corrente. Utile per script grandi: prima cerca/leggi la sezione da modificare, poi usa editScript. Se searchPattern e' fornito, trova le righe corrispondenti con contesto.",
+        inputSchema: z.object({
+            startLine: z.number().optional().describe("Riga iniziale da leggere (1-based). Default: 1."),
+            endLine: z.number().optional().describe("Riga finale da leggere. Default: startLine + 99."),
+            searchPattern: z.string().optional().describe("Pattern regex da cercare nello script. Restituisce le righe corrispondenti con contesto."),
+        }),
+        execute: async ({ startLine, endLine, searchPattern }) =>
+            doReadScriptLines({ currentScript: liveScript, startLine, endLine, searchPattern }),
+    });
+
+    // loadScriptFromFile is ALWAYS available — lets the agent import large scripts from disk
+    tools.loadScriptFromFile = tool({
+        description: "Carica un file Python (.py) o di testo dal disco e restituisce il contenuto. Usa questo tool quando l'utente chiede di importare, caricare o usare uno script da un file. Il contenuto viene automaticamente impostato come codice del nodo. NON ripetere il contenuto nel messaggio — e' troppo grande. Dì solo 'Script caricato da [nome file] (X righe, YKB)'.",
+        inputSchema: z.object({
+            filePath: z.string().describe("Il percorso assoluto del file da caricare. Es: /Users/.../script.py"),
+        }),
+        execute: async ({ filePath }) => {
+            const result = await doLoadScriptFromFile({ filePath });
+            // Update liveScript so editScript/readScriptLines work on loaded content
+            try {
+                const parsed = JSON.parse(result);
+                if (parsed.success && parsed.content) {
+                    liveScript = parsed.content;
+                }
+            } catch { /* ignore */ }
+            return result;
+        },
+    });
 
     return tools;
 }

@@ -1028,7 +1028,7 @@ def execute_python():
                 # FIX: Also replace NaT (missing datetime) with None
                 # IMPORTANT: Must cast to object first, otherwise None in float columns reverts to NaN!
                 df_clean = res_val.astype(object).where(pd.notnull(res_val), None)
-                
+
                 # Double check for NaT specifically if where() missed it for object types
                 # (Sometimes NaT persists in object columns)
                 df_clean = df_clean.replace({pd.NaT: None})
@@ -1039,6 +1039,15 @@ def execute_python():
                     'columns': list(res_val.columns.astype(str)),
                     'rowCount': len(res_val),
                     'stdout': stdout_val
+                })
+            elif isinstance(res_val, str) and res_val.strip().startswith(('<', '<!', '<html', '<div', '<table')):
+                # Fallback: agent returned HTML string but outputType was 'table' — treat as html
+                print(f"⚠️ [EXECUTE] outputType='table' but result is HTML string — auto-switching to html output")
+                return jsonify({
+                    'success': True,
+                    'html': res_val,
+                    'stdout': stdout_val,
+                    '_autoSwitchedOutputType': 'html'
                 })
             else:
                 # DEBUG: Show what we captured

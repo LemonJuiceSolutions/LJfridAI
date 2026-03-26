@@ -2769,6 +2769,15 @@ export async function executePythonPreviewAction(
                 }
 
                 if (outputType === 'table') {
+                    // Backend may auto-switch to html if the script returned HTML instead of DataFrame
+                    if (result._autoSwitchedOutputType === 'html' && result.html) {
+                        return {
+                            success: true,
+                            html: result.html,
+                            stdout: result.stdout,
+                            debugLogs,
+                        };
+                    }
                     return {
                         success: true,
                         data: result.data,
