@@ -15,7 +15,7 @@ const contextPath = process.env.FRIDAI_MCP_CONTEXT;
 if (!contextPath) { console.error('FRIDAI_MCP_CONTEXT env var not set'); process.exit(1); }
 
 const context = JSON.parse(readFileSync(contextPath, 'utf-8'));
-const { connectorId, companyId, baseUrl, mcpSecret } = context;
+const { connectorId, companyId, baseUrl, mcpSecret, nodeId, treeId } = context;
 
 async function callTool(tool: string, params: Record<string, unknown>): Promise<string> {
     const res = await fetch(`${baseUrl}/api/internal/mcp-tool`, {
@@ -104,6 +104,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             description: 'Browse Python/SQL scripts from other nodes in the pipeline.',
             inputSchema: { type: 'object' as const, properties: {}, required: [] },
         },
+        {
+            name: 'updateNodeScript',
+            description: 'Aggiorna il codice Python nel nodo corrente. Usa QUESTO tool per sincronizzare il codice con il box editor dell\'app. Dopo aver letto/modificato un file .py con Read/Edit, chiama questo tool per mettere il contenuto nel nodo. Il codice apparirà direttamente nel box Python dell\'editor.',
+            inputSchema: {
+                type: 'object' as const,
+                properties: {
+                    script: { type: 'string', description: 'Il codice Python completo da inserire nel nodo.' },
+                    outputType: { type: 'string', description: 'Tipo di output: "html", "table", "chart", "variable". Default: "html".', default: 'html' },
+                },
+                required: ['script'],
+            },
+        },
     ],
 }));
 
@@ -113,6 +125,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const params: Record<string, unknown> = { ...args };
         if (connectorId && !params.connectorId) params.connectorId = connectorId;
         if (companyId && !params.companyId) params.companyId = companyId;
+        // Inject nodeId and treeId for updateNodeScript
+        if (name === 'updateNodeScript') {
+            if (nodeId && !params.nodeId) params.nodeId = nodeId;
+            if (treeId && !params.treeId) params.treeId = treeId;
+        }
         const result = await callTool(name, params);
         return { content: [{ type: 'text', text: result }] };
     } catch (error: any) {

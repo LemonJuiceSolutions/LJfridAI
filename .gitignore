@@ -102,3 +102,6 @@ python-backend/**/*.html
 
 # Parquet preview cache (generated at runtime)
 /data/preview-cache
+
+# Large data files
+public/documents/rating_farmaceutico_finale.xlsx

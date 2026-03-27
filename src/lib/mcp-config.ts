@@ -12,6 +12,10 @@ export interface McpContext {
     agentType: McpAgentType;
     connectorId?: string;
     companyId?: string;
+    /** Node path in the decision tree (e.g. "root.options['xls']") */
+    nodeId?: string;
+    /** Tree ID in the database */
+    treeId?: string;
     /** Base URL of the FridAI Next.js server (default: http://localhost:9002) */
     baseUrl?: string;
 }
@@ -39,6 +43,8 @@ export async function createMcpConfig(ctx: McpContext): Promise<McpConfigResult>
         connectorId: ctx.connectorId || '',
         companyId: ctx.companyId || '',
         agentType: ctx.agentType,
+        nodeId: ctx.nodeId || '',
+        treeId: ctx.treeId || '',
         baseUrl,
         mcpSecret,
     }));

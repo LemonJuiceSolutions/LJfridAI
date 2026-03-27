@@ -1,0 +1,573 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id                 String              @id @default(cuid())
+  name               String
+  chartTheme         Json?
+  htmlStylePresets   Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  agentConversations AgentConversation[]
+  boms               BOM[]
+  connections        Connection[]
+  connectors         Connector[]
+  departments        Department[]
+  inventoryItems     InventoryItem[]
+  invitations        Invitation[]
+  materials          Material[]
+  navigationItems    NavigationItem[]
+  orders             Order[]
+  pageLayouts        PageLayout[]
+  pipelines          Pipeline[]
+  products           Product[]
+  roles              Role[]
+  scheduledTasks     ScheduledTask[]
+  suppliers          Supplier[]
+  tokenCaches        TokenCache[]
+  trees                    Tree[]
+  users                    User[]
+  variables                Variable[]
+  knowledgeBaseEntries     KnowledgeBaseEntry[]
+  superAgentConversations  SuperAgentConversation[]
+  leadSearches             LeadSearch[]
+  leads                    Lead[]
+  leadGeneratorConversations LeadGeneratorConversation[]
+  leadGenApiKeys           Json?
+  unifiedStylePresets      Json?
+  activeUnifiedStyleId     String?
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users     User[]
+
+  @@index([companyId])
+}
+
+model User {
+  id                   String          @id @default(cuid())
+  name                 String?
+  email                String          @unique
+  emailVerified        DateTime?
+  password             String?
+  image                String?
+  role                 String          @default("user")
+  companyId            String?
+  departmentId         String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  openRouterAgentModel String?         @default("google/gemini-2.0-flash-001")
+  openRouterApiKey     String?
+  openRouterModel      String?         @default("google/gemini-2.0-flash-001")
+  aiProvider           String?         @default("openrouter")
+  claudeCliModel       String?         @default("claude-sonnet-4-6")
+  roleId               String?
+  accounts             Account[]
+  pageLayouts          PageLayout[]
+  createdTasks         ScheduledTask[]
+  sessions             Session[]
+  company              Company?        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department           Department?     @relation(fields: [departmentId], references: [id])
+  userRole             Role?           @relation(fields: [roleId], references: [id])
+
+  @@index([companyId])
+  @@index([departmentId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model PasswordResetToken {
+  id      String   @id @default(cuid())
+  email   String
+  token   String   @unique
+  expires DateTime
+
+  @@unique([email, token])
+}
+
+model Tree {
+  id                          String   @id @default(cuid())
+  name                        String
+  description                 String
+  naturalLanguageDecisionTree String
+  jsonDecisionTree            String
+  questionsScript             String
+  createdAt                   DateTime @default(now())
+  companyId                   String?
+  type                        String   @default("RULE")
+  company                     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model Variable {
+  id             String   @id @default(cuid())
+  name           String
+  type           String
+  possibleValues Json     @default("[]")
+  createdAt      DateTime @default(now())
+  companyId      String?
+  company        Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model TriggerLog {
+  id         String   @id @default(cuid())
+  collection String
+  data       Json
+  createdAt  DateTime @default(now())
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  role      String   @default("user")
+  status    String   @default("PENDING")
+  expires   DateTime
+  createdAt DateTime @default(now())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([email, companyId])
+  @@index([companyId])
+  @@index([email])
+}
+
+model Connector {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  config        String
+  databaseMap      String?
+  databaseMapLight String?  // Lightweight version for frontend (stripped empty tables)
+  databaseMapAt    DateTime?
+  companyId     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model TokenCache {
+  id        String   @id @default(cuid())
+  companyId String
+  provider  String
+  cacheData String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, provider])
+  @@index([companyId])
+}
+
+model NavigationItem {
+  id                 String   @id @default(cuid())
+  label              String
+  href               String
+  icon               String
+  group              String
+  order              Int      @default(0)
+  companyId          String
+  requiredPermission String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  company            Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  name        String
+  companyId   String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  permissions Permission[]
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users       User[]
+
+  @@unique([companyId, name])
+}
+
+model Permission {
+  id       String @id @default(cuid())
+  action   String
+  resource String
+  roleId   String
+  role     Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, action, resource])
+}
+
+model Product {
+  id         String          @id @default(cuid())
+  sku        String
+  name       String
+  category   String?
+  price      Float
+  imageUrl   String?
+  companyId  String
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  boms       BOM[]
+  inventory  InventoryItem[]
+  orderLines OrderItem[]
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sku])
+}
+
+model Material {
+  id            String         @id @default(cuid())
+  code          String
+  name          String
+  unit          String
+  costPerUnit   Float?
+  supplierId    String?
+  companyId     String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  bomComponents BOMComponent[]
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier      Supplier?      @relation(fields: [supplierId], references: [id])
+
+  @@unique([companyId, code])
+}
+
+model Supplier {
+  id        String     @id @default(cuid())
+  name      String
+  rating    Float?
+  leadTime  String?
+  minOrder  Int?
+  companyId String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  materials Material[]
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model BOM {
+  id         String         @id @default(cuid())
+  name       String
+  productId  String
+  companyId  String
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product    Product        @relation(fields: [productId], references: [id])
+  components BOMComponent[]
+}
+
+model BOMComponent {
+  id         String   @id @default(cuid())
+  bomId      String
+  materialId String
+  quantity   Float
+  bom        BOM      @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  material   Material @relation(fields: [materialId], references: [id])
+}
+
+model InventoryItem {
+  id        String   @id @default(cuid())
+  productId String
+  quantity  Int
+  location  String?
+  size      String?
+  color     String?
+  companyId String
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  externalId   String?
+  customerName String
+  date         DateTime
+  status       String      @default("Pending")
+  total        Float
+  companyId    String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  company      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items        OrderItem[]
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Float
+  status    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
+}
+
+model PageLayout {
+  id        String   @id @default(cuid())
+  pageId    String
+  layouts   Json
+  items     Json
+  companyId String
+  userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@unique([companyId, pageId, userId])
+}
+
+model Pipeline {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  nodes       Json
+  edges       Json
+  companyId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model Connection {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  config    Json
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model AgentConversation {
+  id          String   @id @default(cuid())
+  nodeId      String
+  agentType   String
+  script      String
+  tableSchema Json?
+  inputTables Json?
+  messages           Json
+  companyId          String?
+  claudeCliSessionId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  company            Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, agentType])
+  @@index([nodeId])
+  @@index([companyId])
+}
+
+model KnowledgeBaseEntry {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  context   String?
+  tags      String[]
+  category  String?
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model SuperAgentConversation {
+  id        String   @id @default(cuid())
+  messages  Json
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model ScheduledTask {
+  id                String                   @id @default(cuid())
+  name              String
+  description       String?
+  type              String
+  config            Json
+  scheduleType      String                   @default("interval")
+  cronExpression    String?
+  intervalMinutes   Int?
+  daysOfWeek        String?
+  hours             String?
+  timezone          String                   @default("Europe/Rome")
+  status            String                   @default("active")
+  lastRunAt         DateTime?
+  nextRunAt         DateTime?
+  runCount          Int                      @default(0)
+  successCount      Int                      @default(0)
+  failureCount      Int                      @default(0)
+  maxRetries        Int                      @default(3)
+  retryDelayMinutes Int                      @default(5)
+  lastError         String?
+  companyId         String
+  createdBy         String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  company           Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  creator           User?                    @relation(fields: [createdBy], references: [id])
+  executions        ScheduledTaskExecution[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([nextRunAt])
+  @@index([type])
+}
+
+model ScheduledTaskExecution {
+  id          String        @id @default(cuid())
+  taskId      String
+  status      String
+  startedAt   DateTime      @default(now())
+  completedAt DateTime?
+  durationMs  Int?
+  result      Json?
+  error       String?
+  retryCount  Int           @default(0)
+  createdAt   DateTime      @default(now())
+  task        ScheduledTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model LeadSearch {
+  id              String                      @id @default(cuid())
+  name            String
+  criteria        Json
+  status          String                      @default("pending")
+  resultCount     Int                         @default(0)
+  companyId       String
+  conversationId  String?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  company         Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversation    LeadGeneratorConversation?   @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  leads           Lead[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([conversationId])
+}
+
+model Lead {
+  id              String      @id @default(cuid())
+  firstName       String?
+  lastName        String?
+  fullName        String?
+  jobTitle        String?
+  email           String?
+  emailStatus     String?
+  phone           String?
+  linkedinUrl     String?
+  companyName     String?
+  companyDomain   String?
+  companyWebsite  String?
+  companySize     String?
+  companyIndustry String?
+  companyCity     String?
+  companyCountry  String?
+  companyLinkedin String?
+  source          String?
+  confidence      Float?
+  rawData         Json?
+  notes           String?
+  rating          Int?
+  tags            String[]  @default([])
+  revenueYear1    String?
+  revenueYear2    String?
+  revenueYear3    String?
+  profitYear1     String?
+  profitYear2     String?
+  profitYear3     String?
+  searchId        String?
+  companyId       String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  search          LeadSearch? @relation(fields: [searchId], references: [id], onDelete: SetNull)
+  company         Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([searchId])
+  @@index([email])
+  @@index([companyName])
+}
+
+model LeadGeneratorConversation {
+  id           String       @id @default(cuid())
+  title        String?
+  messages     Json
+  totalCost    Float        @default(0)
+  companyId    String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  leadSearches LeadSearch[]
+
+  @@index([companyId])
+}
