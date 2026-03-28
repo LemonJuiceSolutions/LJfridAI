@@ -85,20 +85,39 @@ function safeContentString(content: unknown): string {
     return '';
 }
 
-// Parse recharts config from markdown code blocks
-function parseRechartsBlocks(content: unknown): { text: string; charts: any[] } {
+// Parse recharts config from markdown code blocks, extracting _sql/_python metadata
+function parseRechartsBlocks(content: unknown): { text: string; charts: any[]; lastMeta: { _sql?: { query: string; connectorId: string }; _python?: { code: string; outputType?: string } } | null } {
     const safeContent = safeContentString(content);
     const charts: any[] = [];
-    const text = safeContent.replace(/```recharts\s*\n?([\s\S]*?)```/g, (_, json) => {
+    let lastMeta: { _sql?: any; _python?: any } | null = null;
+
+    // Parse recharts blocks (charts with optional embedded metadata)
+    let text = safeContent.replace(/```recharts\s*\n?([\s\S]*?)```/g, (_, json) => {
         try {
             const config = JSON.parse(json.trim());
+            // Extract and preserve _sql/_python metadata on the chart object
+            if (config._sql || config._python) {
+                lastMeta = { _sql: config._sql, _python: config._python };
+            }
             charts.push(config);
             return `[CHART_${charts.length - 1}]`;
         } catch {
             return json;
         }
     });
-    return { text, charts };
+
+    // Parse recharts-meta blocks (metadata for tables without charts)
+    text = text.replace(/```recharts-meta\s*\n?([\s\S]*?)```/g, (_, json) => {
+        try {
+            const meta = JSON.parse(json.trim());
+            if (meta._sql || meta._python) {
+                lastMeta = { _sql: meta._sql, _python: meta._python };
+            }
+        } catch { /* ignore */ }
+        return ''; // Remove the meta block from visible text
+    });
+
+    return { text, charts, lastMeta };
 }
 
 // Simple markdown renderer for tables, bold, code blocks
@@ -298,7 +317,8 @@ export function ChatBotAgent() {
         message: Message | null;
         charts: any[];
         selectedChartIndex: number;
-    }>({ open: false, message: null, charts: [], selectedChartIndex: 0 });
+        embeddedMeta: { _sql?: { query: string; connectorId: string }; _python?: { code: string; outputType?: string } } | null;
+    }>({ open: false, message: null, charts: [], selectedChartIndex: 0, embeddedMeta: null });
     const [widgetName, setWidgetName] = useState('');
     const [isSavingWidget, setIsSavingWidget] = useState(false);
 
@@ -631,10 +651,10 @@ export function ChatBotAgent() {
         }
     };
 
-    const openSaveWidgetDialog = (message: Message, charts: any[]) => {
+    const openSaveWidgetDialog = (message: Message, charts: any[], embeddedMeta?: { _sql?: any; _python?: any } | null) => {
         const firstTitle = charts[0]?.title || '';
         setWidgetName(typeof firstTitle === 'string' ? firstTitle : '');
-        setSaveWidgetDialog({ open: true, message, charts, selectedChartIndex: 0 });
+        setSaveWidgetDialog({ open: true, message, charts, selectedChartIndex: 0, embeddedMeta: embeddedMeta || null });
     };
 
     const handleSaveWidget = async () => {
@@ -646,23 +666,35 @@ export function ChatBotAgent() {
             const sqlCall = toolCalls.find(t => t.toolName === 'executeSqlQuery');
             const pythonCall = toolCalls.find(t => t.toolName === 'executePythonCode');
 
-            // DEBUG: Log what we're sending
-            console.log('[SaveWidget] toolCalls count:', toolCalls.length);
-            console.log('[SaveWidget] toolCalls names:', toolCalls.map(t => t.toolName));
-            console.log('[SaveWidget] sqlCall found:', !!sqlCall, sqlCall?.args?.query?.substring(0, 100));
-            console.log('[SaveWidget] pythonCall found:', !!pythonCall);
-            console.log('[SaveWidget] connectorId:', sqlCall?.args?.connectorId);
+            // Priority: embedded metadata from chart > dialog-level meta > toolCalls fallback
+            const chartSql = chart?._sql;
+            const chartPython = chart?._python;
+            const dialogMeta = saveWidgetDialog.embeddedMeta;
+
+            const finalSqlQuery = chartSql?.query || dialogMeta?._sql?.query || sqlCall?.args?.query;
+            const finalConnectorId = chartSql?.connectorId || dialogMeta?._sql?.connectorId || sqlCall?.args?.connectorId;
+            const finalPythonCode = chartPython?.code || dialogMeta?._python?.code || pythonCall?.args?.code;
+
+            console.log('[SaveWidget] Source: embedded=', !!(chartSql || dialogMeta?._sql), 'toolCalls=', !!sqlCall);
+            console.log('[SaveWidget] sqlQuery:', finalSqlQuery?.substring(0, 100));
+            console.log('[SaveWidget] connectorId:', finalConnectorId);
+            console.log('[SaveWidget] pythonCode:', !!finalPythonCode);
             console.log('[SaveWidget] chartConfig type:', chart?.type, 'xAxisKey:', chart?.xAxisKey, 'dataKeys:', chart?.dataKeys);
+
+            // Build chartConfig: use the chart if available, else create a minimal one for table-only saves
+            const chartConfig = chart
+                ? chart
+                : { type: 'bar-chart', data: [], xAxisKey: undefined, dataKeys: undefined };
 
             const res = await fetch('/api/super-agent/save-widget', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     treeName: widgetName.trim(),
-                    chartConfig: chart,
-                    sqlQuery: sqlCall?.args?.query,
-                    connectorId: sqlCall?.args?.connectorId,
-                    pythonCode: pythonCall?.args?.code,
+                    chartConfig,
+                    sqlQuery: finalSqlQuery,
+                    connectorId: finalConnectorId,
+                    pythonCode: finalPythonCode,
                 }),
             });
             const data = await res.json();
@@ -672,7 +704,7 @@ export function ChatBotAgent() {
                 title: '✅ Widget salvato',
                 description: `"${widgetName.trim()}" è disponibile nel picker della dashboard → Aggiungi Widget`,
             });
-            setSaveWidgetDialog({ open: false, message: null, charts: [], selectedChartIndex: 0 });
+            setSaveWidgetDialog({ open: false, message: null, charts: [], selectedChartIndex: 0, embeddedMeta: null });
             setWidgetName('');
         } catch (error: any) {
             toast({
@@ -801,9 +833,9 @@ export function ChatBotAgent() {
                             {messages.map((m, i) => {
                                 // safeContentString guards against any non-string content from DB
                                 const safeContent = safeContentString(m.content);
-                                const { text, charts } = m.role === 'assistant'
+                                const { text, charts, lastMeta } = m.role === 'assistant'
                                     ? parseRechartsBlocks(safeContent)
-                                    : { text: safeContent, charts: [] };
+                                    : { text: safeContent, charts: [], lastMeta: null };
 
                                 return (
                                     <div key={m.timestamp + i} className={cn(
@@ -853,12 +885,12 @@ export function ChatBotAgent() {
                                                     <PenLine className="h-3 w-3" />
                                                     Correggi
                                                 </Button>
-                                                {charts.length > 0 && (
+                                                {(charts.length > 0 || lastMeta) && (
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
                                                         className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
-                                                        onClick={() => openSaveWidgetDialog(m, charts)}
+                                                        onClick={() => openSaveWidgetDialog(m, charts, lastMeta)}
                                                     >
                                                         <BarChart3 className="h-3 w-3" />
                                                         Salva come Widget
@@ -1084,8 +1116,13 @@ export function ChatBotAgent() {
                                 </div>
                             </div>
                         )}
+                        {(saveWidgetDialog.embeddedMeta?._sql || saveWidgetDialog.charts[saveWidgetDialog.selectedChartIndex]?._sql) && (
+                            <p className="text-[11px] text-green-600 font-medium">
+                                Query SQL e connettore rilevati automaticamente dal grafico.
+                            </p>
+                        )}
                         <p className="text-[11px] text-muted-foreground">
-                            Il widget verrà salvato come albero PIPELINE e sarà disponibile nel picker della dashboard sotto &quot;Aggiungi Widget&quot;.
+                            Il widget verrà salvato come albero PIPELINE con i nodi SQL → Python → Grafico già configurati e pronti all&apos;uso.
                         </p>
                     </div>
                     <DialogFooter>

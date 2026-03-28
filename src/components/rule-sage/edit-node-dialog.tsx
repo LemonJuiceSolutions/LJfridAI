@@ -58,6 +58,7 @@ import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import SmartWidgetRenderer from '@/components/widgets/builder/SmartWidgetRenderer';
 import ChartStyleEditor from '@/components/widgets/builder/ChartStyleEditor';
 import PlotlyStyleEditor, { PlotlyStyleOverrides, applyPlotlyOverrides, plotlyJsonToHtml } from '@/components/widgets/builder/PlotlyStyleEditor';
+import AlgorithmSchemaView from '@/components/rule-sage/algorithm-schema-view';
 import VisualCssInspector from '@/components/widgets/builder/VisualCssInspector';
 import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
 import { applyHtmlStyleOverrides, injectIframeFetchPolyfill } from '@/lib/html-style-utils';
@@ -332,6 +333,21 @@ export default function EditNodeDialog({
 }: EditNodeDialogProps) {
   const { toast } = useToast();
   const { apiKey: openRouterApiKey, model: openRouterModel } = useOpenRouterSettings();
+  const [currentAiProvider, setCurrentAiProvider] = useState<'openrouter' | 'claude-cli'>('openrouter');
+  const [currentAiModel, setCurrentAiModel] = useState<string>('');
+  // Load AI provider setting on mount
+  useEffect(() => {
+    import('@/actions/ai-settings').then(({ getAiProviderAction }) => {
+      getAiProviderAction().then(res => {
+        if (!res.error) {
+          setCurrentAiProvider(res.provider);
+          if (res.provider === 'claude-cli') {
+            setCurrentAiModel(res.claudeCliModel || 'claude-sonnet-4-6');
+          }
+        }
+      });
+    });
+  }, []);
   const { activeStyle } = useActiveUnifiedStyle();
 
   // Local state for node type switching (Question <-> Decision)
@@ -451,6 +467,15 @@ export default function EditNodeDialog({
   const [htmlStyleEditorOpen, setHtmlStyleEditorOpen] = useState(false);
   const [htmlStyleOverrides, setHtmlStyleOverrides] = useState<HtmlStyleOverrides>({});
   const [uiStyleOverrides, setUiStyleOverrides] = useState<Partial<UiElementsOverrides>>({});
+
+  // Algorithm Schema Analysis state (single dialog for both SQL and Python)
+  const [algoSchemaDialog, setAlgoSchemaDialog] = useState<{
+    open: boolean;
+    title: string;
+    schema: import('./algorithm-schema-view').AlgoSchema | null;
+    fallbackText: string | null;
+    loading: boolean;
+  }>({ open: false, title: '', schema: null, fallbackText: null, loading: false });
 
   // Listen for DB write success from HTML iframe and re-run preview
   useEffect(() => {
@@ -1285,6 +1310,57 @@ export default function EditNodeDialog({
 
     performGeneration(newHistory, 0).finally(() => setPipelineAgentStatus(null));
   }, [openRouterApiKey, openRouterModel, pythonChatHistory, pythonOutputType, pythonSelectedPipelines, pythonConnectorId, selectedDocuments, availableInputTables, toast, pythonCode, sqlResultName, sqlPreviewData]);
+
+  // --- ALGORITHM SCHEMA ANALYSIS ---
+  const analyzeAlgorithm = useCallback(async (language: 'sql' | 'python') => {
+    const code = language === 'sql' ? sqlQuery : pythonCode;
+    if (!code?.trim()) {
+      toast({ variant: 'destructive', title: 'Nessun codice', description: `Scrivi prima il codice ${language.toUpperCase()} da analizzare.` });
+      return;
+    }
+
+    const title = language === 'sql' ? 'Schema Algoritmo SQL' : 'Schema Algoritmo Python';
+    setAlgoSchemaDialog({ open: true, title, schema: null, fallbackText: null, loading: true });
+
+    try {
+      // Build context from pipeline dependencies
+      const pipelines = language === 'sql' ? selectedPipelines : pythonSelectedPipelines;
+      const contextParts: string[] = [];
+      if (pipelines.length > 0) {
+        contextParts.push(`Dipendenze pipeline (tabelle/DataFrame disponibili): ${pipelines.join(', ')}`);
+      }
+      const schema = getTableSchema(pipelines, availableInputTables);
+      if (Object.keys(schema).length > 0) {
+        contextParts.push(`Schema tabelle: ${JSON.stringify(schema)}`);
+      }
+      if (language === 'sql' && sqlConnectorId) {
+        contextParts.push(`Connettore database: ${sqlConnectors.find(c => c.id === sqlConnectorId)?.name || sqlConnectorId}`);
+      }
+
+      const res = await fetch('/api/analyze-algorithm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          language,
+          context: contextParts.length > 0 ? contextParts.join('\n') : undefined,
+          provider: currentAiProvider,
+          model: currentAiProvider === 'claude-cli' ? currentAiModel : (openRouterModel || undefined),
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Errore analisi');
+      setAlgoSchemaDialog(prev => ({
+        ...prev,
+        schema: data.schema || null,
+        fallbackText: data.fallbackText || null,
+        loading: false,
+      }));
+    } catch (error: any) {
+      setAlgoSchemaDialog(prev => ({ ...prev, open: false, loading: false }));
+      toast({ variant: 'destructive', title: 'Errore analisi', description: error.message || 'Impossibile analizzare il codice.' });
+    }
+  }, [sqlQuery, pythonCode, selectedPipelines, pythonSelectedPipelines, availableInputTables, sqlConnectorId, sqlConnectors, openRouterModel, currentAiProvider, currentAiModel, toast]);
 
   // --- REUSABLE PIPELINE EXECUTION LOGIC ---
   const executeFullPipeline = async (
@@ -2824,7 +2900,20 @@ export default function EditNodeDialog({
                     <div className="flex flex-col order-2 lg:order-1 h-full">
                       {/* SQL Editor */}
                       <div className="flex flex-col gap-2 flex-1">
-                        <Label>Query SQL</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Query SQL</Label>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1.5 text-blue-600 border-blue-300 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-700 dark:hover:bg-blue-900/20"
+                            onClick={() => analyzeAlgorithm('sql')}
+                            disabled={algoSchemaDialog.loading || !sqlQuery?.trim()}
+                          >
+                            {algoSchemaDialog.loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitBranch className="h-3 w-3" />}
+                            Schema Algoritmo
+                          </Button>
+                        </div>
                         <Textarea
                           value={sqlQuery}
                           onChange={(e) => setSqlQuery(e.target.value)}
@@ -3368,6 +3457,17 @@ export default function EditNodeDialog({
                         <div className="flex items-center justify-between">
                           <Label>Codice Python</Label>
                           <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs gap-1.5 text-blue-600 border-blue-300 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-700 dark:hover:bg-blue-900/20"
+                              onClick={() => analyzeAlgorithm('python')}
+                              disabled={algoSchemaDialog.loading || !pythonCode?.trim()}
+                            >
+                              {algoSchemaDialog.loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitBranch className="h-3 w-3" />}
+                              Schema Algoritmo
+                            </Button>
                             <input
                               ref={pyFileInputRef}
                               type="file"
@@ -5892,6 +5992,50 @@ export default function EditNodeDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Algorithm Schema Dialog */}
+      <Dialog open={algoSchemaDialog.open} onOpenChange={(open) => !open && setAlgoSchemaDialog(prev => ({ ...prev, open: false }))}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 shadow-sm">
+                <GitBranch className="h-4 w-4 text-white" />
+              </div>
+              {algoSchemaDialog.title}
+            </DialogTitle>
+            <DialogDescription>
+              Mappa visuale del flusso dati: sorgenti, trasformazioni e output.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto pr-1 -mr-1">
+            {algoSchemaDialog.loading ? (
+              <div className="flex flex-col items-center gap-4 py-16 text-muted-foreground">
+                <div className="relative">
+                  <div className="absolute inset-0 rounded-full bg-blue-500/20 animate-ping" />
+                  <div className="relative flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/50 dark:to-purple-900/50 border border-blue-200 dark:border-blue-700">
+                    <GitBranch className="h-6 w-6 text-blue-600 dark:text-blue-400 animate-pulse" />
+                  </div>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-medium">Analisi algoritmo in corso...</p>
+                  <p className="text-xs text-muted-foreground mt-1">Identificazione sorgenti, trasformazioni e output</p>
+                </div>
+              </div>
+            ) : algoSchemaDialog.schema ? (
+              <AlgorithmSchemaView schema={algoSchemaDialog.schema} />
+            ) : algoSchemaDialog.fallbackText ? (
+              <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
+                <ReactMarkdown>{algoSchemaDialog.fallbackText}</ReactMarkdown>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAlgoSchemaDialog(prev => ({ ...prev, open: false }))}>
+              Chiudi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

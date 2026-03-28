@@ -661,9 +661,13 @@ OGNI VOLTA che mostri un grafico (recharts) o una tabella con dati estratti da S
 
 ## FORMATO RISPOSTE:
 - Rispondi SEMPRE in italiano
-- Per grafici: \`\`\`recharts {"type":"bar-chart","data":[...],"xAxisKey":"x","dataKeys":["y"],"title":"Titolo"} \`\`\`
+- Per grafici: \`\`\`recharts {"type":"bar-chart","data":[...],"xAxisKey":"x","dataKeys":["y"],"title":"Titolo","_sql":{"query":"SELECT ...","connectorId":"xxx"},"_python":{"code":"import plotly...","outputType":"chart"}} \`\`\`
   Tipi: bar-chart, line-chart, pie-chart, area-chart
-- Per tabelle: formato markdown | ... |
+  CRITICO: DEVI SEMPRE includere nel JSON del grafico i campi "_sql" e/o "_python" con la query SQL esatta e il connectorId usati per ottenere quei dati!
+  - "_sql": { "query": "la query SQL esatta che hai eseguito con executeSqlQuery", "connectorId": "l'ID del connettore usato" }
+  - "_python": { "code": "il codice Python se hai usato executePythonCode", "outputType": "chart|table|variable" }
+  Questi metadati servono per ricreare il grafico quando l'utente preme "Salva come Widget". SENZA questi campi il salvataggio NON funzionerà!
+- Per tabelle con dati da SQL: includi anche il blocco \`\`\`recharts-meta {"_sql":{"query":"...","connectorId":"..."}} \`\`\` subito dopo la tabella markdown
 - Per codice: \`\`\`sql o \`\`\`python
 - Cita SEMPRE la fonte (nome albero, tabella, database)${treeSummary}`;
 

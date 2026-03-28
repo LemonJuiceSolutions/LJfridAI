@@ -114,16 +114,25 @@ export async function POST(request: NextRequest) {
 
         const { treeName, chartConfig, sqlQuery, connectorId, pythonCode: _rawPythonCode } = body as {
             treeName: string;
-            chartConfig: { type: string; data: any[]; xAxisKey?: string; dataKeys?: string[]; colors?: string[]; title?: string };
+            chartConfig: { type: string; data?: any[]; xAxisKey?: string; dataKeys?: string[]; colors?: string[]; title?: string; _sql?: any; _python?: any };
             sqlQuery?: string;
             connectorId?: string;
             pythonCode?: string;
         };
 
-        console.log('[save-widget] Received:', { treeName, hasSqlQuery: !!sqlQuery, hasConnectorId: !!connectorId, chartType: chartConfig?.type });
+        // Extract SQL/Python metadata from chartConfig._sql/_python as fallback
+        const resolvedSqlQuery = sqlQuery || chartConfig?._sql?.query;
+        const resolvedConnectorId = connectorId || chartConfig?._sql?.connectorId;
+        const resolvedPythonCode = _rawPythonCode || chartConfig?._python?.code;
+
+        console.log('[save-widget] Received:', { treeName, hasSqlQuery: !!resolvedSqlQuery, hasConnectorId: !!resolvedConnectorId, chartType: chartConfig?.type, source: sqlQuery ? 'explicit' : chartConfig?._sql ? 'embedded' : 'none' });
 
         if (!treeName?.trim()) return NextResponse.json({ error: 'treeName is required' }, { status: 400 });
-        if (!chartConfig?.data || !Array.isArray(chartConfig.data)) return NextResponse.json({ error: 'chartConfig.data is required' }, { status: 400 });
+        // chartConfig.data is optional when SQL query is provided (data will be fetched from DB)
+        if (!chartConfig?.type) return NextResponse.json({ error: 'chartConfig.type is required' }, { status: 400 });
+        if (!resolvedSqlQuery && !resolvedPythonCode && (!chartConfig?.data || !Array.isArray(chartConfig.data))) {
+            return NextResponse.json({ error: 'Serve almeno una query SQL, codice Python, o dati statici per creare il widget' }, { status: 400 });
+        }
 
         const rootId = crypto.randomUUID();
         const sqlStepId = crypto.randomUUID();
@@ -132,18 +141,18 @@ export async function POST(request: NextRequest) {
 
         const normalizedType = normalizeChartType(chartConfig.type);
         const widgetType = normalizedType as WidgetType;
-        const hasSql = !!(sqlQuery && connectorId);
-        const hasPython = !!_rawPythonCode;
+        const hasSql = !!(resolvedSqlQuery && resolvedConnectorId);
+        const hasPython = !!resolvedPythonCode;
 
         // ─── Phase 1: Test & auto-fix SQL ────────────────────────────────
-        let finalSqlQuery = sqlQuery;
+        let finalSqlQuery = resolvedSqlQuery;
         let sqlOk = false;
         let actualColumns: string[] = [];
 
         if (hasSql) {
-            let currentQuery = sqlQuery!;
+            let currentQuery = resolvedSqlQuery!;
             for (let i = 0; i < MAX_RETRIES; i++) {
-                const result = await testSql(currentQuery, connectorId!);
+                const result = await testSql(currentQuery, resolvedConnectorId!);
                 if (result.ok) {
                     sqlOk = true;
                     finalSqlQuery = currentQuery;
@@ -164,7 +173,7 @@ export async function POST(request: NextRequest) {
                     try {
                         const schemaResult = await executeSqlPreviewAction(
                             `SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%${badTable.replace(/'/g, "''")}%' ORDER BY TABLE_NAME`,
-                            connectorId!, [], true
+                            resolvedConnectorId!, [], true
                         );
                         if (!schemaResult.error && schemaResult.data?.length) {
                             const match = schemaResult.data[0];
@@ -188,7 +197,7 @@ export async function POST(request: NextRequest) {
                         try {
                             const colResult = await executeSqlPreviewAction(
                                 `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '${tableName.replace(/'/g, "''")}' ORDER BY ORDINAL_POSITION`,
-                                connectorId!, [], true
+                                resolvedConnectorId!, [], true
                             );
                             if (!colResult.error && colResult.data?.length) {
                                 const colNames = colResult.data.map((r: any) => r.COLUMN_NAME);
@@ -229,13 +238,13 @@ export async function POST(request: NextRequest) {
 
         let finalPythonCode = hasSql
             ? generatePythonChartCode({ type: normalizedType, xAxisKey: finalXAxisKey, dataKeys: finalDataKeys, title: treeName })
-            : _rawPythonCode;
+            : resolvedPythonCode;
         let pythonOk = false;
 
         if (finalPythonCode && (hasSql ? sqlOk : true)) {
-            const deps = hasSql ? [{ tableName: 'dati', query: finalSqlQuery, connectorId }] : [];
+            const deps = hasSql ? [{ tableName: 'dati', query: finalSqlQuery, connectorId: resolvedConnectorId }] : [];
             for (let i = 0; i < MAX_RETRIES; i++) {
-                const result = await testPython(finalPythonCode!, deps, connectorId);
+                const result = await testPython(finalPythonCode!, deps, resolvedConnectorId);
                 if (result.ok) {
                     pythonOk = true;
                     console.log(`[save-widget] Python OK on attempt ${i + 1}`);
@@ -285,14 +294,14 @@ export async function POST(request: NextRequest) {
                 pythonOutputType: 'chart' as const,
                 pythonResultName: 'grafico',
                 pythonSelectedPipelines: ['dati'],
-                pythonConnectorId: connectorId,
+                pythonConnectorId: resolvedConnectorId,
                 options: { 'Visualizza': leafNode },
             };
             const sqlStepNode = {
                 id: sqlStepId,
                 question: `Query SQL: ${treeName}`,
                 sqlQuery: finalSqlQuery,
-                sqlConnectorId: connectorId,
+                sqlConnectorId: resolvedConnectorId,
                 sqlResultName: 'dati',
                 options: { 'Elabora': pythonStepNode },
             };
@@ -301,7 +310,7 @@ export async function POST(request: NextRequest) {
             const pythonStepNode = {
                 id: pythonStepId,
                 question: `Elaborazione Python: ${treeName}`,
-                pythonCode: _rawPythonCode,
+                pythonCode: resolvedPythonCode,
                 pythonOutputType: 'chart' as const,
                 pythonResultName: 'grafico',
                 options: { 'Visualizza': leafNode },
