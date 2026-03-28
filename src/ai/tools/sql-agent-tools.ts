@@ -236,6 +236,94 @@ export async function doBrowseOtherQueries(input: { companyId: string; connector
     }
 }
 
+// ─── Edit Script (find-and-replace) — shared with Python agent ──────────────
+
+export async function doEditScript(input: { oldString: string; newString: string; currentScript: string; replaceAll?: boolean }) {
+    try {
+        const { oldString, newString, currentScript, replaceAll } = input;
+
+        if (!currentScript) {
+            return JSON.stringify({ error: 'Nessuno script/query corrente da modificare.' });
+        }
+
+        if (!currentScript.includes(oldString)) {
+            const lines = oldString.split('\n');
+            const firstLine = lines[0].trim();
+            const matchingLines = currentScript.split('\n')
+                .map((l, i) => ({ line: l, num: i + 1 }))
+                .filter(({ line }) => line.includes(firstLine));
+
+            let hint = '';
+            if (matchingLines.length > 0) {
+                hint = ` Trovate righe simili a: ${matchingLines.slice(0, 3).map(m => `riga ${m.num}`).join(', ')}. Usa readScriptLines per vedere il contesto esatto.`;
+            }
+            return JSON.stringify({ error: `Stringa da sostituire non trovata nello script corrente.${hint}` });
+        }
+
+        const occurrences = currentScript.split(oldString).length - 1;
+        if (occurrences > 1 && !replaceAll) {
+            return JSON.stringify({
+                error: `Trovate ${occurrences} occorrenze di oldString. Usa replaceAll=true per sostituirle tutte, oppure fornisci più contesto per rendere la stringa unica.`,
+                occurrences,
+            });
+        }
+
+        const updatedScript = replaceAll
+            ? currentScript.split(oldString).join(newString)
+            : currentScript.replace(oldString, newString);
+
+        return JSON.stringify({
+            success: true,
+            updatedScript,
+            lineCount: updatedScript.split('\n').length,
+            replacements: replaceAll ? occurrences : 1,
+        });
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+// ─── Read Script Lines ──────────────────────────────────────────────────────
+
+export async function doReadScriptLines(input: { currentScript: string; startLine?: number; endLine?: number; searchPattern?: string }) {
+    try {
+        const { currentScript, startLine, endLine, searchPattern } = input;
+
+        if (!currentScript) {
+            return JSON.stringify({ error: 'Nessuno script/query corrente.' });
+        }
+
+        const allLines = currentScript.split('\n');
+        const totalLines = allLines.length;
+
+        if (searchPattern) {
+            const matches: { lineNum: number; line: string; context: string[] }[] = [];
+            const regex = new RegExp(searchPattern, 'gi');
+            for (let i = 0; i < allLines.length; i++) {
+                if (regex.test(allLines[i])) {
+                    const ctxStart = Math.max(0, i - 2);
+                    const ctxEnd = Math.min(allLines.length, i + 3);
+                    matches.push({
+                        lineNum: i + 1,
+                        line: allLines[i],
+                        context: allLines.slice(ctxStart, ctxEnd).map((l, j) => `${ctxStart + j + 1}: ${l}`),
+                    });
+                }
+                if (matches.length >= 20) break;
+            }
+            return JSON.stringify({ totalLines, matchCount: matches.length, matches });
+        }
+
+        const start = Math.max(1, startLine || 1);
+        const end = Math.min(totalLines, endLine || Math.min(start + 99, totalLines));
+        const lines = allLines.slice(start - 1, end).map((l, i) => `${start + i}: ${l}`);
+
+        return JSON.stringify({ totalLines, range: `${start}-${end}`, lines });
+    } catch (e: any) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
 // ─── Vercel AI SDK Tool Definitions ──────────────────────────────────────────
 
 /**
@@ -245,12 +333,25 @@ export async function doBrowseOtherQueries(input: { companyId: string; connector
 export function createSqlAgentTools(opts: {
     connectorId?: string;
     companyId?: string;
+    /** Current SQL script in the node editor — used by editScript/readScriptLines tools */
+    currentScript?: string;
 }) {
     // Capture in closures to auto-inject into tool calls
     const cid = opts.connectorId || '';
     const cpid = opts.companyId || '';
+    // Mutable ref so editScript can chain multiple edits on the latest version
+    let liveScript = opts.currentScript || '';
 
     const tools: Record<string, any> = {};
+
+    // ── think — internal reasoning tool (like Claude Code's thinking) ────────
+    tools.think = tool({
+        description: "Usa questo tool per RAGIONARE internamente prima di agire. Pianifica il prossimo passo, analizza errori, valuta alternative. Il contenuto NON viene mostrato all'utente. Usalo SEMPRE quando: (1) devi decidere tra più approcci, (2) un tool call è fallita e devi capire perché, (3) il task è complesso e serve un piano.",
+        inputSchema: z.object({
+            reasoning: z.string().describe("Il tuo ragionamento interno: analisi del problema, piano d'azione, valutazione alternative."),
+        }),
+        execute: async ({ reasoning }) => JSON.stringify({ ok: true }),
+    });
 
     if (opts.connectorId) {
         tools.exploreDbSchema = tool({
@@ -363,6 +464,38 @@ Restituisce un sottoinsieme di tabelle alla volta. Usa offset e limit per naviga
                 doBrowseOtherQueries({ companyId: companyId || cpid, connectorId }),
         });
     }
+
+    // ── editScript — find-and-replace on current SQL query ─────────────────
+    tools.editScript = tool({
+        description: "Modifica la query SQL corrente con find-and-replace. Usa QUESTO tool per modificare query grandi invece di riscriverle. Fornisci la stringa esatta da trovare (oldString) e la sostituzione (newString). Il risultato include la query aggiornata che viene automaticamente applicata al nodo.",
+        inputSchema: z.object({
+            oldString: z.string().describe("La stringa ESATTA da trovare nella query corrente. Deve corrispondere carattere per carattere."),
+            newString: z.string().describe("La stringa sostitutiva."),
+            replaceAll: z.boolean().optional().describe("Se true, sostituisce TUTTE le occorrenze. Default: false."),
+        }),
+        execute: async ({ oldString, newString, replaceAll }) => {
+            const result = await doEditScript({ oldString, newString, currentScript: liveScript, replaceAll });
+            try {
+                const parsed = JSON.parse(result);
+                if (parsed.success && parsed.updatedScript) {
+                    liveScript = parsed.updatedScript;
+                }
+            } catch { /* ignore */ }
+            return result;
+        },
+    });
+
+    // ── readScriptLines — read specific lines or search within current query ─
+    tools.readScriptLines = tool({
+        description: "Leggi righe specifiche o cerca pattern nella query SQL corrente. Utile per query grandi: prima cerca/leggi la sezione da modificare, poi usa editScript.",
+        inputSchema: z.object({
+            startLine: z.number().optional().describe("Riga iniziale da leggere (1-based). Default: 1."),
+            endLine: z.number().optional().describe("Riga finale da leggere."),
+            searchPattern: z.string().optional().describe("Pattern regex da cercare nella query."),
+        }),
+        execute: async ({ startLine, endLine, searchPattern }) =>
+            doReadScriptLines({ currentScript: liveScript, startLine, endLine, searchPattern }),
+    });
 
     return tools;
 }

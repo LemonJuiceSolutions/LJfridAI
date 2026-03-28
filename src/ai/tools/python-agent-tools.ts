@@ -428,6 +428,15 @@ export function createPythonAgentTools(opts: {
 
     const tools: Record<string, any> = {};
 
+    // ── think — internal reasoning tool (like Claude Code's thinking) ────────
+    tools.think = tool({
+        description: "Usa questo tool per RAGIONARE internamente prima di agire. Pianifica il prossimo passo, analizza errori, valuta alternative. Il contenuto NON viene mostrato all'utente. Usalo SEMPRE quando: (1) devi decidere tra più approcci, (2) un tool call è fallita e devi capire perché, (3) il task è complesso e serve un piano.",
+        inputSchema: z.object({
+            reasoning: z.string().describe("Il tuo ragionamento interno: analisi del problema, piano d'azione, valutazione alternative."),
+        }),
+        execute: async ({ reasoning }) => JSON.stringify({ ok: true }),
+    });
+
     // pyTestCode is ALWAYS available — it's the core Python tool
     tools.pyTestCode = tool({
         description: "Esegue codice Python di test per verificare che funzioni. Restituisce dati, variabili, stdout. E' il tuo strumento PRINCIPALE per testare il codice! Se passi sqlQuery, i dati vengono pre-caricati dal database e iniettati come df nel codice Python.",
@@ -506,6 +515,16 @@ export function createPythonAgentTools(opts: {
             execute: async ({ companyId, connectorId }) => doPyBrowseOtherScripts({ companyId: companyId || cpid, connectorId: connectorId || cid || undefined }),
         });
     }
+
+    // ── getStyleGuide — on-demand HTML design guide (avoids bloating system prompt) ─
+    tools.getStyleGuide = tool({
+        description: "Ottieni la guida design HTML completa con template, classi CSS, componenti premium e regole di composizione. Chiama QUESTO tool PRIMA di generare HTML per la prima volta in questa conversazione. Include template per: dashboard KPI, report, form CRUD, schede dettaglio, timeline, chat, simulazioni.",
+        inputSchema: z.object({}),
+        execute: async () => {
+            const { getHtmlDesignGuide } = await import('@/ai/html-design-guide');
+            return getHtmlDesignGuide();
+        },
+    });
 
     // editScript — find-and-replace on the current script (works like Claude Code's Edit tool)
     tools.editScript = tool({

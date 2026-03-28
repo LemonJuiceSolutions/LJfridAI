@@ -1,0 +1,30 @@
+{
+  "id": "cmn630kej0053if6pqlfooiae",
+  "name": "Ricavi 2026 per Mese",
+  "description": "Widget generato da FridAI Super Agent",
+  "type": "PIPELINE",
+  "companyId": "cmkgdnono0000f0a2mxegx8h4",
+  "createdAt": "2026-03-25T13:31:06.188Z",
+  "jsonDecisionTree": {
+    "id": "64dbc5a8-7a3b-4189-a7fa-1b0d8f0f8883",
+    "question": "Ricavi 2026 per Mese",
+    "options": {
+      "Visualizza": {
+        "id": "1189b6f0-62cb-4430-a60e-468857367bf8",
+        "decision": "Ricavi 2026 per Mese",
+        "widgetConfig": {
+          "type": "bar-chart",
+          "title": "Ricavi 2026 per Mese",
+          "xAxisKey": "Mese",
+          "dataKeys": [
+            "Ricavi",
+            "RicaviNetti"
+          ],
+          "isPublished": true
+        }
+      }
+    }
+  },
+  "naturalLanguageDecisionTree": "Ricavi 2026 per Mese",
+  "questionsScript": ""
+}
