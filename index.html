@@ -603,6 +603,13 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
   letter-spacing: 0.3px;
 }
 
+#tech.slide-white .tech-flow-step {
+  background: rgba(10,10,20,0.035);
+  border: 1px solid rgba(10,10,20,0.1);
+}
+#tech.slide-white .tech-flow-label { color: #0a0a14; }
+#tech.slide-white .tech-flow-sub { color: rgba(10,10,20,0.55); }
+
 .tech-flow-arrow {
   flex-shrink: 0;
   width: 50px;
@@ -705,12 +712,12 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
       </div>
       <div class="hero-right rv3d rv-d2">
         <h3 style="font-size: clamp(1.4rem, 2vw, 1.8rem); font-weight: 500; color: #1a0a2e; line-height: 1.3; margin-bottom: 0.5rem;">FridAI trasforma dati sparsi in decisioni automatiche — <br><span class="lemon italic" style="font-family:'DM Serif Display',serif;font-size:1.2em;">senza scrivere codice.</span></h3>
-        <p class="body-text" style="font-size:1.1rem;">La piattaforma che connette e automatizza i dati aziendali senza migrazione. Un sistema operativo intelligente per le decisioni data-driven.</p>
+        <p class="body-text" style="font-size:1.1rem;">La piattaforma che connette e automatizza i dati aziendali senza migrazione. Un sistema operativo intelligente per le decisioni insight-driven.</p>
         <div class="hero-kpi">
           <div><div class="kpi-value">4 layer</div><div class="kpi-label">Architettura</div></div>
           <div><div class="kpi-value">Zero</div><div class="kpi-label">Migrazione dati</div></div>
           <div><div class="kpi-value">NL</div><div class="kpi-label">Natural Language</div></div>
-          <div><div class="kpi-value">Brevetto</div><div class="kpi-label">UIBM 2025</div></div>
+          <div><div class="kpi-value">IP</div><div class="kpi-label">UIBM 2025 (AIDRA)</div></div>
         </div>
       </div>
     </div>
@@ -797,14 +804,14 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
         <h2 class="rv rv-d1">Quattro layer,<br>un unico<br><span class="italic lemon">sistema nervoso.</span></h2>
       </div>
       <div>
-        <p class="body-text rv rv-d2" style="max-width:100%;margin-bottom:2.5rem;">FridAI non è un tool di BI, non è un chatbot. È un OS per i dati aziendali: si connette a qualsiasi fonte, comprende lo schema semantico, genera automazioni e applicazioni — tutto senza spostare un dato.</p>
+        <p class="body-text rv rv-d2" style="max-width:100%;margin-bottom:2.5rem;">FridAI non è un tool di BI, non è un chatbot. È un OS per i dati aziendali: si collega a ERP, Excel e database, capisce come sono fatti i dati e genera dashboard, alert e automazioni — senza copiare i dati e senza cambiare i sistemi esistenti.</p>
         <div class="rv3d rv-d3">
           <div class="data-row"><span class="data-key">Layer 1</span><span class="data-val hl">AI che agisce e coordina i processi</span></div>
-          <div class="data-row"><span class="data-key">Layer 2</span><span class="data-val">Connettore universale ai sistemi</span></div>
-          <div class="data-row"><span class="data-key">Layer 3</span><span class="data-val">Motore logico (garantisce precisione)</span></div>
+          <div class="data-row"><span class="data-key">Layer 2</span><span class="data-val">Connessione ai sistemi esistenti (senza copia dati)</span></div>
+          <div class="data-row"><span class="data-key">Layer 3</span><span class="data-val">Motore di regole (tutor qualità dati)</span></div>
           <div class="data-row"><span class="data-key">Layer 4</span><span class="data-val">Creatore di dashboard e alert</span></div>
           <div class="data-row"><span class="data-key">Connettori</span><span class="data-val">ERP, CRM, DB, file, API</span></div>
-          <div class="data-row"><span class="data-key">Proprietà intellettuale</span><span class="data-val hl">Brevetto UIBM depositato</span></div>
+          <div class="data-row"><span class="data-key">Proprietà intellettuale</span><span class="data-val hl">Brevetto UIBM 2025 (AIDRA)</span></div>
         </div>
       </div>
     </div>
@@ -813,15 +820,19 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
 </section>
 
 <!-- =============== 03 TECH DEEP DIVE =============== -->
-<section class="slide slide-tono lj-section" id="tech" style="display:flex;align-items:center;justify-content:center;">
-  <canvas id="lj-three-container" class="section-canvas"></canvas>
+<section class="slide slide-white" id="tech" style="display:flex;align-items:center;justify-content:center;">
+  <div id="techVidWrap" style="position:absolute;z-index:0;pointer-events:none;width:45vw;height:45vw;top:18%;right:2%;left:auto;opacity:0.18;">
+    <video id="techVid" autoplay muted playsinline style="width:100%;height:100%;object-fit:contain;mix-blend-mode:multiply;display:block;">
+      <source src="Video.mp4" type="video/mp4">
+    </video>
+  </div>
   <div class="slide-inner" style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;">
 
     <!-- Centered minimal layout -->
     <div style="text-align:center;max-width:900px;margin:0 auto;">
       <div class="tag rv" style="text-align:center;">Come funziona</div>
-      <h2 class="rv rv-d1" style="font-size:clamp(1.8rem,3.5vw,3rem);line-height:1.05;margin-bottom:1rem;">LLM in ingresso. Business rules al centro.<br><span class="italic lemon">Output deterministici.</span></h2>
-      <p class="body-text rv rv-d2" style="max-width:600px;margin:0 auto 2.5rem;text-align:center;font-size:0.9rem;color:var(--text-secondary);">Tra il linguaggio naturale e gli output finali c'è uno strato deterministico che garantisce accuratezza, ripetibilità e compliance.</p>
+      <h2 class="rv rv-d1" style="font-size:clamp(1.8rem,3.5vw,3rem);line-height:1.05;margin-bottom:1rem;">LLM in ingresso. Motore di regole al centro.<br><span class="italic lemon">Output deterministici e verificabili.</span></h2>
+      <p class="body-text rv rv-d2" style="max-width:650px;margin:0 auto 2.5rem;text-align:center;font-size:0.9rem;color:var(--text-secondary);">L’AI interpreta la richiesta e propone l’intento. Il motore di regole fa da tutor della bontà dei dati: applica definizioni, vincoli e controlli di qualità. Il risultato è sempre ripetibile, tracciabile e compliant.</p>
     </div>
 
     <!-- Minimal horizontal flow -->
@@ -841,7 +852,7 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--lemon-glow)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.7-3.2 6H8.2C6.3 13.7 5 11.5 5 9a7 7 0 0 1 7-7z"/><path d="M9 22h6"/><path d="M10 18h4"/><path d="M12 2v4"/><path d="M8.5 5.5L10 7"/><path d="M15.5 5.5L14 7"/></svg>
         </div>
         <div class="tech-flow-label">Interpretazione AI</div>
-        <div class="tech-flow-sub">L'AI capisce i dati automaticamente</div>
+        <div class="tech-flow-sub">Interpreta la domanda e genera un piano</div>
       </div>
       <div class="tech-flow-arrow rv rv-d3">
         <svg viewBox="0 0 40 12" fill="none" stroke="var(--lemon)" stroke-width="1" opacity="0.4"><line x1="0" y1="6" x2="34" y2="6"/><polyline points="30,2 36,6 30,10"/></svg>
@@ -850,8 +861,8 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
         <div class="tech-flow-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--lemon)" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         </div>
-        <div class="tech-flow-label">Business Rules Engine</div>
-        <div class="tech-flow-sub">Algoritmo deterministico: valida, filtra, struttura</div>
+        <div class="tech-flow-label">Motore di regole</div>
+        <div class="tech-flow-sub">Tutor dei dati: valida, riconcilia, standardizza</div>
       </div>
       <div class="tech-flow-arrow rv rv-d3">
         <svg viewBox="0 0 40 12" fill="none" stroke="var(--lemon)" stroke-width="1" opacity="0.4"><line x1="0" y1="6" x2="34" y2="6"/><polyline points="30,2 36,6 30,10"/></svg>
@@ -861,7 +872,7 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--lemon-deep)" stroke-width="1.2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 10l3-3 3 3 6-6"/></svg>
         </div>
         <div class="tech-flow-label">Output</div>
-        <div class="tech-flow-sub">Tabelle, grafici, alert — deterministici</div>
+        <div class="tech-flow-sub">Report, grafici, alert — deterministici e tracciabili</div>
       </div>
     </div>
 
@@ -891,11 +902,12 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
   <div class="slide-num">05</div>
   <div class="slide-inner">
     <div class="rv"><div class="tag">Case study — Progetto pilota</div><h2 style="max-width:700px;">Quid: la prova che FridAI<br><span class="italic lemon">funziona.</span></h2></div>
-    <p class="body-text rv rv-d1" style="margin-bottom:2.5rem;max-width:700px;">Cooperativa Sociale Quid (€7,6M ricavi, 147 persone, 22 nazionalità) è il primo deployment operativo di FridAI. 6 mesi di co-creazione, risultati misurabili dal giorno uno.</p>
+    <p class="body-text rv rv-d1" style="margin-bottom:2.5rem;max-width:700px;">Cooperativa Sociale Quid (€7,6M ricavi, 170 persone, 22 nazionalità): controllo operativo e finanziario in tempo reale in una manifattura sociale. Da Excel a dati integrati in 6 mesi di pilota e testing (inclusi custom e validazione).</p>
+    <p class="body-text rv rv-d2" style="margin-top:-1.5rem;margin-bottom:2.5rem;max-width:900px;font-size:0.9rem;">Tecnologie abilitanti: AI (orchestrazione agenti, anomaly detection), cloud-native, big data &amp; advanced analytics, automazione digitale dei processi (alert su soglie). Architettura: connettori nativi ai sistemi esistenti, modello dati unificato, dashboard e alert in tempo reale — senza sostituzione del gestionale. Soggetti: Quid (end-user) e Lemon Juice Solutions (fornitore e system integrator).</p>
     <div class="card-grid-3 rv rv-d2" style="margin-top:1rem; grid-template-columns: repeat(2, 1fr);">
       <div class="card tilt-3d"><div class="card-num" style="color:var(--lemon);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">-70%</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Effort operativo</h3><p style="font-size:0.95rem;">Riduzione del lavoro manuale per la creazione di report e aggregazione dati.</p></div>
-      <div class="card tilt-3d"><div class="card-num" style="color:var(--sand);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">+5%</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Efficienza globale</h3><p style="font-size:0.95rem;">Miglioramento netto su pricing e capacità produttiva con la Business Intelligence automatica.</p></div>
-      <div class="card tilt-3d"><div class="card-num" style="color:var(--lemon-deep);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">100%</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Controllo commesse</h3><p style="font-size:0.95rem;">Il totale delle operazioni sottocosto viene rilevato e segnalato prima della chiusura.</p></div>
+      <div class="card tilt-3d"><div class="card-num" style="color:var(--sand);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">+5%</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Marginalità</h3><p style="font-size:0.95rem;">Incremento della marginalità grazie all’eliminazione degli errori di pricing e dei markup negativi.</p></div>
+      <div class="card tilt-3d"><div class="card-num" style="color:var(--lemon-deep);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">100%</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Markup negativi</h3><p style="font-size:0.95rem;">Commesse a markup negativo rilevate e bloccate prima dell’avvio produttivo.</p></div>
       <div class="card tilt-3d"><div class="card-num" style="color:var(--lemon-glow);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">Zero</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Migrazione dati</h3><p style="font-size:0.95rem;">Connessione diretta a ERP, CRM e file Excel senza dover spostare nemmeno un dato.</p></div>
     </div>
   </div>
@@ -925,9 +937,9 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
   <div class="slide-inner">
     <div class="split-grid">
       <div>
-        <div class="tag rv">Verticalizzazione Finance</div>
+        <div class="tag rv">Verticale Fintech</div>
         <h2 class="rv rv-d1">AIDRA:<br>FridAI per il<br><span class="italic lemon">mondo finanziario.</span></h2>
-        <p class="body-text rv rv-d2" style="margin-top:1.5rem;">AIDRA è la verticalizzazione di FridAI per il settore finance. Stessa architettura agentica, stessi principi — applicati a compliance, risk management, reporting regolamentare e analisi di portafoglio.</p>
+        <p class="body-text rv rv-d2" style="margin-top:1.5rem;">AIDRA è il verticale Fintech di FridAI. Stessa architettura, stessi principi — applicati a compliance, risk management, reporting regolamentare, analisi di portafoglio e what-if analysis.</p>
       </div>
       <div>
         <div class="rv3d rv-d3">
@@ -935,9 +947,8 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
           <div class="data-row"><span class="data-key">Settore</span><span class="data-val">Financial Services</span></div>
           <div class="data-row"><span class="data-key">Use case</span><span class="data-val">Compliance, Risk, Reporting, What-if</span></div>
           <div class="data-row"><span class="data-key">What-if analysis</span><span class="data-val hl">Scenari, stress test, sensibilità</span></div>
-          <div class="data-row"><span class="data-key">Differenziatore</span><span class="data-val">Agentic + federato, no lock-in</span></div>
           <div class="data-row"><span class="data-key">Validazione</span><span class="data-val hl">Cross-industry (Quid pilota)</span></div>
-          <div class="data-row"><span class="data-key">Status</span><span class="data-val">In sviluppo — pipeline attiva</span></div>
+          <div class="data-row"><span class="data-key">Status</span><span class="data-val">In testing — use case attivi</span></div>
         </div>
       </div>
     </div>
@@ -1028,19 +1039,20 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
         <h2 class="rv rv-d1" style="margin-bottom:2rem;">Tecnologia validata.<br><span class="italic lemon">Scalabilità dimostrata.</span></h2>
         <div class="chart-wrap rv rv-d2" id="chart">
           <div class="chart-bar-wrap"><div class="chart-bar-val">1</div><div class="chart-bar" data-height="60" style="height:0;background:var(--text-tertiary);opacity:0.3;"></div><div class="chart-bar-label">2025</div></div>
-          <div class="chart-bar-wrap"><div class="chart-bar-val">5</div><div class="chart-bar" data-height="140" style="height:0;background:var(--sand);"></div><div class="chart-bar-label">Pipeline</div></div>
-          <div class="chart-bar-wrap"><div class="chart-bar-val">AIDRA</div><div class="chart-bar" data-height="200" style="height:0;background:var(--lemon-deep);"></div><div class="chart-bar-label">Finance</div></div>
-          <div class="chart-bar-wrap"><div class="chart-bar-val">∞</div><div class="chart-bar" data-height="250" style="height:0;background:var(--lemon);"></div><div class="chart-bar-label">Scalabilità</div></div>
+          <div class="chart-bar-wrap"><div class="chart-bar-val">5</div><div class="chart-bar" data-height="140" style="height:0;background:var(--sand);"></div><div class="chart-bar-label">2026</div></div>
+          <div class="chart-bar-wrap"><div class="chart-bar-val">20</div><div class="chart-bar" data-height="220" style="height:0;background:var(--lemon-deep);"></div><div class="chart-bar-label">2027</div></div>
         </div>
       </div>
       <div class="rv3d rv-d3">
         <div class="data-row"><span class="data-key">Modello</span><span class="data-val">SaaS + setup</span></div>
-        <div class="data-row"><span class="data-key">Pilota Quid</span><span class="data-val hl">Validato in 6 mesi</span></div>
-        <div class="data-row"><span class="data-key">Pipeline attiva</span><span class="data-val hl">5 aziende</span></div>
-        <div class="data-row"><span class="data-key">Verticalizzazione</span><span class="data-val">AIDRA (Finance)</span></div>
-        <div class="data-row"><span class="data-key">Brevetto / Copyright</span><span class="data-val">Depositato aprile 2025</span></div>
-        <div class="data-row"><span class="data-key">Time-to-value</span><span class="data-val hl">6 mesi</span></div>
-        <div class="data-row"><span class="data-key">Risultato pilota</span><span class="data-val">Utile netto aggiunto per Quid</span></div>
+        <div class="data-row"><span class="data-key">Programma</span><span class="data-val hl">Fintech Factory (MEF) — co-finanziato</span></div>
+        <div class="data-row"><span class="data-key">AIDRA</span><span class="data-val">Verticale Fintech di FridAI</span></div>
+        <div class="data-row"><span class="data-key">Brevetto</span><span class="data-val">UIBM — depositato aprile 2025 (AIDRA)</span></div>
+        <div class="data-row"><span class="data-key">Pilota Quid</span><span class="data-val hl">6 mesi (testing + custom)</span></div>
+        <div class="data-row"><span class="data-key">Impatto</span><span class="data-val">Marginalità +5% e -70% lavoro manuale</span></div>
+        <div class="data-row"><span class="data-key">Crescita</span><span class="data-val hl">Volumi +10% senza nuove risorse</span></div>
+        <div class="data-row"><span class="data-key">What-if analysis</span><span class="data-val">Scenari e stress test su rischio e capitale</span></div>
+        <div class="data-row"><span class="data-key">Insight</span><span class="data-val">Dashboard e alert per la direzione</span></div>
       </div>
     </div>
   </div>
@@ -1071,12 +1083,12 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
     <div class="split-grid">
       <div><div class="tag rv">Roadmap</div><h2 class="rv rv-d1">Da pilota a<br>piattaforma di<br><span class="italic lemon">riferimento.</span></h2></div>
       <div class="rv rv-d2">
-        <div class="tl-item"><div class="tl-year">2024</div><div class="tl-content"><h3>Ideazione e design</h3><p>Architettura FridAI. Primi prototipi su dati reali.</p></div></div>
-        <div class="tl-item"><div class="tl-year">2025</div><div class="tl-content"><h3>Pilota Quid</h3><p>Deploy operativo. €147K investiti (€27K CDP). Risultati in 6 mesi.</p></div></div>
-        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2025</div><div class="tl-content"><h3>Brevetto UIBM</h3><p>Deposito brevetto aprile 2025. IP core protetta.</p></div></div>
-        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2026 Q2</div><div class="tl-content"><h3>AIDRA Finance</h3><p>Lancio verticalizzazione finance. Pipeline attiva.</p></div></div>
-        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2026 H2</div><div class="tl-content"><h3>Scale-up</h3><p>5 clienti in pipeline. Voice AI + WhatsApp. Distretto INNESTI.</p></div></div>
-        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2027</div><div class="tl-content"><h3>Espansione verticali</h3><p>Nuove verticalizzazioni industry. Marketplace distrettuale.</p></div></div>
+        <div class="tl-item"><div class="tl-year">2025</div><div class="tl-content"><h3>Architettura & prototipi</h3><p>Design FridAI e primi prototipi su dati reali.</p></div></div>
+        <div class="tl-item"><div class="tl-year">2025</div><div class="tl-content"><h3>Deploy Quid</h3><p>Pilota operativo (testing + custom). Co-finanziamento CDP €27K.</p></div></div>
+        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2025</div><div class="tl-content"><h3>Brevetto UIBM (AIDRA)</h3><p>Deposito aprile 2025. IP core protetta.</p></div></div>
+        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2026 Q2</div><div class="tl-content"><h3>AIDRA Finance</h3><p>Testing e primi use case operativi.</p></div></div>
+        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2026 H2</div><div class="tl-content"><h3>Scale-up</h3><p>5 clienti in pipeline. Voice AI + WhatsApp.</p></div></div>
+        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2027</div><div class="tl-content"><h3>Espansione</h3><p>Nuove verticalizzazioni industry. Target 20 clienti.</p></div></div>
       </div>
     </div>
   </div>
@@ -1160,10 +1172,10 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
         <circle cx="164" cy="164" r="5" fill="#E040FB"/>
       </g>
     </svg>
-    <h2 class="rv rv-d1" style="text-align:center;">I dati sono ovunque.<br>L'intelligenza per usarli,<br><span class="italic lemon">no.</span></h2>
-    <p class="body-text rv rv-d2" style="text-align:center;max-width:650px;margin-top:1.5rem;">FridAI rende ogni azienda capace di decisioni data-driven — senza migrazione, senza lock-in, senza complessità. Dal manifatturiero al finance, con AIDRA. La tecnologia giusta, per qualsiasi impresa.</p>
-    <div class="closing-meta rv rv-d3"><span>Lemon Juice Solutions</span><span>FridAI — Agentic Data OS</span><span>AIDRA — Finance</span><span>Brevetto UIBM 2025</span></div>
-    <p class="rv rv-d4" style="margin-top:4rem;font-family:'JetBrains Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:3px;color:var(--text-tertiary);text-align:center;">Lemon Juice Solutions — info@lemonjuice.solutions</p>
+    <h2 class="rv rv-d1" style="text-align:center;">I dati sono ovunque.<br>Noi portiamo l’intelligenza<br><span class="italic lemon">per usarli.</span></h2>
+    <p class="body-text rv rv-d2" style="text-align:center;max-width:650px;margin-top:1.5rem;">FridAI rende ogni azienda capace di decisioni insight-driven — senza migrazione, senza lock-in, senza complessità. Dal manifatturiero al finance: la tecnologia giusta, per qualsiasi impresa.</p>
+    <div class="closing-meta rv rv-d3"><span>Lemon Juice Solutions</span><span>FridAI — Agentic Data OS</span><span>AIDRA — Finance</span><span>UIBM 2025 (AIDRA)</span></div>
+    <p class="rv rv-d4" style="margin-top:4rem;font-family:'JetBrains Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:3px;color:var(--text-tertiary);text-align:center;">Lemon Juice Solutions — info@lemonjuicesolutions.it</p>
   </div>
 </section>
 
@@ -1718,30 +1730,34 @@ document.querySelectorAll('.tilt-3d').forEach(card=>{
 });
 </script>
 <script>
-// Video: una sola riproduzione al 50%, animazione sincronizzata con la durata
 (function(){
   function init(){
-    var v = document.getElementById('heroVid');
-    var wrap = document.getElementById('heroVidWrap');
-    if(!v || !wrap) return;
-    v.muted = true;
-    v.loop = false;
-    v.playbackRate = 0.5;
+    function setup(vId, wrapId, shouldAnimate){
+      var v = document.getElementById(vId);
+      var wrap = document.getElementById(wrapId);
+      if(!v || !wrap) return;
+      v.muted = true;
+      v.loop = false;
+      v.playbackRate = 0.5;
 
-    function startAnim(){
-      // durata reale = durata video / playbackRate
-      var realDuration = (v.duration / 0.5) + 's';
-      wrap.style.animation = 'vidGrow ' + realDuration + ' linear forwards';
+      function startAnim(){
+        if(!shouldAnimate) return;
+        var realDuration = (v.duration / 0.5) + 's';
+        wrap.style.animation = 'vidGrow ' + realDuration + ' linear forwards';
+      }
+
+      v.addEventListener('loadedmetadata', startAnim);
+
+      var p = v.play();
+      if(p !== undefined){
+        p.catch(function(){
+          document.addEventListener('click', function(){ v.play(); startAnim(); }, {once:true});
+        });
+      }
     }
 
-    v.addEventListener('loadedmetadata', startAnim);
-
-    var p = v.play();
-    if(p !== undefined){
-      p.catch(function(){
-        document.addEventListener('click', function(){ v.play(); startAnim(); }, {once:true});
-      });
-    }
+    setup('heroVid', 'heroVidWrap', true);
+    setup('techVid', 'techVidWrap', false);
   }
   if(document.readyState === 'complete'){ init(); }
   else { window.addEventListener('load', init); }
