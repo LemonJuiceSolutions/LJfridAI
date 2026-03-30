@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FridAI — Agentic Data OS | Lemon Juice Solutions</title>
+<title>FridAI — Agentic Data OS | LemonJuice Solutions</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,300;1,9..40,400&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -203,12 +203,13 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
 .rv-zoom.vis{opacity:1;transform:perspective(600px) translateZ(0) scale(1);}
 
 /* HERO */
-.hero{min-height:100vh;}
-.hero-layout{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:end;}
+.hero{min-height:100vh;position:relative;}
+.hero-layout{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center;height:100%;}
 @media(max-width:900px){.hero-layout{grid-template-columns:1fr;}}
 .hero h1 em{font-style:italic;color:var(--lemon);}
-.hero-right{display:flex;flex-direction:column;gap:2rem;padding-bottom:0.5rem;}
-.hero-kpi{display:flex;gap:2.5rem;flex-wrap:wrap;}
+.hero-right{display:flex;flex-direction:column;gap:2rem;}
+.hero-kpi{display:flex;gap:2.5rem;flex-wrap:wrap;position:absolute;bottom:0;right:0;}
+@media(max-width:900px){.hero-kpi{position:relative;bottom:auto;right:auto;margin-top:3rem;}}
 .kpi-value{font-family:'DM Serif Display',serif;font-size:2.2rem;color:#1a0a2e;line-height:1.1;}
 #hero .kpi-value{color:#1a0a2e;}
 #hero h1{color:#0a0a14;}
@@ -384,7 +385,7 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
 .card-stat{margin-top:1.5rem;font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:var(--lemon);letter-spacing:1px;}
 
 /* CHART BARS - 3D GROW */
-.chart-wrap{display:flex;align-items:flex-end;gap:1.5rem;height:280px;padding:2rem 0;border-bottom:1px solid var(--border);}
+.chart-wrap{display:flex;align-items:flex-end;gap:1.5rem;height:420px;padding:2rem 0;border-bottom:1px solid var(--border);}
 .chart-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:0.8rem;height:100%;justify-content:flex-end;}
 
 .chart-bar {
@@ -522,6 +523,17 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
   position: relative;
 }
 
+#demo .tech-flow-step{
+  height: 260px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.slide-tono#demo .tech-flow-step{
+  max-width: 260px;
+}
+
 .tech-flow-step::before {
   content: '';
   position: absolute;
@@ -643,6 +655,9 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
   .tech-flow-step {
     max-width: 280px;
   }
+  #demo .tech-flow-step{
+    height: auto;
+  }
 }
 
 </style>
@@ -657,7 +672,7 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
 <div class="progress" id="progressBar"></div>
 
 <nav>
-  <div class="nav-brand"><span>FridAI</span> by Lemon Juice Solutions</div>
+  <div class="nav-brand"><span>FridAI</span> by LemonJuice Solutions</div>
   <ul class="nav-dots">
     <li><a href="#hero" class="active">1</a></li>
     <li><a href="#demo">2</a></li>
@@ -675,7 +690,7 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
 <!-- =============== 01 HERO =============== -->
 <section class="slide slide-white hero" id="hero">
   <!-- VIDEO: parte piccolo in alto a destra, cresce al centro per tutta la durata del video -->
-  <div id="heroVidWrap" style="position:absolute;z-index:0;pointer-events:none;width:45vw;height:45vw;top:18%;right:2%;left:auto;opacity:0.2;">
+  <div id="heroVidWrap" style="position:absolute;z-index:0;pointer-events:none;width:45vw;height:45vw;top:18%;right:2%;left:auto;opacity:0.15;">
     <video id="heroVid" autoplay muted playsinline style="width:100%;height:100%;object-fit:contain;mix-blend-mode:multiply;display:block;">
       <source src="Video.mp4" type="video/mp4">
     </video>
@@ -704,22 +719,22 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
     <span style="left:85%;animation-duration:17s;animation-delay:1.1s;width:3px;height:3px;"></span>
   </div>
   <div class="slide-num" style="position:relative;z-index:2;">01</div>
-  <div class="slide-inner" style="position:relative;z-index:2;">
+  <div class="slide-inner" style="position:relative;z-index:2;height:100%;">
     <div class="hero-layout">
       <div>
-        <div class="tag rv">Lemon Juice Solutions</div>
+        <div class="tag rv">LemonJuice Solutions</div>
         <h1 class="rv rv-d1" id="heroTitle">FridAI<br><em>Agentic</em><br><em>Data OS.</em></h1>
       </div>
       <div class="hero-right rv3d rv-d2">
-        <h3 style="font-size: clamp(1.4rem, 2vw, 1.8rem); font-weight: 500; color: #1a0a2e; line-height: 1.3; margin-bottom: 0.5rem;">FridAI trasforma dati sparsi in decisioni automatiche — <br><span class="lemon italic" style="font-family:'DM Serif Display',serif;font-size:1.2em;">senza scrivere codice.</span></h3>
+        <h3 style="font-size: clamp(1.4rem, 2vw, 1.8rem); font-weight: 500; color: #1a0a2e; line-height: 1.3; margin-bottom: 0.5rem;">FridAI trasforma dati sparsi in decisioni strategiche — <br><span class="lemon italic" style="font-family:'DM Serif Display',serif;font-size:1.2em;">senza scrivere codice.</span></h3>
         <p class="body-text" style="font-size:1.1rem;">La piattaforma che connette e automatizza i dati aziendali senza migrazione. Un sistema operativo intelligente per le decisioni insight-driven.</p>
-        <div class="hero-kpi">
-          <div><div class="kpi-value">4 layer</div><div class="kpi-label">Architettura</div></div>
-          <div><div class="kpi-value">Zero</div><div class="kpi-label">Migrazione dati</div></div>
-          <div><div class="kpi-value">NL</div><div class="kpi-label">Natural Language</div></div>
-          <div><div class="kpi-value">IP</div><div class="kpi-label">UIBM 2025 (AIDRA)</div></div>
-        </div>
       </div>
+    </div>
+    <div class="hero-kpi rv rv-d3">
+      <div><div class="kpi-value">4 layer</div><div class="kpi-label">Architettura</div></div>
+      <div><div class="kpi-value">Zero</div><div class="kpi-label">Migrazione dati</div></div>
+      <div><div class="kpi-value">NL</div><div class="kpi-label">Natural Language</div></div>
+      <div><div class="kpi-value">IP</div><div class="kpi-label">UIBM 2025</div></div>
     </div>
   </div>
   <div class="slide-hint" style="position:relative;z-index:2;">Premi Invio ↵</div>
@@ -751,13 +766,13 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
     <div class="tech-flow rv rv-d3">
       <div class="tech-flow-step" style="background:rgba(255,255,255,0.02);">
         <div class="tech-flow-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg></div>
-        <div class="tech-flow-label" style="font-size:1.4rem; margin-bottom:1rem;">1. Input</div>
+        <div class="tech-flow-label" style="font-size:1.4rem; margin-bottom:1rem;">Input</div>
         <div class="tech-flow-sub" style="font-size:1rem;color:#f4f0eb;">ERP<br>Excel<br>CRM</div>
       </div>
       <div class="tech-flow-arrow rv rv-d3">
         <svg viewBox="0 0 40 12" fill="none" stroke="var(--lemon)" stroke-width="1" opacity="0.4"><line x1="0" y1="6" x2="34" y2="6"/><polyline points="30,2 36,6 30,10"/></svg>
       </div>
-      <div class="tech-flow-step tech-flow-step-accent" style="transform: scale(1.15); margin: 0 1.5rem; z-index:10;">
+      <div class="tech-flow-step tech-flow-step-accent" style="z-index:10;">
         <div class="tech-flow-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--lemon)" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         </div>
@@ -769,7 +784,7 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
       </div>
       <div class="tech-flow-step" style="background:rgba(255,255,255,0.02);">
         <div class="tech-flow-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--lemon-deep)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="21"></line></svg></div>
-        <div class="tech-flow-label" style="font-size:1.4rem; margin-bottom:1rem;">3. Output</div>
+        <div class="tech-flow-label" style="font-size:1.4rem; margin-bottom:1rem;">Output</div>
         <div class="tech-flow-sub" style="font-size:1rem;color:#f4f0eb;">Dashboard<br>Automazioni<br>Alert in tempo reale</div>
       </div>
     </div>
@@ -804,14 +819,14 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
         <h2 class="rv rv-d1">Quattro layer,<br>un unico<br><span class="italic lemon">sistema nervoso.</span></h2>
       </div>
       <div>
-        <p class="body-text rv rv-d2" style="max-width:100%;margin-bottom:2.5rem;">FridAI non è un tool di BI, non è un chatbot. È un OS per i dati aziendali: si collega a ERP, Excel e database, capisce come sono fatti i dati e genera dashboard, alert e automazioni — senza copiare i dati e senza cambiare i sistemi esistenti.</p>
+        <p class="body-text rv rv-d2" style="max-width:100%;margin-bottom:2.5rem;">FridAI è un OS per i dati aziendali: si collega a ERP, Excel e database, capisce come sono fatti i dati e genera dashboard, alert e automazioni — senza copiare i dati e senza cambiare i sistemi esistenti.</p>
         <div class="rv3d rv-d3">
           <div class="data-row"><span class="data-key">Layer 1</span><span class="data-val hl">AI che agisce e coordina i processi</span></div>
           <div class="data-row"><span class="data-key">Layer 2</span><span class="data-val">Connessione ai sistemi esistenti (senza copia dati)</span></div>
           <div class="data-row"><span class="data-key">Layer 3</span><span class="data-val">Motore di regole (tutor qualità dati)</span></div>
-          <div class="data-row"><span class="data-key">Layer 4</span><span class="data-val">Creatore di dashboard e alert</span></div>
+          <div class="data-row"><span class="data-key">Layer 4</span><span class="data-val">Creatore di dashboard, alert e insight strategici</span></div>
           <div class="data-row"><span class="data-key">Connettori</span><span class="data-val">ERP, CRM, DB, file, API</span></div>
-          <div class="data-row"><span class="data-key">Proprietà intellettuale</span><span class="data-val hl">Brevetto UIBM 2025 (AIDRA)</span></div>
+          <div class="data-row"><span class="data-key">Proprietà intellettuale</span><span class="data-val hl">Brevetto depositato 2025</span></div>
         </div>
       </div>
     </div>
@@ -821,7 +836,7 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
 
 <!-- =============== 03 TECH DEEP DIVE =============== -->
 <section class="slide slide-white" id="tech" style="display:flex;align-items:center;justify-content:center;">
-  <div id="techVidWrap" style="position:absolute;z-index:0;pointer-events:none;width:45vw;height:45vw;top:18%;right:2%;left:auto;opacity:0.18;">
+  <div id="techVidWrap" style="position:absolute;z-index:0;pointer-events:none;width:45vw;height:45vw;top:18%;left:2%;right:auto;opacity:0.15;">
     <video id="techVid" autoplay muted playsinline style="width:100%;height:100%;object-fit:contain;mix-blend-mode:multiply;display:block;">
       <source src="Video.mp4" type="video/mp4">
     </video>
@@ -832,7 +847,7 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
     <div style="text-align:center;max-width:900px;margin:0 auto;">
       <div class="tag rv" style="text-align:center;">Come funziona</div>
       <h2 class="rv rv-d1" style="font-size:clamp(1.8rem,3.5vw,3rem);line-height:1.05;margin-bottom:1rem;">LLM in ingresso. Motore di regole al centro.<br><span class="italic lemon">Output deterministici e verificabili.</span></h2>
-      <p class="body-text rv rv-d2" style="max-width:650px;margin:0 auto 2.5rem;text-align:center;font-size:0.9rem;color:var(--text-secondary);">L’AI interpreta la richiesta e propone l’intento. Il motore di regole fa da tutor della bontà dei dati: applica definizioni, vincoli e controlli di qualità. Il risultato è sempre ripetibile, tracciabile e compliant.</p>
+      <p class="body-text rv rv-d2" style="max-width:650px;margin:0 auto 2.5rem;text-align:center;font-size:1.08rem;color:#0a0a14;">L’AI interpreta la richiesta e propone l’intento. Il motore di regole fa da tutor della bontà dei dati: applica definizioni, vincoli e controlli di qualità. Il risultato è sempre ripetibile, tracciabile e compliant.</p>
     </div>
 
     <!-- Minimal horizontal flow -->
@@ -903,11 +918,10 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
   <div class="slide-inner">
     <div class="rv"><div class="tag">Case study — Progetto pilota</div><h2 style="max-width:700px;">Quid: la prova che FridAI<br><span class="italic lemon">funziona.</span></h2></div>
     <p class="body-text rv rv-d1" style="margin-bottom:2.5rem;max-width:700px;">Cooperativa Sociale Quid (€7,6M ricavi, 170 persone, 22 nazionalità): controllo operativo e finanziario in tempo reale in una manifattura sociale. Da Excel a dati integrati in 6 mesi di pilota e testing (inclusi custom e validazione).</p>
-    <p class="body-text rv rv-d2" style="margin-top:-1.5rem;margin-bottom:2.5rem;max-width:900px;font-size:0.9rem;">Tecnologie abilitanti: AI (orchestrazione agenti, anomaly detection), cloud-native, big data &amp; advanced analytics, automazione digitale dei processi (alert su soglie). Architettura: connettori nativi ai sistemi esistenti, modello dati unificato, dashboard e alert in tempo reale — senza sostituzione del gestionale. Soggetti: Quid (end-user) e Lemon Juice Solutions (fornitore e system integrator).</p>
     <div class="card-grid-3 rv rv-d2" style="margin-top:1rem; grid-template-columns: repeat(2, 1fr);">
       <div class="card tilt-3d"><div class="card-num" style="color:var(--lemon);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">-70%</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Effort operativo</h3><p style="font-size:0.95rem;">Riduzione del lavoro manuale per la creazione di report e aggregazione dati.</p></div>
       <div class="card tilt-3d"><div class="card-num" style="color:var(--sand);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">+5%</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Marginalità</h3><p style="font-size:0.95rem;">Incremento della marginalità grazie all’eliminazione degli errori di pricing e dei markup negativi.</p></div>
-      <div class="card tilt-3d"><div class="card-num" style="color:var(--lemon-deep);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">100%</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Markup negativi</h3><p style="font-size:0.95rem;">Commesse a markup negativo rilevate e bloccate prima dell’avvio produttivo.</p></div>
+      <div class="card tilt-3d"><div class="card-num" style="color:var(--lemon-deep);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">100%</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Markup commesse controllati</h3><p style="font-size:0.95rem;">Commesse a markup negativo rilevate e bloccate prima dell’avvio produttivo.</p></div>
       <div class="card tilt-3d"><div class="card-num" style="color:var(--lemon-glow);font-size:3.5rem;font-weight:400;margin-bottom:0.5rem;letter-spacing:-1px;">Zero</div><h3 style="font-size:1.1rem;margin-bottom:0.8rem;">Migrazione dati</h3><p style="font-size:0.95rem;">Connessione diretta a ERP, CRM e file Excel senza dover spostare nemmeno un dato.</p></div>
     </div>
   </div>
@@ -986,12 +1000,12 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
           <div class="card tilt-3d">
             <div class="card-num" style="font-size:1.6rem;color:var(--lemon);margin-bottom:1rem;">Scenario</div>
             <h3>Shock & policy</h3>
-            <p>Tassi, spread, FX, commodity, downgrade, default (PD/LGD), nuove regole, limiti e covenant.</p>
+            <p>Tassi, spread, FX, commodity, downgrade, nuove regole, limiti e covenant.</p>
           </div>
           <div class="card tilt-3d">
             <div class="card-num" style="font-size:1.6rem;color:var(--sand);margin-bottom:1rem;">Impatto</div>
             <h3>Metriche chiave</h3>
-            <p>RWA e capitale, P&amp;L, margini, liquidità, esposizioni, concentrazioni, VaR/ES e KPI operativi.</p>
+            <p>P&amp;L, margini, liquidità, esposizioni, concentrazioni, KPI operativi.</p>
           </div>
           <div class="card tilt-3d">
             <div class="card-num" style="font-size:1.6rem;color:var(--lemon-glow);margin-bottom:1rem;">Azione</div>
@@ -1038,9 +1052,9 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
         <div class="tag rv">Modello di business</div>
         <h2 class="rv rv-d1" style="margin-bottom:2rem;">Tecnologia validata.<br><span class="italic lemon">Scalabilità dimostrata.</span></h2>
         <div class="chart-wrap rv rv-d2" id="chart">
-          <div class="chart-bar-wrap"><div class="chart-bar-val">1</div><div class="chart-bar" data-height="60" style="height:0;background:var(--text-tertiary);opacity:0.3;"></div><div class="chart-bar-label">2025</div></div>
-          <div class="chart-bar-wrap"><div class="chart-bar-val">5</div><div class="chart-bar" data-height="140" style="height:0;background:var(--sand);"></div><div class="chart-bar-label">2026</div></div>
-          <div class="chart-bar-wrap"><div class="chart-bar-val">20</div><div class="chart-bar" data-height="220" style="height:0;background:var(--lemon-deep);"></div><div class="chart-bar-label">2027</div></div>
+          <div class="chart-bar-wrap"><div class="chart-bar-val">1</div><div class="chart-bar" data-height="18" style="height:0;background:var(--text-tertiary);opacity:0.3;"></div><div class="chart-bar-label">2025</div></div>
+          <div class="chart-bar-wrap"><div class="chart-bar-val">5</div><div class="chart-bar" data-height="90" style="height:0;background:var(--sand);"></div><div class="chart-bar-label">2026</div></div>
+          <div class="chart-bar-wrap"><div class="chart-bar-val">20</div><div class="chart-bar" data-height="360" style="height:0;background:var(--lemon-deep);"></div><div class="chart-bar-label">2027</div></div>
         </div>
       </div>
       <div class="rv3d rv-d3">
@@ -1051,8 +1065,8 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
         <div class="data-row"><span class="data-key">Pilota Quid</span><span class="data-val hl">6 mesi (testing + custom)</span></div>
         <div class="data-row"><span class="data-key">Impatto</span><span class="data-val">Marginalità +5% e -70% lavoro manuale</span></div>
         <div class="data-row"><span class="data-key">Crescita</span><span class="data-val hl">Volumi +10% senza nuove risorse</span></div>
-        <div class="data-row"><span class="data-key">What-if analysis</span><span class="data-val">Scenari e stress test su rischio e capitale</span></div>
-        <div class="data-row"><span class="data-key">Insight</span><span class="data-val">Dashboard e alert per la direzione</span></div>
+        <div class="data-row"><span class="data-key">What-if analysis</span><span class="data-val">Scenari e stress test personalizzato</span></div>
+        <div class="data-row"><span class="data-key">Insight</span><span class="data-val">Insight strategici (decisioni non automatiche)</span></div>
       </div>
     </div>
   </div>
@@ -1083,11 +1097,12 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
     <div class="split-grid">
       <div><div class="tag rv">Roadmap</div><h2 class="rv rv-d1">Da pilota a<br>piattaforma di<br><span class="italic lemon">riferimento.</span></h2></div>
       <div class="rv rv-d2">
-        <div class="tl-item"><div class="tl-year">2025</div><div class="tl-content"><h3>Architettura & prototipi</h3><p>Design FridAI e primi prototipi su dati reali.</p></div></div>
-        <div class="tl-item"><div class="tl-year">2025</div><div class="tl-content"><h3>Deploy Quid</h3><p>Pilota operativo (testing + custom). Co-finanziamento CDP €27K.</p></div></div>
-        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2025</div><div class="tl-content"><h3>Brevetto UIBM (AIDRA)</h3><p>Deposito aprile 2025. IP core protetta.</p></div></div>
-        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2026 Q2</div><div class="tl-content"><h3>AIDRA Finance</h3><p>Testing e primi use case operativi.</p></div></div>
-        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2026 H2</div><div class="tl-content"><h3>Scale-up</h3><p>5 clienti in pipeline. Voice AI + WhatsApp.</p></div></div>
+
+        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2025 Q2</div><div class="tl-content"><h3>Brevetto UIBM</h3><p>Deposito Q2 2025. IP core protetta.</p></div></div>
+        <div class="tl-item"><div class="tl-year">2025 Q3</div><div class="tl-content"><h3>Architettura</h3><p>Design FridAI e prototipi su dati reali.</p></div></div>
+        <div class="tl-item"><div class="tl-year">2025 Q4</div><div class="tl-content"><h3>Deploy</h3><p>Pilota operativo (testing + custom)</p></div></div>
+        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2026 Q2</div><div class="tl-content"><h3>Go live</h3><p>Testing concluso e primi use case operativi.</p></div></div>
+        <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2026 Q3</div><div class="tl-content"><h3>Scale-up</h3><p>5 clienti in pipeline. Voice AI + WhatsApp.</p></div></div>
         <div class="tl-item" style="border-color:rgba(0,212,255,0.2);"><div class="tl-year" style="color:var(--lemon);">2027</div><div class="tl-content"><h3>Espansione</h3><p>Nuove verticalizzazioni industry. Target 20 clienti.</p></div></div>
       </div>
     </div>
@@ -1174,8 +1189,8 @@ h3{font-family:'DM Sans',sans-serif;font-size:1.1rem;font-weight:500;}
     </svg>
     <h2 class="rv rv-d1" style="text-align:center;">I dati sono ovunque.<br>Noi portiamo l’intelligenza<br><span class="italic lemon">per usarli.</span></h2>
     <p class="body-text rv rv-d2" style="text-align:center;max-width:650px;margin-top:1.5rem;">FridAI rende ogni azienda capace di decisioni insight-driven — senza migrazione, senza lock-in, senza complessità. Dal manifatturiero al finance: la tecnologia giusta, per qualsiasi impresa.</p>
-    <div class="closing-meta rv rv-d3"><span>Lemon Juice Solutions</span><span>FridAI — Agentic Data OS</span><span>AIDRA — Finance</span><span>UIBM 2025 (AIDRA)</span></div>
-    <p class="rv rv-d4" style="margin-top:4rem;font-family:'JetBrains Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:3px;color:var(--text-tertiary);text-align:center;">Lemon Juice Solutions — info@lemonjuicesolutions.it</p>
+    <div class="closing-meta rv rv-d3"><span>LemonJuice Solutions</span><span>FridAI — Agentic Data OS</span><span>AIDRA — Finance</span><span>UIBM 2025 (AIDRA)</span></div>
+    <p class="rv rv-d4" style="margin-top:4rem;font-family:'JetBrains Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:3px;color:var(--text-tertiary);text-align:center;">LemonJuice Solutions — info@lemonjuicesolutions.it</p>
   </div>
 </section>
 
@@ -1769,10 +1784,9 @@ document.querySelectorAll('.tilt-3d').forEach(card=>{
   var heroEl = document.getElementById('hero');
   if(!heroEl) return;
 
-  var els = heroEl.querySelectorAll('h1, .tag, p, .kpi-value, .kpi-label, .hero-kpi > div, .slide-hint, .slide-num');
+  var els = heroEl.querySelectorAll('h1, .tag, p, h3, .slide-hint, .slide-num');
   var params = [];
 
-  
   els.forEach(function(el, i){
     params.push({
       el: el,
