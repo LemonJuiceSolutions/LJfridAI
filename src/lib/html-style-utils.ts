@@ -932,7 +932,7 @@ export function generateHtmlStyleCss(overrides: HtmlStyleOverrides): string {
   // Container (wraps table if user wants max-width / shadow / radius)
   // Target elements INSIDE .__cw, never .__cw itself
   if (o.container_max_width > 0 || o.container_shadow !== 'none' || o.container_border_radius > 0) {
-    css += `.container, .__cw > div, .__cw > table { `;
+    css += `.container, .__cw > div:not(.kanban-board), .__cw > table { `;
     if (o.container_max_width > 0) css += `max-width: ${o.container_max_width}px; margin-left: auto; margin-right: auto; `;
     if (o.container_border_radius > 0) css += `border-radius: ${o.container_border_radius}px; overflow: hidden; `;
     if (o.container_shadow !== 'none') css += `box-shadow: ${SHADOW_MAP[o.container_shadow] || 'none'}; `;
@@ -1620,6 +1620,126 @@ export function generatePlatformLayoutCss(overrides: HtmlStyleOverrides = {}): s
   100% { background-position: -200% 0; }
 }
 
+/* ── Kanban Board ── */
+.kanban-board {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  min-height: 400px;
+  align-items: flex-start;
+  -webkit-overflow-scrolling: touch;
+}
+.kanban-column {
+  flex: 0 0 280px;
+  min-width: 280px;
+  max-width: 320px;
+  background: color-mix(in srgb, var(--border) 25%, transparent);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 160px);
+}
+.kanban-column-header {
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 2px solid var(--border);
+  flex-shrink: 0;
+}
+.kanban-column-header .count {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 100px;
+}
+.kanban-column-body {
+  padding: 10px;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.kanban-column-body::-webkit-scrollbar { width: 4px; }
+.kanban-column-body::-webkit-scrollbar-track { background: transparent; }
+.kanban-column-body::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-secondary) 20%, transparent); border-radius: 100px; }
+.kanban-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  cursor: grab;
+  transition: all var(--transition);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+.kanban-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary);
+}
+.kanban-card:active, .kanban-card.dragging {
+  cursor: grabbing;
+  opacity: 0.7;
+  transform: rotate(2deg);
+  box-shadow: var(--shadow-lg);
+}
+.kanban-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+  line-height: 1.3;
+}
+.kanban-card-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+.kanban-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.kanban-card-delete {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary);
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition);
+  padding: 2px 4px;
+  line-height: 1;
+}
+.kanban-card:hover .kanban-card-delete { opacity: 1; }
+.kanban-card-delete:hover { color: var(--danger); }
+/* Column accent colors via data-color attribute */
+.kanban-column[data-color="primary"] .kanban-column-header { border-bottom-color: var(--primary); }
+.kanban-column[data-color="success"] .kanban-column-header { border-bottom-color: var(--success); }
+.kanban-column[data-color="warning"] .kanban-column-header { border-bottom-color: var(--warning); }
+.kanban-column[data-color="danger"]  .kanban-column-header { border-bottom-color: var(--danger); }
+.kanban-column[data-color="info"]    .kanban-column-header { border-bottom-color: var(--info); }
+/* Drop zone highlight */
+.kanban-column-body.drag-over {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-radius: var(--radius-sm);
+}
+
 /* ── Empty State ── */
 .empty-state {
   text-align: center;
@@ -1850,6 +1970,292 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+
+/* ── Modal / Dialog ── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  justify-content: center;
+  align-items: center;
+  animation: modalFadeIn 0.15s ease;
+}
+.modal-overlay.open, .modal-overlay.active { display: flex; }
+.modal-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  width: 92%;
+  max-width: 520px;
+  box-shadow: var(--shadow-xl);
+  animation: modalSlideUp 0.2s ease;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-dialog h3 { margin-top: 0; margin-bottom: 20px; font-size: 18px; font-weight: 700; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+@keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalSlideUp { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* ── Toast / Notification ── */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  animation: toastSlideIn 0.3s ease;
+  pointer-events: auto;
+}
+.toast.success { background: color-mix(in srgb, var(--success) 12%, var(--bg-card)); border-color: color-mix(in srgb, var(--success) 25%, transparent); color: var(--success); }
+.toast.error   { background: color-mix(in srgb, var(--danger) 12%, var(--bg-card)); border-color: color-mix(in srgb, var(--danger) 25%, transparent); color: var(--danger); }
+.toast.warning { background: color-mix(in srgb, var(--warning) 12%, var(--bg-card)); border-color: color-mix(in srgb, var(--warning) 25%, transparent); color: var(--warning); }
+.toast.info    { background: color-mix(in srgb, var(--primary) 12%, var(--bg-card)); border-color: color-mix(in srgb, var(--primary) 25%, transparent); color: var(--primary); }
+@keyframes toastSlideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+/* ── Tabs ── */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.tab {
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all var(--transition);
+  margin-bottom: -1px;
+}
+.tab:hover { color: var(--text); background: color-mix(in srgb, var(--primary) 4%, transparent); }
+.tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; animation: tabFadeIn 0.2s ease; }
+@keyframes tabFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Toggle Switch ── */
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition);
+}
+.toggle input:checked + .toggle-slider { background: var(--primary); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+/* ── Dropdown Menu ── */
+.dropdown { position: relative; display: inline-block; }
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 500;
+  padding: 4px;
+  animation: dropdownFadeIn 0.15s ease;
+}
+.dropdown-menu.open { display: block; }
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  width: 100%;
+  text-align: left;
+  transition: background var(--transition);
+}
+.dropdown-item:hover { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.dropdown-divider { height: 1px; background: var(--border); margin: 4px 0; }
+@keyframes dropdownFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Accordion / Collapsible ── */
+.accordion { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.accordion-item { border-bottom: 1px solid var(--border); }
+.accordion-item:last-child { border-bottom: none; }
+.accordion-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.accordion-trigger:hover { background: color-mix(in srgb, var(--primary) 4%, transparent); }
+.accordion-trigger::after { content: '\\25BE'; font-size: 12px; color: var(--text-secondary); transition: transform var(--transition); }
+.accordion-trigger.open::after { transform: rotate(180deg); }
+.accordion-content { display: none; padding: 0 18px 16px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+.accordion-content.open { display: block; animation: tabFadeIn 0.2s ease; }
+
+/* ── Chip / Multi-select ── */
+.chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+  cursor: default;
+  transition: all var(--transition);
+}
+.chip .chip-remove {
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity var(--transition);
+}
+.chip .chip-remove:hover { opacity: 1; }
+
+/* ── Stepper / Wizard ── */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 24px;
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  position: relative;
+}
+.step::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  margin: 0 12px;
+}
+.step:last-child::after { display: none; }
+.step-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--border);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+.step.active .step-circle { background: var(--primary); color: white; box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent); }
+.step.completed .step-circle { background: var(--success); color: white; }
+.step.completed::after { background: var(--success); }
+.step-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
+.step.active .step-label { color: var(--primary); }
+.step.completed .step-label { color: var(--success); }
+
+/* ── Color Picker Dots ── */
+.color-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+.color-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.color-dot:hover { transform: scale(1.15); }
+.color-dot.active { border-color: var(--text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 15%, transparent); }
+.color-dot.active::after { content: '\\2713'; color: white; font-size: 13px; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+
+/* ── Floating Action Button ── */
+.fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 80%, var(--info)));
+  color: white;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: var(--shadow-lg), 0 0 0 0 color-mix(in srgb, var(--primary) 30%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+  z-index: 100;
+}
+.fab:hover { transform: scale(1.08); box-shadow: var(--shadow-xl); }
 
 /* ── Print Optimization ── */
 @media print {
@@ -2093,9 +2499,42 @@ function generateInspectorScript(): string {
 }
 
 /**
+ * Sanitize agent-generated HTML that may contain a full document structure
+ * (<html>, <head>, <style>, <body> tags). Extracts <style> blocks and
+ * returns only the body content so it can be safely wrapped.
+ */
+function sanitizeAgentHtml(raw: string): { bodyContent: string; extractedStyles: string } {
+  let s = raw;
+  // 1. Extract all <style> blocks — they get re-injected into the proper <head>
+  const styles: string[] = [];
+  s = s.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_m, css) => {
+    styles.push(css);
+    return '';
+  });
+  // 2. Strip document-level TAGS only (NOT block content)
+  //    Scripts remain in-place so they execute in correct DOM order
+  //    (moving body scripts to <head> breaks getElementById calls)
+  s = s.replace(/<!doctype[^>]*>/gi, '');
+  s = s.replace(/<\/?html[^>]*>/gi, '');
+  s = s.replace(/<\/?head[^>]*>/gi, '');   // strip head TAGS, keep head CONTENT (scripts survive)
+  s = s.replace(/<\/?body[^>]*>/gi, '');
+  s = s.replace(/<meta[^>]*\/?>/gi, '');
+  s = s.replace(/<title[^>]*>[\s\S]*?<\/title>/gi, '');
+  s = s.replace(/<link[^>]*\/?>/gi, '');
+
+  return {
+    bodyContent: s.trim(),
+    extractedStyles: styles.length > 0 ? `<style id="__agent-css">${styles.join('\n')}</style>` : '',
+  };
+}
+
+/**
  * Wrap raw HTML with a full document including generated CSS.
  * When inspectorMode is true, injects click-to-inspect script.
  * Returns a complete HTML string suitable for iframe srcDoc.
+ *
+ * If the input HTML contains a full document structure (<html>, <head>, <style>, <body>),
+ * those tags are stripped and <style> blocks are moved to the proper <head>.
  */
 export function applyHtmlStyleOverrides(
   html: string,
@@ -2107,5 +2546,10 @@ export function applyHtmlStyleOverrides(
   const layoutCss = generatePlatformLayoutCss(overrides);
   const inspector = inspectorMode ? generateInspectorScript() : '';
   const uiStyleTag = uiCss ? `<style id="__dynamic-ui-css">${uiCss}</style>` : '';
-  return `<html><head><style id="__dynamic-css">${css}</style><style id="__platform-layout-css">${layoutCss}</style>${uiStyleTag}</head><body><div class="__cw">${html}</div>${inspector}</body></html>`;
+
+  // Sanitize: extract <style> blocks, strip document-level tags
+  // Scripts stay in bodyContent in their original positions (DOM order matters)
+  const { bodyContent, extractedStyles } = sanitizeAgentHtml(html);
+
+  return `<html><head><style id="__dynamic-css">${css}</style><style id="__platform-layout-css">${layoutCss}</style>${uiStyleTag}${extractedStyles}</head><body><div class="__cw">${bodyContent}</div>${inspector}</body></html>`;
 }

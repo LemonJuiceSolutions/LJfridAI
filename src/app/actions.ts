@@ -1522,8 +1522,24 @@ export async function executeSqlPreviewAction(
         // 1. Bracketed names: [Name] (ignores schema like dbo.[Name])
         // 2. Unbracketed names: Name (with word boundaries)
         // 3. Any context (FROM, JOIN, comma lists, etc.)
+        // Known SQL Server schema names that are valid prefixes for table references
+        const knownSchemas = new Set(['dbo', 'sys', 'information_schema', 'guest', 'db_owner']);
+
         const replaceTableRef = (sqlText: string, originalName: string, tempName: string) => {
             const escaped = escapeRegExp(originalName);
+
+            // Helper: check if a prefix like "t." is a table alias (should NOT replace)
+            // vs a schema like "dbo." (should replace).
+            // Heuristic: short identifiers (<=5 chars) that aren't known schemas are table aliases.
+            const isTableAliasPrefix = (prefix: string | undefined): boolean => {
+                if (!prefix) return false;
+                // Remove trailing dot and brackets
+                const clean = prefix.replace(/[\.\[\]]/g, '').trim();
+                if (!clean) return false;
+                if (knownSchemas.has(clean.toLowerCase())) return false;
+                // Short identifiers are almost certainly table aliases (t, sf, ssf, br, etc.)
+                return clean.length <= 5;
+            };
 
             // Regex for [Name] (consuming optional schema prefix)
             // Matches: [dbo].[Name], dbo.[Name], [Name]
@@ -1539,10 +1555,16 @@ export async function executeSqlPreviewAction(
             let newText = sqlText;
 
             // Replace bracketed first (most specific)
-            newText = newText.replace(bracketRegex, tempName);
+            newText = newText.replace(bracketRegex, (match, prefix) => {
+                if (isTableAliasPrefix(prefix)) return match; // Skip: t.[Fasi] is a column ref
+                return tempName;
+            });
 
             // Replace unbracketed
-            newText = newText.replace(unbracketedRegex, tempName);
+            newText = newText.replace(unbracketedRegex, (match, prefix) => {
+                if (isTableAliasPrefix(prefix)) return match; // Skip: t.Fasi is a column ref
+                return tempName;
+            });
 
             return newText;
         };
@@ -1571,13 +1593,24 @@ export async function executeSqlPreviewAction(
                 // nodeName (question/decision), or displayName (node.name)
                 // e.g. node "Pipeline Prodotto" has pythonResultName "PIPELINEUP", question "UP"
                 // SQL queries may reference any of these names
+                // Only register aliases that are long enough to avoid colliding with column names.
+                // Short aliases like "FASI", "UP", "DDT" can match column references (e.g. t.Fasi).
+                const MIN_ALIAS_LENGTH = 8;
                 if (dep.nodeName && dep.nodeName !== dep.tableName && !nameMap.has(dep.nodeName)) {
-                    nameMap.set(dep.nodeName, tempTableName);
-                    console.log(`[PIPELINE] Registered alias (nodeName): "${dep.nodeName}" -> ${tempTableName}`);
+                    if (dep.nodeName.length >= MIN_ALIAS_LENGTH) {
+                        nameMap.set(dep.nodeName, tempTableName);
+                        console.log(`[PIPELINE] Registered alias (nodeName): "${dep.nodeName}" -> ${tempTableName}`);
+                    } else {
+                        console.log(`[PIPELINE] Skipped short alias (nodeName): "${dep.nodeName}" (len=${dep.nodeName.length} < ${MIN_ALIAS_LENGTH})`);
+                    }
                 }
                 if (dep.displayName && dep.displayName !== dep.tableName && dep.displayName !== dep.nodeName && !nameMap.has(dep.displayName)) {
-                    nameMap.set(dep.displayName, tempTableName);
-                    console.log(`[PIPELINE] Registered alias (displayName): "${dep.displayName}" -> ${tempTableName}`);
+                    if (dep.displayName.length >= MIN_ALIAS_LENGTH) {
+                        nameMap.set(dep.displayName, tempTableName);
+                        console.log(`[PIPELINE] Registered alias (displayName): "${dep.displayName}" -> ${tempTableName}`);
+                    } else {
+                        console.log(`[PIPELINE] Skipped short alias (displayName): "${dep.displayName}" (len=${dep.displayName.length} < ${MIN_ALIAS_LENGTH})`);
+                    }
                 }
 
                 console.log(`[PIPELINE] Materializing: ${tempTableName} (isPython: ${dep.isPython}, hasPythonCode: ${!!dep.pythonCode}, hasQuery: ${!!dep.query})`);

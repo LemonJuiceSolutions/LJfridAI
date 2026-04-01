@@ -25,10 +25,10 @@ FORMATO JSON OBBLIGATORIO:
     { "name": "NomeTabella", "type": "Database SQL", "columns": ["col1", "col2"] }
   ],
   "steps": [
-    { "action": "READ", "description": "Lettura dati dalla tabella X" },
-    { "action": "JOIN", "description": "JOIN tra X e Y su campo Z" },
-    { "action": "FILTER", "description": "Filtro: solo record dove condizione" },
-    { "action": "AGGREGATE", "description": "Aggregazione: SUM(importo) GROUP BY mese" }
+    { "action": "READ", "description": "Lettura dati dalla tabella X", "previewQuery": "SELECT TOP 5 * FROM X" },
+    { "action": "JOIN", "description": "JOIN tra X e Y su campo Z", "previewQuery": "SELECT TOP 5 * FROM X JOIN Y ON X.z = Y.z" },
+    { "action": "FILTER", "description": "Filtro: solo record dove condizione", "previewQuery": "SELECT TOP 5 * FROM X JOIN Y ON X.z = Y.z WHERE condizione" },
+    { "action": "AGGREGATE", "description": "Aggregazione: SUM(importo) GROUP BY mese", "previewQuery": "SELECT TOP 5 mese, SUM(importo) FROM X JOIN Y ON X.z = Y.z WHERE condizione GROUP BY mese" }
   ],
   "output": {
     "type": "Tabella",
@@ -42,6 +42,7 @@ VALORI POSSIBILI:
 - source.type: "Database SQL", "DataFrame Pandas", "File CSV", "Pipeline", "API", "Variabile"
 - step.action: "READ", "JOIN", "FILTER", "AGGREGATE", "CALCULATE", "SORT", "PIVOT", "MERGE", "TRANSFORM", "FORMAT", "EXPORT"
 - step.detail: (opzionale) dettaglio tecnico come la clausola SQL esatta o il codice Python
+- step.previewQuery: (SOLO per SQL) query SQL Server (T-SQL) COMPLETAMENTE AUTONOMA ed eseguibile che mostra i dati intermedi fino a quel punto. Usa TOP 5 (NON LIMIT). Vedi regole sotto.
 - output.type: "Tabella", "Grafico", "Variabile", "HTML"
 
 REGOLE:
@@ -51,7 +52,29 @@ REGOLE:
 - Includi TUTTE le tabelle/sorgenti usate, anche le subquery
 - I nomi colonne nel campo columns devono essere quelli reali usati nel codice
 - Se ci sono dipendenze da pipeline/nodi esterni, aggiungile come source con type "Pipeline"
-- notes: aggiungi solo se ci sono criticità o ottimizzazioni importanti, altrimenti array vuoto`;
+- notes: aggiungi solo se ci sono criticità o ottimizzazioni importanti, altrimenti array vuoto
+
+REGOLE CRITICHE PER previewQuery (SQL):
+- Il database è SQL Server (T-SQL). Usa SEMPRE "SELECT TOP 5" e MAI "LIMIT 5".
+- Ogni previewQuery DEVE essere COMPLETAMENTE AUTONOMA: deve poter essere eseguita da sola senza dipendere da nessun'altra query.
+- NON referenziare MAI nomi di CTE, tabelle temporanee, subquery con alias, o risultati intermedi definiti SOLO all'interno della query originale. Quelle NON sono tabelle reali del database.
+- Se la query originale usa WITH (CTE), e il tuo previewQuery ha bisogno di quei dati, DEVI includere le definizioni WITH complete nel previewQuery stesso.
+- Ogni previewQuery deve referenziare SOLO: (1) tabelle/viste reali del database, oppure (2) CTE definite all'interno dello STESSO previewQuery.
+- Per step successivi, costruisci la query INCREMENTALMENTE includendo tutto il SQL necessario (CTE + JOIN + WHERE + GROUP BY) fino a quel punto.
+
+ESEMPIO con CTE - se il codice originale è:
+  WITH Vendite AS (SELECT SaleDocId, Amount FROM MA_SaleDoc WHERE Type='S'),
+       Dettagli AS (SELECT SaleDocId, ItemCode FROM MA_SaleDocItem)
+  SELECT v.SaleDocId, v.Amount, d.ItemCode FROM Vendite v JOIN Dettagli d ON v.SaleDocId = d.SaleDocId
+
+Allora i previewQuery CORRETTI sono:
+  Step 1 (READ Vendite): "SELECT TOP 5 SaleDocId, Amount FROM MA_SaleDoc WHERE Type='S'"
+  Step 2 (READ Dettagli): "SELECT TOP 5 SaleDocId, ItemCode FROM MA_SaleDocItem"
+  Step 3 (JOIN): "WITH Vendite AS (SELECT SaleDocId, Amount FROM MA_SaleDoc WHERE Type='S'), Dettagli AS (SELECT SaleDocId, ItemCode FROM MA_SaleDocItem) SELECT TOP 5 v.SaleDocId, v.Amount, d.ItemCode FROM Vendite v JOIN Dettagli d ON v.SaleDocId = d.SaleDocId"
+
+SBAGLIATO: "SELECT TOP 5 * FROM Vendite" (Vendite NON è una tabella reale, è una CTE!)
+SBAGLIATO: "SELECT TOP 5 * FROM Dettagli JOIN Vendite ON ..." (nessuna delle due è una tabella reale!)`;
+
 
 
 export async function POST(request: NextRequest) {

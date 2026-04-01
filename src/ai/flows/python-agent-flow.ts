@@ -805,9 +805,12 @@ La variabile DEVE essere del tipo giusto per l'outputType del nodo:
 ### outputType='variable' (VARIABILE):
 - Assegna un dizionario a \`result\`: result = {"valore": 42, "nome": "test"}
 
-### outputType='html' (HTML LIBERO):
+### outputType='html' (HTML LIBERO — INTERFACCE REACT-LIKE):
 - Assegna una stringa HTML a \`result\`: result = "<h1>Titolo</h1><p>Contenuto</p>"
-- Per TABELLE HTML con stile: usa df.to_html(escape=False) + CSS inline in un tag <style>
+- REGOLA ZERO (CRITICA): NIENTE tag <style>, NIENTE @keyframes custom, NIENTE classi CSS inventate. La piattaforma STRAPPA le regole CSS con colori hardcoded (#hex, rgb, hsl). Se scrivi <style>.mia-classe { background: #1a1a2e; }</style> viene CANCELLATO e la pagina esce BIANCA.
+- Usa SOLO classi della piattaforma: .card, .btn, .kpi-grid, .stat-card, .table-section, .modal-overlay, .modal-dialog, .toast-container, .toast, .tabs, .tab, .tab-panel, .toggle, .dropdown, .accordion, .kanban-board, .kanban-column, .kanban-card, .stepper, .chip, .fab, .avatar, .tag, .empty-state, etc.
+- Se serve colore inline (SVG, chart): usa var(--primary), var(--success), var(--danger), etc.
+- Filosofia React-like: stato in oggetto JS + render(), modal con backdrop blur, toast per feedback, transizioni fluide, empty states, keyboard support (ESC chiude modal)
 
 #### REGOLE GENERAZIONE HTML (CRITICO):
 Quando generi codice Python che produce HTML:

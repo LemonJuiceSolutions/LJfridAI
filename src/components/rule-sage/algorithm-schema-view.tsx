@@ -5,7 +5,7 @@ import {
   Database, ArrowDown, Filter, GitMerge, Calculator, BarChart3,
   Table, FileCode2, ArrowRight, AlertTriangle, Zap, SortAsc,
   Layers, FileOutput, Variable, Code, Shuffle, Eye,
-  ArrowDownToLine, ChevronRight,
+  ArrowDownToLine, ChevronRight, Play, Loader2, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -21,6 +21,7 @@ export interface AlgoStep {
   action: string;     // JOIN, FILTER, AGGREGATE, CALCULATE, SORT, PIVOT, MERGE, TRANSFORM, FORMAT, EXPORT, READ
   description: string;
   detail?: string;
+  previewQuery?: string;
 }
 
 export interface AlgoOutput {
@@ -34,6 +35,13 @@ export interface AlgoSchema {
   steps: AlgoStep[];
   output: AlgoOutput;
   notes?: string[];
+}
+
+export interface StepPreview {
+  loading: boolean;
+  error?: string;
+  columns?: string[];
+  rows?: Record<string, any>[];
 }
 
 // ─── Action config ───────────────────────────────────────────────────────────
@@ -102,21 +110,65 @@ function getActionConfig(action: string) {
 
 function FlowConnector({ label }: { label?: string }) {
   return (
-    <div className="flex flex-col items-center py-1">
-      <div className="w-px h-4 bg-gradient-to-b from-muted-foreground/40 to-muted-foreground/20" />
-      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-muted border border-border">
-        <ArrowDown className="h-3 w-3 text-muted-foreground" />
+    <div className="flex flex-col items-center py-1 print:py-0.5">
+      <div className="w-px h-4 bg-gradient-to-b from-muted-foreground/40 to-muted-foreground/20 print:h-2" />
+      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-muted border border-border print:w-4 print:h-4">
+        <ArrowDown className="h-3 w-3 text-muted-foreground print:h-2 print:w-2" />
       </div>
       {label && <span className="text-[9px] text-muted-foreground mt-0.5">{label}</span>}
-      <div className="w-px h-4 bg-gradient-to-b from-muted-foreground/20 to-muted-foreground/40" />
+      <div className="w-px h-4 bg-gradient-to-b from-muted-foreground/20 to-muted-foreground/40 print:h-2" />
+    </div>
+  );
+}
+
+// ─── Mini Data Table ─────────────────────────────────────────────────────────
+
+function MiniDataTable({ columns, rows }: { columns: string[]; rows: Record<string, any>[] }) {
+  return (
+    <div className="mt-2 rounded-lg border border-border/60 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="bg-muted/60">
+              {columns.map((col, i) => (
+                <th key={i} className="px-2 py-1.5 text-left font-semibold text-muted-foreground border-b border-border/40 whitespace-nowrap">
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri} className={cn("border-b border-border/20 last:border-0", ri % 2 === 0 ? "bg-background" : "bg-muted/20")}>
+                {columns.map((col, ci) => (
+                  <td key={ci} className="px-2 py-1 text-foreground/80 font-mono whitespace-nowrap max-w-[200px] truncate">
+                    {row[col] === null ? <span className="text-muted-foreground italic">NULL</span> : String(row[col])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="px-2 py-1 bg-muted/30 border-t border-border/30 text-[10px] text-muted-foreground">
+        Anteprima: {rows.length} righe
+      </div>
     </div>
   );
 }
 
 // ─── Source Card ──────────────────────────────────────────────────────────────
 
-function SourceCard({ source }: { source: AlgoSource }) {
+function SourceCard({ source, preview, onPreview }: {
+  source: AlgoSource;
+  preview?: StepPreview;
+  onPreview?: (sourceName: string) => void;
+}) {
   const Icon = getSourceIcon(source.type);
+  const isDbSource = source.type.toLowerCase().includes('sql') || source.type.toLowerCase().includes('database');
+  const showPreview = preview && !preview.loading && preview.columns && preview.rows;
+  const showPreviewError = preview && !preview.loading && preview.error;
+
   return (
     <div className="flex-1 min-w-0 rounded-xl border border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/30 dark:to-blue-900/20 p-3 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-center gap-2 mb-2">
@@ -127,6 +179,29 @@ function SourceCard({ source }: { source: AlgoSource }) {
           <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 truncate">{source.name}</p>
           <p className="text-[10px] text-blue-600/70 dark:text-blue-400/70 uppercase tracking-wider">{source.type}</p>
         </div>
+        {/* Preview button for DB sources */}
+        {isDbSource && onPreview && (
+          <button
+            onClick={() => onPreview(source.name)}
+            disabled={preview?.loading}
+            className={cn(
+              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-medium transition-all print:hidden",
+              "bg-background/70 border border-border/50 hover:border-border hover:shadow-sm",
+              "text-muted-foreground hover:text-foreground",
+              preview?.loading && "opacity-60 cursor-wait"
+            )}
+            title="Anteprima dati (5 righe)"
+          >
+            {preview?.loading ? (
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            ) : showPreview ? (
+              <X className="h-2.5 w-2.5" />
+            ) : (
+              <Play className="h-2.5 w-2.5" />
+            )}
+            {showPreview ? 'Chiudi' : 'Anteprima'}
+          </button>
+        )}
       </div>
       {source.columns && source.columns.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1">
@@ -140,15 +215,44 @@ function SourceCard({ source }: { source: AlgoSource }) {
           )}
         </div>
       )}
+
+      {/* Preview loading */}
+      {preview?.loading && (
+        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground py-2">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Caricamento anteprima...
+        </div>
+      )}
+
+      {/* Preview error */}
+      {showPreviewError && (
+        <div className="mt-2 rounded-lg border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+          {preview.error}
+        </div>
+      )}
+
+      {/* Preview data table */}
+      {showPreview && preview.columns && preview.rows && (
+        <MiniDataTable columns={preview.columns} rows={preview.rows} />
+      )}
     </div>
   );
 }
 
 // ─── Step Card ───────────────────────────────────────────────────────────────
 
-function StepCard({ step, index }: { step: AlgoStep; index: number }) {
+function StepCard({ step, index, preview, onPreview }: {
+  step: AlgoStep;
+  index: number;
+  preview?: StepPreview;
+  onPreview?: (stepIndex: number, query: string) => void;
+}) {
   const config = getActionConfig(step.action);
   const Icon = config.icon;
+  const hasPreviewQuery = !!step.previewQuery;
+  const showPreview = preview && !preview.loading && preview.columns && preview.rows;
+  const showPreviewError = preview && !preview.loading && preview.error;
+
   return (
     <div className={cn(
       "relative rounded-xl border p-3 shadow-sm hover:shadow-md transition-all",
@@ -171,12 +275,55 @@ function StepCard({ step, index }: { step: AlgoStep; index: number }) {
             <span className={cn("text-[10px] font-bold uppercase tracking-widest", config.color)}>
               {step.action}
             </span>
+            {/* Preview button */}
+            {hasPreviewQuery && onPreview && (
+              <button
+                onClick={() => onPreview(index, step.previewQuery!)}
+                disabled={preview?.loading}
+                className={cn(
+                  "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-medium transition-all print:hidden",
+                  "bg-background/70 border border-border/50 hover:border-border hover:shadow-sm",
+                  "text-muted-foreground hover:text-foreground",
+                  preview?.loading && "opacity-60 cursor-wait"
+                )}
+                title="Anteprima dati (5 righe)"
+              >
+                {preview?.loading ? (
+                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                ) : showPreview ? (
+                  <X className="h-2.5 w-2.5" />
+                ) : (
+                  <Play className="h-2.5 w-2.5" />
+                )}
+                {showPreview ? 'Chiudi' : 'Anteprima'}
+              </button>
+            )}
           </div>
           <p className="text-sm text-foreground/90 leading-relaxed">{step.description}</p>
           {step.detail && (
             <p className="text-xs text-muted-foreground mt-1 font-mono bg-background/50 rounded px-2 py-1 border border-border/50">
               {step.detail}
             </p>
+          )}
+
+          {/* Preview loading */}
+          {preview?.loading && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground py-2">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Caricamento anteprima...
+            </div>
+          )}
+
+          {/* Preview error */}
+          {showPreviewError && (
+            <div className="mt-2 rounded-lg border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+              {preview.error}
+            </div>
+          )}
+
+          {/* Preview data table */}
+          {showPreview && preview.columns && preview.rows && (
+            <MiniDataTable columns={preview.columns} rows={preview.rows} />
           )}
         </div>
       </div>
@@ -240,9 +387,17 @@ function NotesSection({ notes }: { notes: string[] }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function AlgorithmSchemaView({ schema }: { schema: AlgoSchema }) {
+interface AlgorithmSchemaViewProps {
+  schema: AlgoSchema;
+  stepPreviews?: Record<number, StepPreview>;
+  sourcePreviews?: Record<string, StepPreview>;
+  onPreviewStep?: (stepIndex: number, query: string) => void;
+  onPreviewSource?: (sourceName: string) => void;
+}
+
+export default function AlgorithmSchemaView({ schema, stepPreviews, sourcePreviews, onPreviewStep, onPreviewSource }: AlgorithmSchemaViewProps) {
   return (
-    <div className="flex flex-col gap-0 py-2">
+    <div className="flex flex-col gap-0 py-2 algo-schema-print">
       {/* SECTION: Sources */}
       <div className="mb-1">
         <div className="flex items-center gap-2 mb-3">
@@ -254,7 +409,12 @@ export default function AlgorithmSchemaView({ schema }: { schema: AlgoSchema }) 
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {schema.sources.map((src, i) => (
-            <SourceCard key={i} source={src} />
+            <SourceCard
+              key={i}
+              source={src}
+              preview={sourcePreviews?.[src.name]}
+              onPreview={onPreviewSource}
+            />
           ))}
         </div>
       </div>
@@ -273,7 +433,12 @@ export default function AlgorithmSchemaView({ schema }: { schema: AlgoSchema }) 
         <div className="flex flex-col gap-0">
           {schema.steps.map((step, i) => (
             <React.Fragment key={i}>
-              <StepCard step={step} index={i} />
+              <StepCard
+                step={step}
+                index={i}
+                preview={stepPreviews?.[i]}
+                onPreview={onPreviewStep}
+              />
               {i < schema.steps.length - 1 && <FlowConnector />}
             </React.Fragment>
           ))}

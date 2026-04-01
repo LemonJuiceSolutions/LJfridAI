@@ -475,7 +475,13 @@ export default function EditNodeDialog({
     schema: import('./algorithm-schema-view').AlgoSchema | null;
     fallbackText: string | null;
     loading: boolean;
-  }>({ open: false, title: '', schema: null, fallbackText: null, loading: false });
+    language: 'sql' | 'python';
+  }>({ open: false, title: '', schema: null, fallbackText: null, loading: false, language: 'sql' });
+
+  // Step preview state for algorithm schema
+  const [stepPreviews, setStepPreviews] = useState<Record<number, import('./algorithm-schema-view').StepPreview>>({});
+  // Source preview state for algorithm schema
+  const [sourcePreviews, setSourcePreviews] = useState<Record<string, import('./algorithm-schema-view').StepPreview>>({});
 
   // Listen for DB write success from HTML iframe and re-run preview
   useEffect(() => {
@@ -1320,7 +1326,9 @@ export default function EditNodeDialog({
     }
 
     const title = language === 'sql' ? 'Schema Algoritmo SQL' : 'Schema Algoritmo Python';
-    setAlgoSchemaDialog({ open: true, title, schema: null, fallbackText: null, loading: true });
+    setAlgoSchemaDialog({ open: true, title, schema: null, fallbackText: null, loading: true, language });
+    setStepPreviews({});
+    setSourcePreviews({});
 
     try {
       // Build context from pipeline dependencies
@@ -1361,6 +1369,112 @@ export default function EditNodeDialog({
       toast({ variant: 'destructive', title: 'Errore analisi', description: error.message || 'Impossibile analizzare il codice.' });
     }
   }, [sqlQuery, pythonCode, selectedPipelines, pythonSelectedPipelines, availableInputTables, sqlConnectorId, sqlConnectors, openRouterModel, currentAiProvider, currentAiModel, toast]);
+
+  // Build pipeline dependencies from availableInputTables for preview execution
+  const buildPreviewPipelineDeps = useCallback(() => {
+    return availableInputTables
+      ?.filter(t => t.sqlQuery || (t.isPython && t.pythonCode))
+      .map(table => ({
+        tableName: table.name,
+        query: table.sqlQuery || undefined,
+        isPython: table.isPython,
+        pythonCode: table.pythonCode,
+        connectorId: table.connectorId,
+        pipelineDependencies: table.pipelineDependencies,
+        data: table.data && Array.isArray(table.data) ? table.data : undefined
+      })) || [];
+  }, [availableInputTables]);
+
+  // Handle step preview: execute SQL preview query for a specific step
+  const handlePreviewStep = useCallback(async (stepIndex: number, query: string) => {
+    // Toggle off if already showing
+    if (stepPreviews[stepIndex]?.columns) {
+      setStepPreviews(prev => {
+        const next = { ...prev };
+        delete next[stepIndex];
+        return next;
+      });
+      return;
+    }
+
+    setStepPreviews(prev => ({ ...prev, [stepIndex]: { loading: true } }));
+
+    try {
+      const connId = sqlConnectorId || sqlConnectors[0]?.id;
+      if (!connId) {
+        setStepPreviews(prev => ({ ...prev, [stepIndex]: { loading: false, error: 'Nessun connettore SQL configurato.' } }));
+        return;
+      }
+
+      const pipelineDeps = buildPreviewPipelineDeps();
+      const result = await executeSqlPreviewAction(query, connId, pipelineDeps);
+      if (result.error) {
+        setStepPreviews(prev => ({ ...prev, [stepIndex]: { loading: false, error: result.error || 'Errore sconosciuto' } }));
+      } else {
+        const rows = (result.data || []).slice(0, 5);
+        const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+        setStepPreviews(prev => ({ ...prev, [stepIndex]: { loading: false, columns, rows } }));
+      }
+    } catch (err: any) {
+      setStepPreviews(prev => ({ ...prev, [stepIndex]: { loading: false, error: err.message || 'Errore esecuzione query.' } }));
+    }
+  }, [stepPreviews, sqlConnectorId, sqlConnectors, buildPreviewPipelineDeps]);
+
+  // Handle source preview: query the source table for 5 rows
+  const handlePreviewSource = useCallback(async (sourceName: string) => {
+    // Toggle off if already showing
+    if (sourcePreviews[sourceName]?.columns) {
+      setSourcePreviews(prev => {
+        const next = { ...prev };
+        delete next[sourceName];
+        return next;
+      });
+      return;
+    }
+
+    setSourcePreviews(prev => ({ ...prev, [sourceName]: { loading: true } }));
+
+    try {
+      const connId = sqlConnectorId || sqlConnectors[0]?.id;
+      if (!connId) {
+        setSourcePreviews(prev => ({ ...prev, [sourceName]: { loading: false, error: 'Nessun connettore SQL configurato.' } }));
+        return;
+      }
+
+      const pipelineDeps = buildPreviewPipelineDeps();
+      const query = `SELECT TOP 5 * FROM ${sourceName}`;
+      const result = await executeSqlPreviewAction(query, connId, pipelineDeps);
+      if (result.error) {
+        setSourcePreviews(prev => ({ ...prev, [sourceName]: { loading: false, error: result.error || 'Errore sconosciuto' } }));
+      } else {
+        const rows = (result.data || []).slice(0, 5);
+        const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+        setSourcePreviews(prev => ({ ...prev, [sourceName]: { loading: false, columns, rows } }));
+      }
+    } catch (err: any) {
+      setSourcePreviews(prev => ({ ...prev, [sourceName]: { loading: false, error: err.message || 'Errore esecuzione query.' } }));
+    }
+  }, [sourcePreviews, sqlConnectorId, sqlConnectors, buildPreviewPipelineDeps]);
+
+  // Export algorithm schema as .md file
+  const handleExportMarkdown = useCallback(() => {
+    if (!algoSchemaDialog.schema) return;
+    import('@/lib/algo-schema-to-markdown').then(({ algoSchemaToMarkdown }) => {
+      const md = algoSchemaToMarkdown(algoSchemaDialog.schema!, algoSchemaDialog.title);
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${algoSchemaDialog.title.replace(/\s+/g, '_').toLowerCase()}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }, [algoSchemaDialog.schema, algoSchemaDialog.title]);
+
+  // Print/PDF export for algorithm schema
+  const handleExportPdf = useCallback(() => {
+    window.print();
+  }, []);
 
   // --- REUSABLE PIPELINE EXECUTION LOGIC ---
   const executeFullPipeline = async (
@@ -2975,24 +3089,6 @@ export default function EditNodeDialog({
                                     console.warn(`[SQL EXEC] NO pre-calculated data for ${t.name} (isAi=${!!(t as any).aiConfig?.prompt}, ancestorKeys=${Object.keys(ancestorResults || {}).join(',')})`);
                                   }
 
-                                  // SAFEGUARD: Payload size check for client-server transfer
-                                  // Use 2MB limit for AI results (they can be larger) and 500KB for others
-                                  const isAiDep = !!(t as any).aiConfig?.prompt;
-                                  const MAX_PAYLOAD_BYTES = isAiDep ? 2 * 1024 * 1024 : 500 * 1024;
-                                  let shouldPassData = false;
-                                  if (preCalcData && Array.isArray(preCalcData)) {
-                                    try {
-                                      const dataSize = JSON.stringify(preCalcData).length;
-                                      if (dataSize <= MAX_PAYLOAD_BYTES) {
-                                        shouldPassData = true;
-                                      } else {
-                                        console.error(`[SQL EXEC] ⚠️ Data for ${t.name} EXCEEDS limit: ${(dataSize / 1024).toFixed(1)}KB > ${(MAX_PAYLOAD_BYTES / 1024).toFixed(0)}KB — data will be DROPPED!`);
-                                      }
-                                    } catch (e) { }
-                                  }
-
-                                  console.log(`[SQL EXEC] Dep "${t.name}": shouldPassData=${shouldPassData}, hasQuery=${!!t.sqlQuery}, isPython=${t.isPython}, isAi=${isAiDep}`);
-
                                   return {
                                     tableName: t.name,
                                     nodeName: t.nodeName, // FIX: Pass display name for alias resolution
@@ -3002,7 +3098,7 @@ export default function EditNodeDialog({
                                     pythonCode: t.pythonCode,
                                     connectorId: t.connectorId,
                                     pipelineDependencies: t.pipelineDependencies,
-                                    data: shouldPassData ? preCalcData : undefined
+                                    data: preCalcData && Array.isArray(preCalcData) ? preCalcData : undefined
                                   };
                                 });
 
@@ -5995,8 +6091,8 @@ export default function EditNodeDialog({
 
       {/* Algorithm Schema Dialog */}
       <Dialog open={algoSchemaDialog.open} onOpenChange={(open) => !open && setAlgoSchemaDialog(prev => ({ ...prev, open: false }))}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col algo-schema-dialog-print">
+          <DialogHeader className="print:hidden">
             <DialogTitle className="flex items-center gap-2">
               <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 shadow-sm">
                 <GitBranch className="h-4 w-4 text-white" />
@@ -6022,14 +6118,78 @@ export default function EditNodeDialog({
                 </div>
               </div>
             ) : algoSchemaDialog.schema ? (
-              <AlgorithmSchemaView schema={algoSchemaDialog.schema} />
+              <div className="algo-schema-print-area">
+                {/* Print-only title */}
+                <div className="hidden print:block mb-4">
+                  <h1 className="text-lg font-bold flex items-center gap-2">
+                    <GitBranch className="h-5 w-5" />
+                    {algoSchemaDialog.title}
+                  </h1>
+                  <p className="text-xs text-muted-foreground mt-1">Mappa visuale del flusso dati: sorgenti, trasformazioni e output.</p>
+                </div>
+                <AlgorithmSchemaView
+                  schema={algoSchemaDialog.schema}
+                  stepPreviews={stepPreviews}
+                  sourcePreviews={sourcePreviews}
+                  onPreviewStep={algoSchemaDialog.language === 'sql' ? handlePreviewStep : undefined}
+                  onPreviewSource={algoSchemaDialog.language === 'sql' ? handlePreviewSource : undefined}
+                />
+              </div>
             ) : algoSchemaDialog.fallbackText ? (
               <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
                 <ReactMarkdown>{algoSchemaDialog.fallbackText}</ReactMarkdown>
               </div>
             ) : null}
           </div>
-          <DialogFooter>
+          <DialogFooter className="print:hidden flex-wrap gap-2 sm:gap-0">
+            {algoSchemaDialog.schema && (
+              <>
+                {algoSchemaDialog.language === 'sql' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                    onClick={() => {
+                      const schema = algoSchemaDialog.schema!;
+                      // Load all step previews
+                      schema.steps.forEach((step, i) => {
+                        if (step.previewQuery && !stepPreviews[i]) {
+                          handlePreviewStep(i, step.previewQuery);
+                        }
+                      });
+                      // Load all source previews (DB sources only)
+                      schema.sources.forEach((src) => {
+                        const isDb = src.type.toLowerCase().includes('sql') || src.type.toLowerCase().includes('database');
+                        if (isDb && !sourcePreviews[src.name]) {
+                          handlePreviewSource(src.name);
+                        }
+                      });
+                    }}
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    Carica tutte le anteprime
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={handleExportPdf}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Stampa / PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={handleExportMarkdown}
+                >
+                  <FileCode2 className="h-3.5 w-3.5" />
+                  Esporta .md
+                </Button>
+              </>
+            )}
             <Button variant="outline" onClick={() => setAlgoSchemaDialog(prev => ({ ...prev, open: false }))}>
               Chiudi
             </Button>

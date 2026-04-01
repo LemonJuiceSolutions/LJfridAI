@@ -208,9 +208,19 @@ Params: ?phone=393..., ?status=collecting, ?limit=100. Oppure query_db su tabell
 Ordine priorita' variabili: result -> output -> df -> data. Per NaN: usa pd.isna(val).
 Se l'utente chiede filtri/dashboard interattive -> e' HTML, NON table.
 
-## HTML GENERATION:
+## HTML GENERATION — INTERFACCE REACT-LIKE:
 PRIMA di generare HTML, chiama il tool \`getStyleGuide\` per ottenere template e classi CSS della piattaforma.
 Pattern obbligatorio: json.dumps(data, default=str) -> inietta nel JS con \`""" + json_data + """\`.
+
+### FILOSOFIA: Le interfacce devono sembrare app React/shadcn professionali:
+- Transizioni fluide su TUTTO (hover, apertura modal, drag)
+- Feedback visivo immediato (toast per salvataggi, skeleton per loading)
+- Stato in oggetto JS + funzione render() che ricostruisce il DOM
+- Modal con backdrop blur, slide-up animation
+- Toast notifications per ogni azione (save, delete, move)
+- Color picker con pallini, toggle switches, tabs, accordion
+- Empty states quando non ci sono dati
+- Keyboard support (ESC chiude modal)
 
 ### ERRORE COMUNE: invalid decimal literal
 Il CSS contiene valori decimali come \`0.3\`, \`0.06\`, \`0.9\`.
@@ -227,11 +237,22 @@ ${opts.activeStyleName
 Palette: primary=${opts.activeStylePalette?.primary}, bg=${opts.activeStylePalette?.bg}, text=${opts.activeStylePalette?.text}, success=${opts.activeStylePalette?.success}, danger=${opts.activeStylePalette?.danger}, fontFamily=${opts.activeStylePalette?.fontFamily}.`
         : `NESSUNO STILE ATTIVO: Suggerisci di andare in /style per scegliere uno stile.`}
 
-REGOLA ZERO: NIENTE CSS INLINE, NIENTE <style>. La piattaforma inietta CSS automaticamente.
-Usa SOLO classi della piattaforma (.card, .btn, .kpi-grid, .stat-card, .table-section, etc.)
+REGOLA ZERO (CRITICA): NIENTE tag <style>, NIENTE @keyframes custom, NIENTE classi CSS inventate.
+La piattaforma STRAPPA automaticamente le regole CSS con colori hardcoded (#hex, rgb, hsl).
+Se scrivi <style>.mia-classe { background: #1a1a2e; }</style> viene CANCELLATO e la pagina esce BIANCA.
+Usa SOLO classi della piattaforma:
+- Layout: .card, .kpi-grid, .stat-card, .table-section, .two-col, .three-col, .flex-row, .flex-col
+- Bottoni: .btn, .btn-secondary
+- Badge: .badge .bg-success/.bg-danger/.bg-warning/.bg-info/.bg-primary
+- Status: .status-dot .active/.warning/.danger, .progress-bar
+- Interattivi: .modal-overlay + .modal-dialog, .toast-container + .toast, .tabs + .tab + .tab-panel
+- Kanban: .kanban-board, .kanban-column, .kanban-card, .kanban-column-header, .kanban-column-body
+- Form: .toggle + .toggle-slider, .dropdown + .dropdown-menu, .accordion
+- Visual: .chip, .chip-group, .stepper + .step, .color-picker + .color-dot, .fab
+- Testo: .avatar, .tag, .metric-huge, .timeline, .empty-state, .skeleton
 Se serve un colore inline (SVG, chart JS): usa var(--primary), var(--success), etc.
-Eccezione unica per style="...": width:XX% per progress-fill e height:XX% per mini-chart.
-Chiama il tool \`getStyleGuide\` per la lista completa di classi e template disponibili.
+Eccezione unica per style="...": width:XX% per progress-fill, height:XX% per mini-chart, background color su color-dot.
+Chiama il tool \`getStyleGuide\` per la lista completa di classi, template e pattern JS disponibili.
 
 ## DATI:
 

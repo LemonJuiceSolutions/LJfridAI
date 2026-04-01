@@ -523,6 +523,80 @@ NON creare CSS custom per le bolle. Usa QUESTE classi.
 
 ---
 
+### TEMPLATE 9: KANBAN BOARD / TASK BOARD
+Quando l'utente chiede una kanban board, task board, board Trello, gestione task visuale:
+\`\`\`html
+<h1>Kanban Board</h1>
+<p class="text-secondary">Trascina le card tra le colonne per aggiornare lo stato</p>
+
+<div class="flex-row mt-md mb-md">
+  <button class="btn" onclick="addCard()">+ Card</button>
+  <button class="btn-secondary" onclick="addColumn()">+ Colonna</button>
+</div>
+
+<div class="kanban-board mt-md" id="board">
+  <div class="kanban-column" data-color="warning" data-col="todo">
+    <div class="kanban-column-header">
+      Da Fare <span class="count" id="count-todo">3</span>
+    </div>
+    <div class="kanban-column-body"
+         ondragover="event.preventDefault(); this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="dropCard(event, this)">
+      <div class="kanban-card" draggable="true" ondragstart="dragCard(event, this)">
+        <button class="kanban-card-delete" onclick="this.parentElement.remove(); updateCounts()">&times;</button>
+        <div class="kanban-card-title">Titolo Task</div>
+        <div class="kanban-card-desc">Descrizione breve del task</div>
+        <div class="kanban-card-footer">
+          <span class="badge bg-warning">Media</span>
+          <span class="tag">Feature</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="kanban-column" data-color="info" data-col="doing">
+    <div class="kanban-column-header">
+      In Corso <span class="count" id="count-doing">2</span>
+    </div>
+    <div class="kanban-column-body"
+         ondragover="event.preventDefault(); this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="dropCard(event, this)">
+      <!-- cards qui -->
+    </div>
+  </div>
+
+  <div class="kanban-column" data-color="success" data-col="done">
+    <div class="kanban-column-header">
+      Completato <span class="count" id="count-done">1</span>
+    </div>
+    <div class="kanban-column-body"
+         ondragover="event.preventDefault(); this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="dropCard(event, this)">
+      <!-- cards qui -->
+    </div>
+  </div>
+</div>
+\`\`\`
+CLASSI KANBAN DISPONIBILI:
+- \`.kanban-board\`: container flex orizzontale scrollabile, mette le colonne affiancate
+- \`.kanban-column\`: colonna singola (280px, flex, sfondo tenue). Usa \`data-color="primary|success|warning|danger|info"\` per il colore header
+- \`.kanban-column-header\`: header colonna con titolo + \`.count\` per il badge conteggio
+- \`.kanban-column-body\`: area scrollabile dove vanno le card. Aggiungi ondragover/ondragleave/ondrop per drag&drop
+- \`.kanban-card\`: card singola con grab cursor, hover shadow, drag rotation. Usa \`draggable="true"\` + \`ondragstart\`
+- \`.kanban-card-title\`: titolo card (bold)
+- \`.kanban-card-desc\`: descrizione card (grigio, piccola)
+- \`.kanban-card-footer\`: footer con badge/tag affiancati
+- \`.kanban-card-delete\`: bottone x che appare al hover (metti \`&times;\` come contenuto)
+- \`.drag-over\`: classe aggiunta automaticamente al body colonna durante il drag
+DRAG & DROP: Usa HTML5 native (draggable, ondragstart, ondragover, ondrop). Salva l'elemento dragged in una variabile globale.
+NON usare localStorage — non e' affidabile nell'iframe. Tieni lo stato in variabili JS.
+Per dati iniziali: inietta con json.dumps() -> JSON.parse() nel JS.
+
+---
+
 ### REGOLE DI COMPOSIZIONE PREMIUM (SEMPRE):
 
 1. **INIZIA SEMPRE con H1 + sottotitolo**: \`<h1>Titolo</h1><p class="text-secondary">Contesto/data</p>\`
@@ -546,14 +620,147 @@ NON creare CSS custom per le bolle. Usa QUESTE classi.
 19. **TIMELINE per cronologie**: usa \`.timeline\` > \`.timeline-item\` per eventi ordinati
 20. **METRIC-HUGE per il numero piu' importante**: un singolo dato hero con classe \`.metric-huge\`
 
-### ⚠️ REMINDER FINALE — ZERO CSS INLINE:
+### COMPONENTI INTERATTIVI AVANZATI (stile React/shadcn):
+
+#### Modal / Dialog:
+\`\`\`html
+<div class="modal-overlay" id="myModal">
+  <div class="modal-dialog">
+    <h3>Titolo Dialog</h3>
+    <label class="font-bold text-sm">Campo</label>
+    <input type="text" placeholder="...">
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal()">Annulla</button>
+      <button class="btn" onclick="saveModal()">Salva</button>
+    </div>
+  </div>
+</div>
+\`\`\`
+Per aprire: \`document.getElementById('myModal').classList.add('open')\`
+Per chiudere: \`document.getElementById('myModal').classList.remove('open')\`
+Click su overlay per chiudere: \`modal.addEventListener('click', e => { if (e.target === modal) closeModal(); })\`
+
+#### Toast / Notifica:
+\`\`\`html
+<div class="toast-container" id="toasts"></div>
+<script>
+function showToast(msg, type) {
+  var t = document.createElement('div');
+  t.className = 'toast ' + (type || 'info');
+  t.textContent = msg;
+  document.getElementById('toasts').appendChild(t);
+  setTimeout(function() { t.style.opacity = '0'; setTimeout(function() { t.remove(); }, 200); }, 3000);
+}
+</script>
+\`\`\`
+Tipi: \`success\`, \`error\`, \`warning\`, \`info\`
+
+#### Tabs (navigazione a schede):
+\`\`\`html
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('tab1')">Tab 1</button>
+  <button class="tab" onclick="switchTab('tab2')">Tab 2</button>
+  <button class="tab" onclick="switchTab('tab3')">Tab 3</button>
+</div>
+<div class="tab-panel active" id="tab1">Contenuto tab 1</div>
+<div class="tab-panel" id="tab2">Contenuto tab 2</div>
+<div class="tab-panel" id="tab3">Contenuto tab 3</div>
+<script>
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  event.target.classList.add('active');
+  document.getElementById(id).classList.add('active');
+}
+</script>
+\`\`\`
+
+#### Toggle Switch:
+\`<label class="toggle"><input type="checkbox" onchange="..."><span class="toggle-slider"></span></label>\`
+
+#### Dropdown Menu:
+\`\`\`html
+<div class="dropdown">
+  <button class="btn-secondary" onclick="this.nextElementSibling.classList.toggle('open')">Opzioni ▾</button>
+  <div class="dropdown-menu">
+    <button class="dropdown-item" onclick="...">Modifica</button>
+    <button class="dropdown-item" onclick="...">Duplica</button>
+    <div class="dropdown-divider"></div>
+    <button class="dropdown-item" onclick="...">Elimina</button>
+  </div>
+</div>
+\`\`\`
+
+#### Accordion / Collapsible:
+\`\`\`html
+<div class="accordion">
+  <div class="accordion-item">
+    <button class="accordion-trigger" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('open')">
+      Sezione 1
+    </button>
+    <div class="accordion-content">Contenuto espandibile...</div>
+  </div>
+</div>
+\`\`\`
+
+#### Stepper / Wizard:
+\`\`\`html
+<div class="stepper">
+  <div class="step completed"><span class="step-circle">1</span><span class="step-label">Dati</span></div>
+  <div class="step active"><span class="step-circle">2</span><span class="step-label">Revisione</span></div>
+  <div class="step"><span class="step-circle">3</span><span class="step-label">Conferma</span></div>
+</div>
+\`\`\`
+
+#### Chip Group (tag rimuovibili):
+\`\`\`html
+<div class="chip-group">
+  <span class="chip">Tag 1 <span class="chip-remove" onclick="this.parentElement.remove()">&times;</span></span>
+  <span class="chip">Tag 2 <span class="chip-remove" onclick="this.parentElement.remove()">&times;</span></span>
+</div>
+\`\`\`
+
+#### Color Picker (pallini):
+\`\`\`html
+<div class="color-picker">
+  <span class="color-dot active" style="background:#3b82f6" onclick="selectColor(this)"></span>
+  <span class="color-dot" style="background:#22c55e" onclick="selectColor(this)"></span>
+  <span class="color-dot" style="background:#ef4444" onclick="selectColor(this)"></span>
+</div>
+\`\`\`
+
+#### FAB (Floating Action Button):
+\`<button class="fab" onclick="...">+</button>\`
+
+---
+
+### FILOSOFIA "REACT-LIKE":
+Quando crei interfacce interattive (board, form complessi, app-like), segui questi principi:
+1. **State in variabili JS**: usa un oggetto STATE globale, poi una funzione \`render()\` che ricostruisce il DOM
+2. **Template via createElement**: per liste dinamiche usa \`document.createElement\` + \`.innerHTML\`, non string concatenation
+3. **Event delegation**: per elementi dinamici, attacca gli handler dopo il render o usa delegazione sull'elemento parent
+4. **Animazioni CSS**: usa le classi piattaforma (\`animation: modalSlideUp\`, \`tabFadeIn\`, etc.) — MAI \`@keyframes\` custom
+5. **Feedback visivo**: ogni azione utente deve avere feedback — toast per salvataggi, hover states, transition su tutto
+6. **Loading states**: mostra .skeleton o spinner durante caricamenti
+7. **Empty states**: usa \`.empty-state\` quando non ci sono dati
+8. **Keyboard support**: ESC per chiudere modal/dropdown, Enter per confermare
+
+### ⚠️ REMINDER FINALE — ZERO CSS CUSTOM:
+ATTENZIONE: La piattaforma STRAPPA automaticamente le regole CSS con colori hardcoded (#hex, rgb, hsl).
+Se scrivi \`<style>.mia-classe { background: #1a1a2e; }</style>\` viene CANCELLATO e la pagina esce BIANCA.
+
 PRIMA di restituire l'HTML, CONTROLLA che:
-- NON contenga MAI \`style="..."\` (eccezione: width/height % per progress-fill e mini-chart bar)
-- NON contenga MAI \`<style>...</style>\`
-- NON contenga MAI colori hardcoded (#hex, rgb(), hsl())
+- NON contenga MAI \`<style>...</style>\` — TUTTO il CSS necessario e' gia' iniettato dalla piattaforma
+- NON contenga MAI \`style="..."\` (eccezione: width/height % per progress-fill, mini-chart bar, e background color sui color-dot)
+- NON contenga MAI colori hardcoded (#hex, rgb(), hsl()) — usa SOLO var(--primary), var(--success), etc.
+- NON contenga MAI \`@keyframes\` custom — la piattaforma ha gia' tutte le animazioni necessarie
+- NON inventare classi CSS (es. .board-container, .my-card-item) — usa SOLO le classi documentate sopra
 - OGNI sezione sia wrappata in \`.card\` con \`<h3>\`
 - OGNI dato numerico importante sia in \`.stat-card\` dentro \`.kpi-grid\`
 - OGNI tabella sia in \`.table-section\`
-Se violi queste regole, la piattaforma sovrascrive tutto con !important e il risultato sara' ROTTO.
+- OGNI modal usi \`.modal-overlay\` + \`.modal-dialog\` (NON creare CSS custom per modal)
+- OGNI notifica usi \`.toast-container\` + \`.toast\` (NON creare CSS custom per toast)
+- OGNI board/kanban usi le classi \`.kanban-*\` (NON creare CSS custom per board)
+Se violi queste regole, il CSS viene strippato e il risultato sara' una PAGINA BIANCA.
 `.trim();
 }

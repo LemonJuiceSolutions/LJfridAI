@@ -23,6 +23,8 @@ import {
     BarChart3,
     Save,
     Coins,
+    Copy,
+    ClipboardCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -593,6 +595,30 @@ export function ChatBotAgent() {
         }]);
     };
 
+    const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+    const [copiedAll, setCopiedAll] = useState(false);
+
+    const copyToClipboard = async (text: string, index?: number) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            if (index !== undefined) {
+                setCopiedIndex(index);
+                setTimeout(() => setCopiedIndex(null), 1500);
+            } else {
+                setCopiedAll(true);
+                setTimeout(() => setCopiedAll(false), 1500);
+            }
+        } catch { /* ignore */ }
+    };
+
+    const copyFullConversation = () => {
+        const text = messages.map(m => {
+            const role = m.role === 'user' ? 'Tu' : 'FridAI';
+            return `[${role}]\n${m.content}`;
+        }).join('\n\n---\n\n');
+        copyToClipboard(text);
+    };
+
     const openCorrectionDialog = (messageIndex: number) => {
         setCorrectionMessageIndex(messageIndex);
         setCorrectionText('');
@@ -802,6 +828,11 @@ export function ChatBotAgent() {
                             </div>
                         </div>
                         <div className="flex items-center gap-1">
+                            {messages.length > 1 && (
+                                <Button variant="ghost" size="icon" onClick={copyFullConversation} className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary" title="Copia conversazione">
+                                    {copiedAll ? <ClipboardCheck className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                                </Button>
+                            )}
                             <Button variant="ghost" size="icon" onClick={clearChat} className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive">
                                 <Trash2 className="h-4 w-4" />
                             </Button>
@@ -874,8 +905,32 @@ export function ChatBotAgent() {
                                                 )}
                                             </div>
                                         </div>
+                                        {/* Copy button for user messages */}
+                                        {m.role === 'user' && (
+                                            <div className="flex items-center gap-1 mt-1">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
+                                                    onClick={() => copyToClipboard(safeContent, i)}
+                                                >
+                                                    {copiedIndex === i ? <ClipboardCheck className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                                                    {copiedIndex === i ? 'Copiato' : 'Copia'}
+                                                </Button>
+                                            </div>
+                                        )}
+                                        {/* Buttons for assistant messages */}
                                         {m.role === 'assistant' && i > 0 && (
                                             <div className="flex items-center gap-1">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
+                                                    onClick={() => copyToClipboard(safeContent, i)}
+                                                >
+                                                    {copiedIndex === i ? <ClipboardCheck className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                                                    {copiedIndex === i ? 'Copiato' : 'Copia'}
+                                                </Button>
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"

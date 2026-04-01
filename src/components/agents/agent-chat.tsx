@@ -31,6 +31,8 @@ import {
   Settings2,
   Check,
   ChevronsUpDown,
+  Copy,
+  ClipboardCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1278,6 +1280,38 @@ export function AgentChat({
     setActiveVersionIndex(-1);
   };
 
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [copiedAll, setCopiedAll] = useState(false);
+
+  const copyToClipboard = useCallback(async (text: string, index?: number) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (index !== undefined) {
+        setCopiedIndex(index);
+        setTimeout(() => setCopiedIndex(null), 1500);
+      } else {
+        setCopiedAll(true);
+        setTimeout(() => setCopiedAll(false), 1500);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const formatMessageForCopy = useCallback((m: AgentChatMessage) => {
+    let text = m.content;
+    if (m.scriptSnapshot) {
+      text += '\n\n```\n' + m.scriptSnapshot + '\n```';
+    }
+    return text;
+  }, []);
+
+  const copyFullConversation = useCallback(() => {
+    const text = messages.map(m => {
+      const role = m.role === 'user' ? 'Tu' : `Agente ${agentType === 'sql' ? 'SQL' : 'Python'}`;
+      return `[${role}]\n${formatMessageForCopy(m)}`;
+    }).join('\n\n---\n\n');
+    copyToClipboard(text);
+  }, [messages, agentType, copyToClipboard, formatMessageForCopy]);
+
   const toggleDeleteSelection = (versionIndex: number) => {
     // Can't delete the "Originale" version (index 0)
     if (versionIndex === 0) return;
@@ -1503,6 +1537,11 @@ export function AgentChat({
                   </TooltipContent>
                 </UiTooltip>
               </TooltipProvider>
+            )}
+            {messages.length > 0 && (
+              <Button variant="ghost" size="icon" onClick={copyFullConversation} className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary" title="Copia conversazione">
+                {copiedAll ? <ClipboardCheck className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+              </Button>
             )}
             <Button variant="ghost" size="icon" onClick={clearConversation} className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive">
               <Trash2 className="h-4 w-4" />
@@ -1804,8 +1843,32 @@ export function AgentChat({
                       })()}
                     </div>
                   </div>
+                  {/* Copy button for user messages */}
+                  {m.role === 'user' && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
+                        onClick={() => copyToClipboard(m.content, i)}
+                      >
+                        {copiedIndex === i ? <ClipboardCheck className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                        {copiedIndex === i ? 'Copiato' : 'Copia'}
+                      </Button>
+                    </div>
+                  )}
+                  {/* Buttons for assistant messages */}
                   {m.role === 'assistant' && (
                     <div className="flex items-center gap-2 mt-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
+                        onClick={() => copyToClipboard(formatMessageForCopy(m), i)}
+                      >
+                        {copiedIndex === i ? <ClipboardCheck className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                        {copiedIndex === i ? 'Copiato' : 'Copia'}
+                      </Button>
                       {i > 0 && (
                         <Button
                           variant="ghost"

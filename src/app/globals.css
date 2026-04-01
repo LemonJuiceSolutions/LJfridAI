@@ -226,3 +226,70 @@ blockquote {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.5);
 }
+
+/* ─── Algorithm Schema Print Styles ─────────────────────────────────────── */
+@media print {
+  /* Hide EVERYTHING by default */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Show only the schema print area and its children */
+  .algo-schema-print-area,
+  .algo-schema-print-area * {
+    visibility: visible !important;
+  }
+
+  /* Position the print area to fill the page */
+  .algo-schema-print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 1rem !important;
+    background: white !important;
+  }
+
+  /* Dialog overlay — transparent */
+  [data-radix-dialog-overlay] {
+    display: none !important;
+  }
+
+  /* Dialog content — remove constraints for print */
+  .algo-schema-dialog-print {
+    position: static !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    width: 100% !important;
+    height: auto !important;
+    border: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+    overflow: visible !important;
+  }
+
+  /* Schema content styles for print */
+  .algo-schema-print {
+    overflow: visible !important;
+  }
+
+  .algo-schema-print .rounded-xl {
+    page-break-inside: avoid;
+  }
+
+  /* Force light colors for print */
+  .algo-schema-print-area * {
+    color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide interactive elements */
+  .print\:hidden {
+    display: none !important;
+    visibility: hidden !important;
+  }
+}

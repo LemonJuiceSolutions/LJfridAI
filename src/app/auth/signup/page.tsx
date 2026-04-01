@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,18 @@ import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
 export default function SignUpPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-violet-950 via-indigo-950 to-slate-950 p-4">
+                <Loader2 className="h-8 w-8 animate-spin text-white" />
+            </div>
+        }>
+            <SignUpContent />
+        </Suspense>
+    );
+}
+
+function SignUpContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const token = searchParams.get('token');
