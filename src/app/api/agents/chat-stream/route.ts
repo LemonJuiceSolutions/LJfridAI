@@ -195,6 +195,43 @@ FUNZIONI BUILT-IN: query_db(sql) -> DataFrame pandas
 API: fetch('/api/whatsapp/sessions?flat=true') -> {success, count, data: [{session_id, phone, role, content, timestamp, session_status}]}
 Params: ?phone=393..., ?status=collecting, ?limit=100. Oppure query_db su tabella WhatsAppSession (PostgreSQL).
 
+## LEMLIST API (se connettore Lemlist selezionato):
+Env vars: LEMLIST_API_KEY, LEMLIST_BASE_URL (https://api.lemlist.com/api)
+Auth: Basic con username vuoto e API key come password.
+\`\`\`python
+import requests, os, base64
+api_key = os.environ.get('LEMLIST_API_KEY', '')
+base_url = os.environ.get('LEMLIST_BASE_URL', 'https://api.lemlist.com/api')
+auth = ('', api_key)  # requests gestisce Basic auth con tupla
+
+# Lista campagne
+campaigns = requests.get(f'{base_url}/campaigns', auth=auth).json()
+
+# Statistiche campagna
+stats = requests.get(f'{base_url}/campaigns/{campaign_id}/stats', auth=auth).json()
+
+# Aggiungi lead a campagna
+requests.post(f'{base_url}/campaigns/{campaign_id}/leads/{email}', auth=auth,
+    json={'firstName': 'Mario', 'lastName': 'Rossi', 'companyName': 'Acme'})
+
+# Pausa/resume lead
+requests.post(f'{base_url}/campaigns/{campaign_id}/leads/{email}/pause', auth=auth)
+requests.post(f'{base_url}/campaigns/{campaign_id}/leads/{email}/resume', auth=auth)
+
+# Segna come interessato
+requests.post(f'{base_url}/campaigns/{campaign_id}/leads/{email}/interested', auth=auth)
+
+# Aggiorna variabili custom
+requests.patch(f'{base_url}/campaigns/{campaign_id}/leads/{email}', auth=auth,
+    json={'customField': 'valore'})
+
+# Elimina/unsub lead
+requests.delete(f'{base_url}/campaigns/{campaign_id}/leads/{email}?action=unsubscribe', auth=auth)
+
+# Export campagna
+requests.get(f'{base_url}/campaigns/{campaign_id}/export', auth=auth)
+\`\`\`
+
 ## DIVIETI ASSOLUTI:
 - NO query SQL raw fuori da query_db(). NO pyodbc/sqlalchemy/sqlite3.
 - Se df vuoto -> USA query_db(). NON dire "collega nodo upstream".

@@ -866,7 +866,7 @@ function DiagramInner({ map, connectorId }: { map: DatabaseMap; connectorId: str
 }
 
 // ─── Main export ────────────────────────────────────────────────────────────
-export function DatabaseERDiagram({ map: rawMap, connectorId }: { map: DatabaseMap; connectorId: string }) {
+export default function DatabaseERDiagram({ map: rawMap, connectorId }: { map: DatabaseMap; connectorId: string }) {
     // Filter out empty tables (0 rows AND 0 columns)
     const map = useMemo(() => {
         const emptySet = new Set(rawMap.tables.filter(t => t.rowCount === 0 && t.columns.length === 0).map(t => t.fullName));

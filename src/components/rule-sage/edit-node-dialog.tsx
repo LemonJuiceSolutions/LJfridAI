@@ -39,7 +39,7 @@ import { Play, Database, FileCode, FileCode2, Save, X, RotateCcw, Plus, Trash2, 
 import { Textarea } from '../ui/textarea';
 import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, EmailActionConfig, AIConfig, ExternalAgentConfig } from '@/lib/types';
 import { Input } from '../ui/input';
-import _ from 'lodash';
+import cloneDeep from 'lodash/cloneDeep';
 import { useToast } from '@/hooks/use-toast';
 import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction, exportTableToSqlAction, fetchTableDataAction, executeEmailAction, getAuthenticatedUser, processDescriptionAction, rephraseQuestionAction, updateTreeNodeAction, fetchOpenRouterModelsAction } from '@/app/actions';
 import { sendEmailWithConnectorAction, sendTestEmailWithDataAction } from '@/app/actions/connectors';
@@ -1000,7 +1000,7 @@ export default function EditNodeDialog({
   const handleStartEditLink = (index: number) => {
     setEditingLinkIndex(index);
     const linkToEdit = links[index];
-    setEditingLink(_.cloneDeep(linkToEdit));
+    setEditingLink(cloneDeep(linkToEdit));
   };
 
   const handleCancelEditLink = () => {
@@ -1029,7 +1029,7 @@ export default function EditNodeDialog({
   const handleStartEditTrigger = (index: number) => {
     setEditingTriggerIndex(index);
     const triggerToEdit = triggers[index];
-    setEditingTrigger(_.cloneDeep(triggerToEdit));
+    setEditingTrigger(cloneDeep(triggerToEdit));
   };
 
   const handleCancelEditTrigger = () => {
@@ -5371,6 +5371,7 @@ export default function EditNodeDialog({
                         existingSchedule={nodeSchedules['EMAIL_SEND']}
                         taskConfigProvider={() => ({
                           connectorId: emailConfig?.connectorId,
+                          sqlConnectorId: sqlConnectorId, // SQL connector for {{TABELLA:...}} placeholders
                           to: emailConfig?.to,
                           cc: emailConfig?.cc,
                           bcc: emailConfig?.bcc,
@@ -5378,6 +5379,14 @@ export default function EditNodeDialog({
                           body: emailConfig?.body,
                           contextTables: availableInputTables,
                           attachments: safeEmailAttachments,
+                          selectedTables: emailAttachments?.tablesInBody?.map((name: string) => {
+                            const node = availableInputTables.find(t => (t.allNames || [t.name]).includes(name));
+                            return node ? { name, query: node.sqlQuery, inBody: true, pipelineDependencies: node.pipelineDependencies } : { name, inBody: true };
+                          }) || [],
+                          selectedPythonOutputs: [...(emailAttachments?.pythonOutputsInBody || []), ...(emailAttachments?.pythonOutputsAsAttachment || [])].map((name: string) => {
+                            const node = availableInputTables.find(t => (t.allNames || [t.name]).includes(name));
+                            return node ? { name, code: node.pythonCode, outputType: node.pythonOutputType || 'table', connectorId: node.connectorId, inBody: (emailAttachments?.pythonOutputsInBody || []).includes(name), asAttachment: (emailAttachments?.pythonOutputsAsAttachment || []).includes(name), pipelineDependencies: node.pipelineDependencies } : { name, inBody: true };
+                          }) || [],
                         })}
                         onScheduleChanged={loadNodeSchedules}
                       />

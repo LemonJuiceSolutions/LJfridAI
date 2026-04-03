@@ -6,7 +6,6 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, BrainCircuit, Loader2, Pencil, Check, GitMerge, Trash2, RefreshCw, Eraser } from 'lucide-react';
 import Link from 'next/link';
-import _ from 'lodash';
 
 import { getTreeAction, executeConsolidationAction, getStandardizationDataAction, updateTreeNodeAction, regenerateNaturalLanguageAction, clearPreviewDataAction } from '@/app/actions';
 import Image from 'next/image';

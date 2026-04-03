@@ -20,7 +20,7 @@ import { ConnectorsManager } from './connectors-manager';
 import { Users, UserPlus, Copy, UserSearch } from 'lucide-react';
 import {
     getLeadGenApiKeysAction, saveLeadGenApiKeysAction,
-    testApolloApiKeyAction, testHunterApiKeyAction, testSerpApiKeyAction, testApifyApiKeyAction, testGroqApiKeyAction, testWhatsAppAction
+    testApolloApiKeyAction, testHunterApiKeyAction, testSerpApiKeyAction, testApifyApiKeyAction, testGroqApiKeyAction, testVibeProspectApiKeyAction, testFirecrawlApiKeyAction, testWhatsAppAction
 } from '@/actions/lead-generator';
 import { Badge } from '@/components/ui/badge';
 import { uploadFile, listFiles, deleteFile, type FileInfo } from '@/lib/storage-client';
@@ -52,6 +52,8 @@ export default function SettingsPage() {
     const [leadGenSerpApi, setLeadGenSerpApi] = useState('');
     const [leadGenApify, setLeadGenApify] = useState('');
     const [leadGenGroq, setLeadGenGroq] = useState('');
+    const [leadGenVibeProspect, setLeadGenVibeProspect] = useState('');
+    const [leadGenFirecrawl, setLeadGenFirecrawl] = useState('');
     const [isLeadGenSaving, setIsLeadGenSaving] = useState(false);
 
     // Provider API Test State
@@ -61,11 +63,15 @@ export default function SettingsPage() {
     const [serpApiTest, setSerpApiTest] = useState<ApiTestResult | null>(null);
     const [apifyTest, setApifyTest] = useState<ApiTestResult | null>(null);
     const [groqTest, setGroqTest] = useState<ApiTestResult | null>(null);
+    const [vibeProspectTest, setVibeProspectTest] = useState<ApiTestResult | null>(null);
+    const [firecrawlTest, setFirecrawlTest] = useState<ApiTestResult | null>(null);
     const [isTestingApollo, setIsTestingApollo] = useState(false);
     const [isTestingHunter, setIsTestingHunter] = useState(false);
     const [isTestingSerpApi, setIsTestingSerpApi] = useState(false);
     const [isTestingApify, setIsTestingApify] = useState(false);
     const [isTestingGroq, setIsTestingGroq] = useState(false);
+    const [isTestingVibeProspect, setIsTestingVibeProspect] = useState(false);
+    const [isTestingFirecrawl, setIsTestingFirecrawl] = useState(false);
 
     // WABA Test State
     const [testWABANumber, setTestWABANumber] = useState('');
@@ -142,6 +148,8 @@ export default function SettingsPage() {
                 if (res.keys.serpApi) setLeadGenSerpApi(res.keys.serpApi);
                 if (res.keys.apify) setLeadGenApify(res.keys.apify);
                 if (res.keys.groq) setLeadGenGroq(res.keys.groq);
+                if (res.keys.vibeProspect) setLeadGenVibeProspect(res.keys.vibeProspect);
+                if (res.keys.firecrawl) setLeadGenFirecrawl(res.keys.firecrawl);
             }
         });
     }, []);
@@ -993,6 +1001,58 @@ export default function SettingsPage() {
                                 <p className="text-[9px] text-muted-foreground">Web scraping. Free: $5/mese crediti.</p>
                             </div>
 
+                            {/* Vibe Prospecting (Explorium) */}
+                            <div className="space-y-1.5 p-2.5 border rounded-lg">
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="vibe-prospect-key" className="text-xs">Vibe Prospecting</Label>
+                                    <a href="https://app.vibeprospecting.ai" target="_blank" rel="noopener noreferrer" className="text-[9px] text-muted-foreground hover:underline flex items-center gap-0.5">vibeprospecting.ai <ExternalLink className="h-2.5 w-2.5" /></a>
+                                </div>
+                                <div className="flex gap-1.5">
+                                    <Input id="vibe-prospect-key" type="password" placeholder="API key..." value={leadGenVibeProspect} onChange={(e) => { setLeadGenVibeProspect(e.target.value); setVibeProspectTest(null); }} className="flex-1 h-7 text-xs" />
+                                    <Button variant="secondary" size="sm" className="h-7 px-2" disabled={!leadGenVibeProspect || isTestingVibeProspect} onClick={async () => { setIsTestingVibeProspect(true); setVibeProspectTest(null); try { setVibeProspectTest(await testVibeProspectApiKeyAction(leadGenVibeProspect)); } catch { setVibeProspectTest({ success: false, message: 'Errore di connessione' }); } setIsTestingVibeProspect(false); }}>
+                                        {isTestingVibeProspect ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}<span className="ml-1 text-[10px]">Test</span>
+                                    </Button>
+                                </div>
+                                {vibeProspectTest && (
+                                    <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${vibeProspectTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {vibeProspectTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
+                                        <div><p className="font-medium">{vibeProspectTest.message}</p>{vibeProspectTest.quota && (<div className="mt-0.5 flex flex-wrap gap-1"><Badge variant="outline" className="text-[8px] h-4">{vibeProspectTest.quota.plan}</Badge>{vibeProspectTest.quota.extra && <Badge variant="secondary" className="text-[8px] h-4">{vibeProspectTest.quota.extra}</Badge>}</div>)}</div>
+                                    </div>
+                                )}
+                                <ol className="text-[9px] text-muted-foreground list-decimal list-inside space-y-0.5 pt-0.5">
+                                    <li>Registrati gratis su <a href="https://app.vibeprospecting.ai/signup" target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:underline">app.vibeprospecting.ai/signup</a></li>
+                                    <li>Recupera la API key da <a href="https://admin.explorium.ai" target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:underline">admin.explorium.ai</a> → API Key</li>
+                                    <li>Incolla la chiave qui sopra e salva</li>
+                                </ol>
+                                <p className="text-[9px] text-muted-foreground">80M+ aziende, intent data, email verificate. Piano free disponibile.</p>
+                            </div>
+
+                            {/* Firecrawl */}
+                            <div className="space-y-1.5 p-2.5 border rounded-lg">
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="firecrawl-key" className="text-xs">Firecrawl</Label>
+                                    <a href="https://www.firecrawl.dev" target="_blank" rel="noopener noreferrer" className="text-[9px] text-muted-foreground hover:underline flex items-center gap-0.5">firecrawl.dev <ExternalLink className="h-2.5 w-2.5" /></a>
+                                </div>
+                                <div className="flex gap-1.5">
+                                    <Input id="firecrawl-key" type="password" placeholder="fc-xxxxxxxxxxxx" value={leadGenFirecrawl} onChange={(e) => { setLeadGenFirecrawl(e.target.value); setFirecrawlTest(null); }} className="flex-1 h-7 text-xs" />
+                                    <Button variant="secondary" size="sm" className="h-7 px-2" disabled={!leadGenFirecrawl || isTestingFirecrawl} onClick={async () => { setIsTestingFirecrawl(true); setFirecrawlTest(null); try { setFirecrawlTest(await testFirecrawlApiKeyAction(leadGenFirecrawl)); } catch { setFirecrawlTest({ success: false, message: 'Errore di connessione' }); } setIsTestingFirecrawl(false); }}>
+                                        {isTestingFirecrawl ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}<span className="ml-1 text-[10px]">Test</span>
+                                    </Button>
+                                </div>
+                                {firecrawlTest && (
+                                    <div className={`p-2 rounded-md flex items-start gap-1.5 text-[10px] ${firecrawlTest.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+                                        {firecrawlTest.success ? <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" /> : <XCircle className="h-3 w-3 mt-0.5 shrink-0" />}
+                                        <div><p className="font-medium">{firecrawlTest.message}</p>{firecrawlTest.quota && (<div className="mt-0.5 flex flex-wrap gap-1"><Badge variant="outline" className="text-[8px] h-4">{firecrawlTest.quota.plan}</Badge>{firecrawlTest.quota.extra && <Badge variant="secondary" className="text-[8px] h-4">{firecrawlTest.quota.extra}</Badge>}</div>)}</div>
+                                    </div>
+                                )}
+                                <ol className="text-[9px] text-muted-foreground list-decimal list-inside space-y-0.5 pt-0.5">
+                                    <li>Registrati su <a href="https://www.firecrawl.dev" target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:underline">firecrawl.dev</a></li>
+                                    <li>Vai in <span className="font-medium text-foreground">Dashboard → API Keys</span></li>
+                                    <li>Incolla la chiave qui sopra e salva</li>
+                                </ol>
+                                <p className="text-[9px] text-muted-foreground">Web scraping AI. Free: 500 crediti (no carta).</p>
+                            </div>
+
                             {/* Groq */}
                             <div className="space-y-1.5 p-2.5 border rounded-lg">
                                 <div className="flex items-center justify-between">
@@ -1031,6 +1091,8 @@ export default function SettingsPage() {
                                             serpApi: leadGenSerpApi || undefined,
                                             apify: leadGenApify || undefined,
                                             groq: leadGenGroq || undefined,
+                                            vibeProspect: leadGenVibeProspect || undefined,
+                                            firecrawl: leadGenFirecrawl || undefined,
                                         });
                                         if (result.success) {
                                             toast({ title: "Salvato", description: "Chiavi API Provider salvate." });

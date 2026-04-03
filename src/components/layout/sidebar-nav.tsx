@@ -59,14 +59,14 @@ const fridaiNavItems = [
 import * as LucideIcons from 'lucide-react';
 import { useNavigation } from '@/hooks/use-navigation';
 
-import { useLayout } from '@/components/providers/layout-provider';
+import { useSidebar } from '@/components/providers/layout-provider';
 
 export function SidebarNav() {
     const pathname = usePathname();
     const { data: session } = useSession();
     const { editMode, setEditMode } = useEditMode();
     const { navItems, settingsNavItems, isLoading } = useNavigation();
-    const { isSidebarOpen, toggleSidebar } = useLayout();
+    const { isSidebarOpen, toggleSidebar } = useSidebar();
     const [missedTasksCount, setMissedTasksCount] = useState<number>(0);
 
     useEffect(() => {
@@ -178,6 +178,7 @@ export function SidebarNav() {
                                     href={item.href}
                                     className={cn(
                                         "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
+                                        item.href === '/chatbot' && "mb-2",
                                         isActive
                                             ? "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
                                             : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-900 hover:text-slate-900 dark:hover:text-white"

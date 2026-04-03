@@ -28,6 +28,7 @@ const CONNECTOR_TYPES = [
     { value: 'SHAREPOINT', label: 'Excel / SharePoint', icon: FileSpreadsheet },
     { value: 'SMTP', label: 'Email SMTP', icon: Mail },
     { value: 'WHATSAPP', label: 'WhatsApp Business', icon: MessageSquare },
+    { value: 'LEMLIST', label: 'Lemlist', icon: Send },
 ];
 
 // Default Azure AD credentials for SharePoint integration
@@ -1037,6 +1038,32 @@ export function ConnectorsManager() {
                                 )}
                             </div>
                         )}
+                    </>
+                );
+            case 'LEMLIST':
+                return (
+                    <>
+                        <div className="space-y-2">
+                            <Label>API Key *</Label>
+                            <Input type="password" value={configData.apiKey || ''} onChange={e => setConfigData({ ...configData, apiKey: e.target.value })} placeholder="lem_xxxxxxxxxxxx" />
+                            <p className="text-xs text-muted-foreground">
+                                Da <a href="https://app.lemlist.com/settings/integrations" target="_blank" rel="noopener noreferrer" className="underline font-medium">app.lemlist.com</a> → Settings → Integrations → API
+                            </p>
+                        </div>
+                        <div className="p-3 rounded-md bg-purple-50 dark:bg-purple-950 text-purple-800 dark:text-purple-200 text-xs space-y-1.5">
+                            <p className="font-bold text-sm">Lemlist API — cosa puoi fare da Python:</p>
+                            <ul className="list-disc list-inside space-y-0.5">
+                                <li>Listare campagne e statistiche</li>
+                                <li>Aggiungere/rimuovere lead a campagne</li>
+                                <li>Pause/resume lead e campagne</li>
+                                <li>Esportare risultati campagne</li>
+                                <li>Aggiornare variabili custom sui lead</li>
+                            </ul>
+                            <p className="mt-1.5 font-medium">Variabili Python disponibili:</p>
+                            <code className="block bg-purple-100 dark:bg-purple-900 rounded p-1.5 text-[10px]">
+                                LEMLIST_API_KEY, LEMLIST_BASE_URL
+                            </code>
+                        </div>
                     </>
                 );
             default:

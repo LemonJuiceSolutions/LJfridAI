@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useActiveUnifiedStyle } from '@/hooks/use-active-style';
 import { PipelineExecutionDialog } from '@/components/widgets/builder/PipelineExecutionDialog';
 import Link from 'next/link';
-import _ from 'lodash';
+import get from 'lodash/get';
 
 interface PreviewWidgetRendererProps {
     treeId: string;
@@ -110,7 +110,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                     const foundPath = findPathById(jsonTree, nodeId);
                     if (foundPath) {
                         const lodashPath = foundPath.replace(/^root\.?/, '');
-                        const treeNode = lodashPath ? _.get(jsonTree, lodashPath) : jsonTree;
+                        const treeNode = lodashPath ? get(jsonTree, lodashPath) : jsonTree;
                         // Merge: cache data takes priority, tree JSON fills gaps
                         node = node ? { ...treeNode, ...node } : treeNode;
                         setNodePath(foundPath);

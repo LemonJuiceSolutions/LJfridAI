@@ -13,7 +13,12 @@ import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import sql from 'mssql';
 
-import _ from 'lodash';
+import cloneDeep from 'lodash/cloneDeep';
+import isEqual from 'lodash/isEqual';
+import omit from 'lodash/omit';
+import set from 'lodash/set';
+import uniqBy from 'lodash/uniqBy';
+import unset from 'lodash/unset';
 import { nanoid } from 'nanoid';
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
@@ -1059,7 +1064,7 @@ export async function updateTreeNodeAction({
             jsonTree = { ...jsonTree, ...parsedNodeData };
         } else {
             if (parsedNodeData === null) { // Deletion case
-                _.unset(jsonTree, lodashPath);
+                unset(jsonTree, lodashPath);
             } else {
                 // Circular Dependency Check
                 const newRefs = extractSubTreeRefs(parsedNodeData);
@@ -1074,7 +1079,7 @@ export async function updateTreeNodeAction({
                         return { success: false, error: error };
                     }
                 }
-                _.set(jsonTree, lodashPath, parsedNodeData);
+                set(jsonTree, lodashPath, parsedNodeData);
             }
         }
 
@@ -1215,7 +1220,7 @@ Genera la descrizione in linguaggio naturale seguendo le regole sopra.`;
         } else {
             // Use Genkit/Gemini
             const { output } = await ai.generate({
-                model: 'googleai/gemini-1.5-flash-latest',
+                model: 'googleai/gemini-2.0-flash',
                 prompt: userPrompt,
                 system: systemPrompt,
                 output: {
@@ -1275,7 +1280,7 @@ export interface DiagnoseProblemActionInput {
     history: string | { speaker: 'user' | 'bot', text: string }[];
 }
 
-export async function diagnoseProblemAction(input: Omit<DiagnoseProblemActionInput, 'decisionTree'> & { specificTreeId?: string; previousNodeId?: string }, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: DiagnoseProblemOutput | null; error: string | null; }> {
+export async function diagnoseProblemAction(input: Omit<DiagnoseProblemActionInput, 'decisionTree'> & { specificTreeId?: string; previousNodeId?: string }, openRouterConfig?: { apiKey: string, model: string }, claudeCliConfig?: { model: string }): Promise<{ data: DiagnoseProblemOutput | null; error: string | null; }> {
     try {
         const allTreesResult = await getTreesAction(); // Fetch ALL trees for diagnosis context
 
@@ -1347,10 +1352,41 @@ Diagnostica il prossimo passo.`;
                     treeName: result.treeName
                 }
             }
+        } else if (claudeCliConfig) {
+            // ─── Claude CLI path ───────────────────────────────────────────
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+            const claudePath = process.env.CLAUDE_PATH || '/opt/homebrew/bin/claude';
+
+            const cliPrompt = `<system>\n${systemPrompt}\n\nRispondi SOLO con JSON valido nel formato specificato. Nessun testo extra.\n</system>\n\n${userPrompt}`;
+
+            try {
+                const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
+                const fullPath = [...extraPaths, process.env.PATH || ''].join(':');
+                const { stdout } = await execAsync(
+                    `${claudePath} --model ${claudeCliConfig.model} -p ${JSON.stringify(cliPrompt)}`,
+                    { timeout: 60000, maxBuffer: 1024 * 1024, env: { ...process.env, PATH: fullPath } }
+                );
+                // Parse JSON from CLI output (may have extra text around it)
+                const jsonMatch = stdout.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    diagnosisOutput = {
+                        question: parsed.question || parsed.text || "Non ho capito, puoi ripetere?",
+                        options: parsed.options,
+                        isFinalDecision: parsed.isFinalDecision || false,
+                        treeName: parsed.treeName
+                    };
+                }
+            } catch (cliError: any) {
+                console.error('Claude CLI diagnose error:', cliError);
+                throw new Error(`Claude CLI errore: ${cliError.message}`);
+            }
         } else {
             // Use Genkit/Gemini
             const { output } = await ai.generate({
-                model: 'googleai/gemini-1.5-flash-latest',
+                model: 'googleai/gemini-2.0-flash',
                 prompt: userPrompt,
                 system: systemPrompt,
                 output: {
@@ -1647,7 +1683,8 @@ export async function executeSqlPreviewAction(
                             'table',
                             {}, // inputData (handled inside by dependencies?) No, executePythonPreviewAction handles dependencies param
                             dep.pipelineDependencies, // Recursive dependencies
-                            dep.connectorId // Pass connector ID for HubSpot/other API tokens
+                            dep.connectorId, // Pass connector ID for HubSpot/other API tokens
+                            _bypassAuth // Pass through bypass flag (needed for scheduler context)
                         );
 
                         if (!pythonResult.success) {
@@ -2519,6 +2556,14 @@ export async function executePythonPreviewAction(
                 if (config.password) envVars['DB_PASSWORD'] = config.password;
                 if (config.username) envVars['DB_USERNAME'] = config.username;
 
+                // Handle Lemlist
+                if (connector.type === 'LEMLIST') {
+                    if (config.apiKey) {
+                        envVars['LEMLIST_API_KEY'] = config.apiKey;
+                        envVars['LEMLIST_BASE_URL'] = 'https://api.lemlist.com/api';
+                    }
+                }
+
                 // Handle SharePoint Auth
                 if (connector.type === 'SHAREPOINT') {
                     const tenantId = config.tenantId || "0089ad7d-e10f-49b4-bf68-60e706423382";
@@ -2921,20 +2966,23 @@ export async function getVariablesAction(): Promise<{ data: Variable[] | null; e
 
         // Fetch only the fields needed for variable usage tracking (id, name, jsonDecisionTree)
         // Excludes heavy fields like naturalLanguageDecisionTree, questionsScript, description
-        let treesData;
-        if (serverCache.trees && (now - serverCache.treesTimestamp) < serverCache.CACHE_DURATION) {
-            treesData = serverCache.trees;
-        } else {
-            treesData = await db.tree.findMany({
+        const cachedTrees = (serverCache.trees && (now - serverCache.treesTimestamp) < serverCache.CACHE_DURATION)
+            ? serverCache.trees
+            : null;
+
+        const treesPromise = cachedTrees
+            ? Promise.resolve(cachedTrees)
+            : db.tree.findMany({
                 where: { companyId: user.companyId },
                 select: { id: true, name: true, jsonDecisionTree: true, companyId: true }
             });
-        }
 
-        const variablesData = await db.variable.findMany({
+        const variablesPromise = db.variable.findMany({
             where: { companyId: user.companyId },
             orderBy: { name: 'asc' }
         });
+
+        const [treesData, variablesData] = await Promise.all([treesPromise, variablesPromise]);
 
         const variables: Variable[] = variablesData.map(v => ({
             id: v.id,
@@ -3194,7 +3242,7 @@ export async function executeConsolidationAction(
             // Fix: Use provided ID if available (for merges OR restoring orphans), otherwise gen new
             const varToSaveId = action.dbVarId ? action.dbVarId : nanoid();
 
-            const cleanFinalOptions = _.uniqBy(
+            const cleanFinalOptions = uniqBy(
                 (action.finalOptions || []).map(opt => ({ ...opt, id: opt.id || nanoid(8) }))
                     .filter(v => v && v.name && v.name.trim() !== ''),
                 'name'
@@ -3268,7 +3316,7 @@ function recursiveTreeUpdate(
         return { node, updated };
     }
 
-    const newNode = _.cloneDeep(node);
+    const newNode = cloneDeep(node);
 
     if (newNode.question === oldQuestionName) {
 
@@ -3290,7 +3338,7 @@ function recursiveTreeUpdate(
                 newOptions[opt.name] = currentOptions[opt.name] || { decision: 'Percorso non definito', id: nanoid(8) };
             });
 
-            if (!_.isEqual(newNode.options, newOptions)) {
+            if (!isEqual(newNode.options, newOptions)) {
                 newNode.options = newOptions;
                 updated = true;
             }
@@ -3344,9 +3392,78 @@ async function callOpenRouterWithTools(apiKey: string, model: string, messages: 
     return data.choices[0].message;
 }
 
-export async function detaiAction(input: DetaiInput, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: any | null; error: string | null; }> {
+export async function detaiAction(input: DetaiInput, openRouterConfig?: { apiKey: string, model: string }, claudeCliConfig?: { model: string }): Promise<{ data: any | null; error: string | null; }> {
     try {
-        if (openRouterConfig && openRouterConfig.apiKey) {
+        if (claudeCliConfig) {
+            // ─── Claude CLI path ───────────────────────────────────────────
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+
+            const claudePath = process.env.CLAUDE_PATH || '/opt/homebrew/bin/claude';
+
+            // Build conversation text from history
+            const lastUserMsg = input.messages.filter(m => m.role === 'user').pop();
+            const userText = lastUserMsg?.content?.[0]?.text || '';
+
+            // Build conversation context from history
+            const historyText = input.messages
+                .filter(m => m.id !== 'initial-message')
+                .map(m => {
+                    if (m.role === 'user') return `User: ${m.content[0]?.text || ''}`;
+                    if (m.role === 'model') return `Assistant: ${m.content[0]?.text || ''}`;
+                    return '';
+                })
+                .filter(Boolean)
+                .join('\n');
+
+            const systemPrompt = `Sei detAI, un assistente IA esperto e proattivo. Rispondi in italiano. Basa le tue risposte sulla conoscenza contenuta negli alberi decisionali dell'azienda.
+
+REGOLE:
+1. Se l'utente menziona un termine specifico, una procedura o un concetto, CERCA prima nel database usando lo strumento searchDecisionTrees.
+2. Se trovi informazioni, attribuisci la fonte con [Fonte: ID] ... [Fine Fonte].
+3. Usa il grassetto (**testo**) per le informazioni trovate.
+4. Se non trovi nulla, dillo onestamente.`;
+
+            // For Claude CLI, do keyword-based tree search (no Genkit/Gemini dependency)
+            const treesResult = await getTreesAction();
+            let contextPrompt = '';
+            if (treesResult.data && treesResult.data.length > 0) {
+                const queryLower = userText.toLowerCase();
+                const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+                const matchedTrees = treesResult.data
+                    .map(t => {
+                        const searchText = `${t.name} ${t.description || ''} ${t.naturalLanguageDecisionTree || ''}`.toLowerCase();
+                        const matchCount = queryWords.filter(w => searchText.includes(w)).length;
+                        return { ...t, matchCount };
+                    })
+                    .filter(t => t.matchCount > 0)
+                    .sort((a, b) => b.matchCount - a.matchCount)
+                    .slice(0, 5);
+
+                if (matchedTrees.length > 0) {
+                    const treeSummaries = matchedTrees.map(t =>
+                        `[Albero: ${t.name} (ID: ${t.id})]\n${(t.naturalLanguageDecisionTree || t.description || '').slice(0, 2000)}`
+                    ).join('\n\n---\n\n');
+                    contextPrompt = `<context>\nAlberi decisionali pertinenti trovati:\n\n${treeSummaries}\n</context>\n\n`;
+                }
+            }
+
+            const fullPrompt = `<system>\n${systemPrompt}\n</system>\n\n${contextPrompt}${historyText ? `Conversazione precedente:\n${historyText}\n\n` : ''}Rispondi all'utente: ${userText}`;
+
+            try {
+                const extraPaths2 = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
+                const fullPath2 = [...extraPaths2, process.env.PATH || ''].join(':');
+                const { stdout } = await execAsync(
+                    `${claudePath} --model ${claudeCliConfig.model} -p ${JSON.stringify(fullPrompt)}`,
+                    { timeout: 60000, maxBuffer: 1024 * 1024, env: { ...process.env, PATH: fullPath2 } }
+                );
+                return { data: { text: stdout.trim() }, error: null };
+            } catch (cliError: any) {
+                console.error('Claude CLI error:', cliError);
+                return { data: null, error: `Claude CLI errore: ${cliError.message}` };
+            }
+        } else if (openRouterConfig && openRouterConfig.apiKey) {
             // Check if the last message is a tool request that needs execution
             const lastInputMsg = input.messages[input.messages.length - 1];
             if (lastInputMsg?.role === 'model' && lastInputMsg.content[0].toolRequest) {
@@ -3484,7 +3601,7 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
 }
 
 
-export async function searchTreesAction(query: string, openRouterConfig?: { apiKey: string, model: string }): Promise<string> {
+export async function searchTreesAction(query: string, openRouterConfig?: { apiKey: string, model: string }, claudeCliConfig?: { model: string }): Promise<string> {
     const treesResult = await getTreesAction();
     if (treesResult.error || !treesResult.data) {
         return 'Errore: Impossibile accedere al database degli alberi decisionali.';
@@ -3535,6 +3652,32 @@ Alberi disponibili:
         }
     }
 
+    if (claudeCliConfig) {
+        // Claude CLI path: keyword-based matching (no Gemini dependency)
+        const queryLower = query.toLowerCase();
+        const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+        const matchedTrees = searchableTrees
+            .map(t => {
+                const searchText = `${t.name} ${t.description || ''} ${t.content || ''}`.toLowerCase();
+                const matchCount = queryWords.filter(w => searchText.includes(w)).length;
+                return { ...t, matchCount };
+            })
+            .filter(t => t.matchCount > 0)
+            .sort((a, b) => b.matchCount - a.matchCount)
+            .slice(0, 5);
+
+        if (matchedTrees.length === 0) {
+            return 'Nessun risultato trovato.';
+        }
+
+        return JSON.stringify(matchedTrees.map(t => ({
+            name: t.name,
+            sourceId: t.id,
+            reason: `Corrispondenza per ${t.matchCount} parole chiave`,
+            summary: (t.content || t.description || '').slice(0, 500)
+        })), null, 2);
+    }
+
     const SearchResultSchema = z.object({
         relevantTrees: z.array(z.object({
             name: z.string().describe("Il nome dell'albero decisionale."),
@@ -3545,7 +3688,7 @@ Alberi disponibili:
     });
 
     const { output } = await ai.generate({
-        model: 'googleai/gemini-1.5-pro-latest',
+        model: 'googleai/gemini-2.0-flash',
         prompt: `Analizza la seguente lista di alberi decisionali e restituisci solo quelli che sono altamente pertinenti alla query dell'utente. Per ogni albero, includi il suo ID univoco nel campo 'sourceId'.
 
 Query utente: "${query}"
@@ -3585,23 +3728,26 @@ export async function updateVariableAction(treeId: string | undefined, id: strin
         }));
 
         const newName = updateData.name?.trim();
-        const newPossibleValues = updatedPossibleValues ? _.uniqBy((updatedPossibleValues || []).map(v => ({ ...v, name: v.name.trim() })).filter(v => v.name), 'name') : undefined;
+        const newPossibleValues = updatedPossibleValues ? uniqBy((updatedPossibleValues || []).map(v => ({ ...v, name: v.name.trim() })).filter(v => v.name), 'name') : undefined;
 
-        const dbUpdatePayload: any = { ..._.omit(updateData, 'id', 'usedIn', 'createdAt', 'possibleValues') };
+        const dbUpdatePayload: any = { ...omit(updateData, 'id', 'usedIn', 'createdAt', 'possibleValues') };
         if (newPossibleValues) dbUpdatePayload.possibleValues = newPossibleValues;
         if (newName) dbUpdatePayload.name = newName;
 
         transactionOps.push(db.variable.update({ where: { id }, data: dbUpdatePayload }));
 
-        const allVarsResult = await getVariablesAction();
+        const [allVarsResult, allTreesResult] = await Promise.all([
+            getVariablesAction(),
+            getTreesAction()
+        ]);
         if (allVarsResult.error) throw new Error(allVarsResult.error);
+        if (allTreesResult.error) throw new Error(allTreesResult.error);
         const affectedTreesIds = allVarsResult.data?.find(v => v.id === id)?.usedIn?.map(t => t.id) || [];
 
         if (affectedTreesIds.length > 0) {
-            const affectedTreesResult = await getTreesAction(affectedTreesIds);
-            if (affectedTreesResult.error) throw new Error(affectedTreesResult.error);
+            const affectedTreeDocs = allTreesResult.data!.filter(t => affectedTreesIds.includes(t.id));
 
-            for (const treeDoc of affectedTreesResult.data!) {
+            for (const treeDoc of affectedTreeDocs) {
                 if (!treeDoc.jsonDecisionTree) continue;
                 let jsonTree;
                 try {
@@ -3652,7 +3798,7 @@ function recursiveTreeUpdateById(
     oldPossibleValues: VariableOption[] = []
 ): { node: any, updated: boolean } {
     let updated = false;
-    const newNode = _.cloneDeep(node);
+    const newNode = cloneDeep(node);
 
     if (typeof node !== "object" || node === null) {
         return { node, updated };
@@ -3706,7 +3852,7 @@ function recursiveTreeUpdateById(
                 }
             }
 
-            if (!_.isEqual(newNode.options, newOptions)) {
+            if (!isEqual(newNode.options, newOptions)) {
                 newNode.options = newOptions;
                 updated = true;
             }
@@ -3795,7 +3941,7 @@ export async function mergeVariablesAction(
             where: { id: targetVariableId },
             data: {
                 name: finalName,
-                possibleValues: _.uniqBy(finalPossibleValues.map(v => ({ ...v, id: v.id || nanoid(8) })), 'name')
+                possibleValues: uniqBy(finalPossibleValues.map(v => ({ ...v, id: v.id || nanoid(8) })), 'name')
             }
         }));
 
@@ -3979,32 +4125,33 @@ export async function resolveDependencyChainAction(targetName: string): Promise<
     try {
         const user = await getAuthenticatedUser();
 
-        // Helper to find a node in ANY tree
-        const findNodeInDb = async (name: string) => {
-            // 1. Search for trees that MIGHT contain the definition (text search on JSON column)
-            const candidates = await db.tree.findMany({
-                where: {
-                    companyId: user.companyId,
-                    jsonDecisionTree: {
-                        contains: name,
-                    }
-                },
-                select: {
-                    id: true,
-                    jsonDecisionTree: true,
-                    name: true
-                }
-            });
+        // Pre-fetch all trees once to avoid N+1 queries during recursive resolution
+        const allTrees = await db.tree.findMany({
+            where: { companyId: user.companyId },
+            select: {
+                id: true,
+                jsonDecisionTree: true,
+                name: true
+            }
+        });
 
-            // 2. Iterate and parse
-            for (const tree of candidates) {
-                try {
-                    const json = JSON.parse(tree.jsonDecisionTree);
-                    const node = findNodeByResultName(json, name);
-                    if (node) return node;
-                } catch (e) {
-                    continue;
-                }
+        // Pre-parse all trees once
+        const parsedTrees: { id: string; name: string; json: any }[] = [];
+        for (const tree of allTrees) {
+            try {
+                const json = JSON.parse(tree.jsonDecisionTree);
+                parsedTrees.push({ id: tree.id, name: tree.name, json });
+            } catch (e) {
+                continue;
+            }
+        }
+
+        // Helper to find a node in ANY tree (searches pre-fetched data, no DB calls)
+        const findNodeInDb = (name: string) => {
+            // Filter candidates by checking if the raw JSON string contains the name
+            for (const tree of parsedTrees) {
+                const node = findNodeByResultName(tree.json, name);
+                if (node) return node;
             }
             return null;
         };
@@ -4013,18 +4160,18 @@ export async function resolveDependencyChainAction(targetName: string): Promise<
         const visited = new Set<string>();
         const resolving = new Set<string>(); // Cycle detection
 
-        const buildChain = async (currentName: string) => {
+        const buildChain = (currentName: string) => {
             if (visited.has(currentName.toLowerCase())) return;
             if (resolving.has(currentName.toLowerCase())) {
                 console.warn(`Circular dependency detected for ${currentName}. Breaking cycle.`);
                 return;
             }
-            // Skip common keywords to avoid useless DB lookups
+            // Skip common keywords to avoid useless lookups
             if (['print', 'len', 'range', 'list', 'dict', 'set', 'str', 'int', 'float', 'import', 'from', 'def', 'return', 'none', 'true', 'false', 'self'].includes(currentName.toLowerCase())) return;
 
             resolving.add(currentName.toLowerCase());
 
-            const node = await findNodeInDb(currentName);
+            const node = findNodeInDb(currentName);
 
             if (node) {
                 // Determine dependencies of THIS node
@@ -4042,7 +4189,7 @@ export async function resolveDependencyChainAction(targetName: string): Promise<
                 for (const dep of potentialDeps) {
                     // Optimization: Only resolve if it looks like a variable (length > 2)
                     if (dep.length > 2 && dep !== currentName) {
-                        await buildChain(dep);
+                        buildChain(dep);
                     }
                 }
 
@@ -4056,7 +4203,7 @@ export async function resolveDependencyChainAction(targetName: string): Promise<
             resolving.delete(currentName.toLowerCase());
         };
 
-        await buildChain(targetName);
+        buildChain(targetName);
 
         if (chain.length > 0) {
             return { data: chain, error: null };
@@ -4072,7 +4219,7 @@ export async function resolveDependencyChainAction(targetName: string): Promise<
                 // But we need to make sure we don't return partial chains from the first attempt if it failed?
                 // The first attempt verified `chain` is empty, so we are safe.
 
-                await buildChain(simpleName);
+                buildChain(simpleName);
 
                 if (chain.length > 0) {
                     return { data: chain, error: null };

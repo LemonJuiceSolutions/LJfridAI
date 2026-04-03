@@ -117,7 +117,7 @@ Follow these steps with absolute rigor:
     *   **CRITICAL: Include Attachments**: If the current node (question or decision) in the JSON tree contains 'media', 'links', or 'triggers', you MUST include them in your output exactly as they appear in the JSON.`;
     
     const { output } = await ai.generate({
-      model: 'googleai/gemini-1.5-flash',
+      model: 'googleai/gemini-2.0-flash',
       prompt: prompt,
       output: { schema: DiagnoseProblemOutputSchema },
     });

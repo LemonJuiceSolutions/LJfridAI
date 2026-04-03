@@ -3,7 +3,8 @@ import type { DecisionNode, StoredTree, DecisionLeaf, Variable, VariableOption, 
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Mail, AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code, FileCode, Upload, Clock, Sparkles, Loader2 } from 'lucide-react';
-import _ from 'lodash';
+import cloneDeep from 'lodash/cloneDeep';
+import get from 'lodash/get';
 import EditNodeDialog from './edit-node-dialog';
 import AddNodeDialog from './add-node-dialog';
 import PanZoomContainer from './pan-zoom-container';
@@ -56,7 +57,7 @@ const ensureNodeIds = (node: any): any => {
         return node;
     }
 
-    const newNode = _.cloneDeep(node);
+    const newNode = cloneDeep(node);
 
     const traverse = (n: any): any => {
         if (Array.isArray(n)) {
@@ -289,7 +290,7 @@ function getNodeFromPath(obj: any, path: string): any {
         return obj;
     }
     const lodashPath = path.replace(/^root\.?/, '');
-    return _.get(obj, lodashPath);
+    return get(obj, lodashPath);
 }
 
 
@@ -322,7 +323,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
     const layout = useMemo(() => {
         if (!tree) return { positionedNodes: [], contentWidth: 0, contentHeight: 0 };
         // Enrich tree with possibleValues from dbVariables
-        const enrichedTree = _.cloneDeep(tree);
+        const enrichedTree = cloneDeep(tree);
         const enrichNode = (node: any) => {
             if (node.variableId) {
                 const dbVar = dbVariables.find(v => v.id === node.variableId);
@@ -796,7 +797,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             // Usa functional update (prev =>) per evitare race conditions quando più anteprime
             // vengono salvate in rapida successione (es. pipeline con più antenati)
             setTree(prevTree => {
-                const newTree = _.cloneDeep(prevTree);
+                const newTree = cloneDeep(prevTree);
                 const nodeToUpdate = getNodeFromPath(newTree, path);
                 console.log('[DEBUG] Node to update in local tree:', nodeToUpdate ? 'found' : 'NOT FOUND');
                 if (nodeToUpdate) {

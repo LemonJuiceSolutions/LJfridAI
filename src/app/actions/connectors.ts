@@ -346,6 +346,34 @@ export async function testConnectorAction(type: string, config: string) {
             return result;
         }
 
+        if (type === 'LEMLIST') {
+            try {
+                if (!conf.apiKey) {
+                    return { success: false, message: 'API Key Lemlist obbligatoria' };
+                }
+                // Lemlist uses Basic auth: empty username, apiKey as password
+                const basicAuth = Buffer.from(`:${conf.apiKey}`).toString('base64');
+                const res = await fetch('https://api.lemlist.com/api/campaigns', {
+                    headers: {
+                        'Authorization': `Basic ${basicAuth}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+                if (res.ok) {
+                    const campaigns = await res.json();
+                    const count = Array.isArray(campaigns) ? campaigns.length : 0;
+                    return { success: true, message: `Connessione Lemlist riuscita! ${count} campagne trovate.` };
+                } else if (res.status === 401) {
+                    return { success: false, message: 'API Key non valida.' };
+                } else {
+                    const err = await res.text();
+                    return { success: false, message: `Errore Lemlist: ${res.status} - ${err}` };
+                }
+            } catch (err: any) {
+                return { success: false, message: `Errore Network: ${err.message}` };
+            }
+        }
+
         if (type === 'WHATSAPP') {
             try {
                 if (!conf.phoneNumberId || !conf.accessToken) {

@@ -14,7 +14,8 @@ import {
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { Input } from '../ui/input';
-import _ from 'lodash';
+import cloneDeep from 'lodash/cloneDeep';
+import isEqual from 'lodash/isEqual';
 import type { VariableOption } from '@/lib/types';
 
 interface EditOptionDialogProps {
@@ -36,7 +37,7 @@ export default function EditOptionDialog({
 
   useEffect(() => {
     if (isOpen) {
-      setOption(_.cloneDeep(initialOption));
+      setOption(cloneDeep(initialOption));
     }
   }, [isOpen, initialOption]);
 
@@ -46,7 +47,7 @@ export default function EditOptionDialog({
       name: option.name.trim(),
       abbreviation: option.abbreviation.trim().toUpperCase()
     };
-    if (_.isEqual(trimmedOption, initialOption) || trimmedOption.name === '') {
+    if (isEqual(trimmedOption, initialOption) || trimmedOption.name === '') {
       onClose();
       return;
     }

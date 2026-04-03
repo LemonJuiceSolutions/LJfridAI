@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import type { DetaiInput } from '@/ai/flows/detai-flow';
 import { Badge } from '@/components/ui/badge';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
+import { getAiProviderAction } from '@/actions/ai-settings';
 
 
 type Message = {
@@ -60,6 +61,17 @@ export default function DetaiPage() {
     const [isLoading, setIsLoading] = useState(false);
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     const { apiKey: dbApiKey, model: dbModel } = useOpenRouterSettings();
+    const [aiProvider, setAiProvider] = useState<'openrouter' | 'claude-cli'>('openrouter');
+    const [claudeCliModel, setClaudeCliModel] = useState('claude-sonnet-4-6');
+
+    useEffect(() => {
+        getAiProviderAction().then(res => {
+            if (!res.error) {
+                setAiProvider(res.provider);
+                if (res.claudeCliModel) setClaudeCliModel(res.claudeCliModel);
+            }
+        });
+    }, []);
 
     const scrollToBottom = () => {
         if (scrollAreaRef.current) {
@@ -75,7 +87,9 @@ export default function DetaiPage() {
         setIsLoading(true);
 
         try {
-            const openRouterConfig = dbApiKey ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
+            const openRouterConfig = (aiProvider === 'openrouter' && dbApiKey) ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
+            // If claude-cli is selected OR if openrouter has no API key, fall back to Claude CLI
+            const claudeCliConfig = (aiProvider === 'claude-cli' || !openRouterConfig) ? { model: claudeCliModel } : undefined;
 
             // Map local message state to the format expected by the AI flow
             const history: DetaiInput['messages'] = currentMessages
@@ -89,7 +103,7 @@ export default function DetaiPage() {
                             : [{ toolRequest: m.toolRequest }]
                 }));
 
-            const result = await detaiAction({ messages: history }, openRouterConfig);
+            const result = await detaiAction({ messages: history }, openRouterConfig, claudeCliConfig);
 
             if (result.error || !result.data) {
                 throw new Error(result.error || 'La risposta è fallita senza un errore specifico.');
@@ -320,10 +334,10 @@ export default function DetaiPage() {
     }
 
     return (
-        <div className="flex flex-col h-screen bg-background">
+        <div className="flex flex-col h-[calc(100vh-2rem)] bg-background">
             <main className="flex-1 overflow-hidden">
                 <div className="container mx-auto h-full p-4 md:p-6">
-                    <Card className="h-full flex flex-col">
+                    <Card className="h-full flex flex-col overflow-hidden">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <MessageSquareText className="h-6 w-6 text-primary" />

@@ -288,11 +288,11 @@ function InlineChart({ config }: { config: any }) {
     );
 }
 
-import { useLayout } from '@/components/providers/layout-provider';
+import { useChatbot } from '@/components/providers/layout-provider';
 
 export function ChatBotAgent() {
     const { toast } = useToast();
-    const { isChatbotOpen, toggleChatbot, setChatbotOpen } = useLayout();
+    const { isChatbotOpen, toggleChatbot, setChatbotOpen } = useChatbot();
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [conversationId, setConversationId] = useState<string | null>(null);

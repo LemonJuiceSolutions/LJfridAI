@@ -149,6 +149,7 @@ model Tree {
   previewCache                NodePreviewCache[]
 
   @@index([companyId])
+  @@index([type])
 }
 
 model NodePreviewCache {
@@ -212,6 +213,7 @@ model Connector {
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
+  @@index([type])
 }
 
 model TokenCache {
@@ -333,6 +335,9 @@ model BOMComponent {
   quantity   Float
   bom        BOM      @relation(fields: [bomId], references: [id], onDelete: Cascade)
   material   Material @relation(fields: [materialId], references: [id])
+
+  @@index([bomId])
+  @@index([materialId])
 }
 
 model InventoryItem {
@@ -373,6 +378,9 @@ model OrderItem {
   updatedAt DateTime @updatedAt
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product   Product  @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
 }
 
 model PageLayout {

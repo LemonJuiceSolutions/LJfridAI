@@ -140,7 +140,7 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
     const fullHistory = [systemMessage, ...cleanHistory];
 
     const { text } = await ai.generate({
-        model: 'googleai/gemini-1.5-flash',
+        model: 'googleai/gemini-2.0-flash',
         messages: fullHistory,
         tools: [searchDecisionTrees],
     });

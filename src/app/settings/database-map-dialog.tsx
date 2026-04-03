@@ -26,11 +26,21 @@ import type { DatabaseMap, TableInfo, ColumnInfo, RelationshipInfo } from '@/lib
 import {
     Loader2, Search, RefreshCw, Sparkles, ChevronRight, ChevronDown,
     Key, ArrowRight, Database, Pencil, Check, X, GitFork, Table2, Link2, Network,
-    ScanSearch, Eye, Zap, Timer, PlayCircle, DollarSign, Gift, CheckCircle2,
+    ScanSearch, Eye, Zap, Timer, PlayCircle, DollarSign, Gift, CheckCircle2, Download,
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { fetchOpenRouterModelsAction } from '../actions';
-import { DatabaseERDiagram } from './database-er-diagram';
+import dynamic from 'next/dynamic';
+
+const DatabaseERDiagram = dynamic(() => import('./database-er-diagram'), {
+    ssr: false,
+    loading: () => (
+        <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+            <Loader2 className="h-5 w-5 animate-spin mr-2" />
+            Caricamento diagramma...
+        </div>
+    ),
+});
 
 interface DatabaseMapDialogProps {
     connectorId: string;
@@ -768,6 +778,121 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
 
     const handleCancelAI = () => {
         cancelRef.current = true;
+    };
+
+    // ─── Export Database Map as Excel ─────────────────────────────────────────
+    const handleExportExcel = async () => {
+        if (!map) return;
+        try {
+            const XLSX = await import('xlsx');
+            const wb = XLSX.utils.book_new();
+
+            // Sheet 1: Tables
+            const tablesData = map.tables.map(t => ({
+                'Schema': t.schema,
+                'Tabella': t.name,
+                'Nome Completo': t.fullName,
+                'Righe': t.rowCount,
+                'Colonne': t.columns.length,
+                'Primary Key': t.primaryKeyColumns.join(', '),
+                'FK In Entrata': t.foreignKeysIn.length,
+                'FK In Uscita': t.foreignKeysOut.length,
+                'Descrizione': t.description || '',
+                'Descrizione Utente': t.userDescription || '',
+            }));
+            const wsTabelle = XLSX.utils.json_to_sheet(tablesData);
+            // Auto-size columns
+            wsTabelle['!cols'] = [
+                { wch: 12 }, { wch: 30 }, { wch: 40 }, { wch: 10 }, { wch: 8 },
+                { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 50 }, { wch: 50 },
+            ];
+            XLSX.utils.book_append_sheet(wb, wsTabelle, 'Tabelle');
+
+            // Sheet 2: Columns
+            const columnsData: any[] = [];
+            for (const t of map.tables) {
+                for (const c of t.columns) {
+                    columnsData.push({
+                        'Schema': t.schema,
+                        'Tabella': t.name,
+                        'Colonna': c.name,
+                        'Tipo Dato': c.dataType,
+                        'Max Length': c.maxLength ?? '',
+                        'Nullable': c.isNullable ? 'S' : 'N',
+                        'Primary Key': c.isPrimaryKey ? 'S' : 'N',
+                        'Foreign Key': c.isForeignKey ? 'S' : 'N',
+                        'FK Target': c.foreignKeyTarget
+                            ? `${c.foreignKeyTarget.schema}.${c.foreignKeyTarget.table}.${c.foreignKeyTarget.column}`
+                            : '',
+                        'Default': c.defaultValue || '',
+                        'Descrizione': c.description || '',
+                        'Descrizione Utente': c.userDescription || '',
+                    });
+                }
+            }
+            const wsColonne = XLSX.utils.json_to_sheet(columnsData);
+            wsColonne['!cols'] = [
+                { wch: 12 }, { wch: 30 }, { wch: 30 }, { wch: 18 }, { wch: 10 },
+                { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 40 }, { wch: 20 },
+                { wch: 50 }, { wch: 50 },
+            ];
+            XLSX.utils.book_append_sheet(wb, wsColonne, 'Colonne');
+
+            // Sheet 3: Relations
+            const relsData = map.relationships.map(r => ({
+                'Sorgente Schema': r.sourceSchema,
+                'Sorgente Tabella': r.sourceTable,
+                'Sorgente Colonna': r.sourceColumn,
+                'Target Schema': r.targetSchema,
+                'Target Tabella': r.targetTable,
+                'Target Colonna': r.targetColumn,
+                'Constraint': r.constraintName || '',
+                'Inferita': r.inferred ? 'S' : 'N',
+                'Confidenza %': r.confidence ?? '',
+                'Metodo': r.inferenceMethod || 'formal_fk',
+                'Motivazione': r.reason || '',
+            }));
+            const wsRelazioni = XLSX.utils.json_to_sheet(relsData);
+            wsRelazioni['!cols'] = [
+                { wch: 12 }, { wch: 30 }, { wch: 25 }, { wch: 12 }, { wch: 30 },
+                { wch: 25 }, { wch: 30 }, { wch: 8 }, { wch: 12 }, { wch: 15 }, { wch: 50 },
+            ];
+            XLSX.utils.book_append_sheet(wb, wsRelazioni, 'Relazioni');
+
+            // Sheet 4: Summary
+            const summaryData = [
+                { 'Metrica': 'Database', 'Valore': map.databaseName },
+                { 'Metrica': 'Connettore', 'Valore': map.connectorName },
+                { 'Metrica': 'Tabelle Totali', 'Valore': map.summary.totalTables },
+                { 'Metrica': 'Colonne Totali', 'Valore': map.summary.totalColumns },
+                { 'Metrica': 'Relazioni Totali', 'Valore': map.summary.totalRelationships },
+                { 'Metrica': 'Righe Totali', 'Valore': map.summary.totalRows.toLocaleString() },
+                { 'Metrica': 'Relazioni Formali (FK)', 'Valore': map.relationships.filter(r => !r.inferred).length },
+                { 'Metrica': 'Relazioni Inferite (AI)', 'Valore': map.relationships.filter(r => r.inferred).length },
+                { 'Metrica': 'Generato il', 'Valore': map.generatedAt ? new Date(map.generatedAt).toLocaleString('it-IT') : '' },
+                { 'Metrica': 'Descrizioni AI il', 'Valore': map.descriptionsGeneratedAt ? new Date(map.descriptionsGeneratedAt).toLocaleString('it-IT') : '' },
+            ];
+            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+            wsSummary['!cols'] = [{ wch: 25 }, { wch: 40 }];
+            XLSX.utils.book_append_sheet(wb, wsSummary, 'Riepilogo');
+
+            // Generate and download
+            const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx', compression: true });
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mappatura-${map.databaseName || connectorName}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            toast({ title: 'Export completato', description: `${tablesData.length} tabelle, ${columnsData.length} colonne, ${relsData.length} relazioni esportate.` });
+        } catch (err: any) {
+            console.error('[Export] Error:', err);
+            toast({ title: 'Errore export', description: err.message, variant: 'destructive' });
+        }
     };
 
     const [inferringRels, setInferringRels] = useState(false);
@@ -1583,10 +1708,16 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                                     {map ? 'Analisi Completa' : 'Scansiona e Analizza'}
                                 </Button>
                                 {map && (
-                                    <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleResumeAnalysis} disabled={loading || (aiProvider === 'openrouter' && aiMode === 'paid' && !selectedModel)}>
-                                        <PlayCircle className="h-3 w-3 mr-1" />
-                                        Completa Mappatura
-                                    </Button>
+                                    <>
+                                        <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleResumeAnalysis} disabled={loading || (aiProvider === 'openrouter' && aiMode === 'paid' && !selectedModel)}>
+                                            <PlayCircle className="h-3 w-3 mr-1" />
+                                            Completa Mappatura
+                                        </Button>
+                                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleExportExcel} title="Esporta tabelle, colonne e relazioni in Excel">
+                                            <Download className="h-3 w-3 mr-1" />
+                                            Esporta Excel
+                                        </Button>
+                                    </>
                                 )}
                             </>
                         )}

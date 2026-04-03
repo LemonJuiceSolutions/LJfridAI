@@ -7,7 +7,9 @@ import { DateTime } from 'luxon';
 import { CronExpressionParser } from 'cron-parser';
 import { executePythonPreviewAction, exportTableToSqlAction, executeSqlPreviewAction } from '@/app/actions';
 import { sendTestEmailWithDataAction, executeSqlAction } from '@/app/actions/connectors';
-import _ from 'lodash';
+import escapeRegExp from 'lodash/escapeRegExp';
+import get from 'lodash/get';
+import set from 'lodash/set';
 
 import fs from 'fs';
 
@@ -835,7 +837,7 @@ export class SchedulerService {
 
           // Helper for precise replacement (to avoid partial matches like PROD vs PRODFIL)
           const replaceRef = (sql: string, oldName: string, newName: string) => {
-            const escaped = _.escapeRegExp(oldName);
+            const escaped = escapeRegExp(oldName);
             // Match FROM/JOIN followed by optional schema and the table name
             const pattern = `\\b(FROM|JOIN)\\s+((?:\\[[^\\]]+\\]|\\w+)\\.)?\\[?${escaped}\\]?\\b`;
             const regex = new RegExp(pattern, 'gi');
@@ -848,7 +850,7 @@ export class SchedulerService {
             const keyNorm = key.toLowerCase().trim();
             if (keyNorm !== normalizedName && !addedDepNames.has(key)) {
               // Precise Detection: Use regex with word boundaries
-              const tableRegex = new RegExp(`\\b${_.escapeRegExp(keyNorm)}\\b`, 'i');
+              const tableRegex = new RegExp(`\\b${escapeRegExp(keyNorm)}\\b`, 'i');
               if (!tableRegex.test(sqlQueryLower)) continue;
 
               // Permanent Table Reuse
@@ -1466,11 +1468,33 @@ export class SchedulerService {
       logger.log(`[EmailSend] Using saved config.sqlConnectorId: ${effectiveSqlConnectorId}`);
     }
     // Fallback to inferring from availableInputTables
-    else if (selectedTables.length > 0) {
+    if (!effectiveSqlConnectorId && selectedTables.length > 0) {
+      // Try matching by name first
       const firstTable = availableInputTables.find(t => t.name === selectedTables[0].name);
       if (firstTable?.connectorId) {
         effectiveSqlConnectorId = firstTable.connectorId;
-        logger.log(`[EmailSend] Inferred sqlConnectorId from tree: ${effectiveSqlConnectorId}`);
+        logger.log(`[EmailSend] Inferred sqlConnectorId from table name match: ${effectiveSqlConnectorId}`);
+      }
+    }
+    // Fallback: try matching by allNames/alias (e.g. "JoinCommesse" might be in allNames)
+    if (!effectiveSqlConnectorId && selectedTables.length > 0) {
+      for (const st of selectedTables) {
+        const matchingNode = availableInputTables.find(t =>
+          (t.allNames || [t.name]).some((n: string) => n === st.name) && t.connectorId
+        );
+        if (matchingNode?.connectorId) {
+          effectiveSqlConnectorId = matchingNode.connectorId;
+          logger.log(`[EmailSend] Inferred sqlConnectorId from allNames match "${st.name}" -> node "${matchingNode.name}": ${effectiveSqlConnectorId}`);
+          break;
+        }
+      }
+    }
+    // Last resort: use the first non-Python node's connector from the tree
+    if (!effectiveSqlConnectorId) {
+      const firstSqlNode = availableInputTables.find(t => !t.isPython && t.connectorId);
+      if (firstSqlNode?.connectorId) {
+        effectiveSqlConnectorId = firstSqlNode.connectorId;
+        logger.log(`[EmailSend] Inferred sqlConnectorId from first SQL node "${firstSqlNode.name}": ${effectiveSqlConnectorId}`);
       }
     }
 
@@ -1527,13 +1551,26 @@ export class SchedulerService {
     // 1. Prepare Inputs
     const {
       query,
-      connectorIdSql,
       sqlResultName,
       contextTables,
       selectedPipelines, // Names of dependencies
       treeId, nodeId, nodePath,
       sqlExportConfig
     } = config;
+
+    // Resolve connectorIdSql: use explicit value, or infer from first SQL dependency, or from export config
+    let connectorIdSql = config.connectorIdSql;
+    if (!connectorIdSql && contextTables && Array.isArray(contextTables)) {
+      const firstSqlDep = (contextTables as any[]).find(t => t.connectorId && !t.isPython);
+      if (firstSqlDep) {
+        connectorIdSql = firstSqlDep.connectorId;
+        logger.log(`[SqlNode] Inferred connectorIdSql from dependency "${firstSqlDep.name}": ${connectorIdSql}`);
+      }
+    }
+    if (!connectorIdSql && sqlExportConfig?.targetConnectorId) {
+      connectorIdSql = sqlExportConfig.targetConnectorId;
+      logger.log(`[SqlNode] Inferred connectorIdSql from export config: ${connectorIdSql}`);
+    }
 
     if (!query || !connectorIdSql) return { success: false, error: "Missing Query or Connector" };
 
@@ -1747,9 +1784,9 @@ export class SchedulerService {
       // Root update
       json = { ...json, ...updateData };
     } else {
-      const existing = _.get(json, path);
+      const existing = get(json, path);
       if (existing) {
-        _.set(json, path, { ...existing, ...updateData });
+        set(json, path, { ...existing, ...updateData });
       }
     }
 

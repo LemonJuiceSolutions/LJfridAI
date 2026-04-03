@@ -6,7 +6,7 @@ import {
     Users, Building2, Mail, Phone, Linkedin, Globe, FileSpreadsheet,
     ChevronRight, ChevronLeft, RefreshCw, ChevronsUpDown, Check,
     Plus, MessageSquare, Clock, MoreHorizontal, Star, X, Tag,
-    PenLine, ExternalLink, ShieldCheck, Info,
+    PenLine, ExternalLink, ShieldCheck, Info, CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +20,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { fetchOpenRouterModelsAction } from '@/app/actions';
 import { getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction } from '@/actions/openrouter';
 import { getAiProviderAction, saveAiProviderAction, type AiProvider } from '@/actions/ai-settings';
-import { sendLeadEmailAction, generateLeadEmailAction } from '@/actions/lead-generator';
+import { sendLeadEmailAction, generateLeadEmailAction, getLeadGenApiKeysAction } from '@/actions/lead-generator';
 
 const CLAUDE_CLI_MODELS = [
     { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
@@ -762,6 +762,9 @@ export default function LeadGeneratorPage() {
     const [showHistory, setShowHistory] = useState(true);
     const [currentCost, setCurrentCost] = useState<number>(0);
 
+    // Provider API keys status (which are configured)
+    const [configuredProviders, setConfiguredProviders] = useState<Record<string, boolean>>({});
+
     // Leads panel state
     const [showLeadsPanel, setShowLeadsPanel] = useState(true);
     const [leads, setLeads] = useState<any[]>([]);
@@ -799,6 +802,19 @@ export default function LeadGeneratorPage() {
         });
         getOpenRouterAgentModelAction().then(result => {
             if (result.model) setModel(result.model);
+        });
+        // Load which provider API keys are configured
+        getLeadGenApiKeysAction().then(res => {
+            if (res.keys) {
+                setConfiguredProviders({
+                    apollo: !!res.keys.apollo,
+                    hunter: !!res.keys.hunter,
+                    serpApi: !!res.keys.serpApi,
+                    apify: !!res.keys.apify,
+                    vibeProspect: !!res.keys.vibeProspect,
+                    firecrawl: !!res.keys.firecrawl,
+                });
+            }
         });
     }, []);
 
@@ -1298,13 +1314,50 @@ export default function LeadGeneratorPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                        <Badge variant="secondary" className="text-[10px]">Apollo.io</Badge>
-                        <Badge variant="secondary" className="text-[10px]">Hunter.io</Badge>
-                        <Badge variant="secondary" className="text-[10px]">Google Maps</Badge>
-                        <Badge variant="secondary" className="text-[10px]">Web Scraping</Badge>
-                        <Badge variant="secondary" className="text-[10px]">Apify</Badge>
+                    <div className="flex gap-1 flex-wrap">
+                        {[
+                            { key: 'apollo', label: 'Apollo.io' },
+                            { key: 'hunter', label: 'Hunter.io' },
+                            { key: 'serpApi', label: 'Google Maps' },
+                            { key: 'vibeProspect', label: 'Vibe Prospect' },
+                            { key: 'firecrawl', label: 'Firecrawl' },
+                            { key: 'apify', label: 'Apify' },
+                        ].map(p => (
+                            <Badge
+                                key={p.key}
+                                variant={configuredProviders[p.key] ? 'default' : 'secondary'}
+                                className={cn(
+                                    'text-[10px]',
+                                    configuredProviders[p.key]
+                                        ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border-green-200 dark:border-green-800'
+                                        : 'opacity-50'
+                                )}
+                            >
+                                {configuredProviders[p.key] && <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />}
+                                {p.label}
+                            </Badge>
+                        ))}
                     </div>
+                    {leads.length > 0 && (() => {
+                        const bySource: Record<string, number> = {};
+                        for (const l of leads) {
+                            const src = (l.source || 'altro').toLowerCase().replace(/_/g, ' ');
+                            bySource[src] = (bySource[src] || 0) + 1;
+                        }
+                        return (
+                            <div className="flex gap-1 items-center">
+                                <span className="text-[9px] text-muted-foreground">Lead:</span>
+                                {Object.entries(bySource).sort((a, b) => b[1] - a[1]).map(([src, count]) => (
+                                    <Badge key={src} variant="outline" className="text-[9px] h-4 px-1.5 font-normal">
+                                        {src} <span className="font-semibold ml-0.5">{count}</span>
+                                    </Badge>
+                                ))}
+                                <Badge variant="outline" className="text-[9px] h-4 px-1.5 font-semibold bg-muted">
+                                    Tot: {leads.length}
+                                </Badge>
+                            </div>
+                        );
+                    })()}
                     <Button
                         variant="ghost"
                         size="sm"

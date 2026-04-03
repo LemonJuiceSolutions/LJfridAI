@@ -19,7 +19,7 @@ import { Label } from '../ui/label';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
-import _ from 'lodash';
+import uniqBy from 'lodash/uniqBy';
 import { nanoid } from 'nanoid';
 
 interface MergeVariablesDialogProps {
@@ -45,7 +45,7 @@ export default function MergeVariablesDialog({
 
   useEffect(() => {
     if (isOpen && variablesToMerge.length === 2) {
-      const combinedOptions = _.uniqBy(
+      const combinedOptions = uniqBy(
           [...(variablesToMerge[0].possibleValues || []), ...(variablesToMerge[1].possibleValues || [])].map(opt => ({...opt, id: opt.id || nanoid(8)})), 
           'name'
       );

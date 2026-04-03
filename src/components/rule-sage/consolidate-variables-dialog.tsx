@@ -19,7 +19,8 @@ import { Label } from '../ui/label';
 import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
-import _ from 'lodash';
+import filter from 'lodash/filter';
+import uniqBy from 'lodash/uniqBy';
 import { cn } from '@/lib/utils';
 import { nanoid } from 'nanoid';
 
@@ -281,8 +282,8 @@ export default function ConsolidateVariablesDialog({
                 const treeVar = p.treeVariable;
                 const dbVar = p.type === 'merge' ? p.dbVariable : null;
 
-                const combinedOptions = _.uniqBy(
-                    _.filter(
+                const combinedOptions = uniqBy(
+                    filter(
                         [...(treeVar.possibleValues || []), ...(dbVar?.possibleValues || [])],
                         v => v && v.name
                     ).map((v: any) => ({ ...v, id: v.id || nanoid(8) })),

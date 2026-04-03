@@ -28,7 +28,12 @@ export interface ClaudeCliResult {
  * Spawn Claude CLI and return a UIMessageStreamResponse compatible with useChat.
  */
 export function streamFromClaudeCli(opts: ClaudeCliOptions): ClaudeCliResult {
-    const claudePath = process.env.CLAUDE_PATH || 'claude';
+    const claudePath = process.env.CLAUDE_PATH || '/opt/homebrew/bin/claude';
+
+    // Ensure /opt/homebrew/bin is in PATH so `node` and `claude` are found
+    const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
+    const currentPath = process.env.PATH || '';
+    const fullPath = [...extraPaths, currentPath].join(':');
 
     // Build CLI arguments
     const args: string[] = [];
@@ -49,7 +54,7 @@ export function streamFromClaudeCli(opts: ClaudeCliOptions): ClaudeCliResult {
 
     const child = spawn(claudePath, args, {
         cwd: opts.cwd || process.cwd(),
-        env: { ...process.env, FORCE_COLOR: '0' },
+        env: { ...process.env, FORCE_COLOR: '0', PATH: fullPath },
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -135,7 +140,12 @@ export async function runClaudeCliSync(opts: ClaudeCliOptions): Promise<{
     inputTokens?: number;
     outputTokens?: number;
 }> {
-    const claudePath = process.env.CLAUDE_PATH || 'claude';
+    const claudePath = process.env.CLAUDE_PATH || '/opt/homebrew/bin/claude';
+
+    // Ensure /opt/homebrew/bin is in PATH so `node` and `claude` are found
+    const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
+    const currentPath = process.env.PATH || '';
+    const fullPath = [...extraPaths, currentPath].join(':');
 
     const args: string[] = [];
     if (opts.model) { args.push('--model', opts.model); }
@@ -152,7 +162,7 @@ export async function runClaudeCliSync(opts: ClaudeCliOptions): Promise<{
     return new Promise((resolve, reject) => {
         const child = spawn(claudePath, args, {
             cwd: opts.cwd || process.cwd(),
-            env: { ...process.env, FORCE_COLOR: '0' },
+            env: { ...process.env, FORCE_COLOR: '0', PATH: fullPath },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
 

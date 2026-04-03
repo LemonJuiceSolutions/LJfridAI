@@ -28,7 +28,7 @@ async function getAuthUser() {
  * Save Lead Generator API keys (Apollo, Hunter, SerpApi, Apify) - per company
  */
 export async function saveLeadGenApiKeysAction(
-    keys: { apollo?: string; hunter?: string; serpApi?: string; apify?: string; groq?: string }
+    keys: { apollo?: string; hunter?: string; serpApi?: string; apify?: string; groq?: string; vibeProspect?: string; firecrawl?: string }
 ): Promise<{ success: boolean; error?: string }> {
     const user = await getAuthUser();
     if (!user) return { success: false, error: "Non autorizzato" };
@@ -50,7 +50,7 @@ export async function saveLeadGenApiKeysAction(
  * Get Lead Generator API keys - per company
  */
 export async function getLeadGenApiKeysAction(): Promise<{
-    keys?: { apollo?: string; hunter?: string; serpApi?: string; apify?: string; groq?: string };
+    keys?: { apollo?: string; hunter?: string; serpApi?: string; apify?: string; groq?: string; vibeProspect?: string; firecrawl?: string };
     error?: string;
 }> {
     const user = await getAuthUser();
@@ -84,6 +84,123 @@ export async function testGroqApiKeyAction(apiKey: string): Promise<ApiTestResul
         return {
             success: true,
             message: `Connessione Groq riuscita! Whisper: ${whisperModel?.id || 'whisper-large-v3'} disponibile. Piano gratuito: 2000 min/giorno.`,
+        };
+    } catch (error: any) {
+        return { success: false, message: error.message || 'Errore di connessione.' };
+    }
+}
+
+/**
+ * Test Vibe Prospecting (Explorium) API key
+ */
+export async function testVibeProspectApiKeyAction(apiKey: string): Promise<ApiTestResult> {
+    if (!apiKey?.trim()) return { success: false, message: 'API key mancante' };
+    try {
+        const res = await fetch('https://api.explorium.ai/v1/credits', {
+            headers: { 'api_key': apiKey.trim() },
+        });
+        if (res.status === 401 || res.status === 403) return { success: false, message: 'API key non valida.' };
+        if (!res.ok) return { success: false, message: `Errore Vibe Prospect: ${res.statusText}` };
+        const data = await res.json();
+        const allocated = data.allocated_credits ?? 0;
+        const remaining = data.remaining_credits ?? 0;
+        const used = allocated > 0 ? allocated - remaining : 0;
+        return {
+            success: true,
+            message: `Connessione Vibe Prospecting riuscita!`,
+            quota: {
+                used,
+                available: remaining,
+                plan: `Vibe Prospecting (Explorium)`,
+                extra: allocated > 0 ? `${used.toLocaleString('it-IT')}/${allocated.toLocaleString('it-IT')} crediti usati` : `${remaining.toLocaleString('it-IT')} crediti rimasti`,
+            },
+        };
+    } catch (error: any) {
+        // If /v1/credits doesn't work, try a minimal prospects search as connectivity check
+        try {
+            const res2 = await fetch('https://api.explorium.ai/v1/prospects', {
+                method: 'POST',
+                headers: {
+                    'api_key': apiKey.trim(),
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ filter: { job_titles: ['CEO'] }, limit: 1 }),
+            });
+            if (res2.status === 401 || res2.status === 403) return { success: false, message: 'API key non valida.' };
+            if (res2.ok || res2.status === 422) {
+                // 422 = valid key but bad request format, still means connection works
+                return {
+                    success: true,
+                    message: 'Connessione Vibe Prospecting riuscita! (endpoint crediti non disponibile)',
+                };
+            }
+            return { success: false, message: `Errore Vibe Prospect: ${res2.statusText}` };
+        } catch (e2: any) {
+            return { success: false, message: error.message || 'Errore di connessione.' };
+        }
+    }
+}
+
+/**
+ * Test Firecrawl API key and get credit usage
+ */
+export async function testFirecrawlApiKeyAction(apiKey: string): Promise<ApiTestResult> {
+    if (!apiKey?.trim()) return { success: false, message: 'API key mancante' };
+    try {
+        // Firecrawl doesn't have a dedicated /credits endpoint — do a minimal scrape to test
+        const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey.trim()}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                url: 'https://example.com',
+                formats: ['markdown'],
+                onlyMainContent: true,
+                timeout: 10000,
+            }),
+        });
+
+        if (res.status === 401 || res.status === 403) {
+            return { success: false, message: 'API key non valida.' };
+        }
+
+        if (res.status === 402) {
+            return { success: false, message: 'Crediti Firecrawl esauriti.' };
+        }
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            return { success: false, message: `Errore Firecrawl: ${errData.error || res.statusText}` };
+        }
+
+        // Check response headers for rate limit / credits info
+        const creditsUsed = res.headers.get('x-credits-used');
+        const creditsRemaining = res.headers.get('x-credits-remaining');
+        const rateLimit = res.headers.get('x-ratelimit-remaining');
+
+        let extra: string | undefined;
+        let used = 0;
+        let available = 0;
+
+        if (creditsRemaining) {
+            available = parseInt(creditsRemaining, 10);
+            used = creditsUsed ? parseInt(creditsUsed, 10) : 0;
+            extra = `${available.toLocaleString('it-IT')} crediti rimasti`;
+        } else if (rateLimit) {
+            extra = `Rate limit: ${rateLimit} richieste rimaste`;
+        }
+
+        return {
+            success: true,
+            message: 'Connessione Firecrawl riuscita! Scraping example.com OK.',
+            quota: extra ? {
+                used,
+                available,
+                plan: 'Firecrawl',
+                extra,
+            } : undefined,
         };
     } catch (error: any) {
         return { success: false, message: error.message || 'Errore di connessione.' };

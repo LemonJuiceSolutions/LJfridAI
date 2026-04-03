@@ -26,7 +26,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
-import _ from 'lodash';
+import cloneDeep from 'lodash/cloneDeep';
+import isEqual from 'lodash/isEqual';
+import uniqBy from 'lodash/uniqBy';
 import { Checkbox } from '@/components/ui/checkbox';
 import MergeVariablesDialog from '@/components/rule-sage/merge-variables-dialog';
 import { nanoid } from 'nanoid';
@@ -115,7 +117,7 @@ function VariablesContent() {
             setEditingState({
                 variableId: variable.id,
                 name: variable.name,
-                possibleValues: _.cloneDeep(variable.possibleValues || []).map(v => ({ ...v, id: v.id || nanoid(8) })),
+                possibleValues: cloneDeep(variable.possibleValues || []).map(v => ({ ...v, id: v.id || nanoid(8) })),
                 newOption: { id: nanoid(8), name: '', value: (variable.possibleValues?.length || 0), abbreviation: '' },
             });
         }
@@ -138,7 +140,7 @@ function VariablesContent() {
         setIsSaving(true);
 
         const newName = editingState.name.trim();
-        const newPossibleValues = _.uniqBy(
+        const newPossibleValues = uniqBy(
             editingState.possibleValues
                 .map(v => ({ ...v, name: v.name.trim(), id: v.id || nanoid(8) }))
                 .filter(v => v.name),
@@ -150,7 +152,7 @@ function VariablesContent() {
         if (newName !== originalVariable.name) {
             updatePayload.name = newName;
         }
-        if (!_.isEqual(newPossibleValues, originalVariable.possibleValues)) {
+        if (!isEqual(newPossibleValues, originalVariable.possibleValues)) {
             updatePayload.possibleValues = newPossibleValues;
         }
 

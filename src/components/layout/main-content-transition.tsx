@@ -1,11 +1,12 @@
 'use client';
 
 import React, { ReactNode } from 'react';
-import { useLayout } from '@/components/providers/layout-provider';
+import { useSidebar, useChatbot } from '@/components/providers/layout-provider';
 import { cn } from '@/lib/utils';
 
 export function MainContentTransition({ children }: { children: ReactNode }) {
-    const { isSidebarOpen, isChatbotOpen } = useLayout();
+    const { isSidebarOpen } = useSidebar();
+    const { isChatbotOpen } = useChatbot();
 
     return (
         <div

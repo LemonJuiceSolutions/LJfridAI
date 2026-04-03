@@ -24,7 +24,7 @@ async function generateTreeWithClaudeCli(
     companyId: string,
     model: string,
 ): Promise<{ data: any | null; error: string | null }> {
-    const claudePath = process.env.CLAUDE_PATH || 'claude';
+    const claudePath = process.env.CLAUDE_PATH || '/opt/homebrew/bin/claude';
 
     const systemPrompt = `Sei un Business Rules Engine esperto. Devi generare un albero decisionale strutturato a partire dalla descrizione fornita dall'utente.
 
@@ -72,9 +72,13 @@ REGOLE:
             `<system>\n${systemPrompt}\n</system>\n\n${userPrompt}`,
         ];
 
+        // Ensure /opt/homebrew/bin is in PATH so `node` and `claude` are found
+        const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
+        const currentPath = process.env.PATH || '';
+        const fullPath = [...extraPaths, currentPath].join(':');
         const child = spawn(claudePath, args, {
             cwd: process.cwd(),
-            env: { ...process.env, FORCE_COLOR: '0' },
+            env: { ...process.env, FORCE_COLOR: '0', PATH: fullPath },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
 

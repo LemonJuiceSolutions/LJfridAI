@@ -2,33 +2,39 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
-type LayoutContextType = {
+// ── Sidebar Context ──
+
+type SidebarContextType = {
     isSidebarOpen: boolean;
-    isChatbotOpen: boolean;
     toggleSidebar: () => void;
-    toggleChatbot: () => void;
     setSidebarOpen: (open: boolean) => void;
-    setChatbotOpen: (open: boolean) => void;
-    sidebarWidth: number; // e.g. 256 for w-64
-    chatbotWidth: number; // e.g. 384 for w-96
+    sidebarWidth: number;
 };
 
-// Default widths in pixels (matching Tailwind classes ml-64 (256px) and mr-96 (384px))
-// Adjusting: Sidebar w-56 is 224px. Layout used ml-64 (256px). We can stick to 256px for margin or tighten it.
-// Let's use 256px (w-64) for sidebar margin when open, and 0 when closed.
 const SIDEBAR_WIDTH = 256;
-const CHATBOT_WIDTH = 384; // w-96
 
-const LayoutContext = createContext<LayoutContextType | undefined>(undefined);
+const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
+
+// ── Chatbot Context ──
+
+type ChatbotContextType = {
+    isChatbotOpen: boolean;
+    toggleChatbot: () => void;
+    setChatbotOpen: (open: boolean) => void;
+    chatbotWidth: number;
+};
+
+const CHATBOT_WIDTH = 384;
+
+const ChatbotContext = createContext<ChatbotContextType | undefined>(undefined);
+
+// ── Provider ──
 
 export function LayoutProvider({ children }: { children: ReactNode }) {
-    // Initialize from localStorage if available, otherwise default to open
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isChatbotOpen, setIsChatbotOpen] = useState(true);
-    const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
-        setMounted(true);
         if (typeof window === 'undefined') return;
         try {
             const savedSidebar = window.localStorage.getItem('sidebar-open');
@@ -60,32 +66,50 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
         try { window.localStorage.setItem('chatbot-open', String(open)); } catch {}
     };
 
-    // Prevent hydration mismatch by rendering simpler state or handled by consumer
-    // consumers should handle !mounted if appropriate, but for layout we want stability.
-    // We'll let effects sync it.
-
     return (
-        <LayoutContext.Provider
+        <SidebarContext.Provider
             value={{
                 isSidebarOpen,
-                isChatbotOpen,
                 toggleSidebar,
-                toggleChatbot,
                 setSidebarOpen: setSidebarOpenState,
-                setChatbotOpen: setChatbotOpenState,
                 sidebarWidth: isSidebarOpen ? SIDEBAR_WIDTH : 0,
-                chatbotWidth: isChatbotOpen ? CHATBOT_WIDTH : 0,
             }}
         >
-            {children}
-        </LayoutContext.Provider>
+            <ChatbotContext.Provider
+                value={{
+                    isChatbotOpen,
+                    toggleChatbot,
+                    setChatbotOpen: setChatbotOpenState,
+                    chatbotWidth: isChatbotOpen ? CHATBOT_WIDTH : 0,
+                }}
+            >
+                {children}
+            </ChatbotContext.Provider>
+        </SidebarContext.Provider>
     );
 }
 
-export function useLayout() {
-    const context = useContext(LayoutContext);
+// ── Hooks ──
+
+export function useSidebar() {
+    const context = useContext(SidebarContext);
     if (context === undefined) {
-        throw new Error('useLayout must be used within a LayoutProvider');
+        throw new Error('useSidebar must be used within a LayoutProvider');
     }
     return context;
+}
+
+export function useChatbot() {
+    const context = useContext(ChatbotContext);
+    if (context === undefined) {
+        throw new Error('useChatbot must be used within a LayoutProvider');
+    }
+    return context;
+}
+
+/** @deprecated Use `useSidebar()` or `useChatbot()` for better performance. */
+export function useLayout() {
+    const sidebar = useSidebar();
+    const chatbot = useChatbot();
+    return { ...sidebar, ...chatbot };
 }

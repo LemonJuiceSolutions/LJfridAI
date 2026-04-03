@@ -15,6 +15,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import Image from 'next/image';
 import type { MediaItem, LinkItem, TriggerItem, DiagnosticNode } from '@/lib/types';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
+import { getAiProviderAction } from '@/actions/ai-settings';
 
 
 type Message = {
@@ -50,6 +51,17 @@ export default function ChatbotPage() {
     const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
     const [selectedTreeJson, setSelectedTreeJson] = useState<string | null>(null);
     const { apiKey: dbApiKey, model: dbModel } = useOpenRouterSettings();
+    const [aiProvider, setAiProvider] = useState<'openrouter' | 'claude-cli'>('openrouter');
+    const [claudeCliModel, setClaudeCliModel] = useState('claude-sonnet-4-6');
+
+    useEffect(() => {
+        getAiProviderAction().then(res => {
+            if (!res.error) {
+                setAiProvider(res.provider);
+                if (res.claudeCliModel) setClaudeCliModel(res.claudeCliModel);
+            }
+        });
+    }, []);
 
     useEffect(() => {
         if (scrollAreaRef.current) {
@@ -153,7 +165,8 @@ export default function ChatbotPage() {
                 setInitialProblem(problem);
             }
 
-            const openRouterConfig = dbApiKey ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
+            const openRouterConfig = (aiProvider === 'openrouter' && dbApiKey) ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
+            const claudeCliConfig = (aiProvider === 'claude-cli' || !openRouterConfig) ? { model: claudeCliModel } : undefined;
 
             // CHECK: Is this the initial search phase?
             // If we don't have a current tree active AND this is not an option click (meaning it's a new query)
@@ -163,7 +176,7 @@ export default function ChatbotPage() {
             if (!activeTreeId && !isOptionClick) {
                 // Perform Search
                 try {
-                    const searchResultJson = await searchTreesAction(problem, openRouterConfig);
+                    const searchResultJson = await searchTreesAction(problem, openRouterConfig, claudeCliConfig);
                     let searchResults = [];
                     try {
                         // Check if it's the "No results" string or JSON
@@ -208,7 +221,7 @@ export default function ChatbotPage() {
                 history,
                 specificTreeId: activeTreeId, // Pass the active tree ID if any
                 previousNodeId: previousNodeId
-            }, openRouterConfig);
+            }, openRouterConfig, claudeCliConfig);
 
 
             if (result.error || !result.data) {
