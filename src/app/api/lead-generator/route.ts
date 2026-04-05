@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { leadGeneratorFlow } from '@/ai/flows/lead-generator-flow';
+import type { ProgressEvent } from '@/ai/flows/lead-generator-flow';
 
 async function getAuthenticatedCompanyUser() {
     const session = await getServerSession(authOptions);
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { userMessage, conversationId, model, aiProvider } = body;
+        const { userMessage, conversationId, model, aiProvider, stream, skillsContext } = body;
 
         if (!userMessage) {
             return NextResponse.json({ error: 'Missing required field: userMessage' }, { status: 400 });
@@ -85,7 +86,77 @@ export async function POST(request: NextRequest) {
             activeConversationId = newConversation.id;
         }
 
-        // Call the lead generator flow with conversationId
+        // ===== SSE STREAMING MODE =====
+        if (stream) {
+            const encoder = new TextEncoder();
+            const readableStream = new ReadableStream({
+                async start(controller) {
+                    const sendEvent = (event: string, data: any) => {
+                        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+                    };
+
+                    // Send conversationId immediately
+                    sendEvent('conversationId', { conversationId: activeConversationId });
+
+                    try {
+                        const onProgress = (progressEvent: ProgressEvent) => {
+                            sendEvent('progress', progressEvent);
+                        };
+
+                        console.log(`[LeadGen-Route] ▶ Calling leadGeneratorFlow — aiProvider=${aiProvider}, model=${model}, userMsg="${userMessage.substring(0, 60)}", apiKeys=${Object.keys(leadGenApiKeys).filter(k => leadGenApiKeys[k]).join(',')}`);
+
+                        const result = await leadGeneratorFlow({
+                            messages: genkitMessages,
+                            companyId: user.company!.id,
+                            model: model || undefined,
+                            apiKey: (user as any).openRouterApiKey || undefined,
+                            leadGenApiKeys,
+                            conversationId: activeConversationId,
+                            aiProvider: aiProvider || 'openrouter',
+                            onProgress,
+                            skillsContext: skillsContext || undefined,
+                        });
+
+                        // Save conversation
+                        const newTotalCost = previousCost + result.cost;
+                        const updatedHistory = [
+                            ...conversationHistory,
+                            { role: 'user', content: [{ text: userMessage }] },
+                            { role: 'model', content: [{ text: result.text }] },
+                        ];
+                        await db.leadGeneratorConversation.update({
+                            where: { id: activeConversationId },
+                            data: { messages: updatedHistory, totalCost: newTotalCost, updatedAt: new Date() },
+                        });
+
+                        // Send final result
+                        sendEvent('result', {
+                            success: true,
+                            message: result.text,
+                            conversationId: activeConversationId,
+                            cost: result.cost,
+                            totalCost: newTotalCost,
+                            totalTokens: result.totalTokens,
+                        });
+                    } catch (error: any) {
+                        console.error('Error in lead generator SSE:', error);
+                        sendEvent('error', { error: error.message || 'Errore interno' });
+                    } finally {
+                        controller.close();
+                    }
+                },
+            });
+
+            return new Response(readableStream, {
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
+            });
+        }
+
+        // ===== CLASSIC (NON-STREAMING) MODE =====
         const result = await leadGeneratorFlow({
             messages: genkitMessages,
             companyId: user.company!.id,
@@ -94,6 +165,7 @@ export async function POST(request: NextRequest) {
             leadGenApiKeys,
             conversationId: activeConversationId,
             aiProvider: aiProvider || 'openrouter',
+            skillsContext: skillsContext || undefined,
         });
 
         // Calculate total cost (accumulated from previous + this call)
@@ -227,6 +299,34 @@ export async function DELETE(request: NextRequest) {
         return NextResponse.json({ success: true });
     } catch (error: any) {
         console.error('Error clearing lead generator conversation:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
+export async function PATCH(request: NextRequest) {
+    try {
+        const user = await getAuthenticatedCompanyUser();
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const { id, title } = await request.json();
+        if (!id || typeof title !== 'string') {
+            return NextResponse.json({ error: 'Missing id or title' }, { status: 400 });
+        }
+
+        const updated = await db.leadGeneratorConversation.updateMany({
+            where: { id, companyId: user.company!.id },
+            data: { title: title.trim() },
+        });
+
+        if (updated.count === 0) {
+            return NextResponse.json({ error: 'Not found' }, { status: 404 });
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (error: any) {
+        console.error('Error updating lead generator conversation:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

@@ -78,6 +78,7 @@
     "nodemailer": "^7.0.12",
     "parquetjs-lite": "^0.8.7",
     "patch-package": "^8.0.0",
+    "playwright": "^1.59.1",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",

@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
     Send, Bot, Loader2, Trash2, UserSearch, Download, Search,
     Users, Building2, Mail, Phone, Linkedin, Globe, FileSpreadsheet,
     ChevronRight, ChevronLeft, RefreshCw, ChevronsUpDown, Check,
     Plus, MessageSquare, Clock, MoreHorizontal, Star, X, Tag,
     PenLine, ExternalLink, ShieldCheck, Info, CheckCircle2,
+    Target, AtSign, TrendingUp, BarChart3, ArrowLeft, FolderOpen, Copy, Pencil, Save, Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +21,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { fetchOpenRouterModelsAction } from '@/app/actions';
 import { getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction } from '@/actions/openrouter';
 import { getAiProviderAction, saveAiProviderAction, type AiProvider } from '@/actions/ai-settings';
-import { sendLeadEmailAction, generateLeadEmailAction, getLeadGenApiKeysAction } from '@/actions/lead-generator';
+import { sendLeadEmailAction, generateLeadEmailAction, getLeadGenApiKeysAction, getLeadGenApiCreditsAction } from '@/actions/lead-generator';
 
 const CLAUDE_CLI_MODELS = [
     { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
@@ -385,7 +386,9 @@ function LeadDetailDialog({
 
     if (!lead) return null;
 
-    const name = lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'N/A';
+    const contacts: any[] = lead.contacts || [];
+    const contactCount = contacts.length;
+    const primaryName = lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || null;
     const currentYear = new Date().getFullYear();
     const hasFinancials = lead.revenueYear1 || lead.revenueYear2 || lead.revenueYear3 || lead.profitYear1 || lead.profitYear2 || lead.profitYear3;
 
@@ -394,50 +397,38 @@ function LeadDetailDialog({
             <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle className="flex items-center justify-between pr-6">
-                        <span>{name}</span>
+                        <div className="flex items-center gap-2">
+                            <Building2 className="h-4.5 w-4.5 text-muted-foreground shrink-0" />
+                            <span>{lead.companyName || primaryName || 'N/A'}</span>
+                        </div>
                         {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                     </DialogTitle>
-                    {lead.jobTitle && (
-                        <p className="text-sm text-muted-foreground">{lead.jobTitle}</p>
-                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {lead.companyIndustry && (
+                            <Badge variant="secondary" className="text-[10px]">{lead.companyIndustry}</Badge>
+                        )}
+                        {contactCount > 0 && (
+                            <Badge variant="outline" className="text-[10px] gap-1">
+                                <Users className="h-2.5 w-2.5" />
+                                {contactCount} contatt{contactCount === 1 ? 'o' : 'i'}
+                            </Badge>
+                        )}
+                    </div>
                 </DialogHeader>
 
                 <div className="space-y-4 mt-2">
-                    {/* Company info */}
-                    {lead.companyName && (
-                        <div className="flex items-center gap-2 text-sm">
-                            <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span className="font-medium">{lead.companyName}</span>
-                            {lead.companyIndustry && (
-                                <Badge variant="secondary" className="text-[10px]">{lead.companyIndustry}</Badge>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Contact details */}
+                    {/* Company details */}
                     <div className="grid grid-cols-1 gap-2 text-sm">
-                        {lead.email && (
-                            <a href={`mailto:${lead.email}`} className="flex items-center gap-2 text-blue-500 hover:underline">
-                                <Mail className="h-3.5 w-3.5 shrink-0" />
-                                {lead.email}
-                            </a>
-                        )}
-                        {lead.phone && (
-                            <a href={`tel:${lead.phone}`} className="flex items-center gap-2 text-green-600 hover:underline">
-                                <Phone className="h-3.5 w-3.5 shrink-0" />
-                                {lead.phone}
-                            </a>
-                        )}
-                        {lead.linkedinUrl && (
-                            <a href={lead.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline">
-                                <Linkedin className="h-3.5 w-3.5 shrink-0" />
-                                LinkedIn
-                            </a>
-                        )}
                         {lead.companyWebsite && (
                             <a href={lead.companyWebsite.startsWith('http') ? lead.companyWebsite : `https://${lead.companyWebsite}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-purple-500 hover:underline">
                                 <Globe className="h-3.5 w-3.5 shrink-0" />
                                 {lead.companyWebsite}
+                            </a>
+                        )}
+                        {lead.companyDomain && !lead.companyWebsite && (
+                            <a href={`https://${lead.companyDomain}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-purple-500 hover:underline">
+                                <Globe className="h-3.5 w-3.5 shrink-0" />
+                                {lead.companyDomain}
                             </a>
                         )}
                     </div>
@@ -465,7 +456,7 @@ function LeadDetailDialog({
                             <div className="flex items-center justify-between">
                                 <span className="font-medium flex items-center gap-1.5">
                                     <Info className="h-3 w-3 text-muted-foreground" />
-                                    Affidabilita' e Fonte
+                                    Affidabilita&apos; e Fonte
                                 </span>
                                 <button onClick={() => setShowSourceInfo(false)} className="text-muted-foreground hover:text-foreground">
                                     <X className="h-3 w-3" />
@@ -475,7 +466,7 @@ function LeadDetailDialog({
                                 <span className="text-muted-foreground">Fonte dati:</span>
                                 <span className="font-medium capitalize">{lead.source || 'N/A'}</span>
 
-                                <span className="text-muted-foreground">Affidabilita':</span>
+                                <span className="text-muted-foreground">Affidabilita&apos;:</span>
                                 <span className="font-medium flex items-center gap-1">
                                     {lead.confidence != null ? (
                                         <>
@@ -490,15 +481,6 @@ function LeadDetailDialog({
                                         <span className="text-muted-foreground">Non disponibile</span>
                                     )}
                                 </span>
-
-                                {lead.emailStatus && (
-                                    <>
-                                        <span className="text-muted-foreground">Stato email:</span>
-                                        <span className={cn('font-medium', lead.emailStatus === 'valid' ? 'text-green-600' : lead.emailStatus === 'invalid' ? 'text-red-500' : 'text-amber-500')}>
-                                            {lead.emailStatus === 'valid' ? 'Verificata' : lead.emailStatus === 'invalid' ? 'Non valida' : lead.emailStatus}
-                                        </span>
-                                    </>
-                                )}
 
                                 <span className="text-muted-foreground">Aggiornato:</span>
                                 <span className="font-medium">{new Date(lead.updatedAt || lead.createdAt).toLocaleDateString('it-IT')}</span>
@@ -519,6 +501,92 @@ function LeadDetailDialog({
                                 </p>
                             )}
                         </div>
+                    )}
+
+                    {/* ===== CONTACTS SECTION ===== */}
+                    {contactCount > 0 && (
+                        <>
+                            <hr className="border-muted" />
+                            <div>
+                                <label className="text-xs font-medium text-muted-foreground mb-2 block flex items-center gap-1.5">
+                                    <Users className="h-3 w-3" />
+                                    Contatti ({contactCount})
+                                </label>
+                                <div className="space-y-2">
+                                    {contacts.map((c: any, idx: number) => {
+                                        const cName = c.fullName || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Contatto';
+                                        const isVerified = c.emailStatus === 'valid';
+                                        return (
+                                            <div key={idx} className="rounded-md border bg-muted/10 p-2.5 text-xs space-y-1">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-medium text-[11px]">{cName}</span>
+                                                    {isVerified && (
+                                                        <Badge variant="outline" className="text-[8px] h-4 px-1 border-green-500/50 text-green-600 gap-0.5">
+                                                            <CheckCircle2 className="h-2 w-2" />
+                                                            Verificato
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                {c.jobTitle && (
+                                                    <p className="text-[10px] text-muted-foreground">{c.jobTitle}</p>
+                                                )}
+                                                <div className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
+                                                    {c.email && (
+                                                        <a href={`mailto:${c.email}`} className="flex items-center gap-1 text-blue-500 hover:underline text-[10px]">
+                                                            <Mail className="h-2.5 w-2.5 shrink-0" />
+                                                            {c.email}
+                                                        </a>
+                                                    )}
+                                                    {c.phone && (
+                                                        <a href={`tel:${c.phone}`} className="flex items-center gap-1 text-green-600 hover:underline text-[10px]">
+                                                            <Phone className="h-2.5 w-2.5 shrink-0" />
+                                                            {c.phone}
+                                                        </a>
+                                                    )}
+                                                    {c.linkedinUrl && (
+                                                        <a href={c.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:underline text-[10px]">
+                                                            <Linkedin className="h-2.5 w-2.5 shrink-0" />
+                                                            LinkedIn
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Fallback: show primary contact if no contacts array */}
+                    {contactCount === 0 && (primaryName || lead.email) && (
+                        <>
+                            <hr className="border-muted" />
+                            <div>
+                                <label className="text-xs font-medium text-muted-foreground mb-2 block">Contatto principale</label>
+                                <div className="grid grid-cols-1 gap-2 text-sm">
+                                    {primaryName && <span className="font-medium text-xs">{primaryName}{lead.jobTitle ? ` - ${lead.jobTitle}` : ''}</span>}
+                                    {lead.email && (
+                                        <a href={`mailto:${lead.email}`} className="flex items-center gap-2 text-blue-500 hover:underline text-xs">
+                                            <Mail className="h-3.5 w-3.5 shrink-0" />
+                                            {lead.email}
+                                        </a>
+                                    )}
+                                    {lead.phone && (
+                                        <a href={`tel:${lead.phone}`} className="flex items-center gap-2 text-green-600 hover:underline text-xs">
+                                            <Phone className="h-3.5 w-3.5 shrink-0" />
+                                            {lead.phone}
+                                        </a>
+                                    )}
+                                    {lead.linkedinUrl && (
+                                        <a href={lead.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline text-xs">
+                                            <Linkedin className="h-3.5 w-3.5 shrink-0" />
+                                            LinkedIn
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+                        </>
                     )}
 
                     {/* Revenue & Profit */}
@@ -757,6 +825,16 @@ export default function LeadGeneratorPage() {
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+    // Progress streaming state
+    const [progressMessage, setProgressMessage] = useState<string>('');
+    const [progressPercent, setProgressPercent] = useState<number>(0);
+    const [progressPhase, setProgressPhase] = useState<string>('');
+    const [progressStats, setProgressStats] = useState<{ companies?: number; leads?: number; leadsWithEmail?: number }>({});
+    const [browserLogs, setBrowserLogs] = useState<string[]>([]);
+    const [browserUrl, setBrowserUrl] = useState<string>('');
+    const [browserScreenshot, setBrowserScreenshot] = useState<string>('');
+    const browserLogRef = useRef<HTMLDivElement>(null);
+
     // Conversation history state
     const [conversations, setConversations] = useState<ConversationMeta[]>([]);
     const [showHistory, setShowHistory] = useState(true);
@@ -764,6 +842,10 @@ export default function LeadGeneratorPage() {
 
     // Provider API keys status (which are configured)
     const [configuredProviders, setConfiguredProviders] = useState<Record<string, boolean>>({});
+    const [apiCredits, setApiCredits] = useState<any>(null);
+
+    // View mode: 'dashboard' shows all searches as cards, 'detail' opens a specific search
+    const [viewMode, setViewMode] = useState<'dashboard' | 'detail'>('dashboard');
 
     // Leads panel state
     const [showLeadsPanel, setShowLeadsPanel] = useState(true);
@@ -781,6 +863,11 @@ export default function LeadGeneratorPage() {
     const activeSearchIdRef = useRef<string | null>(null);
     const loadLeadsAbortRef = useRef<AbortController | null>(null);
 
+    // Title editing state
+    const [isEditingTitle, setIsEditingTitle] = useState(false);
+    const [editTitleValue, setEditTitleValue] = useState('');
+    const titleInputRef = useRef<HTMLInputElement>(null);
+
     const scrollToBottom = useCallback(() => {
         if (scrollAreaRef.current) {
             scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
@@ -790,6 +877,13 @@ export default function LeadGeneratorPage() {
     useEffect(() => {
         scrollToBottom();
     }, [messages, scrollToBottom]);
+
+    // Auto-scroll browser log to bottom
+    useEffect(() => {
+        if (browserLogRef.current) {
+            browserLogRef.current.scrollTop = browserLogRef.current.scrollHeight;
+        }
+    }, [browserLogs]);
 
     // Load AI provider and models on mount
     useEffect(() => {
@@ -815,6 +909,10 @@ export default function LeadGeneratorPage() {
                     firecrawl: !!res.keys.firecrawl,
                 });
             }
+        });
+        // Load API credits balance
+        getLeadGenApiCreditsAction().then(res => {
+            if (res.credits) setApiCredits(res.credits);
         });
     }, []);
 
@@ -886,7 +984,7 @@ export default function LeadGeneratorPage() {
     };
 
     const handleSwitchConversation = async (id: string) => {
-        if (id === conversationId) return;
+        if (id === conversationId && viewMode === 'detail') return;
         await loadConversation(id);
         // Find searches linked to this conversation and auto-select the first one
         const convSearches = searches.filter((s: any) => s.conversationId === id);
@@ -897,21 +995,70 @@ export default function LeadGeneratorPage() {
             setLeadsTab('leads');
             loadLeads(firstSearchId);
         } else {
-            // No linked searches found - show all leads
             activeSearchIdRef.current = null;
             setActiveSearchId(null);
             loadLeads(null);
         }
+        setViewMode('detail');
+        setActiveTab('chat');
     };
 
     const handleNewConversation = () => {
         setConversationId(null);
         setMessages([]);
         setCurrentCost(0);
-        // Reset search filter
         activeSearchIdRef.current = null;
         setActiveSearchId(null);
-        loadLeads(null);
+        setLeads([]);
+        setViewMode('detail');
+        setActiveTab('chat');
+    };
+
+    const handleBackToDashboard = () => {
+        setViewMode('dashboard');
+        loadSearches();
+    };
+
+    // Rename conversation title
+    const handleStartEditTitle = () => {
+        // Use the currently displayed title as starting value
+        const conv = conversations.find(c => c.id === conversationId);
+        const searchName = searches.find(s => s.id === activeSearchIdRef.current)?.name;
+        setEditTitleValue(conv?.title || searchName || '');
+        setIsEditingTitle(true);
+        setTimeout(() => titleInputRef.current?.select(), 50);
+    };
+
+    const handleSaveTitle = async () => {
+        if (!conversationId || !editTitleValue.trim()) {
+            setIsEditingTitle(false);
+            return;
+        }
+        try {
+            await fetch('/api/lead-generator', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: conversationId, title: editTitleValue.trim() }),
+            });
+            setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, title: editTitleValue.trim() } : c));
+            toast({ description: 'Titolo aggiornato' });
+        } catch {
+            toast({ variant: 'destructive', description: 'Errore nel salvataggio del titolo' });
+        }
+        setIsEditingTitle(false);
+    };
+
+    // Copy entire chat history to clipboard
+    const handleCopyChat = () => {
+        const chatText = messages.map(msg => {
+            const role = msg.role === 'user' ? 'Tu' : 'AI';
+            return `[${role}]\n${msg.content}`;
+        }).join('\n\n---\n\n');
+        navigator.clipboard.writeText(chatText).then(() => {
+            toast({ description: 'Chat copiata negli appunti' });
+        }).catch(() => {
+            toast({ variant: 'destructive', description: 'Errore nella copia' });
+        });
     };
 
     const handleDeleteConversation = async (id: string, e: React.MouseEvent) => {
@@ -1125,6 +1272,13 @@ export default function LeadGeneratorPage() {
         setInput('');
         if (textareaRef.current) textareaRef.current.style.height = '40px';
         setIsLoading(true);
+        setProgressMessage('Avvio ricerca...');
+        setProgressPercent(0);
+        setProgressPhase('');
+        setProgressStats({});
+        setBrowserLogs([]);
+        setBrowserUrl('');
+        setBrowserScreenshot('');
 
         try {
             const res = await fetch('/api/lead-generator', {
@@ -1135,43 +1289,143 @@ export default function LeadGeneratorPage() {
                     conversationId,
                     model: activeModel,
                     aiProvider,
+                    stream: true,
+                    skillsContext: skillsContext || undefined,
                 }),
             });
 
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `HTTP ${res.status}`);
+            }
 
-            if (data.conversationId) setConversationId(data.conversationId);
-            if (data.totalCost != null) setCurrentCost(data.totalCost);
+            // Check if response is SSE stream
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('text/event-stream') && res.body) {
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let finalData: any = null;
 
-            const assistantMessage: Message = {
-                role: 'assistant',
-                content: data.message || 'Nessuna risposta.',
-                timestamp: Date.now(),
-            };
-            setMessages(prev => [...prev, assistantMessage]);
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
 
-            // Refresh searches and conversation list, then auto-select this conversation's search
-            const currentConvId = data.conversationId || conversationId;
-            const refreshAndSelectSearch = async () => {
-                const { getLeadSearchesAction } = await import('@/actions/lead-generator');
-                const searchResult = await getLeadSearchesAction();
-                if (searchResult.searches) {
-                    setSearches(searchResult.searches);
-                    // Auto-select the most recent search from this conversation
-                    const convSearch = searchResult.searches.find((s: any) => s.conversationId === currentConvId);
-                    if (convSearch) {
-                        activeSearchIdRef.current = convSearch.id;
-                        setActiveSearchId(convSearch.id);
-                        loadLeads(convSearch.id);
-                    } else {
-                        loadLeads(activeSearchIdRef.current);
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                    let currentEvent = '';
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            currentEvent = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            const dataStr = line.slice(6);
+                            try {
+                                const data = JSON.parse(dataStr);
+                                if (currentEvent === 'progress') {
+                                    setProgressMessage(data.message || '');
+                                    if (data.progress != null) setProgressPercent(data.progress);
+                                    if (data.phase) setProgressPhase(data.phase);
+                                    setProgressStats({
+                                        companies: data.companiesFound,
+                                        leads: data.leadsFound,
+                                        leadsWithEmail: data.leadsWithEmail,
+                                    });
+                                    // Capture browser activity logs + screenshots
+                                    if (data.message && data.message.startsWith('🌐')) {
+                                        setBrowserLogs(prev => {
+                                            const next = [...prev, data.message];
+                                            return next.length > 100 ? next.slice(-100) : next;
+                                        });
+                                    }
+                                    if (data.browserUrl) setBrowserUrl(data.browserUrl);
+                                    if (data.browserScreenshot) setBrowserScreenshot(data.browserScreenshot);
+                                    // Clear screenshot when no browser activity
+                                    if (data.message && !data.message.startsWith('🌐') && !data.browserScreenshot) {
+                                        setBrowserScreenshot('');
+                                        setBrowserUrl('');
+                                    }
+                                } else if (currentEvent === 'conversationId') {
+                                    if (data.conversationId) setConversationId(data.conversationId);
+                                } else if (currentEvent === 'result') {
+                                    finalData = data;
+                                } else if (currentEvent === 'error') {
+                                    throw new Error(data.error || 'Errore sconosciuto');
+                                }
+                            } catch (e: any) {
+                                if (currentEvent === 'error') throw e;
+                            }
+                            currentEvent = '';
+                        }
                     }
                 }
-            };
-            await Promise.all([refreshAndSelectSearch(), loadConversationList()]);
-            // Delayed re-fetch in case DB write was slow
-            setTimeout(() => refreshAndSelectSearch(), 2000);
+
+                if (!finalData) throw new Error('Nessuna risposta dal server');
+
+                if (finalData.conversationId) setConversationId(finalData.conversationId);
+                if (finalData.totalCost != null) setCurrentCost(finalData.totalCost);
+
+                const assistantMessage: Message = {
+                    role: 'assistant',
+                    content: finalData.message || 'Nessuna risposta.',
+                    timestamp: Date.now(),
+                };
+                setMessages(prev => [...prev, assistantMessage]);
+
+                // Refresh searches
+                const currentConvId = finalData.conversationId || conversationId;
+                const refreshAndSelectSearch = async () => {
+                    const { getLeadSearchesAction } = await import('@/actions/lead-generator');
+                    const searchResult = await getLeadSearchesAction();
+                    if (searchResult.searches) {
+                        setSearches(searchResult.searches);
+                        const convSearch = searchResult.searches.find((s: any) => s.conversationId === currentConvId);
+                        if (convSearch) {
+                            activeSearchIdRef.current = convSearch.id;
+                            setActiveSearchId(convSearch.id);
+                            loadLeads(convSearch.id);
+                        } else {
+                            loadLeads(activeSearchIdRef.current);
+                        }
+                    }
+                };
+                await Promise.all([refreshAndSelectSearch(), loadConversationList()]);
+                setTimeout(() => refreshAndSelectSearch(), 2000);
+            } else {
+                // Fallback: non-streaming JSON response
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+
+                if (data.conversationId) setConversationId(data.conversationId);
+                if (data.totalCost != null) setCurrentCost(data.totalCost);
+
+                const assistantMessage: Message = {
+                    role: 'assistant',
+                    content: data.message || 'Nessuna risposta.',
+                    timestamp: Date.now(),
+                };
+                setMessages(prev => [...prev, assistantMessage]);
+
+                const currentConvId = data.conversationId || conversationId;
+                const refreshAndSelectSearch = async () => {
+                    const { getLeadSearchesAction } = await import('@/actions/lead-generator');
+                    const searchResult = await getLeadSearchesAction();
+                    if (searchResult.searches) {
+                        setSearches(searchResult.searches);
+                        const convSearch = searchResult.searches.find((s: any) => s.conversationId === currentConvId);
+                        if (convSearch) {
+                            activeSearchIdRef.current = convSearch.id;
+                            setActiveSearchId(convSearch.id);
+                            loadLeads(convSearch.id);
+                        } else {
+                            loadLeads(activeSearchIdRef.current);
+                        }
+                    }
+                };
+                await Promise.all([refreshAndSelectSearch(), loadConversationList()]);
+                setTimeout(() => refreshAndSelectSearch(), 2000);
+            }
         } catch (error: any) {
             toast({
                 variant: 'destructive',
@@ -1185,6 +1439,10 @@ export default function LeadGeneratorPage() {
             }]);
         } finally {
             setIsLoading(false);
+            setProgressMessage('');
+            setProgressPercent(0);
+            setProgressPhase('');
+            setProgressStats({});
         }
     };
 
@@ -1252,55 +1510,338 @@ export default function LeadGeneratorPage() {
         return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
     };
 
-    return (
-        <div className="flex flex-col h-[calc(100vh-2rem)] p-4 md:p-6 gap-4">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-                        <UserSearch className="h-5 w-5 text-white" />
+    // Active search tab: chat | leads | export | skills
+    const [activeTab, setActiveTab] = useState<'chat' | 'leads' | 'export' | 'skills'>('chat');
+
+    // Skills / Company profile for the AI agent
+    const [skillsData, setSkillsData] = useState({
+        companyName: '',
+        tagline: '',
+        sector: '',
+        location: '',
+        founded: '',
+        teamSize: '',
+        website: '',
+        description: '',
+        products: '',
+        targetCustomers: '',
+        uniqueValue: '',
+        tone: '',
+    });
+    const [isSkillsSaving, setIsSkillsSaving] = useState(false);
+
+    // Load skills from localStorage on mount
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('leadgen-skills');
+            if (saved) setSkillsData(JSON.parse(saved));
+        } catch {}
+    }, []);
+
+    const handleSaveSkills = () => {
+        setIsSkillsSaving(true);
+        try {
+            localStorage.setItem('leadgen-skills', JSON.stringify(skillsData));
+            toast({ title: 'Skills salvate', description: 'Il profilo aziendale è stato aggiornato.' });
+        } catch {
+            toast({ variant: 'destructive', title: 'Errore', description: 'Non riesco a salvare.' });
+        }
+        setIsSkillsSaving(false);
+    };
+
+    // Build skills context string for the AI agent
+    const skillsContext = useMemo(() => {
+        const s = skillsData;
+        const parts: string[] = [];
+        if (s.companyName) parts.push(`Azienda: ${s.companyName}`);
+        if (s.tagline) parts.push(`Tagline: ${s.tagline}`);
+        if (s.sector) parts.push(`Settore: ${s.sector}`);
+        if (s.location) parts.push(`Sede: ${s.location}`);
+        if (s.founded) parts.push(`Fondata: ${s.founded}`);
+        if (s.teamSize) parts.push(`Team: ${s.teamSize}`);
+        if (s.website) parts.push(`Sito: ${s.website}`);
+        if (s.description) parts.push(`Descrizione: ${s.description}`);
+        if (s.products) parts.push(`Prodotti/Servizi: ${s.products}`);
+        if (s.targetCustomers) parts.push(`Clienti target: ${s.targetCustomers}`);
+        if (s.uniqueValue) parts.push(`Proposta di valore unica: ${s.uniqueValue}`);
+        if (s.tone) parts.push(`Tono comunicazione: ${s.tone}`);
+        return parts.length > 0 ? parts.join('\n') : '';
+    }, [skillsData]);
+
+    // Compute KPIs from current leads
+    const kpiData = useMemo(() => {
+        if (leads.length === 0) return null;
+        const totalLeads = leads.length;
+        const genericRe = /^(info|admin|support|hello|contact|sales|marketing|office|noreply|segreteria|amministrazione|contatti|ordini|orders|customer|service|webstore)@/i;
+        const uniqueCompanies = new Set(leads.filter(l => l.companyName).map(l => l.companyName.toLowerCase())).size;
+        const withPersonalEmail = leads.filter(l => l.email && !genericRe.test(l.email)).length;
+        const withGenericEmail = leads.filter(l => l.email && genericRe.test(l.email)).length;
+        const withAnyEmail = leads.filter(l => l.email).length;
+        const withPhone = leads.filter(l => l.phone).length;
+        const withLinkedin = leads.filter(l => l.linkedinUrl).length;
+        const withContact = leads.filter(l => l.fullName || (l.firstName && l.lastName)).length;
+        const avgConfidence = totalLeads > 0 ? Math.round(leads.reduce((s, l) => s + ((l.confidence || 0) * 100), 0) / totalLeads) : 0;
+        const emailRate = totalLeads > 0 ? Math.round((withAnyEmail / totalLeads) * 100) : 0;
+        return { totalLeads, uniqueCompanies, withPersonalEmail, withGenericEmail, withAnyEmail, withPhone, withLinkedin, withContact, avgConfidence, emailRate };
+    }, [leads]);
+
+    // Compute per-conversation lead counts from searches
+    const convLeadCounts = useMemo(() => {
+        const map: Record<string, number> = {};
+        for (const s of searches) {
+            if (s.conversationId) {
+                map[s.conversationId] = (map[s.conversationId] || 0) + (s._count?.leads || 0);
+            }
+        }
+        return map;
+    }, [searches]);
+
+    // ============================================================
+    // RENDER: Dashboard mode (grid of search cards) OR Detail mode
+    // ============================================================
+
+    // ===== DASHBOARD VIEW =====
+    if (viewMode === 'dashboard') {
+        return (
+            <div className="flex flex-col h-[calc(100vh-2rem)] p-4 md:p-6">
+                {/* Dashboard Header */}
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+                            <UserSearch className="h-5 w-5 text-white" />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold">Lead Generator</h1>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                                <button
+                                    onClick={() => {
+                                        const next = aiProvider === 'claude-cli' ? 'openrouter' : 'claude-cli';
+                                        setAiProvider(next);
+                                        saveAiProviderAction(next, claudeModel).catch(() => {});
+                                    }}
+                                    className={cn(
+                                        "text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors",
+                                        aiProvider === 'claude-cli'
+                                            ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+                                            : "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200"
+                                    )}
+                                >
+                                    {aiProvider === 'claude-cli' ? 'Claude CLI' : 'OpenRouter'}
+                                </button>
+                                <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
+                                    <PopoverTrigger asChild>
+                                        <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                                            <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                                            <span className="truncate max-w-[200px]">{isSavingModel ? '...' : activeModelName}</span>
+                                            <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+                                        </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[300px] p-0" align="start">
+                                        <Command>
+                                            <CommandInput placeholder="Cerca modello..." />
+                                            <CommandList>
+                                                <CommandEmpty>Nessun modello trovato.</CommandEmpty>
+                                                <CommandGroup heading={aiProvider === 'claude-cli' ? 'Modelli Claude' : 'Modelli OpenRouter'}>
+                                                    {(aiProvider === 'claude-cli' ? CLAUDE_CLI_MODELS : availableModels).map(m => (
+                                                        <CommandItem key={m.id} value={m.id} onSelect={() => handleModelChange(m.id)} className="text-xs">
+                                                            <Check className={cn("mr-2 h-3 w-3", activeModel === m.id ? "opacity-100" : "opacity-0")} />
+                                                            <span className="truncate">{m.name}</span>
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold">Lead Generator</h1>
-                        <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-2">
+                        {/* Provider badges */}
+                        <div className="flex gap-1 flex-wrap">
+                            {[
+                                { key: 'apollo', label: 'Apollo', creditKey: 'apollo' },
+                                { key: 'hunter', label: 'Hunter', creditKey: 'hunter' },
+                                { key: 'serpApi', label: 'SerpApi', creditKey: 'serpApi' },
+                                { key: 'vibeProspect', label: 'Vibe', creditKey: 'vibe' },
+                                { key: 'firecrawl', label: 'Firecrawl', creditKey: 'firecrawl' },
+                                { key: 'apify', label: 'Apify', creditKey: 'apify' },
+                            ].map(p => {
+                                const configured = configuredProviders[p.key];
+                                if (!configured) return null;
+                                const cred = apiCredits?.[p.creditKey] as { used: number; available: number; remaining: number } | undefined;
+                                const hasCredits = cred && cred.available > 0;
+                                const usagePct = hasCredits ? Math.min(100, Math.round((cred.used / cred.available) * 100)) : 0;
+                                return (
+                                    <div key={p.key} className={cn('inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px]', usagePct >= 85 ? 'border-red-300 dark:border-red-700' : 'border-green-300 dark:border-green-700')} title={hasCredits ? `${cred.remaining} rimanenti` : `${p.label}: attivo`}>
+                                        <div className={cn('h-1.5 w-1.5 rounded-full', usagePct >= 85 ? 'bg-red-500' : usagePct >= 50 ? 'bg-amber-500' : 'bg-green-500')} />
+                                        <span>{p.label}</span>
+                                        {hasCredits && <span className="font-mono text-muted-foreground">{cred.remaining}</span>}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <Button onClick={handleNewConversation} size="sm" className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700">
+                            <Plus className="h-4 w-4 mr-1" />
+                            Nuova ricerca
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Search cards grid */}
+                <ScrollArea className="flex-1">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {/* New search card */}
+                        <Card
+                            className="border-dashed border-2 hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all cursor-pointer group flex flex-col items-center justify-center min-h-[180px]"
+                            onClick={handleNewConversation}
+                        >
+                            <div className="h-12 w-12 rounded-full bg-emerald-500/10 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors mb-3">
+                                <Plus className="h-6 w-6 text-emerald-600" />
+                            </div>
+                            <span className="text-sm font-medium text-muted-foreground group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors">
+                                Nuova ricerca
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/60 mt-1">
+                                Cerca contatti con l&apos;AI
+                            </span>
+                        </Card>
+
+                        {/* Existing search cards */}
+                        {conversations.map((conv) => {
+                            const leadCount = convLeadCounts[conv.id] || 0;
+                            const matchingSearch = searches.find(s => s.conversationId === conv.id);
+                            return (
+                                <Card
+                                    key={conv.id}
+                                    className="hover:shadow-md hover:border-emerald-500/30 transition-all cursor-pointer group relative"
+                                    onClick={() => handleSwitchConversation(conv.id)}
+                                >
+                                    <CardHeader className="pb-2">
+                                        <div className="flex items-start justify-between">
+                                            <div className="flex-1 min-w-0 pr-2">
+                                                <CardTitle className="text-base font-bold truncate leading-tight">
+                                                    {conv.title || 'Ricerca senza titolo'}
+                                                </CardTitle>
+                                                <CardDescription className="text-[10px] mt-1">
+                                                    {formatDate(conv.updatedAt)}
+                                                    {conv.totalCost > 0 && <span className="ml-1.5 font-mono">{formatCost(conv.totalCost)}</span>}
+                                                </CardDescription>
+                                            </div>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <button onClick={(e) => e.stopPropagation()} className="h-6 w-6 shrink-0 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity">
+                                                        <MoreHorizontal className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-40">
+                                                    <DropdownMenuItem onClick={(e) => handleDeleteConversation(conv.id, e as any)} className="text-destructive text-xs">
+                                                        <Trash2 className="h-3 w-3 mr-2" />Elimina
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        </div>
+                                    </CardHeader>
+                                    <CardContent className="pt-0">
+                                        {/* Mini KPI row */}
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <div className="flex items-center gap-1 text-violet-600 dark:text-violet-400">
+                                                <Users className="h-3 w-3" />
+                                                <span className="text-sm font-bold tabular-nums">{leadCount}</span>
+                                                <span className="text-[10px] text-muted-foreground">lead</span>
+                                            </div>
+                                            {matchingSearch?.name && matchingSearch.name !== conv.title && (
+                                                <Badge variant="outline" className="text-[8px] h-4 px-1.5 truncate max-w-[120px]">
+                                                    {matchingSearch.name}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        {/* Open button hint */}
+                                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                                            <FolderOpen className="h-3 w-3" />
+                                            <span>Clicca per aprire</span>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            );
+                        })}
+                    </div>
+                    {conversations.length === 0 && (
+                        <div className="text-center py-20 text-muted-foreground">
+                            <Search className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                            <p className="text-lg font-medium mb-1">Nessuna ricerca ancora</p>
+                            <p className="text-sm">Crea la tua prima ricerca per trovare contatti con l&apos;AI</p>
+                        </div>
+                    )}
+                </ScrollArea>
+
+                {/* Delete search confirmation */}
+                <AlertDialog open={!!deleteSearchTarget} onOpenChange={(open) => { if (!open) setDeleteSearchTarget(null); }}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Eliminare questa ricerca?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                Eliminando la ricerca <strong>&quot;{deleteSearchTarget?.name}&quot;</strong> verranno eliminati anche tutti i <strong>{deleteSearchTarget?._count?.leads || 0} lead</strong> associati.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Annulla</AlertDialogCancel>
+                            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteSearchTarget && handleDeleteSearch(deleteSearchTarget.id)}>
+                                Elimina
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </div>
+        );
+    }
+
+    // ===== DETAIL VIEW =====
+    // Title priority: conversation title (user-editable) > search name (auto-generated)
+    const convTitle = conversations.find(c => c.id === conversationId)?.title;
+    const activeSearchName = searches.find(s => s.id === activeSearchId)?.name;
+    const displayTitle = convTitle || activeSearchName || 'Nuova ricerca';
+
+    return (
+        <div className="flex flex-col h-[calc(100vh-2rem)] overflow-hidden">
+            {/* Top bar */}
+            <div className="border-b shrink-0">
+                {/* Row 1: Nav + actions */}
+                <div className="flex items-center justify-between px-6 pt-4 pb-1">
+                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 -ml-2 text-muted-foreground hover:text-foreground" onClick={handleBackToDashboard}>
+                        <ArrowLeft className="h-4 w-4" />
+                        <span className="text-xs">Tutte le ricerche</span>
+                    </Button>
+                    <div className="flex items-center gap-2">
+                        {messages.length > 0 && (
+                            <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={handleCopyChat}>
+                                <Copy className="h-3.5 w-3.5" />
+                                <span className="text-xs">Copia chat</span>
+                            </Button>
+                        )}
+                        <div className="flex items-center gap-1">
                             <button
-                                onClick={() => {
-                                    const next = aiProvider === 'claude-cli' ? 'openrouter' : 'claude-cli';
-                                    setAiProvider(next);
-                                    saveAiProviderAction(next, claudeModel).catch(() => {});
-                                }}
-                                className={cn(
-                                    "text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors",
-                                    aiProvider === 'claude-cli'
-                                        ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
-                                        : "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200"
-                                )}
+                                onClick={() => { const next = aiProvider === 'claude-cli' ? 'openrouter' : 'claude-cli'; setAiProvider(next); saveAiProviderAction(next, claudeModel).catch(() => {}); }}
+                                className={cn("text-[9px] font-medium px-1.5 py-0.5 rounded", aiProvider === 'claude-cli' ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200" : "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200")}
                             >
-                                {aiProvider === 'claude-cli' ? 'Claude CLI' : 'OpenRouter'}
+                                {aiProvider === 'claude-cli' ? 'Claude' : 'OR'}
                             </button>
                             <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
                                 <PopoverTrigger asChild>
-                                    <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                                        <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                                        <span className="truncate max-w-[200px]">
-                                            {isSavingModel ? 'Salvando...' : activeModelName}
-                                        </span>
-                                        <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+                                    <button className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground">
+                                        <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
+                                        <span className="truncate max-w-[120px]">{isSavingModel ? '...' : activeModelName}</span>
+                                        <ChevronsUpDown className="h-2.5 w-2.5 opacity-50" />
                                     </button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-[300px] p-0" align="start">
+                                <PopoverContent className="w-[280px] p-0" align="end">
                                     <Command>
                                         <CommandInput placeholder="Cerca modello..." />
                                         <CommandList>
-                                            <CommandEmpty>Nessun modello trovato.</CommandEmpty>
-                                            <CommandGroup heading={aiProvider === 'claude-cli' ? 'Modelli Claude' : 'Modelli OpenRouter'}>
+                                            <CommandEmpty>Nessun modello.</CommandEmpty>
+                                            <CommandGroup>
                                                 {(aiProvider === 'claude-cli' ? CLAUDE_CLI_MODELS : availableModels).map(m => (
-                                                    <CommandItem
-                                                        key={m.id}
-                                                        value={m.id}
-                                                        onSelect={() => handleModelChange(m.id)}
-                                                        className="text-xs"
-                                                    >
+                                                    <CommandItem key={m.id} value={m.id} onSelect={() => handleModelChange(m.id)} className="text-xs">
                                                         <Check className={cn("mr-2 h-3 w-3", activeModel === m.id ? "opacity-100" : "opacity-0")} />
                                                         <span className="truncate">{m.name}</span>
                                                     </CommandItem>
@@ -1311,205 +1852,167 @@ export default function LeadGeneratorPage() {
                                 </PopoverContent>
                             </Popover>
                         </div>
+                        {currentCost > 0 && <Badge variant="secondary" className="text-[10px] font-mono">{formatCost(currentCost)}</Badge>}
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { loadLeads(activeSearchIdRef.current); loadSearches(); }} title="Aggiorna"><RefreshCw className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleClearChat} title="Elimina"><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="flex gap-1 flex-wrap">
-                        {[
-                            { key: 'apollo', label: 'Apollo.io' },
-                            { key: 'hunter', label: 'Hunter.io' },
-                            { key: 'serpApi', label: 'Google Maps' },
-                            { key: 'vibeProspect', label: 'Vibe Prospect' },
-                            { key: 'firecrawl', label: 'Firecrawl' },
-                            { key: 'apify', label: 'Apify' },
-                        ].map(p => (
-                            <Badge
-                                key={p.key}
-                                variant={configuredProviders[p.key] ? 'default' : 'secondary'}
-                                className={cn(
-                                    'text-[10px]',
-                                    configuredProviders[p.key]
-                                        ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border-green-200 dark:border-green-800'
-                                        : 'opacity-50'
-                                )}
-                            >
-                                {configuredProviders[p.key] && <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />}
-                                {p.label}
-                            </Badge>
-                        ))}
+
+                {/* Row 2: BIG title */}
+                <div className="px-6 pb-3">
+                    {isEditingTitle ? (
+                        <div className="flex items-end gap-3">
+                            <input
+                                ref={titleInputRef}
+                                value={editTitleValue}
+                                onChange={(e) => setEditTitleValue(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTitle(); if (e.key === 'Escape') setIsEditingTitle(false); }}
+                                className="text-3xl font-extrabold tracking-tight bg-transparent border-b-2 border-emerald-500 outline-none flex-1 min-w-0 pb-1"
+                                autoFocus
+                            />
+                            <Button className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white h-10 px-5" onClick={handleSaveTitle}>
+                                <Check className="h-4 w-4 mr-1.5" />
+                                Salva
+                            </Button>
+                            <Button variant="outline" className="shrink-0 h-10" onClick={() => setIsEditingTitle(false)}>
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-3xl font-extrabold tracking-tight truncate">
+                                {displayTitle}
+                            </h1>
+                            <Button variant="outline" size="sm" className="shrink-0 h-8 gap-1.5" onClick={handleStartEditTitle}>
+                                <Pencil className="h-3.5 w-3.5" />
+                                <span className="text-xs">Modifica</span>
+                            </Button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Row 3: Provider API badges */}
+                {Object.values(configuredProviders).some(Boolean) && (
+                    <div className="px-4 pb-2">
+                        <div className="flex gap-1.5">
+                            {(() => {
+                                const items = [
+                                    { key: 'apollo', label: 'Apollo', creditKey: 'apollo' },
+                                    { key: 'hunter', label: 'Hunter', creditKey: 'hunter' },
+                                    { key: 'serpApi', label: 'SerpApi', creditKey: 'serpApi' },
+                                    { key: 'vibeProspect', label: 'Vibe', creditKey: 'vibe' },
+                                    { key: 'firecrawl', label: 'Firecrawl', creditKey: 'firecrawl' },
+                                    { key: 'apify', label: 'Apify', creditKey: 'apify' },
+                                ].filter(p => configuredProviders[p.key]);
+                                return items.map(p => {
+                                    const cred = apiCredits?.[p.creditKey] as { used: number; available: number; remaining: number } | undefined;
+                                    const hasCredits = cred && cred.available > 0;
+                                    const usagePct = hasCredits ? Math.min(100, Math.round((cred.used / cred.available) * 100)) : 0;
+                                    return (
+                                        <div key={p.key} className={cn('flex-1 flex items-center justify-center gap-1.5 rounded-lg border py-1.5 text-xs', usagePct >= 85 ? 'border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950' : 'border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950')} title={hasCredits ? `${cred.remaining} rimanenti su ${cred.available}` : `${p.label}: attivo`}>
+                                            <div className={cn('h-2 w-2 rounded-full shrink-0', usagePct >= 85 ? 'bg-red-500' : usagePct >= 50 ? 'bg-amber-500' : 'bg-green-500')} />
+                                            <span className="font-medium">{p.label}</span>
+                                            {hasCredits && <span className="font-mono text-muted-foreground">{cred.remaining}</span>}
+                                        </div>
+                                    );
+                                });
+                            })()}
+                        </div>
                     </div>
-                    {leads.length > 0 && (() => {
-                        const bySource: Record<string, number> = {};
-                        for (const l of leads) {
-                            const src = (l.source || 'altro').toLowerCase().replace(/_/g, ' ');
-                            bySource[src] = (bySource[src] || 0) + 1;
-                        }
-                        return (
-                            <div className="flex gap-1 items-center">
-                                <span className="text-[9px] text-muted-foreground">Lead:</span>
-                                {Object.entries(bySource).sort((a, b) => b[1] - a[1]).map(([src, count]) => (
-                                    <Badge key={src} variant="outline" className="text-[9px] h-4 px-1.5 font-normal">
-                                        {src} <span className="font-semibold ml-0.5">{count}</span>
-                                    </Badge>
-                                ))}
-                                <Badge variant="outline" className="text-[9px] h-4 px-1.5 font-semibold bg-muted">
-                                    Tot: {leads.length}
-                                </Badge>
-                            </div>
-                        );
-                    })()}
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowHistory(!showHistory)}
-                    >
-                        <Clock className="h-4 w-4" />
-                        <span className="ml-1 text-xs">{showHistory ? 'Nascondi' : 'Cronologia'}</span>
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowLeadsPanel(!showLeadsPanel)}
-                    >
-                        {showLeadsPanel ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-                        <span className="ml-1 text-xs">{showLeadsPanel ? 'Nascondi' : 'Lead'}</span>
-                    </Button>
+                )}
+
+                {/* Row 4: KPI cards — full width like the chat below */}
+                {(isLoading && (progressStats.companies || progressStats.leads)) && (
+                    <div className="px-4 pb-3">
+                        <div className="flex gap-2 overflow-x-auto">
+                            {[
+                                progressStats.companies ? { icon: Building2, label: 'Aziende trovate', value: progressStats.companies, color: 'text-blue-600 dark:text-blue-400', iconBg: 'bg-blue-500/10' } : null,
+                                progressStats.leads ? { icon: Users, label: 'Lead identificati', value: progressStats.leads, color: 'text-violet-600 dark:text-violet-400', iconBg: 'bg-violet-500/10' } : null,
+                                progressStats.leadsWithEmail ? { icon: Mail, label: 'Con email', value: progressStats.leadsWithEmail, color: 'text-green-600 dark:text-green-400', iconBg: 'bg-green-500/10' } : null,
+                            ].filter(Boolean).map((kpi: any) => (
+                                <div key={kpi.label} className="flex-1 min-w-0 flex items-center gap-3 rounded-xl border bg-card p-3">
+                                    <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center shrink-0', kpi.iconBg)}>
+                                        <kpi.icon className={cn('h-5 w-5', kpi.color)} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className={cn('text-2xl font-bold tabular-nums leading-none', kpi.color)}>{kpi.value}</span>
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/40" />
+                                        </div>
+                                        <span className="text-xs text-muted-foreground">{kpi.label}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                {!isLoading && kpiData && (
+                    <div className="px-4 pb-3">
+                        <div className="flex gap-2 overflow-x-auto">
+                            {[
+                                { icon: Users, label: 'Lead', value: kpiData.totalLeads, color: 'text-violet-600 dark:text-violet-400', iconBg: 'bg-violet-500/10' },
+                                { icon: Building2, label: 'Aziende', value: kpiData.uniqueCompanies, color: 'text-blue-600 dark:text-blue-400', iconBg: 'bg-blue-500/10' },
+                                { icon: Target, label: 'Con nome', value: kpiData.withContact, color: 'text-emerald-600 dark:text-emerald-400', iconBg: 'bg-emerald-500/10' },
+                                { icon: Mail, label: 'Email pers.', value: kpiData.withPersonalEmail, color: 'text-green-600 dark:text-green-400', iconBg: 'bg-green-500/10' },
+                                { icon: AtSign, label: 'Email gen.', value: kpiData.withGenericEmail, color: 'text-amber-600 dark:text-amber-400', iconBg: 'bg-amber-500/10' },
+                                { icon: Phone, label: 'Telefono', value: kpiData.withPhone, color: 'text-sky-600 dark:text-sky-400', iconBg: 'bg-sky-500/10' },
+                                { icon: Linkedin, label: 'LinkedIn', value: kpiData.withLinkedin, color: 'text-[#0A66C2]', iconBg: 'bg-[#0A66C2]/10' },
+                                { icon: TrendingUp, label: 'Qualita', value: `${kpiData.avgConfidence}%`, color: kpiData.avgConfidence >= 60 ? 'text-green-600 dark:text-green-400' : kpiData.avgConfidence >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400', iconBg: kpiData.avgConfidence >= 60 ? 'bg-green-500/10' : kpiData.avgConfidence >= 30 ? 'bg-amber-500/10' : 'bg-red-500/10' },
+                                { icon: BarChart3, label: 'Email rate', value: `${kpiData.emailRate}%`, color: kpiData.emailRate >= 60 ? 'text-green-600 dark:text-green-400' : kpiData.emailRate >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400', iconBg: kpiData.emailRate >= 60 ? 'bg-green-500/10' : kpiData.emailRate >= 30 ? 'bg-amber-500/10' : 'bg-red-500/10' },
+                            ].filter(k => k.value !== 0 && k.value !== '0%').map(kpi => (
+                                <div key={kpi.label} className="flex-1 min-w-[90px] flex items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5">
+                                    <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center shrink-0', kpi.iconBg)}>
+                                        <kpi.icon className={cn('h-4.5 w-4.5', kpi.color)} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <span className={cn('text-lg font-bold tabular-nums leading-none block', kpi.color)}>{kpi.value}</span>
+                                        <span className="text-[10px] text-muted-foreground leading-tight">{kpi.label}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Row 4: Tabs */}
+                <div className="flex gap-0 px-4">
+                    {[
+                        { key: 'chat' as const, icon: MessageSquare, label: 'Chat' },
+                        { key: 'leads' as const, icon: Users, label: `Lead${leads.length > 0 ? ` (${leads.length})` : ''}` },
+                        { key: 'export' as const, icon: Download, label: 'Export' },
+                        { key: 'skills' as const, icon: Building2, label: 'Skills' },
+                    ].map(tab => (
+                        <button
+                            key={tab.key}
+                            onClick={() => setActiveTab(tab.key)}
+                            className={cn(
+                                'flex items-center gap-1.5 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px',
+                                activeTab === tab.key
+                                    ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400'
+                                    : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
+                            )}
+                        >
+                            <tab.icon className="h-4 w-4" />
+                            {tab.label}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            {/* Main Content */}
-            <div className="flex-1 flex gap-4 overflow-hidden">
-                {/* Conversation History Sidebar */}
-                {showHistory && (
-                    <Card className="w-64 flex flex-col shrink-0">
-                        <CardHeader className="pb-2 px-3 pt-3">
-                            <div className="flex items-center justify-between">
-                                <CardTitle className="text-xs font-semibold">Ricerche</CardTitle>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7"
-                                    onClick={handleNewConversation}
-                                    title="Nuova ricerca"
-                                >
-                                    <Plus className="h-3.5 w-3.5" />
-                                </Button>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="flex-1 overflow-hidden p-0 px-2 pb-2">
-                            <ScrollArea className="h-full">
-                                <div className="space-y-0.5">
-                                    {/* New conversation button */}
-                                    <button
-                                        onClick={handleNewConversation}
-                                        className={cn(
-                                            "w-full text-left px-2.5 py-2 rounded-md text-xs transition-colors flex items-center gap-2",
-                                            !conversationId
-                                                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                                : "hover:bg-muted text-muted-foreground"
-                                        )}
-                                    >
-                                        <Plus className="h-3 w-3 shrink-0" />
-                                        <span className="font-medium">Nuova ricerca</span>
-                                    </button>
-
-                                    {conversations.length === 0 ? (
-                                        <div className="text-center py-6 text-muted-foreground">
-                                            <MessageSquare className="h-6 w-6 mx-auto mb-2 opacity-30" />
-                                            <p className="text-[10px]">Nessuna ricerca salvata</p>
-                                        </div>
-                                    ) : (
-                                        conversations.map((conv) => (
-                                            <div
-                                                key={conv.id}
-                                                onClick={() => handleSwitchConversation(conv.id)}
-                                                className={cn(
-                                                    "w-full text-left px-2.5 py-2 rounded-md text-xs transition-colors cursor-pointer group flex items-start gap-2",
-                                                    conversationId === conv.id
-                                                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                                        : "hover:bg-muted text-foreground"
-                                                )}
-                                            >
-                                                <MessageSquare className="h-3 w-3 shrink-0 mt-0.5 opacity-50" />
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="truncate font-medium text-[11px] leading-tight">
-                                                        {conv.title || 'Ricerca senza titolo'}
-                                                    </div>
-                                                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mt-0.5">
-                                                        <span>{formatDate(conv.updatedAt)}</span>
-                                                        {conv.totalCost > 0 && (
-                                                            <Badge variant="outline" className="text-[8px] h-3.5 px-1 font-mono">
-                                                                {formatCost(conv.totalCost)}
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
-                                                        <button
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            className="h-5 w-5 shrink-0 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/10 transition-opacity"
-                                                        >
-                                                            <MoreHorizontal className="h-3 w-3" />
-                                                        </button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end" className="w-36">
-                                                        <DropdownMenuItem
-                                                            onClick={(e) => handleDeleteConversation(conv.id, e as any)}
-                                                            className="text-destructive text-xs"
-                                                        >
-                                                            <Trash2 className="h-3 w-3 mr-2" />
-                                                            Elimina
-                                                        </DropdownMenuItem>
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </ScrollArea>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Chat Area */}
-                <Card className="flex-1 flex flex-col min-w-0">
-                    {currentCost > 0 && (
-                        <div className="flex items-center justify-end px-4 pt-2 pb-0">
-                            <Badge variant="secondary" className="text-[10px] font-mono gap-1">
-                                Costo: {formatCost(currentCost)}
-                            </Badge>
-                        </div>
-                    )}
-                    <CardContent className="flex-1 overflow-hidden p-0">
-                        <div
-                            ref={scrollAreaRef}
-                            className="h-full overflow-y-auto px-4 py-4 space-y-4"
-                        >
+            {/* Tab content — contained card */}
+            <div className="flex-1 overflow-hidden mx-4 mb-4 border rounded-xl bg-card shadow-sm">
+                {/* ===== CHAT TAB ===== */}
+                {activeTab === 'chat' && (
+                    <div className="flex flex-col h-full">
+                        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                             {displayMessages.map((msg, i) => (
-                                <div
-                                    key={i}
-                                    className={cn(
-                                        'flex gap-3',
-                                        msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'
-                                    )}
-                                >
+                                <div key={i} className={cn('flex gap-3', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
                                     <Avatar className="h-7 w-7 shrink-0">
-                                        <AvatarFallback className={cn(
-                                            'text-xs',
-                                            msg.role === 'user'
-                                                ? 'bg-primary text-primary-foreground'
-                                                : 'bg-emerald-500/10 text-emerald-600'
-                                        )}>
+                                        <AvatarFallback className={cn('text-xs', msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-emerald-500/10 text-emerald-600')}>
                                             {msg.role === 'user' ? 'Tu' : <Bot className="h-3.5 w-3.5" />}
                                         </AvatarFallback>
                                     </Avatar>
-                                    <div className={cn(
-                                        'max-w-[85%] rounded-xl px-4 py-3 text-sm',
-                                        msg.role === 'user'
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'bg-muted/50 border'
-                                    )}>
+                                    <div className={cn('max-w-[85%] rounded-xl px-4 py-3 text-sm', msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted/50 border')}>
                                         <RichContent content={msg.content} />
                                     </div>
                                 </div>
@@ -1517,309 +2020,334 @@ export default function LeadGeneratorPage() {
                             {isLoading && (
                                 <div className="flex gap-3">
                                     <Avatar className="h-7 w-7 shrink-0">
-                                        <AvatarFallback className="bg-emerald-500/10 text-emerald-600">
-                                            <Bot className="h-3.5 w-3.5" />
-                                        </AvatarFallback>
+                                        <AvatarFallback className="bg-emerald-500/10 text-emerald-600"><Bot className="h-3.5 w-3.5" /></AvatarFallback>
                                     </Avatar>
-                                    <div className="bg-muted/50 border rounded-xl px-4 py-3 text-sm">
-                                        <div className="flex items-center gap-2 text-muted-foreground">
-                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                            <span className="text-xs">Sto cercando contatti...</span>
+                                    <div className="bg-muted/50 border rounded-xl px-4 py-3 text-sm min-w-[280px] max-w-[600px]">
+                                        <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                                            <span className="text-xs font-medium">{progressMessage || 'Sto cercando contatti...'}</span>
                                         </div>
+                                        {progressPercent > 0 && (
+                                            <div className="space-y-1.5">
+                                                <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                                                    <div className="bg-emerald-500 h-1.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${Math.min(progressPercent, 100)}%` }} />
+                                                </div>
+                                                <div className="text-[10px] text-muted-foreground/70">{progressPercent}%</div>
+                                            </div>
+                                        )}
+                                        {(browserLogs.length > 0 || browserScreenshot) && (
+                                            <div className="mt-3 border-t border-dashed pt-2">
+                                                <div className="flex items-center gap-1.5 mb-1.5 text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+                                                    <Globe className="h-3 w-3" /><span>Browser Agent</span>
+                                                </div>
+                                                <div className="rounded-lg overflow-hidden border border-border/60 shadow-sm">
+                                                    {browserUrl && (
+                                                        <div className="flex items-center gap-2 bg-muted/80 px-2 py-1 border-b border-border/40">
+                                                            <div className="flex gap-1">
+                                                                <div className="w-2 h-2 rounded-full bg-red-400" />
+                                                                <div className="w-2 h-2 rounded-full bg-amber-400" />
+                                                                <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                                                            </div>
+                                                            <div className="flex-1 bg-background/60 rounded px-2 py-0.5 text-[10px] font-mono text-muted-foreground truncate">{browserUrl}</div>
+                                                        </div>
+                                                    )}
+                                                    {browserScreenshot && (
+                                                        <div className="bg-white">
+                                                            <img src={`data:image/jpeg;base64,${browserScreenshot}`} alt="Browser" className="w-full h-auto max-h-[220px] object-contain object-top" />
+                                                        </div>
+                                                    )}
+                                                    <div ref={browserLogRef} className="max-h-[120px] overflow-y-auto bg-[#1a1a2e] text-[10px] text-green-400 font-mono px-2 py-1.5 space-y-px scroll-smooth">
+                                                        {browserLogs.slice(-30).map((log, idx) => (
+                                                            <div key={idx} className={cn('leading-tight', log.includes('✅') && 'text-emerald-400', log.includes('❌') && 'text-red-400', log.includes('⚠️') && 'text-amber-400', log.includes('👤') && 'text-cyan-400', log.includes('📧') && 'text-blue-400')}>
+                                                                {log.replace('🌐 ', '')}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
                         </div>
-                    </CardContent>
-
-                    {/* Input Area */}
-                    <div className="border-t p-4">
-                        <form
-                            onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-                            className="flex gap-2 items-end"
-                        >
-                            <textarea
-                                ref={textareaRef}
-                                value={input}
-                                onChange={(e) => {
-                                    setInput(e.target.value);
-                                    // Auto-resize
-                                    e.target.style.height = 'auto';
-                                    e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
-                                }}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault();
-                                        handleSend();
-                                    }
-                                }}
-                                placeholder="Descrivi i contatti che stai cercando... (Shift+Enter per a capo)"
-                                disabled={isLoading}
-                                rows={1}
-                                className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                style={{ minHeight: '40px', maxHeight: '200px' }}
-                            />
-                            <Button type="submit" size="icon" disabled={isLoading || !input.trim()} className="shrink-0">
-                                <Send className="h-4 w-4" />
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={handleClearChat}
-                                title="Elimina conversazione"
-                            >
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                        </form>
+                        <div className="border-t p-4">
+                            <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex gap-2 items-end">
+                                <textarea
+                                    ref={textareaRef}
+                                    value={input}
+                                    onChange={(e) => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'; }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                                    placeholder="Descrivi i contatti che stai cercando... (Shift+Enter per a capo)"
+                                    disabled={isLoading}
+                                    rows={1}
+                                    className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                    style={{ minHeight: '40px', maxHeight: '200px' }}
+                                />
+                                <Button type="submit" size="icon" disabled={isLoading || !input.trim()} className="shrink-0">
+                                    <Send className="h-4 w-4" />
+                                </Button>
+                            </form>
+                        </div>
                     </div>
-                </Card>
+                )}
 
-                {/* Leads Panel */}
-                {showLeadsPanel && (
-                    <Card className="w-80 flex flex-col shrink-0">
-                        <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between">
-                                <CardTitle className="text-sm">Lead Salvati</CardTitle>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-6 w-6"
-                                    onClick={() => { loadLeads(activeSearchIdRef.current); loadSearches(); }}
-                                    title="Aggiorna"
-                                >
-                                    <RefreshCw className="h-3 w-3" />
+                {/* ===== LEADS TAB ===== */}
+                {activeTab === 'leads' && (
+                    <div className="h-full flex flex-col p-4">
+                        <div className="flex items-center gap-2 mb-3 flex-wrap">
+                            <Input placeholder="Cerca lead..." value={leadsSearch} onChange={(e) => setLeadsSearch(e.target.value)} className="h-8 text-xs w-64" />
+                            <div className="flex items-center gap-1 ml-auto">
+                                {leads.length > 0 && (
+                                    <>
+                                        <button onClick={selectAllLeads} className="text-[10px] px-2 py-1 rounded border hover:bg-muted transition-colors">
+                                            {selectedLeadIds.size === leads.length ? 'Deseleziona' : 'Seleziona tutti'}
+                                        </button>
+                                        {selectedLeadIds.size > 0 && (
+                                            <button onClick={handleDeleteSelectedLeads} disabled={isDeletingLeads} className="text-[10px] px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 transition-colors flex items-center gap-0.5">
+                                                {isDeletingLeads ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Trash2 className="h-2.5 w-2.5" />}
+                                                Elimina {selectedLeadIds.size}
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                        <ScrollArea className="flex-1">
+                            {leadsLoading ? (
+                                <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+                            ) : leads.length === 0 ? (
+                                <div className="text-center py-16 text-muted-foreground">
+                                    <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                                    <p className="text-sm font-medium">Nessun lead salvato</p>
+                                    <p className="text-xs mt-1">Avvia una ricerca nella tab Chat</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                                    {leads.map((lead) => {
+                                        const leadContacts: any[] = lead.contacts || [];
+                                        const contactCount = leadContacts.length;
+                                        const bestContact = leadContacts[0] || { fullName: lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim(), jobTitle: lead.jobTitle, email: lead.email };
+                                        const isGenericEmail = lead.email && /^(info|admin|support|hello|contact|sales|marketing|office|noreply|segreteria|amministrazione|contatti|ordini|orders|customer|service|webstore)@/i.test(lead.email);
+                                        const confidencePct = lead.confidence != null ? Math.round(lead.confidence * 100) : null;
+                                        return (
+                                            <div key={lead.id} className={cn("border rounded-lg p-2.5 text-xs hover:bg-muted/30 transition-colors cursor-pointer", selectedLeadIds.has(lead.id) && "ring-1 ring-violet-400 bg-violet-50/50 dark:bg-violet-900/20")} onClick={() => { setSelectedLead(lead); setIsLeadDialogOpen(true); }}>
+                                                <div className="flex items-center gap-1.5 mb-0.5">
+                                                    <input type="checkbox" checked={selectedLeadIds.has(lead.id)} onChange={(e) => { e.stopPropagation(); toggleLeadSelection(lead.id); }} onClick={(e) => e.stopPropagation()} className="h-3 w-3 rounded border-gray-300 accent-violet-500 shrink-0 cursor-pointer" />
+                                                    <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                                                    <div className="font-medium truncate flex-1 text-[11px]">{lead.companyName || bestContact.fullName || 'Lead'}</div>
+                                                    {contactCount > 0 && <Badge variant="outline" className="text-[8px] h-4 px-1 shrink-0 gap-0.5"><Users className="h-2 w-2" />{contactCount}</Badge>}
+                                                    {lead.rating > 0 && <div className="flex shrink-0">{[1,2,3,4,5].map(i => <Star key={i} className={cn('h-2 w-2', i <= lead.rating ? 'fill-amber-400 text-amber-400' : 'text-transparent')} />)}</div>}
+                                                </div>
+                                                <div className="flex items-center gap-1 mt-0.5 pl-[26px]">
+                                                    <div className="truncate flex-1 text-[10px] text-muted-foreground">{bestContact.fullName || 'N/A'}{bestContact.jobTitle && <span> · {bestContact.jobTitle}</span>}</div>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 mt-1 pl-[26px] flex-wrap">
+                                                    {lead.email && <div className={cn("flex items-center gap-0.5 text-[10px]", isGenericEmail ? 'text-amber-500' : 'text-blue-500')} title={lead.email}><Mail className="h-2.5 w-2.5" />{isGenericEmail && <span className="text-[8px] font-medium">GEN</span>}</div>}
+                                                    {lead.phone && <div className="text-[10px] text-green-500"><Phone className="h-2.5 w-2.5" /></div>}
+                                                    {lead.linkedinUrl && <div className="text-[10px] text-blue-600"><Linkedin className="h-2.5 w-2.5" /></div>}
+                                                    {lead.companyWebsite && <div className="text-[10px] text-purple-500"><Globe className="h-2.5 w-2.5" /></div>}
+                                                    <div className="flex items-center gap-1 ml-auto">
+                                                        {lead.source && <Badge variant="outline" className="text-[8px] h-4 px-1">{lead.source}</Badge>}
+                                                        {confidencePct != null && <Badge variant="outline" className={cn("text-[8px] h-4 px-1 font-mono gap-0.5", confidencePct >= 70 ? 'border-green-500/50 text-green-600' : confidencePct >= 40 ? 'border-amber-500/50 text-amber-600' : 'border-red-500/50 text-red-500')}><ShieldCheck className="h-2 w-2" />{confidencePct}%</Badge>}
+                                                    </div>
+                                                </div>
+                                                {(lead.revenueYear3 || lead.revenueYear2) && <div className="text-[9px] text-muted-foreground mt-1 pl-[26px] truncate">Fatt: {lead.revenueYear3 || lead.revenueYear2 || '-'}</div>}
+                                                {lead.tags?.length > 0 && <div className="flex flex-wrap gap-0.5 mt-1 pl-[26px]">{lead.tags.slice(0, 3).map((tag: string) => <Badge key={tag} variant="default" className="text-[7px] h-3.5 px-1">{tag}</Badge>)}{lead.tags.length > 3 && <Badge variant="secondary" className="text-[7px] h-3.5 px-1">+{lead.tags.length - 3}</Badge>}</div>}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </ScrollArea>
+                    </div>
+                )}
+
+                {/* ===== EXPORT TAB ===== */}
+                {activeTab === 'export' && (
+                    <div className="p-8 max-w-md mx-auto">
+                        <div className="text-center mb-6">
+                            <FileSpreadsheet className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+                            <h3 className="text-sm font-semibold mb-1">Esporta lead</h3>
+                            <p className="text-xs text-muted-foreground">{leads.length} lead disponibili</p>
+                        </div>
+                        <div className="space-y-3">
+                            <Button className="w-full" variant="outline" size="lg" onClick={() => handleExport('csv')} disabled={leads.length === 0}>
+                                <Download className="h-4 w-4 mr-2" />Esporta CSV
+                            </Button>
+                            <Button className="w-full" variant="outline" size="lg" onClick={() => handleExport('excel')} disabled={leads.length === 0}>
+                                <FileSpreadsheet className="h-4 w-4 mr-2" />Esporta Excel
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {/* ===== SKILLS TAB ===== */}
+                {activeTab === 'skills' && (
+                    <div className="h-full overflow-y-auto">
+                        <div className="max-w-2xl mx-auto p-6 space-y-6">
+                            {/* Header */}
+                            <div className="flex items-center gap-3 pb-4 border-b">
+                                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+                                    <Sparkles className="h-5 w-5 text-white" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold">Skills &mdash; Chi sei?</h3>
+                                    <p className="text-xs text-muted-foreground">Compila il profilo aziendale per aiutare l&apos;agente AI a scrivere email migliori e cercare lead più mirati</p>
+                                </div>
+                            </div>
+
+                            {/* Form grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {/* Company Name */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Nome azienda *</label>
+                                    <Input
+                                        placeholder="Es. Quid Informatica"
+                                        value={skillsData.companyName}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, companyName: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                                {/* Tagline */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Tagline / Slogan</label>
+                                    <Input
+                                        placeholder="Es. Innoviamo il tuo business con l'AI"
+                                        value={skillsData.tagline}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, tagline: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                                {/* Sector */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Settore</label>
+                                    <Input
+                                        placeholder="Es. Software, Consulenza IT, AI"
+                                        value={skillsData.sector}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, sector: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                                {/* Location */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Sede</label>
+                                    <Input
+                                        placeholder="Es. Verona, Italia"
+                                        value={skillsData.location}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, location: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                                {/* Founded */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Anno fondazione</label>
+                                    <Input
+                                        placeholder="Es. 1988"
+                                        value={skillsData.founded}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, founded: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                                {/* Team size */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Dimensione team</label>
+                                    <Input
+                                        placeholder="Es. 50-100 persone"
+                                        value={skillsData.teamSize}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, teamSize: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                                {/* Website */}
+                                <div className="sm:col-span-2 space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Sito web</label>
+                                    <Input
+                                        placeholder="Es. https://www.quidinformatica.it"
+                                        value={skillsData.website}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, website: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Long text fields */}
+                            <div className="space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Descrizione azienda</label>
+                                    <textarea
+                                        placeholder="Descrivi cosa fa la tua azienda, la sua storia, i suoi valori..."
+                                        value={skillsData.description}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, description: e.target.value }))}
+                                        rows={3}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Prodotti / Servizi offerti</label>
+                                    <textarea
+                                        placeholder="Elenca i principali prodotti e servizi: ERP, CRM, soluzioni AI, consulenza..."
+                                        value={skillsData.products}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, products: e.target.value }))}
+                                        rows={3}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Clienti target</label>
+                                    <textarea
+                                        placeholder="A chi vi rivolgete? PMI manifatturiere, aziende fashion, retail..."
+                                        value={skillsData.targetCustomers}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, targetCustomers: e.target.value }))}
+                                        rows={2}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Proposta di valore unica</label>
+                                    <textarea
+                                        placeholder="Cosa vi differenzia? Perché un cliente dovrebbe scegliere voi?"
+                                        value={skillsData.uniqueValue}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, uniqueValue: e.target.value }))}
+                                        rows={2}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Tono di comunicazione</label>
+                                    <Input
+                                        placeholder="Es. Professionale ma amichevole, tecnico, formale..."
+                                        value={skillsData.tone}
+                                        onChange={e => setSkillsData(prev => ({ ...prev, tone: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Preview */}
+                            {skillsContext && (
+                                <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
+                                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                                        <Info className="h-3.5 w-3.5" />
+                                        Anteprima &mdash; Questo contesto verrà iniettato nell&apos;agente AI
+                                    </div>
+                                    <pre className="text-xs whitespace-pre-wrap text-foreground/80 font-mono leading-relaxed">{skillsContext}</pre>
+                                </div>
+                            )}
+
+                            {/* Save button */}
+                            <div className="flex justify-end pt-2 pb-4">
+                                <Button onClick={handleSaveSkills} disabled={isSkillsSaving} className="gap-2 bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700">
+                                    {isSkillsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                    Salva Skills
                                 </Button>
                             </div>
-                        </CardHeader>
-                        <CardContent className="flex-1 overflow-hidden p-0">
-                            <Tabs value={leadsTab} onValueChange={setLeadsTab} className="h-full flex flex-col">
-                                <TabsList className="mx-4 mb-2 grid grid-cols-2 h-8">
-                                    <TabsTrigger value="leads" className="text-[10px]">Lead</TabsTrigger>
-                                    <TabsTrigger value="export" className="text-[10px]">Export</TabsTrigger>
-                                </TabsList>
-
-                                <TabsContent value="leads" className="flex-1 overflow-hidden m-0 px-4 pb-4">
-                                    {activeSearchId && searches.length > 0 && (
-                                        <div className="flex items-center justify-between mb-1.5">
-                                            <span className="text-[10px] font-medium text-muted-foreground truncate">
-                                                {searches.find(s => s.id === activeSearchId)?.name || 'Ricerca'}
-                                            </span>
-                                            <button
-                                                className="text-[10px] text-muted-foreground hover:text-foreground"
-                                                onClick={() => { activeSearchIdRef.current = null; setActiveSearchId(null); loadLeads(null); }}
-                                            >
-                                                Mostra tutti
-                                            </button>
-                                        </div>
-                                    )}
-                                    <div className="mb-2 space-y-1.5">
-                                        <Input
-                                            placeholder="Cerca lead..."
-                                            value={leadsSearch}
-                                            onChange={(e) => setLeadsSearch(e.target.value)}
-                                            className="h-7 text-xs"
-                                        />
-                                        {leads.length > 0 && (
-                                            <div className="flex items-center gap-1 flex-wrap">
-                                                <button
-                                                    onClick={selectAllLeads}
-                                                    className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted transition-colors"
-                                                >
-                                                    {selectedLeadIds.size === leads.length ? 'Deseleziona' : 'Seleziona tutti'}
-                                                </button>
-                                                {selectedLeadIds.size > 0 && (
-                                                    <button
-                                                        onClick={handleDeleteSelectedLeads}
-                                                        disabled={isDeletingLeads}
-                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 transition-colors flex items-center gap-0.5"
-                                                    >
-                                                        {isDeletingLeads ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Trash2 className="h-2.5 w-2.5" />}
-                                                        Elimina {selectedLeadIds.size} selezionati
-                                                    </button>
-                                                )}
-                                                <button
-                                                    onClick={() => {
-                                                        if (confirm(`Eliminare tutti i ${leads.length} lead? Questa azione non può essere annullata.`)) {
-                                                            handleDeleteAllLeads();
-                                                        }
-                                                    }}
-                                                    disabled={isDeletingLeads}
-                                                    className="text-[10px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ml-auto"
-                                                >
-                                                    Elimina tutti
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <ScrollArea className="h-[calc(100%-2.5rem)]">
-                                        {leadsLoading ? (
-                                            <div className="flex items-center justify-center py-8 text-muted-foreground">
-                                                <Loader2 className="h-4 w-4 animate-spin" />
-                                            </div>
-                                        ) : leads.length === 0 ? (
-                                            <div className="text-center py-8 text-muted-foreground">
-                                                <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                                                <p className="text-xs">Nessun lead salvato</p>
-                                                <p className="text-[10px] mt-1">I lead trovati dall&apos;agente appariranno qui</p>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {leads.map((lead) => {
-                                                    const isGenericEmail = lead.email && /^(info|admin|support|hello|contact|sales|marketing|office|noreply|segreteria|amministrazione|contatti|ordini|orders|customer|service|webstore)@/i.test(lead.email);
-                                                    const confidencePct = lead.confidence != null ? Math.round(lead.confidence * 100) : null;
-                                                    return (
-                                                    <div
-                                                        key={lead.id}
-                                                        className={cn("border rounded-lg p-2 text-xs hover:bg-muted/30 transition-colors cursor-pointer", selectedLeadIds.has(lead.id) && "ring-1 ring-violet-400 bg-violet-50/50 dark:bg-violet-900/20")}
-                                                        onClick={() => { setSelectedLead(lead); setIsLeadDialogOpen(true); }}
-                                                    >
-                                                        <div className="flex items-center gap-1.5 mb-0.5">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={selectedLeadIds.has(lead.id)}
-                                                                onChange={(e) => { e.stopPropagation(); toggleLeadSelection(lead.id); }}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                className="h-3 w-3 rounded border-gray-300 accent-violet-500 shrink-0 cursor-pointer"
-                                                            />
-                                                            <span className="text-[10px] text-muted-foreground flex-1 truncate">
-                                                                {lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || lead.companyName || 'Lead'}
-                                                            </span>
-                                                        </div>
-                                                        {lead.companyName && (
-                                                            <div className="flex items-center gap-1">
-                                                                <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
-                                                                <div className="font-medium truncate flex-1 text-[11px]">{lead.companyName}</div>
-                                                                {lead.rating > 0 && (
-                                                                    <div className="flex shrink-0">
-                                                                        {[1, 2, 3, 4, 5].map(i => (
-                                                                            <Star key={i} className={cn('h-2 w-2', i <= lead.rating ? 'fill-amber-400 text-amber-400' : 'text-transparent')} />
-                                                                        ))}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        <div className="flex items-center gap-1 mt-0.5">
-                                                            <div className="truncate flex-1 text-[10px] text-muted-foreground">
-                                                                {lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'N/A'}
-                                                                {lead.jobTitle && <span> · {lead.jobTitle}</span>}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                                                            {lead.email && (
-                                                                <div className={cn("flex items-center gap-0.5 text-[10px]", isGenericEmail ? 'text-amber-500' : 'text-blue-500')} title={isGenericEmail ? `Email generica: ${lead.email}` : lead.email}>
-                                                                    <Mail className="h-2.5 w-2.5" />
-                                                                    {isGenericEmail && <span className="text-[8px] font-medium">GEN</span>}
-                                                                </div>
-                                                            )}
-                                                            {lead.phone && (
-                                                                <div className="flex items-center gap-0.5 text-[10px] text-green-500">
-                                                                    <Phone className="h-2.5 w-2.5" />
-                                                                </div>
-                                                            )}
-                                                            {lead.linkedinUrl && (
-                                                                <div className="flex items-center gap-0.5 text-[10px] text-blue-600">
-                                                                    <Linkedin className="h-2.5 w-2.5" />
-                                                                </div>
-                                                            )}
-                                                            {lead.companyWebsite && (
-                                                                <div className="flex items-center gap-0.5 text-[10px] text-purple-500">
-                                                                    <Globe className="h-2.5 w-2.5" />
-                                                                </div>
-                                                            )}
-                                                            <div className="flex items-center gap-1 ml-auto">
-                                                                {lead.source && (
-                                                                    <Badge variant="outline" className="text-[8px] h-4 px-1">
-                                                                        {lead.source}
-                                                                    </Badge>
-                                                                )}
-                                                                {confidencePct != null && (
-                                                                    <Badge
-                                                                        variant="outline"
-                                                                        className={cn("text-[8px] h-4 px-1 font-mono gap-0.5", confidencePct >= 70 ? 'border-green-500/50 text-green-600' : confidencePct >= 40 ? 'border-amber-500/50 text-amber-600' : 'border-red-500/50 text-red-500')}
-                                                                    >
-                                                                        <ShieldCheck className="h-2 w-2" />
-                                                                        {confidencePct}%
-                                                                    </Badge>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        {/* Financial data preview */}
-                                                        {(lead.revenueYear3 || lead.revenueYear2) && (
-                                                            <div className="text-[9px] text-muted-foreground mt-1 truncate">
-                                                                Fatt: {lead.revenueYear3 || lead.revenueYear2 || '-'}
-                                                            </div>
-                                                        )}
-                                                        {lead.tags?.length > 0 && (
-                                                            <div className="flex flex-wrap gap-0.5 mt-1">
-                                                                {lead.tags.slice(0, 3).map((tag: string) => (
-                                                                    <Badge key={tag} variant="default" className="text-[7px] h-3.5 px-1">
-                                                                        {tag}
-                                                                    </Badge>
-                                                                ))}
-                                                                {lead.tags.length > 3 && (
-                                                                    <Badge variant="secondary" className="text-[7px] h-3.5 px-1">
-                                                                        +{lead.tags.length - 3}
-                                                                    </Badge>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </ScrollArea>
-                                </TabsContent>
-
-                                <TabsContent value="export" className="m-0 px-4 pb-4">
-                                    <div className="space-y-3">
-                                        <div className="text-center py-4">
-                                            <FileSpreadsheet className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-50" />
-                                            <p className="text-xs text-muted-foreground mb-1">
-                                                Esporta {activeSearchId ? 'i lead della ricerca selezionata' : 'tutti i lead'}
-                                            </p>
-                                            <p className="text-[10px] text-muted-foreground">
-                                                {leads.length} lead disponibili
-                                            </p>
-                                        </div>
-                                        <Button
-                                            className="w-full"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handleExport('csv')}
-                                            disabled={leads.length === 0}
-                                        >
-                                            <Download className="h-3.5 w-3.5 mr-2" />
-                                            Esporta CSV
-                                        </Button>
-                                        <Button
-                                            className="w-full"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handleExport('excel')}
-                                            disabled={leads.length === 0}
-                                        >
-                                            <FileSpreadsheet className="h-3.5 w-3.5 mr-2" />
-                                            Esporta Excel
-                                        </Button>
-                                    </div>
-                                </TabsContent>
-                            </Tabs>
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </div>
                 )}
             </div>
 
             {/* Lead detail dialog */}
-            <LeadDetailDialog
-                lead={selectedLead}
-                open={isLeadDialogOpen}
-                onOpenChange={setIsLeadDialogOpen}
-                onUpdate={handleUpdateLead}
-                onDelete={handleDeleteLead}
-                onSendEmail={handleSendEmail}
-            />
+            <LeadDetailDialog lead={selectedLead} open={isLeadDialogOpen} onOpenChange={setIsLeadDialogOpen} onUpdate={handleUpdateLead} onDelete={handleDeleteLead} onSendEmail={handleSendEmail} />
 
             {/* Delete search confirmation */}
             <AlertDialog open={!!deleteSearchTarget} onOpenChange={(open) => { if (!open) setDeleteSearchTarget(null); }}>
@@ -1827,16 +2355,13 @@ export default function LeadGeneratorPage() {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Eliminare questa ricerca?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Eliminando la ricerca <strong>&quot;{deleteSearchTarget?.name}&quot;</strong> verranno eliminati anche tutti i <strong>{deleteSearchTarget?._count?.leads || 0} lead</strong> associati. Questa azione non può essere annullata.
+                            Eliminando la ricerca <strong>&quot;{deleteSearchTarget?.name}&quot;</strong> verranno eliminati anche tutti i <strong>{deleteSearchTarget?._count?.leads || 0} lead</strong> associati.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Annulla</AlertDialogCancel>
-                        <AlertDialogAction
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            onClick={() => deleteSearchTarget && handleDeleteSearch(deleteSearchTarget.id)}
-                        >
-                            Elimina ricerca e lead
+                        <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteSearchTarget && handleDeleteSearch(deleteSearchTarget.id)}>
+                            Elimina
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

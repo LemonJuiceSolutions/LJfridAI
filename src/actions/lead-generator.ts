@@ -627,6 +627,204 @@ export async function sendLeadEmailAction(params: {
 }
 
 /**
+ * Get API credit balance for lead generation providers
+ */
+type ProviderCredits = { used: number; available: number; remaining: number };
+
+export async function getLeadGenApiCreditsAction(): Promise<{
+    credits?: Record<string, ProviderCredits>;
+    error?: string;
+}> {
+    const user = await getAuthUser();
+    if (!user) return { error: "Non autorizzato" };
+
+    try {
+        const company = await db.company.findUnique({
+            where: { id: user.company!.id },
+            select: { leadGenApiKeys: true },
+        });
+        const keys = (company?.leadGenApiKeys as any) || {};
+        const credits: Record<string, ProviderCredits> = {};
+
+        // Run all provider checks in parallel for speed
+        const checks: Promise<void>[] = [];
+
+        // ===== HUNTER.IO =====
+        if (keys.hunter) {
+            checks.push((async () => {
+                try {
+                    const res = await fetch(`https://api.hunter.io/v2/account?api_key=${encodeURIComponent(keys.hunter)}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        const r = data.data?.requests || {};
+                        const s = r.searches || {};
+                        const v = r.verifications || {};
+                        credits.hunter = { used: s.used ?? 0, available: s.available ?? 0, remaining: Math.max(0, (s.available ?? 0) - (s.used ?? 0)) };
+                        credits.hunterVerifications = { used: v.used ?? 0, available: v.available ?? 0, remaining: Math.max(0, (v.available ?? 0) - (v.used ?? 0)) };
+                    }
+                } catch (e) { console.error('Hunter credits check failed:', e); }
+            })());
+        }
+
+        // ===== APOLLO.IO =====
+        // Credits come from response headers on a minimal search (same approach as testApolloApiKeyAction)
+        if (keys.apollo) {
+            checks.push((async () => {
+                try {
+                    const res = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'X-Api-Key': keys.apollo },
+                        body: JSON.stringify({ page: 1, per_page: 1, person_titles: ['CEO'] }),
+                    });
+                    if (res.ok) {
+                        const used24h = parseInt(res.headers.get('x-rate-limit-24h-used') || '0', 10);
+                        const limit24h = parseInt(res.headers.get('x-rate-limit-24h-limit') || '0', 10);
+                        // Also check minutely limits
+                        const usedMin = parseInt(res.headers.get('x-rate-limit-minute-used') || '0', 10);
+                        const limitMin = parseInt(res.headers.get('x-rate-limit-minute-limit') || '0', 10);
+                        // Use 24h limits as the main metric
+                        if (limit24h > 0) {
+                            credits.apollo = { used: used24h, available: limit24h, remaining: Math.max(0, limit24h - used24h) };
+                        } else if (limitMin > 0) {
+                            credits.apollo = { used: usedMin, available: limitMin, remaining: Math.max(0, limitMin - usedMin) };
+                        } else {
+                            // Headers not available but key works
+                            credits.apollo = { used: 0, available: -1, remaining: -1 };
+                        }
+                    } else if (res.status === 401 || res.status === 403) {
+                        credits.apollo = { used: 0, available: 0, remaining: 0 }; // key invalid
+                    } else {
+                        credits.apollo = { used: 0, available: -1, remaining: -1 };
+                    }
+                } catch (e) {
+                    console.error('Apollo credits check failed:', e);
+                    credits.apollo = { used: 0, available: -1, remaining: -1 };
+                }
+            })());
+        }
+
+        // ===== VIBE / EXPLORIUM =====
+        // Uses GET /v1/credits → allocated_credits, remaining_credits
+        if (keys.vibeProspect) {
+            checks.push((async () => {
+                try {
+                    const res = await fetch('https://api.explorium.ai/v1/credits', {
+                        headers: { 'api_key': keys.vibeProspect },
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        const allocated = data.allocated_credits ?? 0;
+                        const remaining = data.remaining_credits ?? 0;
+                        credits.vibe = { used: allocated > 0 ? allocated - remaining : 0, available: allocated, remaining };
+                    } else {
+                        credits.vibe = { used: 0, available: -1, remaining: -1 };
+                    }
+                } catch (e) {
+                    console.error('Vibe credits check failed:', e);
+                    credits.vibe = { used: 0, available: -1, remaining: -1 };
+                }
+            })());
+        }
+
+        // ===== SERPAPI =====
+        if (keys.serpApi) {
+            checks.push((async () => {
+                try {
+                    const res = await fetch(`https://serpapi.com/account.json?api_key=${encodeURIComponent(keys.serpApi)}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        const searchesLeft = data.total_searches_left ?? data.plan_searches_left ?? 0;
+                        const thisMonth = data.this_month_usage ?? 0;
+                        credits.serpApi = {
+                            used: thisMonth,
+                            available: searchesLeft + thisMonth,
+                            remaining: Math.max(0, searchesLeft),
+                        };
+                    }
+                } catch (e) { console.error('SerpApi credits check failed:', e); }
+            })());
+        }
+
+        // ===== FIRECRAWL =====
+        // Try /v1/team/credits first, then scrape example.com and check headers as fallback
+        if (keys.firecrawl) {
+            checks.push((async () => {
+                try {
+                    // Try dedicated credits endpoint first
+                    const res = await fetch('https://api.firecrawl.dev/v1/team/credits', {
+                        headers: { 'Authorization': `Bearer ${keys.firecrawl}` },
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        const remaining = data.remaining_credits ?? data.data?.remaining_credits ?? 0;
+                        const limit = data.credits_limit ?? data.data?.credits_limit ?? 0;
+                        const used = limit > 0 ? limit - remaining : 0;
+                        credits.firecrawl = { used: Math.max(0, used), available: limit > 0 ? limit : remaining, remaining: Math.max(0, remaining) };
+                    } else {
+                        // Fallback: minimal scrape to read headers
+                        const scrapeRes = await fetch('https://api.firecrawl.dev/v1/scrape', {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${keys.firecrawl}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: 'https://example.com', formats: ['markdown'], onlyMainContent: true, timeout: 10000 }),
+                        });
+                        const remaining = parseInt(scrapeRes.headers.get('x-credits-remaining') || '0', 10);
+                        const used = parseInt(scrapeRes.headers.get('x-credits-used') || '0', 10);
+                        if (remaining > 0 || used > 0) {
+                            credits.firecrawl = { used, available: used + remaining, remaining };
+                        } else {
+                            credits.firecrawl = { used: 0, available: -1, remaining: -1 };
+                        }
+                    }
+                } catch (e) {
+                    console.error('Firecrawl credits check failed:', e);
+                    credits.firecrawl = { used: 0, available: -1, remaining: -1 };
+                }
+            })());
+        }
+
+        // ===== APIFY =====
+        if (keys.apify) {
+            checks.push((async () => {
+                try {
+                    // Get plan info + monthly usage in parallel
+                    const [userRes, usageRes] = await Promise.all([
+                        fetch(`https://api.apify.com/v2/users/me?token=${encodeURIComponent(keys.apify)}`),
+                        fetch(`https://api.apify.com/v2/users/me/usage/monthly?token=${encodeURIComponent(keys.apify)}`),
+                    ]);
+                    let monthlyLimit = 5; // default $5 free plan
+                    if (userRes.ok) {
+                        const userData = await userRes.json();
+                        monthlyLimit = userData.data?.plan?.monthlyUsageCreditsUsd || 5;
+                    }
+                    let usageUsd = 0;
+                    if (usageRes.ok) {
+                        const usageData = await usageRes.json();
+                        usageUsd = usageData.data?.usageTotalUsd || usageData.usageTotalUsd || 0;
+                    }
+                    // Store as cents for integer display
+                    credits.apify = {
+                        used: Math.round(usageUsd * 100),
+                        available: Math.round(monthlyLimit * 100),
+                        remaining: Math.round(Math.max(0, monthlyLimit - usageUsd) * 100),
+                    };
+                } catch (e) {
+                    console.error('Apify credits check failed:', e);
+                    credits.apify = { used: 0, available: -1, remaining: -1 };
+                }
+            })());
+        }
+
+        // Wait for all checks to complete
+        await Promise.all(checks);
+
+        return { credits };
+    } catch (error) {
+        console.error("Failed to get lead gen API credits:", error);
+        return { error: "Impossibile caricare i crediti API" };
+    }
+}
+
+/**
  * Generate a personalized email for a lead using AI
  */
 export async function generateLeadEmailAction(leadId: string): Promise<{
@@ -644,9 +842,7 @@ export async function generateLeadEmailAction(leadId: string): Promise<{
         });
         if (!lead) return { error: "Lead non trovato" };
 
-        // Get user's OpenRouter API key
-        const apiKey = (user as any).openRouterApiKey;
-        if (!apiKey) return { error: "Configura la API key OpenRouter nelle Impostazioni." };
+        // AI Provider is dynamically loaded below
 
         // Get sender and company info
         const companyName = user.company!.name || 'la nostra azienda';
@@ -691,27 +887,46 @@ REGOLE:
 Rispondi SOLO in questo formato JSON esatto:
 {"subject": "oggetto email", "body": "corpo email (usa \\n per a capo)"}`;
 
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: (user as any).openRouterModel || 'google/gemini-2.0-flash-001',
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.7,
-                max_tokens: 500,
-            }),
-        });
+        const { getAiProviderAction } = await import('@/actions/ai-settings');
+        const { provider, claudeCliModel } = await getAiProviderAction();
 
-        if (!response.ok) {
-            const err = await response.text();
-            return { error: `Errore AI: ${err}` };
+        let text = '';
+
+        if (provider === 'claude-cli') {
+            const { runClaudeCliSync } = await import('@/ai/providers/claude-cli-provider');
+            const result = await runClaudeCliSync({
+                model: claudeCliModel || 'claude-sonnet-4-6',
+                systemPrompt: "Rispondi SOLO in formato JSON.",
+                userPrompt: prompt,
+            });
+            text = result.text || '';
+        } else {
+            // Get user's OpenRouter API key
+            const apiKey = (user as any).openRouterApiKey;
+            if (!apiKey) return { error: "Configura la API key OpenRouter nelle Impostazioni per generare l'email con questo provider." };
+
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: (user as any).openRouterModel || 'google/gemini-2.0-flash-001',
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.7,
+                    max_tokens: 500,
+                }),
+            });
+
+            if (!response.ok) {
+                const err = await response.text();
+                return { error: `Errore AI: ${err}` };
+            }
+
+            const data = await response.json();
+            text = data.choices?.[0]?.message?.content || '';
         }
-
-        const data = await response.json();
-        const text = data.choices?.[0]?.message?.content || '';
 
         // Parse JSON from response (handle markdown code blocks)
         const jsonMatch = text.match(/\{[\s\S]*"subject"[\s\S]*"body"[\s\S]*\}/);

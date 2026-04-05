@@ -540,6 +540,7 @@ model LeadSearch {
 
 model Lead {
   id              String      @id @default(cuid())
+  // Primary contact (best contact for this company — backward compatible)
   firstName       String?
   lastName        String?
   fullName        String?
@@ -548,6 +549,9 @@ model Lead {
   emailStatus     String?
   phone           String?
   linkedinUrl     String?
+  // All contacts for this company (JSON array of {fullName, firstName, lastName, jobTitle, email, emailStatus, phone, linkedinUrl})
+  contacts        Json?
+  // Company info (the lead IS the company)
   companyName     String?
   companyDomain   String?
   companyWebsite  String?

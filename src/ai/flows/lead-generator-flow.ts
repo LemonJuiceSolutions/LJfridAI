@@ -5,6 +5,32 @@ import { execSync } from 'child_process';
 
 // ===================== TYPES =====================
 
+export type ProgressPhase =
+    | 'plan'           // Generating execution plan
+    | 'execute'        // Running search tasks
+    | 'scrape'         // Scraping websites
+    | 'knowledge'      // Generating known companies from AI knowledge
+    | 'domain'         // Discovering company domains
+    | 'enrich'         // Enriching leads (Hunter, Vibe, Apollo)
+    | 'verify'         // Verifying emails
+    | 'save'           // Saving leads to database
+    | 'synthesize'     // Generating final response
+    | 'done';          // Complete
+
+export interface ProgressEvent {
+    phase: ProgressPhase;
+    message: string;
+    detail?: string;       // More specific info (e.g. company name being searched)
+    companiesFound?: number;
+    leadsFound?: number;
+    leadsWithEmail?: number;
+    progress?: number;     // 0-100 percentage (approximate)
+    browserUrl?: string;           // Current URL the browser agent is visiting
+    browserScreenshot?: string;    // Base64 JPEG screenshot of the browser viewport
+}
+
+export type ProgressCallback = (event: ProgressEvent) => void;
+
 export interface LeadGeneratorInput {
     messages: any[]; // Genkit message format: { role, content: [{ text }] }
     companyId: string;
@@ -13,15 +39,26 @@ export interface LeadGeneratorInput {
     leadGenApiKeys?: { apollo?: string; hunter?: string; serpApi?: string; apify?: string; vibeProspect?: string; firecrawl?: string };
     conversationId?: string;
     aiProvider?: 'openrouter' | 'claude-cli';
+    onProgress?: ProgressCallback;
+    skillsContext?: string;
 }
 
 // ===================== SYSTEM PROMPT =====================
 
-function buildSystemPrompt(companyId: string): string {
+function buildSystemPrompt(companyId: string, skillsContext?: string): string {
     return `Sei LeadAI, un assistente esperto nella ricerca di contatti commerciali e lead B2B. Aiuti a trovare aziende e persone di contatto in settori specifici.
 
 DATA DI OGGI: ${new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 Company ID: ${companyId}
+${skillsContext ? `
+## PROFILO AZIENDALE DELL'UTENTE (usa queste info per personalizzare email, pitch e ricerche):
+${skillsContext}
+IMPORTANTE: Usa queste informazioni per:
+- Scrivere email di outreach personalizzate che presentino l'azienda dell'utente in modo convincente
+- Capire il target ideale e filtrare i lead di conseguenza
+- Adattare il tono delle comunicazioni al brand dell'utente
+- Proporre angoli di vendita coerenti con i prodotti/servizi offerti
+` : ''}
 
 ## RAGIONAMENTO STRUTTURATO (OBBLIGATORIO):
 Per ogni ricerca di lead, segui questo processo mentale:
@@ -184,14 +221,16 @@ Quando l'utente chiede contatti di espositori a una fiera o evento, segui questa
    - "[nome fiera] edizione precedente espositori" (le liste anno precedente sono spesso simili)
 2. Per ogni URL trovato, usa scrapeWithFirecrawl (NON scrapeWebsite!) per estrarre i nomi delle aziende.
    Firecrawl gestisce le pagine JavaScript-heavy che il backend Python non riesce a processare.
-3. Se il sito ufficiale non mostra la lista (caricata via JS o non ancora pubblicata):
+3. Se il sito ufficiale non mostra la lista (caricata via JS o timeout anti-bot):
    - Usa mapWebsiteFirecrawl sul sito della fiera per trovare pagine "/exhibitors", "/espositori", "/companies"
    - Prova a scrappare quelle sotto-pagine con scrapeWithFirecrawl
    - Se non funziona, usa le fonti alternative (10times, expodatabase, edizioni precedenti)
-4. Se nessuna fonte online ha la lista completa, costruisci una lista di espositori NOTI combinando:
-   - Risultati Google Web con nomi aziende menzionate negli articoli/comunicati stampa sulla fiera
-   - Leader di settore che tipicamente espongono a quel tipo di fiera (es: per SPS automazione → Siemens, Schneider Electric, ABB, Beckhoff, Omron, Festo, Rockwell, Phoenix Contact, Weidmuller, SICK, Pilz, Balluff, IFM, Turck, Lapp, Wago, B&R, Mitsubishi Electric, Bosch Rexroth, Eaton, Pepperl+Fuchs, Datalogic, Gefran, SMC, Camozzi, ecc.)
-   - Aziende trovate cercando "[nome fiera] [anno]" + nomi brand specifici del settore
+
+CRITICO: GLI ESPOSITORI DI UNA FIERA (ES. SPS PARMA) SONO MULTINAZIONALI E AZIENDE DA TUTTO IL MONDO/ITALIA. *NON* HANNO SEDE NELLA CITTA DELLA FIERA! QUINDI ❌ È ASSOLUTAMENTE VIETATO USARE 'searchGoogleMaps' PER CERCARE "AZIENDE A PARMA". TROVERESTI SOLO INSTALLATORI LOCALI. 
+
+4. Se TUTTE le fonti online bloccano l'estrazione o vanno in timeout, e non hai una lista formale, DEVI COMUNQUE PRODURRE DECINE DI CONTATTI. Costruisci TU STESSO una lista MASSIVA IN MEMORIA (almeno 50 aziende) di espositori POTENZIALI e NOTI:
+   - USA LA TUA CONOSCENZA per stilare le migliori 50-100 aziende del settore target! (es: per SPS → automatizzazione, macchine: Siemens, ABB, Schneider, Festo, Omron, Pilz, SMC, Rockwell, Bosch Rexroth, Fanuc, Kuka, Yaskawa, Universal Robots, Comau, B&R, Beckhoff, Phoenix Contact, SICK, Datalogic, Turck, Ifm, Wago, Lapp, ecc. GENERANE ALMENO 40!)
+   - Passa questi nomi direttamente ad Apollo o Vibe per recuperare ALMENO 5-10 contatti per ogni azienda (creando così una lista massiva da 100-200 lead). NON FERMARTI FINCHE' NON HAI almeno 100 contatti in output!
 
 ### FASE 2 - RICERCA CONTATTI (PER OGNI ESPOSITORE):
 Per ogni azienda nella lista, cerca UN contatto personale:
@@ -233,9 +272,9 @@ const leadGenTools = [
             parameters: {
                 type: 'object',
                 properties: {
-                    jobTitles: { type: 'array', items: { type: 'string' }, description: 'Ruoli/titoli da cercare (es: "Marketing Manager", "CEO")' },
-                    industries: { type: 'array', items: { type: 'string' }, description: 'Settori/industrie' },
-                    locations: { type: 'array', items: { type: 'string' }, description: 'Citta\' o paesi' },
+                    jobTitles: { type: 'array', items: { type: 'string' }, description: 'Ruoli/titoli (OBBLIGATORIO IN INGLESE, es: "Marketing Manager", "CEO", "Sales Director")' },
+                    industries: { type: 'array', items: { type: 'string' }, description: 'Settori (OBBLIGATORIO IN INGLESE, es: "Industrial Automation", "Software")' },
+                    locations: { type: 'array', items: { type: 'string' }, description: 'Paesi/Citta\' (OBBLIGATORIO IN INGLESE, es: "Italy", "Milan")' },
                     companySize: { type: 'string', description: 'Range dipendenti: 1-10, 11-50, 51-200, 201-500, 501-1000, 1001+' },
                     keywords: { type: 'string', description: 'Parole chiave aggiuntive' },
                     limit: { type: 'number', description: 'Numero max risultati (default 25)' },
@@ -252,8 +291,8 @@ const leadGenTools = [
             parameters: {
                 type: 'object',
                 properties: {
-                    industries: { type: 'array', items: { type: 'string' }, description: 'Settori/industrie' },
-                    locations: { type: 'array', items: { type: 'string' }, description: 'Citta\'/paesi' },
+                    industries: { type: 'array', items: { type: 'string' }, description: 'Settori/industrie (OBBLIGATORIO IN INGLESE, es: "Industrial Automation")' },
+                    locations: { type: 'array', items: { type: 'string' }, description: 'Citta\'/paesi (OBBLIGATORIO IN INGLESE, es: "Italy")' },
                     companySize: { type: 'string', description: 'Range dipendenti' },
                     keywords: { type: 'string', description: 'Parole chiave' },
                     limit: { type: 'number', description: 'Numero max risultati (default 25)' },
@@ -295,7 +334,7 @@ const leadGenTools = [
         type: 'function' as const,
         function: {
             name: 'searchGoogleMaps',
-            description: 'Cerca attivita\' su Google Maps in una zona specifica. Ottimo per attivita\' locali.',
+            description: 'Cerca attivita\' su Google Maps. Ottimo per attivita\' puramente locali (ristoranti, negozi). ❌ ASSOLUTAMENTE VIETATO USARE QUESTO TOOL PER CERCARE ESPOSITORI DI FIERE O AZIENDE DI SETTORI GLOBALI/NAZIONALI. (Gli espositori di una fiera non hanno sede nella città in cui si svolge la fiera!).',
             parameters: {
                 type: 'object',
                 properties: {
@@ -432,9 +471,9 @@ const leadGenTools = [
                 properties: {
                     job_titles: { type: 'array', items: { type: 'string' }, description: 'Ruoli da cercare (es: "Software Engineer", "CTO", "Marketing Director")' },
                     job_levels: { type: 'array', items: { type: 'string' }, description: 'Livello: "owner", "c-suite", "vice president", "director", "manager", "senior non-managerial", "partner", "founder"' },
-                    job_departments: { type: 'array', items: { type: 'string' }, description: 'Dipartimento: "engineering", "sales", "marketing", "finance", "it", "operations", "c-suite", "human resources", "legal", "product", "design"' },
-                    country_codes: { type: 'array', items: { type: 'string' }, description: 'Codici paese ISO (es: "IT", "US", "DE")' },
-                    company_country_codes: { type: 'array', items: { type: 'string' }, description: 'Paese sede azienda (es: "IT", "US")' },
+                    job_departments: { type: 'array', items: { type: 'string' }, description: 'Dipartimento (IN INGLESE): "engineering", "sales", "marketing", "finance", "it", "operations", "c-suite", "human resources", "legal", "product", "design"' },
+                    country_codes: { type: 'array', items: { type: 'string' }, description: 'Codici paese ISO-2 (es: "IT", "US", "DE")' },
+                    company_country_codes: { type: 'array', items: { type: 'string' }, description: 'Paese sede azienda ISO-2 (es: "IT", "US")' },
                     company_names: { type: 'array', items: { type: 'string' }, description: 'Nomi aziende specifiche' },
                     company_sizes: { type: 'array', items: { type: 'string' }, description: 'Range dipendenti: "1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5001-10000", "10001+"' },
                     company_revenues: { type: 'array', items: { type: 'string' }, description: 'Range fatturato: "0-500K", "500K-1M", "1M-5M", "5M-10M", "10M-25M", "25M-75M", "75M-200M", "200M-500M", "500M-1B"' },
@@ -576,6 +615,9 @@ async function executeToolCall(
 
                 if (!response.ok) {
                     const err = await response.text();
+                    if (response.status === 403 || response.status === 401 || response.status === 429) {
+                        return JSON.stringify({ warning: `Apollo API quota/piano limitato (${response.status})`, people: [] });
+                    }
                     return JSON.stringify({ error: `Apollo API errore: ${response.status} - ${err}` });
                 }
 
@@ -633,6 +675,9 @@ async function executeToolCall(
 
                 if (!response.ok) {
                     const err = await response.text();
+                    if (response.status === 403 || response.status === 401 || response.status === 429) {
+                        return JSON.stringify({ warning: `Apollo API quota/piano limitato (${response.status})`, organizations: [] });
+                    }
                     return JSON.stringify({ error: `Apollo API errore: ${response.status} - ${err}` });
                 }
 
@@ -845,17 +890,84 @@ async function executeToolCall(
         case 'saveLeads': {
             try {
                 const rawLeads = args.leads || [];
-                // Filter out leads with generic or missing emails before saving
+                // Filter out leads with generic or missing emails
                 const genericEmailPrefixes = ['info@', 'admin@', 'support@', 'contatti@', 'hello@', 'office@', 'sales@', 'marketing@', 'noreply@', 'contact@', 'segreteria@', 'amministrazione@', 'ordini@', 'orders@', 'customer@', 'service@', 'webstore@', 'reception@', 'direzione@', 'commerciale@', 'hr@', 'jobs@', 'careers@', 'press@', 'media@', 'billing@', 'accounting@', 'general@', 'team@', 'help@'];
-                const leadsArray = rawLeads.filter((l: any) => {
-                    if (!l.email) return false;
-                    const emailLower = l.email.toLowerCase();
-                    return !genericEmailPrefixes.some((prefix: string) => emailLower.startsWith(prefix));
-                });
-                if (leadsArray.length < rawLeads.length) {
-                    console.log(`[saveLeads] Filtered out ${rawLeads.length - leadsArray.length} leads with generic/missing emails (kept ${leadsArray.length})`);
+                const isGeneric = (email: string) => email && genericEmailPrefixes.some(p => email.toLowerCase().startsWith(p));
+
+                // ===== GROUP CONTACTS BY COMPANY =====
+                // Each lead = 1 company with N contacts inside
+                const companyMap = new Map<string, { companyData: any; contacts: any[] }>();
+
+                for (const l of rawLeads) {
+                    // Build a company key from name or domain
+                    const companyKey = (l.companyName || l.companyDomain || l.email?.split('@')[1] || 'unknown').toLowerCase().trim();
+                    if (!companyMap.has(companyKey)) {
+                        companyMap.set(companyKey, {
+                            companyData: {
+                                companyName: l.companyName || null,
+                                companyDomain: l.companyDomain || null,
+                                companyWebsite: l.companyWebsite || null,
+                                companySize: l.companySize || null,
+                                companyIndustry: l.companyIndustry || null,
+                                companyCity: l.companyCity || null,
+                                companyCountry: l.companyCountry || null,
+                                source: l.source || 'manual',
+                                notes: l.notes || null,
+                                revenueYear1: l.revenueYear1 || null,
+                                revenueYear2: l.revenueYear2 || null,
+                                revenueYear3: l.revenueYear3 || null,
+                                profitYear1: l.profitYear1 || null,
+                                profitYear2: l.profitYear2 || null,
+                                profitYear3: l.profitYear3 || null,
+                            },
+                            contacts: [],
+                        });
+                    }
+
+                    const entry = companyMap.get(companyKey)!;
+                    // Merge company-level data (prefer non-null values)
+                    for (const key of Object.keys(entry.companyData)) {
+                        if (!entry.companyData[key] && (l as any)[key]) {
+                            entry.companyData[key] = (l as any)[key];
+                        }
+                    }
+
+                    // Add as contact if it has a name or personal email
+                    const hasPersonalEmail = l.email && !isGeneric(l.email);
+                    const hasName = l.fullName || l.firstName || l.lastName;
+                    if (hasPersonalEmail || hasName) {
+                        const contactFullName = l.fullName || `${l.firstName || ''} ${l.lastName || ''}`.trim() || null;
+                        // Avoid duplicate contacts (same email)
+                        const isDupe = l.email && entry.contacts.some((c: any) => c.email?.toLowerCase() === l.email.toLowerCase());
+                        if (!isDupe) {
+                            entry.contacts.push({
+                                fullName: contactFullName,
+                                firstName: l.firstName || null,
+                                lastName: l.lastName || null,
+                                jobTitle: l.jobTitle || null,
+                                email: l.email || null,
+                                emailStatus: l.emailStatus || null,
+                                phone: l.phone || null,
+                                linkedinUrl: l.linkedinUrl || null,
+                            });
+                        }
+                    }
                 }
-                console.log(`[saveLeads] Saving ${leadsArray.length} leads for company ${companyId}`);
+
+                // Filter out companies with zero useful contacts (no personal email at all)
+                // For fair/event searches, also keep companies WITHOUT personal email contacts
+                // (they're still valuable as an exhibitor list to enrich later)
+                const companiesWithContacts = [...companyMap.entries()].filter(([_, v]) =>
+                    v.contacts.some(c => c.email && !isGeneric(c.email))
+                );
+                // Also keep companies with at least a domain (valuable company records even without personal contacts)
+                const companiesWithDomainOnly = [...companyMap.entries()].filter(([key, v]) =>
+                    !companiesWithContacts.some(([k]) => k === key) &&
+                    (v.companyData.companyDomain || v.companyData.companyWebsite)
+                );
+                const allCompaniesToSave = [...companiesWithContacts, ...companiesWithDomainOnly];
+
+                console.log(`[saveLeads] Grouped ${rawLeads.length} raw leads into ${companyMap.size} companies, ${companiesWithContacts.length} with personal contacts, ${companiesWithDomainOnly.length} with domain only`);
 
                 // Create the search record
                 const search = await db.leadSearch.create({
@@ -863,53 +975,85 @@ async function executeToolCall(
                         name: args.searchName || 'Ricerca Lead',
                         criteria: args.criteria || {},
                         status: 'completed',
-                        resultCount: leadsArray.length,
+                        resultCount: allCompaniesToSave.length,
                         companyId,
                         ...(conversationId ? { conversationId } : {}),
                     },
                 });
                 console.log(`[saveLeads] Created search ${search.id}`);
 
-                // Create lead records
-                const leadsData = leadsArray.map((l: any) => ({
-                    firstName: l.firstName || null,
-                    lastName: l.lastName || null,
-                    fullName: l.fullName || `${l.firstName || ''} ${l.lastName || ''}`.trim() || null,
-                    jobTitle: l.jobTitle || null,
-                    email: l.email || null,
-                    phone: l.phone || null,
-                    linkedinUrl: l.linkedinUrl || null,
-                    companyName: l.companyName || null,
-                    companyDomain: l.companyDomain || null,
-                    companyWebsite: l.companyWebsite || null,
-                    companySize: l.companySize || null,
-                    companyIndustry: l.companyIndustry || null,
-                    companyCity: l.companyCity || null,
-                    companyCountry: l.companyCountry || null,
-                    source: l.source || 'manual',
-                    notes: l.notes || null,
-                    revenueYear1: l.revenueYear1 || null,
-                    revenueYear2: l.revenueYear2 || null,
-                    revenueYear3: l.revenueYear3 || null,
-                    profitYear1: l.profitYear1 || null,
-                    profitYear2: l.profitYear2 || null,
-                    profitYear3: l.profitYear3 || null,
-                    confidence: l.confidence != null ? (parseFloat(l.confidence) > 1 ? parseFloat(l.confidence) / 100 : parseFloat(l.confidence)) : null,
-                    emailStatus: l.emailStatus || null,
-                    searchId: search.id,
-                    companyId,
-                }));
+                // Create one lead per company, with contacts array + best contact as primary
+                const leadsData = allCompaniesToSave.map(([_, { companyData, contacts }]) => {
+                    // Pick best contact (highest: verified email > has phone > has linkedin > has job title)
+                    const scored = contacts.map(c => ({
+                        ...c,
+                        _score: (c.emailStatus === 'valid' ? 4 : c.email ? 2 : 0)
+                            + (c.phone ? 2 : 0) + (c.linkedinUrl ? 1 : 0) + (c.jobTitle ? 1 : 0),
+                    }));
+                    scored.sort((a, b) => b._score - a._score);
+                    const best = scored[0] || {};
+
+                    // Compute confidence based on company completeness + contact quality
+                    let conf = 0;
+                    if (best.email && !isGeneric(best.email)) conf += 25;
+                    if (best.emailStatus === 'valid') conf += 10;
+                    if (best.fullName) conf += 12;
+                    if (best.jobTitle) conf += 8;
+                    if (best.phone) conf += 8;
+                    if (best.linkedinUrl) conf += 7;
+                    if (companyData.companyName) conf += 8;
+                    if (companyData.companyWebsite || companyData.companyDomain) conf += 5;
+                    if (companyData.companyIndustry) conf += 5;
+                    if (companyData.companyCity) conf += 4;
+                    if (companyData.companyCountry) conf += 3;
+                    if (contacts.length > 1) conf += 5; // bonus for multiple contacts
+                    // For companies without any contacts, set minimal confidence
+                    if (contacts.length === 0) {
+                        conf = 0;
+                        if (companyData.companyName) conf += 8;
+                        if (companyData.companyWebsite || companyData.companyDomain) conf += 5;
+                        if (companyData.companyIndustry) conf += 3;
+                        if (companyData.companyCity) conf += 2;
+                        if (companyData.companyCountry) conf += 2;
+                        conf = Math.min(100, conf);
+                    }
+                    conf = Math.min(100, conf);
+
+                    // Clean _score from contacts before storing
+                    const cleanContacts = scored.map(({ _score, ...rest }) => rest);
+
+                    return {
+                        // Primary contact (best one)
+                        firstName: best.firstName || null,
+                        lastName: best.lastName || null,
+                        fullName: best.fullName || null,
+                        jobTitle: best.jobTitle || null,
+                        email: best.email || null,
+                        emailStatus: best.emailStatus || null,
+                        phone: best.phone || null,
+                        linkedinUrl: best.linkedinUrl || null,
+                        // All contacts
+                        contacts: cleanContacts,
+                        // Company data
+                        ...companyData,
+                        confidence: conf / 100,
+                        searchId: search.id,
+                        companyId,
+                    };
+                });
 
                 if (leadsData.length > 0) {
                     const result = await db.lead.createMany({ data: leadsData });
-                    console.log(`[saveLeads] Created ${result.count} leads in DB`);
+                    console.log(`[saveLeads] Created ${result.count} company leads in DB (${rawLeads.length} raw → ${result.count} companies)`);
                 }
 
+                const totalContacts = allCompaniesToSave.reduce((s, [_, v]) => s + v.contacts.length, 0);
                 return JSON.stringify({
                     success: true,
                     searchId: search.id,
                     savedCount: leadsData.length,
-                    message: `Salvati ${leadsData.length} lead con successo nella ricerca "${args.searchName}".`,
+                    totalContacts,
+                    message: `Salvati ${leadsData.length} aziende (${totalContacts} contatti totali) nella ricerca "${args.searchName}".`,
                 });
             } catch (e: any) {
                 console.error(`[saveLeads] ERROR:`, e);
@@ -1093,6 +1237,9 @@ async function executeToolCall(
 
                 if (!response.ok) {
                     const err = await response.text();
+                    if (response.status === 403 || response.status === 422 || response.status === 401) {
+                        return JSON.stringify({ warning: `Vibe API errore/limite crediti (${response.status})`, data: [] });
+                    }
                     return JSON.stringify({ error: `Vibe Prospecting API errore: ${response.status} - ${err}` });
                 }
 
@@ -1167,6 +1314,9 @@ async function executeToolCall(
 
                 if (!response.ok) {
                     const err = await response.text();
+                    if (response.status === 403 || response.status === 422 || response.status === 401) {
+                        return JSON.stringify({ warning: `Vibe API errore/limite crediti (${response.status})`, data: [] });
+                    }
                     return JSON.stringify({ error: `Vibe Prospecting API errore: ${response.status} - ${err}` });
                 }
 
@@ -1221,6 +1371,10 @@ async function executeToolCall(
             }
             try {
                 const formats = args.formats || ['markdown'];
+                // For fair/exhibitor pages, use longer timeout and wait for JS rendering
+                const isFairUrl = (args.url || '').match(/espositor|exhibitor|aussteller|exposan/i);
+                const timeout = args.timeout || (isFairUrl ? 60000 : 30000);
+                const waitFor = args.waitFor || (isFairUrl ? 5000 : undefined);
                 const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
                     method: 'POST',
                     headers: {
@@ -1231,8 +1385,8 @@ async function executeToolCall(
                         url: args.url,
                         formats,
                         onlyMainContent: args.onlyMainContent !== false,
-                        timeout: 30000,
-                        ...(args.waitFor ? { waitFor: args.waitFor } : {}),
+                        timeout,
+                        ...(waitFor ? { waitFor } : {}),
                     }),
                 });
 
@@ -1316,6 +1470,22 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
         return leadGeneratorFlowClaude(input);
     }
 
+    // For fair/event searches, ALWAYS use Claude CLI flow — it has the full Playwright browser
+    // pipeline (scrape exhibitor page, visit each website, Google+LinkedIn search) that the
+    // OpenRouter tool-calling loop doesn't support
+    const allMsgTexts = input.messages.map(m => {
+        if (typeof m.content === 'string') return m.content;
+        if (Array.isArray(m.content)) return m.content.map((c: any) => c.text || c).filter(Boolean).join(' ');
+        return '';
+    }).join(' ');
+    const fairRegex = /fiera|sps|expo|esposi|mecspe|salone|fair|exhibit|event|espositor|exhibitor/i;
+    const isFairRequest = fairRegex.test(allMsgTexts);
+    console.log(`[LeadGen] Fair detection: isFairRequest=${isFairRequest}, aiProvider=${input.aiProvider}, textSample="${allMsgTexts.substring(0, 100)}"`);
+    if (isFairRequest) {
+        console.log('[LeadGen] ✅ Fair search detected — routing to Claude CLI flow (Firecrawl + Playwright pipeline)');
+        return leadGeneratorFlowClaude(input);
+    }
+
     if (!input.apiKey) {
         throw new Error('API key OpenRouter mancante. Configura la chiave nelle Impostazioni.');
     }
@@ -1324,7 +1494,7 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
 
     const systemMessage = {
         role: 'system' as const,
-        content: [{ text: buildSystemPrompt(input.companyId) }],
+        content: [{ text: buildSystemPrompt(input.companyId, input.skillsContext) }],
     };
 
     // Truncate conversation history
@@ -1640,16 +1810,19 @@ REGOLE PER HUNTER.IO (IMPORTANTE):
 REGOLE PER VIBE PROSPECTING:
 - company_country_codes: usa SEMPRE codici ISO a 2 lettere: ["IT"], ["US"], ["DE"], etc.
 - company_sizes: usa ESATTAMENTE questi valori: "1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5001-10000", "10001+"
-- linkedin_categories: ATTENZIONE - usa SOLO categorie LinkedIn esatte. NON inventare.
-  Categorie VALIDE per automazione/industria: "Industrial Automation", "Machinery", "Electrical/Electronic Manufacturing", "Mechanical or Industrial Engineering", "Semiconductors", "Computer Hardware", "Computer Software", "Information Technology and Services", "Automotive", "Plastics", "Food Production", "Oil & Energy", "Renewables & Environment"
-  Per altri settori usa termini GENERICI in inglese. Se non sei sicuro della categoria, NON usare linkedin_categories — lascialo vuoto e usa job_titles + company_country_codes.
+- NON usare MAI il campo linkedin_categories (spesso genera errori API 422). Usa piuttosto job_titles e company_names.
 - has_email: metti SEMPRE true per avere solo prospect con email
 - Per cercare aziende specifiche usa company_names con i nomi esatti (piu affidabile delle categorie)
-- Se usi company_names, NON aggiungere linkedin_categories (potrebbe filtrare troppo)
+- Se usi company_names, eviterai filtri troppo restrittivi.
 
 REGOLE PER GOOGLE MAPS (SerpApi):
 - query: scrivi la ricerca completa (es: "automazione industriale Parma")
 - NON usare il parametro location, metti la localita nella query stessa
+
+REGOLE PER GOOGLE MAPS (CRITICO):
+- NON usare MAI searchGoogleMaps per ricerche di fiere/eventi/espositori!
+- Google Maps trova aziende LOCALI nella citta della fiera, NON gli espositori (che vengono da tutto il mondo)
+- Usa searchGoogleMaps SOLO per ricerche locali esplicite ("aziende di automazione a Bologna")
 
 REGOLE PER RICERCHE ITALIA:
 - Per ricerche in Italia usa country_codes: ["IT"] (Vibe), locations: ["Italy"] (Apollo)
@@ -1723,13 +1896,20 @@ function createDefaultPlan(userRequest: string, apiKeys: Record<string, string |
         }
     }
 
-    // Job titles in Italian + English
-    const jobTitles = ['Direttore Tecnico', 'Responsabile Ufficio Tecnico', 'CTO', 'Technical Director', 'Head of Engineering', 'R&D Manager'];
+    // Job titles in Italian + English — use commercial/sales roles for fairs, technical for general
+    const jobTitles = isFair
+        ? ['Sales Manager', 'Area Manager', 'Business Development Manager', 'Key Account Manager', 'Commercial Director', 'Export Manager', 'Direttore Commerciale', 'Responsabile Vendite']
+        : ['Direttore Tecnico', 'Responsabile Ufficio Tecnico', 'CTO', 'Technical Director', 'Head of Engineering', 'R&D Manager'];
 
     if (apiKeys.apollo) {
         tasks.push({
             id: id++, tool: 'searchPeopleApollo',
-            args: { jobTitles, locations: isItaly ? ['Italy'] : [], limit: 25 },
+            args: {
+                jobTitles,
+                industries: isFair ? ['Industrial Automation', 'Manufacturing', 'Electrical Equipment', 'Machinery'] : [],
+                locations: isItaly ? ['Italy'] : [],
+                limit: isFair ? 50 : 25,
+            },
             description: 'Cerca contatti su Apollo', dependsOn: [1],
         });
     }
@@ -1737,21 +1917,29 @@ function createDefaultPlan(userRequest: string, apiKeys: Record<string, string |
         tasks.push({
             id: id++, tool: 'searchProspectsVibe',
             args: {
-                job_titles: ['Technical Director', 'CTO', 'Head of Engineering', 'R&D Director'],
+                job_titles: isFair
+                    ? ['Sales Manager', 'Business Development Manager', 'Key Account Manager', 'Commercial Director']
+                    : ['Technical Director', 'CTO', 'Head of Engineering', 'R&D Director'],
                 company_country_codes: isItaly ? ['IT'] : [],
                 has_email: true,
-                limit: 25,
+                limit: isFair ? 50 : 25,
             },
             description: 'Cerca contatti su Vibe Prospecting', dependsOn: [1],
         });
     }
 
-    // For fairs, also add Google Maps search
+    // For fairs: add MULTIPLE Google web searches with different queries for max coverage
     if (apiKeys.serpApi && isFair) {
+        const fairName = reqLower.includes('sps') ? 'SPS Italia Parma' : reqLower.includes('mecspe') ? 'MECSPE' : 'fiera';
         tasks.push({
-            id: id++, tool: 'searchGoogleMaps',
-            args: { query: userRequest.slice(0, 100) },
-            description: 'Ricerca su Google Maps', dependsOn: [1],
+            id: id++, tool: 'searchGoogleWeb',
+            args: { query: `${fairName} 2025 espositori elenco completo`, num: 20 },
+            description: `Google search espositori ${fairName} 2025 (anno precedente)`, dependsOn: [1],
+        });
+        tasks.push({
+            id: id++, tool: 'searchGoogleWeb',
+            args: { query: `${fairName} exhibitors list companies`, num: 20 },
+            description: `Google search exhibitors ${fairName} (English)`, dependsOn: [1],
         });
     }
 
@@ -1808,6 +1996,8 @@ function scoreLeadCompleteness(lead: any): number {
     if (lead.companySize) score += 3;
     // Financial data bonus
     if (lead.revenueYear3 || lead.revenueYear2) score += 2;
+    // Company intelligence bonus (notes with description/info)
+    if (lead.notes && lead.notes.length > 30) score += 3;
     return Math.min(100, score);
 }
 
@@ -1917,8 +2107,10 @@ async function executePlan(
     plan: ExecutionPlan,
     companyId: string,
     apiKeys: Record<string, string | undefined>,
-    conversationId?: string
+    conversationId?: string,
+    onProgress?: ProgressCallback
 ): Promise<{ results: Map<number, any>; allLeads: any[] }> {
+    const emit = onProgress || (() => {});
     const results = new Map<number, any>();
     const allLeads: any[] = [];
     const existingEmails = new Set<string>();
@@ -1926,6 +2118,376 @@ async function executePlan(
     const completed = new Set<number>();
     const pending = new Set(plan.tasks.map(t => t.id));
     let maxWaves = 20; // safety limit
+
+    // ===================== FAIR MODE: PHASE 1 — AI EXHIBITOR LIST =====================
+    // For fair/event searches, the FIRST thing we do is generate a massive list of exhibitors
+    // with real domains using Claude's knowledge. This replaces scraping (which always fails on
+    // JS-heavy fair websites) and gives us a solid list to search contacts for.
+    const isFairSearch = plan.summary?.toLowerCase().match(/fiera|sps|expo|esposi|mecspe|salone|fair|exhibit|event/i)
+        || plan.tasks.some(t => t.description?.toLowerCase().match(/fiera|espositor|exhibitor/i));
+
+    console.log(`[LeadGen-ExecutePlan] isFairSearch=${!!isFairSearch}, plan.summary="${plan.summary?.substring(0, 80)}", tasks=${plan.tasks.length}`);
+    console.log(`[LeadGen-ExecutePlan] apiKeys available: ${Object.keys(apiKeys).filter(k => apiKeys[k]).join(', ')}`);
+
+    if (isFairSearch) {
+        // Extract fair context from plan
+        const fairContext = [
+            plan.summary || '',
+            ...plan.tasks.map(t => t.description || ''),
+            ...plan.tasks.map(t => JSON.stringify(t.args || {})),
+        ].join(' ');
+
+        const allExhibitors: Array<{ name: string; domain: string; country?: string }> = [];
+        const existingNames = new Set<string>();
+
+        // Helper to add company names (deduplicated)
+        const addExhibitor = (name: string, domain = '', country?: string): boolean => {
+            const clean = name.trim();
+            const key = clean.toLowerCase();
+            if (existingNames.has(key)) return false;
+            if (clean.length < 2 || clean.length > 100) return false;
+            if (/^(home|contatti?|about|chi siamo|news|event|prodott|search|menu|login|register|cookie|privacy)/i.test(clean)) return false;
+            existingNames.add(key);
+            allExhibitors.push({ name: clean, domain, country });
+            return true;
+        };
+
+        // Helper to extract company names from raw text using Claude
+        const extractCompaniesFromText = (text: string, source: string): number => {
+            if (text.length < 100) return 0;
+            try {
+                const extractPrompt = `Estrai TUTTI i nomi di AZIENDE ESPOSITRICI da questo testo di una pagina web di una fiera.
+Rispondi SOLO con un JSON array di stringhe con i nomi delle aziende.
+Non includere testo generico, titoli di pagina, elementi di navigazione, nomi di persone — solo NOMI DI AZIENDE.
+Se non trovi aziende, rispondi con [].
+
+TESTO (da ${source}):
+${text.substring(0, 20000)}`;
+                const result = callClaudeCli(extractPrompt, 'claude-haiku-4-5', 60_000);
+                const jsonMatch = result.match(/\[[\s\S]*\]/);
+                if (jsonMatch) {
+                    const names: string[] = JSON.parse(jsonMatch[0]);
+                    let added = 0;
+                    for (const n of names) {
+                        if (addExhibitor(n)) added++;
+                    }
+                    return added;
+                }
+            } catch { /* extraction failed */ }
+            return 0;
+        };
+
+        // ===================== PHASE 0: SCRAPE EXHIBITOR LIST using available providers =====================
+        // Strategy cascade: Firecrawl (JS rendering) → SerpApi (Google) → Apify → Claude knowledge
+        // apiKeys is already available as a parameter of executePlan()
+        console.log(`[LeadGen-Phase0] ✅ ENTERED PHASE 0 — firecrawl=${!!apiKeys.firecrawl}, serpApi=${!!apiKeys.serpApi}, apify=${!!apiKeys.apify}`);
+
+        // Find exhibitor page URLs
+        const exhibitorUrls = new Set<string>();
+        const urlMatches = fairContext.match(/https?:\/\/[^\s"'<>]+/gi);
+        if (urlMatches) urlMatches.forEach(u => exhibitorUrls.add(u.replace(/[.,;)]+$/, '')));
+        if (fairContext.toLowerCase().includes('sps') && fairContext.toLowerCase().match(/parma|italia/)) {
+            exhibitorUrls.add('https://www.spsitalia.it/it/elenco-ricerca-espositori');
+        }
+
+        // --- STRATEGY 1: Firecrawl (handles JS-rendered pages) ---
+        if (apiKeys.firecrawl && allExhibitors.length < 50) {
+            emit({ phase: 'knowledge', message: `Fase 0: Uso Firecrawl per leggere il sito ufficiale della fiera...`, progress: 2 });
+
+            // First, map the fair website to find exhibitor/espositori pages
+            try {
+                const mapResult = await executeToolCall('mapWebsiteFirecrawl', {
+                    url: [...exhibitorUrls][0] || 'https://www.spsitalia.it',
+                    search: 'espositori exhibitor elenco list',
+                    limit: 50,
+                }, companyId, apiKeys as any, conversationId);
+                const mapData = JSON.parse(mapResult);
+                if (mapData.links?.length > 0) {
+                    // Add exhibitor-related URLs
+                    for (const link of mapData.links) {
+                        if (typeof link === 'string' && link.match(/espositor|exhibitor|aussteller|elenco|list|company|aziend/i)) {
+                            exhibitorUrls.add(link);
+                        }
+                    }
+                    console.log(`[LeadGen-Phase0] Firecrawl map found ${mapData.links.length} URLs, ${exhibitorUrls.size} exhibitor-related`);
+                }
+            } catch (e: any) {
+                console.error(`[LeadGen-Phase0] Firecrawl map failed:`, e.message);
+            }
+
+            // Scrape each exhibitor URL
+            for (const url of exhibitorUrls) {
+                if (allExhibitors.length >= 200) break; // Enough from scraping
+                try {
+                    emit({ phase: 'knowledge', message: `🌐 Firecrawl: scraping ${url}...`, browserUrl: url, progress: 3 });
+
+                    const scrapeResult = await executeToolCall('scrapeWithFirecrawl', {
+                        url,
+                        formats: ['markdown'],
+                        onlyMainContent: true,
+                        waitFor: 5000,
+                        timeout: 60000,
+                    }, companyId, apiKeys as any, conversationId);
+                    const scrapeData = JSON.parse(scrapeResult);
+
+                    if (scrapeData.markdown && scrapeData.markdown.length > 200) {
+                        const added = extractCompaniesFromText(scrapeData.markdown, url);
+                        emit({
+                            phase: 'knowledge',
+                            message: `🌐 Firecrawl: ${added} aziende estratte da ${url}`,
+                            companiesFound: allExhibitors.length,
+                            progress: 4,
+                        });
+                        console.log(`[LeadGen-Phase0] Firecrawl scraped ${url}: ${added} new companies (total: ${allExhibitors.length})`);
+                    }
+                } catch (e: any) {
+                    console.error(`[LeadGen-Phase0] Firecrawl scrape ${url} failed:`, e.message);
+                }
+            }
+        }
+
+        // --- STRATEGY 2: SerpApi Google search for exhibitor lists ---
+        if (apiKeys.serpApi && allExhibitors.length < 100) {
+            emit({ phase: 'knowledge', message: `Fase 0: Cerco lista espositori su Google (SerpApi)...`, progress: 5 });
+
+            const googleQueries = [
+                `"SPS 2026" OR "SPS Parma 2026" elenco espositori lista completa`,
+                `"SPS Italia 2026" exhibitors list companies`,
+                `spsitalia.it espositori 2026 elenco aziende`,
+                `"SPS 2025" OR "SPS 2024" Parma elenco completo espositori`, // Previous editions have similar exhibitors
+            ];
+
+            for (const query of googleQueries) {
+                if (allExhibitors.length >= 200) break;
+                try {
+                    emit({ phase: 'knowledge', message: `🔍 Google: "${query.substring(0, 50)}..."`, progress: 5 });
+
+                    const searchResult = await executeToolCall('searchGoogleWeb', {
+                        query,
+                        num: 10,
+                        gl: 'it',
+                        hl: 'it',
+                    }, companyId, apiKeys as any, conversationId);
+                    const searchData = JSON.parse(searchResult);
+                    const results = searchData.organic_results || searchData.results || [];
+
+                    // For each result, if it looks like an exhibitor list, scrape it
+                    for (const r of results.slice(0, 5)) {
+                        if (allExhibitors.length >= 300) break;
+                        const resultUrl = r.link || r.url;
+                        if (!resultUrl) continue;
+                        // Skip PDFs, videos, social media
+                        if (resultUrl.match(/\.(pdf|mp4|youtube|facebook|twitter|instagram)/i)) continue;
+
+                        // Check if snippet contains company names
+                        const snippet = (r.snippet || r.description || '') + ' ' + (r.title || '');
+                        if (snippet.length > 50) {
+                            const addedFromSnippet = extractCompaniesFromText(snippet, 'Google snippet');
+                            if (addedFromSnippet > 0) {
+                                console.log(`[LeadGen-Phase0] Google snippet: ${addedFromSnippet} companies from "${resultUrl}"`);
+                            }
+                        }
+
+                        // Scrape the page with Firecrawl if available
+                        if (apiKeys.firecrawl && resultUrl.match(/espositor|exhibitor|list|elenco|companies|aziend/i)) {
+                            try {
+                                emit({ phase: 'knowledge', message: `🌐 Scraping: ${resultUrl.substring(0, 60)}...`, browserUrl: resultUrl, progress: 6 });
+
+                                const pageResult = await executeToolCall('scrapeWithFirecrawl', {
+                                    url: resultUrl,
+                                    formats: ['markdown'],
+                                    onlyMainContent: true,
+                                    timeout: 30000,
+                                }, companyId, apiKeys as any, conversationId);
+                                const pageData = JSON.parse(pageResult);
+
+                                if (pageData.markdown && pageData.markdown.length > 200) {
+                                    const added = extractCompaniesFromText(pageData.markdown, resultUrl);
+                                    if (added > 5) {
+                                        emit({
+                                            phase: 'knowledge',
+                                            message: `✅ ${added} aziende trovate da ${resultUrl.substring(0, 50)}`,
+                                            companiesFound: allExhibitors.length,
+                                            progress: 7,
+                                        });
+                                    }
+                                }
+                            } catch { /* scrape failed, continue */ }
+                        }
+                    }
+                } catch (e: any) {
+                    console.error(`[LeadGen-Phase0] Google search failed:`, e.message);
+                }
+            }
+        }
+
+        // --- STRATEGY 3: Apify Google Search Scraper for deeper results ---
+        if (apiKeys.apify && allExhibitors.length < 100) {
+            emit({ phase: 'knowledge', message: `Fase 0: Apify search per lista espositori...`, progress: 7 });
+            try {
+                const apifyResult = await executeToolCall('runApifyActor', {
+                    actorId: 'apify/google-search-scraper',
+                    input: {
+                        queries: `SPS 2026 Parma elenco completo espositori\nSPS Italia 2026 exhibitors full list\nSPS Parma 2025 lista espositori aziende`,
+                        maxPagesPerQuery: 3,
+                        languageCode: 'it',
+                        countryCode: 'it',
+                    },
+                }, companyId, apiKeys as any, conversationId);
+                const apifyData = JSON.parse(apifyResult);
+                const items = apifyData.items || apifyData.results || [];
+                for (const item of items) {
+                    const text = (item.title || '') + ' ' + (item.description || '') + ' ' + (item.snippet || '');
+                    if (text.length > 30) {
+                        extractCompaniesFromText(text, 'Apify Google');
+                    }
+                    // Also scrape promising URLs
+                    const itemUrl = item.url || item.link;
+                    if (itemUrl && apiKeys.firecrawl && itemUrl.match(/espositor|exhibitor|list|elenco/i) && allExhibitors.length < 200) {
+                        try {
+                            const scrapeR = await executeToolCall('scrapeWithFirecrawl', {
+                                url: itemUrl,
+                                formats: ['markdown'],
+                                onlyMainContent: true,
+                            }, companyId, apiKeys as any, conversationId);
+                            const scrapeD = JSON.parse(scrapeR);
+                            if (scrapeD.markdown) extractCompaniesFromText(scrapeD.markdown, itemUrl);
+                        } catch { /* skip */ }
+                    }
+                }
+                console.log(`[LeadGen-Phase0] Apify search: total ${allExhibitors.length} companies after processing`);
+            } catch (e: any) {
+                console.error(`[LeadGen-Phase0] Apify failed:`, e.message);
+            }
+        }
+
+        emit({
+            phase: 'knowledge',
+            message: allExhibitors.length > 0
+                ? `Fase 0 completata: ${allExhibitors.length} espositori trovati online. Integro con AI...`
+                : 'Nessun espositore trovato online. Genero lista con AI...',
+            companiesFound: allExhibitors.length,
+            progress: allExhibitors.length > 0 ? 10 : 5,
+        });
+        const MAX_BATCHES = 10; // safety limit (10 batches × ~100 each = ~1000 companies max)
+        const MIN_NEW_PER_BATCH = 5; // stop if a batch adds fewer than this (Claude is running out)
+
+        for (let batch = 1; batch <= MAX_BATCHES; batch++) {
+            const isFirstBatch = batch === 1;
+            const alreadyFoundList = allExhibitors.map(e => e.name);
+            // Only send last 200 names to avoid exceeding token limits
+            const alreadyFoundStr = alreadyFoundList.slice(-200).join(', ');
+
+            const batchPrompt = isFirstBatch
+                ? `Sei un esperto di fiere industriali. Genera la lista PIU' COMPLETA POSSIBILE di aziende REALI che espongono o che tipicamente espongono alla fiera descritta.
+
+CONTESTO FIERA: ${fairContext}
+${alreadyFoundList.length > 0 ? `\nAZIENDE GIA' TROVATE dal sito ufficiale (${alreadyFoundList.length}):\n${alreadyFoundStr}\n\nPer le aziende qui sopra che NON hanno ancora un dominio email, INCLUDILE nella tua risposta CON il dominio email corretto.\nGenera anche ALTRE aziende espositrici non ancora in lista.\n` : ''}
+Per OGNI azienda indica:
+- name: nome ufficiale
+- domain: dominio EMAIL aziendale (quello usato per le email dei dipendenti, NON il sito generico). Es: "siemens.com", "festo.com", "sew-eurodrive.it". OBBLIGATORIO.
+- country: paese (es: "Germany", "Italy")
+
+REGOLE:
+- GENERA IL MAGGIOR NUMERO POSSIBILE. Non fermarti a 50 o 100 — vai avanti finche ne conosci
+- SOLO aziende REALI che esistono davvero e sono plausibili espositori
+- Includi TUTTE le dimensioni: multinazionali, medie imprese, PMI italiane, startup
+- Il dominio DEVE essere quello usato per le email aziendali
+- Per aziende con filiale italiana, preferisci .it se usato per email (sew-eurodrive.it, lenze.it)
+- Per multinazionali globali: siemens.com, festo.com, abb.com, schneider-electric.com
+- Nomi composti: "BOSCH REXROTH"=boschrexroth.com, "ENDRESS+HAUSER"=endress.com, "NORD DRIVESYSTEMS"=nord.com
+- Per SPS/automazione copri TUTTI i settori: PLC, sensori, drives, motori, robotica, pneumatica, connettori, cavi, software industriale, HMI, SCADA, safety, visione, motion control, fieldbus, IO-Link, edge computing, cobot, encoder, inverter, riduttori, switch Ethernet industriale, alimentatori, morsettiere, quadri elettrici, sistemi di trasporto, AGV, magazzini automatici, stampa 3D industriale, digital twin, cybersecurity OT, MES, ERP industriale
+
+Rispondi SOLO con JSON array. Nessun testo prima o dopo.`
+                : `Genera ALTRE aziende REALI espositrici della stessa fiera. Devono essere TUTTE DIVERSE da quelle gia trovate.
+
+CONTESTO FIERA: ${fairContext}
+
+AZIENDE GIA' TROVATE (${alreadyFoundList.length} — NON ripeterle):
+${alreadyFoundStr}
+
+Cerca aziende che NON hai ancora elencato:
+${batch <= 3 ? '- Medie aziende europee del settore, PMI italiane specializzate, fornitori di componenti, distributori' :
+  batch <= 5 ? '- Aziende di nicchia: integratori di sistema, produttori di connettori/cavi specializzati, aziende di visione artificiale, produttori di sensori di processo, pneumatica/oleodinamica, sicurezza macchine' :
+  batch <= 7 ? '- Startup industriali, aziende di software MES/SCADA/digital twin, cybersecurity OT, cloud industriale, aziende asiatiche con presenza europea, distributori di componenti' :
+  '- Qualsiasi altra azienda del settore automazione/industria che non hai ancora nominato, anche piccole o di nicchia'}
+
+Stesse regole: name, domain (OBBLIGATORIO, email domain reale), country.
+Se non hai piu aziende da aggiungere, rispondi con un array vuoto: []
+Rispondi SOLO con JSON array.`;
+
+            try {
+                emit({
+                    phase: 'knowledge',
+                    message: `Fase 1: Generazione espositori [batch ${batch}]... ${allExhibitors.length} aziende trovate`,
+                    companiesFound: allExhibitors.length,
+                    progress: 5 + Math.min(15, batch * 2),
+                });
+
+                const result = callClaudeCli(batchPrompt, 'claude-sonnet-4-6', 120_000);
+                let companies: Array<{ name: string; domain: string; country?: string }> = [];
+                try {
+                    const jsonMatch = result.match(/\[[\s\S]*\]/);
+                    if (jsonMatch) companies = JSON.parse(jsonMatch[0]);
+                } catch { /* parse failed */ }
+
+                let newInBatch = 0;
+                for (const co of companies) {
+                    if (!co.name || !co.domain) continue;
+                    const key = co.name.toLowerCase().trim();
+                    if (existingNames.has(key)) continue;
+                    if (!co.domain.includes('.')) continue;
+                    allExhibitors.push(co);
+                    existingNames.add(key);
+                    newInBatch++;
+                }
+
+                console.log(`[LeadGen-FairMode] Batch ${batch}: Claude returned ${companies.length}, ${newInBatch} new unique → total: ${allExhibitors.length}`);
+
+                // Stop if Claude is running out of companies
+                if (newInBatch < MIN_NEW_PER_BATCH) {
+                    console.log(`[LeadGen-FairMode] Batch ${batch} added only ${newInBatch} new companies (< ${MIN_NEW_PER_BATCH}). Stopping.`);
+                    break;
+                }
+            } catch (e: any) {
+                console.error(`[LeadGen-FairMode] Batch ${batch} failed:`, e.message);
+                break; // stop on error
+            }
+        }
+
+        // Convert exhibitors to leads
+        if (allExhibitors.length > 0) {
+            for (const co of allExhibitors) {
+                allLeads.push({
+                    firstName: null, lastName: null, fullName: null,
+                    jobTitle: null, email: null, phone: null, linkedinUrl: null,
+                    companyName: co.name,
+                    companyDomain: co.domain.toLowerCase(),
+                    companyWebsite: `https://www.${co.domain.toLowerCase()}`,
+                    companySize: null, companyIndustry: null,
+                    companyCity: null, companyCountry: co.country || null,
+                    source: 'knowledge', notes: 'Espositore generato da AI (fase 1)',
+                    confidence: null, emailStatus: null,
+                    _enriched: false, _sources: new Set(['knowledge']),
+                });
+            }
+
+            console.log(`[LeadGen-FairMode] Phase 1 complete: ${allExhibitors.length} exhibitors with domains ready for contact search`);
+            emit({
+                phase: 'knowledge',
+                message: `Fase 1 completata: ${allExhibitors.length} espositori con domini pronti. Avvio fase 2: ricerca contatti...`,
+                companiesFound: allExhibitors.length,
+                progress: 20,
+            });
+
+            // Remove scraping tasks from plan — we don't need them, we have the list already
+            const scrapingTools = ['scrapeWithFirecrawl', 'scrapeWebsite', 'mapWebsiteFirecrawl'];
+            plan.tasks = plan.tasks.filter(t => !scrapingTools.includes(t.tool));
+            // Re-index pending set
+            pending.clear();
+            for (const t of plan.tasks) pending.add(t.id);
+        }
+    }
 
     async function executeTask(task: MicroTask): Promise<void> {
         console.log(`[LeadGen-Exec] Task ${task.id}/${plan.tasks.length}: ${task.tool} - ${task.description}`);
@@ -2011,6 +2573,13 @@ async function executePlan(
 
         // Execute all ready tasks in parallel
         console.log(`[LeadGen-Exec] Wave: ${ready.length} parallel tasks [${ready.map(t => t.tool).join(', ')}]`);
+        emit({
+            phase: 'execute',
+            message: `Esecuzione ricerche: ${ready.map(t => t.description || t.tool).join(', ')}`,
+            detail: ready.map(t => t.tool).join(', '),
+            leadsFound: allLeads.length,
+            progress: Math.round((completed.size / plan.tasks.length) * 20), // 0-20% for plan execution
+        });
         await Promise.all(ready.map(t => executeTask(t)));
     }
 
@@ -2035,6 +2604,7 @@ async function executePlan(
 
             if (exhibitorUrls.length > 0) {
                 console.log(`[LeadGen-Exec] Scraping ${exhibitorUrls.length} exhibitor pages from Google results`);
+                emit({ phase: 'scrape', message: `Scraping ${exhibitorUrls.length} pagine espositori trovate su Google...`, progress: 22 });
                 const scrapePromises = exhibitorUrls.map(async (url: string) => {
                     try {
                         const toolName = apiKeys.firecrawl ? 'scrapeWithFirecrawl' : 'scrapeWebsite';
@@ -2074,11 +2644,11 @@ async function executePlan(
         try {
             const extractPrompt = `Estrai i NOMI delle aziende dal seguente testo (lista espositori di una fiera).
 Rispondi SOLO con un JSON array di oggetti con campi: name (nome azienda), website (URL se presente, altrimenti null).
-Max 50 aziende. Se non trovi aziende, rispondi con [].
+Estrai TUTTE le aziende che trovi, senza limite. Se non trovi aziende, rispondi con [].
 NON inventare aziende. Solo quelle presenti nel testo.
 
 TESTO:
-${scraped.markdown.slice(0, 15000)}
+${scraped.markdown.slice(0, 30000)}
 
 JSON:`;
             const extractResult = callClaudeCli(extractPrompt, 'claude-haiku-4-5', 60_000);
@@ -2111,6 +2681,268 @@ JSON:`;
         }
     }
 
+    // ===================== KNOWLEDGE-BASED EXHIBITOR GENERATION (TOP-UP) =====================
+    // If fair mode phase 1 didn't generate enough, or for non-fair searches that still match fair patterns
+    // isFairSearch is already defined at the top of executePlan
+    // Only count companies from scraping/knowledge (NOT Google Maps local businesses, which are irrelevant for fairs)
+    const realExhibitorSources = ['scraping', 'knowledge', 'apollo', 'vibe_prospecting'];
+    const companiesFromScraping = allLeads.filter(l => l.source === 'scraping' && l.companyName).length;
+    const realExhibitorCompanies = new Set(
+        allLeads.filter(l => l.companyName && realExhibitorSources.includes(l.source))
+            .map(l => l.companyName!.toLowerCase())
+    ).size;
+    const totalCompanies = new Set(allLeads.filter(l => l.companyName).map(l => l.companyName!.toLowerCase())).size;
+
+    // For fairs: ALWAYS generate knowledge if we have fewer than 100 real exhibitors
+    // (SPS alone has 400+ exhibitors, so 100 is still conservative)
+    const realExhibitorCompaniesWithDomain = new Set(
+        allLeads.filter(l => l.companyName && l.companyDomain && realExhibitorSources.includes(l.source))
+            .map(l => l.companyName!.toLowerCase())
+    ).size;
+
+    if (isFairSearch && realExhibitorCompaniesWithDomain < 80) {
+        console.log(`[LeadGen-Knowledge] Fair search: ${realExhibitorCompaniesWithDomain} companies with domains (${realExhibitorCompanies} total real exhibitors, ${totalCompanies} total incl. local). Generating known exhibitors...`);
+        emit({
+            phase: 'knowledge',
+            message: `${realExhibitorCompanies} aziende espositrici trovate (${totalCompanies} totali). Genero lista massiva espositori noti del settore...`,
+            companiesFound: realExhibitorCompanies,
+            progress: 30,
+        });
+
+        // Build context about which companies we already have
+        const existingCompanyNames = [...new Set(allLeads.filter(l => l.companyName).map(l => l.companyName!))];
+
+        // Extract fair name and sector from plan summary + task descriptions
+        const fairContext = [
+            plan.summary || '',
+            ...plan.tasks.map(t => t.description || ''),
+            ...plan.tasks.map(t => JSON.stringify(t.args || {})),
+        ].join(' ');
+
+        try {
+            const knowledgePrompt = `Sei un esperto di fiere industriali. Genera una lista MASSIVA di aziende espositrici.
+
+CONTESTO FIERA: ${fairContext}
+
+AZIENDE GIA' TROVATE (${existingCompanyNames.length}): ${existingCompanyNames.slice(0, 50).join(', ')}
+
+COMPITO: Genera una lista di almeno 80 aziende REALI che sono tipici espositori di questa fiera o del settore correlato.
+Per ogni azienda indica:
+- name: nome ufficiale dell'azienda
+- website: sito web ufficiale (OBBLIGATORIO - es: "https://www.siemens.com"). Questo campo e' CRITICO perche' lo useremo per cercare contatti. Per aziende con filiale italiana usa il dominio .it se esiste (es: "https://www.abb.it", "https://www.festo.it"). Se non conosci il sito, prova il pattern https://www.[nomeazienda].com o .it
+- domain: dominio email dell'azienda (es: "siemens.com", "abb.it", "festo.com"). Per aziende italiane o con filiale italiana, PREFERISCI il dominio .it
+- country: paese sede principale (es: "Germany", "Italy", "Japan")
+
+REGOLE:
+- INCLUDI aziende di TUTTE le dimensioni: multinazionali, medie imprese, PMI italiane
+- Per SPS/automazione includi: PLC, sensori, drives, robotica, pneumatica, connettori, cavi, software industriale, HMI, SCADA, safety, visione artificiale, motion control, bus di campo, IO-Link, edge computing industriale, cobot
+- Includi sia aziende internazionali (Siemens, ABB, Schneider) che italiane (Datalogic, Gefran, Sew-Eurodrive Italia, Lenze Italia, Camozzi, Pizzato, Pneumax, Lovato Electric, Seneca, Telmotor)
+- NON includere aziende gia' nella lista "GIA' TROVATE"
+- SOLO aziende REALI che esistono davvero
+- Il website e' FONDAMENTALE: senza di esso non possiamo cercare contatti. Mettilo SEMPRE.
+
+Rispondi SOLO con un JSON array. Nessun testo prima o dopo.
+Esempio: [{"name":"Siemens","website":"https://www.siemens.com","domain":"siemens.it","country":"Germany"},{"name":"Gefran","website":"https://www.gefran.com","domain":"gefran.com","country":"Italy"}]`;
+
+            const knowledgeResult = callClaudeCli(knowledgePrompt, 'claude-sonnet-4-6', 120_000);
+            let knownCompanies: Array<{ name: string; website?: string | null; domain?: string | null; country?: string | null }> = [];
+            try {
+                const jsonMatch = knowledgeResult.match(/\[[\s\S]*\]/);
+                if (jsonMatch) knownCompanies = JSON.parse(jsonMatch[0]);
+            } catch { /* parse failed */ }
+
+            if (knownCompanies.length > 0) {
+                console.log(`[LeadGen-Knowledge] Generated ${knownCompanies.length} known exhibitor companies`);
+                const existingLower = new Set(existingCompanyNames.map(n => n.toLowerCase()));
+                let added = 0;
+                for (const co of knownCompanies) {
+                    if (!co.name || existingLower.has(co.name.toLowerCase())) continue;
+                    // Use explicit domain field if provided, otherwise extract from website
+                    const domain = co.domain || (co.website ? extractDomain(co.website) : null);
+                    allLeads.push({
+                        firstName: null, lastName: null, fullName: null,
+                        jobTitle: null, email: null, phone: null, linkedinUrl: null,
+                        companyName: co.name,
+                        companyDomain: domain,
+                        companyWebsite: co.website || (domain ? `https://www.${domain}` : null),
+                        companySize: null, companyIndustry: null,
+                        companyCity: null, companyCountry: co.country || null,
+                        source: 'knowledge', notes: `Espositore noto del settore — generato da conoscenza AI`,
+                        confidence: null, emailStatus: null,
+                        _enriched: false, _sources: new Set(['knowledge']),
+                    });
+                    added++;
+                }
+                console.log(`[LeadGen-Knowledge] Added ${added} new companies (total leads: ${allLeads.length})`);
+                const withDomain = allLeads.filter(l => l.source === 'knowledge' && l.companyDomain).length;
+                console.log(`[LeadGen-Knowledge] ${withDomain}/${added} companies have domains → ready for Hunter enrichment`);
+                emit({
+                    phase: 'knowledge',
+                    message: `Generati ${added} espositori noti. ${withDomain} hanno già il dominio web.`,
+                    companiesFound: totalCompanies + added,
+                    progress: 35,
+                });
+            }
+        } catch (e: any) {
+            console.error('[LeadGen-Knowledge] Failed to generate known exhibitors:', e.message);
+        }
+    }
+
+    // ===================== DOMAIN DISCOVERY =====================
+    // For companies without a domain, use Claude to map company names → real domains
+    // This is the #1 most critical step: without correct domains, Hunter can't find contacts
+    const needDomain = allLeads.filter(l => l.companyName && !l.companyDomain && !l.companyWebsite);
+    if (needDomain.length > 0) {
+        console.log(`[LeadGen-Domain] ${needDomain.length} companies need domain discovery`);
+        emit({
+            phase: 'domain',
+            message: `Ricerca domini reali per ${needDomain.length} aziende con AI...`,
+            companiesFound: new Set(allLeads.filter(l => l.companyName).map(l => l.companyName!.toLowerCase())).size,
+            progress: 38,
+        });
+
+        // ===== STRATEGY 1 (PRIMARY): Claude AI domain mapping =====
+        // Ask Claude to provide the real corporate email domain for each company.
+        // This is FREE (no API credits) and far more accurate than string guessing.
+        // Claude knows that "SIEMENS" = siemens.com, "FESTO" = festo.com, "SEW-EURODRIVE ITALIA" = sew-eurodrive.it, etc.
+        const companyNamesNeedingDomain = [...new Set(needDomain.filter(l => !l.companyDomain).map(l => l.companyName!))];
+        const CLAUDE_DOMAIN_BATCH = 60; // Process 60 companies per Claude call
+        let claudeMappedCount = 0;
+
+        for (let batchStart = 0; batchStart < companyNamesNeedingDomain.length; batchStart += CLAUDE_DOMAIN_BATCH) {
+            const batch = companyNamesNeedingDomain.slice(batchStart, batchStart + CLAUDE_DOMAIN_BATCH);
+            const batchNum = Math.floor(batchStart / CLAUDE_DOMAIN_BATCH) + 1;
+            const totalBatches = Math.ceil(companyNamesNeedingDomain.length / CLAUDE_DOMAIN_BATCH);
+
+            emit({
+                phase: 'domain',
+                message: `AI: mappatura domini [${batchNum}/${totalBatches}] — ${batch.length} aziende...`,
+                progress: 38 + Math.round((batchStart / companyNamesNeedingDomain.length) * 5),
+            });
+
+            try {
+                const domainPrompt = `Per ciascuna delle seguenti aziende, indica il DOMINIO EMAIL AZIENDALE corretto (quello usato per le email dei dipendenti, NON necessariamente il sito web).
+
+REGOLE CRITICHE:
+- Rispondi SOLO con un JSON array
+- Per ogni azienda: {"name":"NOME ESATTO","domain":"dominio.com"}
+- Se l'azienda ha una filiale italiana con dominio .it usato per email, usa quello (es: sew-eurodrive.it, lenze.it, sick.it)
+- Se l'azienda usa un dominio .com globale per le email, usa .com (es: siemens.com, festo.com, abb.com)
+- Per aziende piccole/sconosciute, prova il pattern nomeazienda.it o nomeazienda.com
+- Se non sei sicuro del dominio, indica comunque la tua migliore stima — NON lasciare null
+- Per consorzi, università, associazioni: usa il loro dominio reale (es: unipr.it, profibus.com)
+- ATTENZIONE ai nomi composti: "BOSCH REXROTH" = boschrexroth.com, "NORD DRIVESYSTEMS" = nord.com, "ENDRESS + HAUSER" = endress.com
+
+AZIENDE:
+${batch.map((name, i) => `${i + 1}. ${name}`).join('\n')}
+
+JSON:`;
+
+                const domainResult = callClaudeCli(domainPrompt, 'claude-haiku-4-5', 60_000);
+                let mappings: Array<{ name: string; domain: string }> = [];
+                try {
+                    const jsonMatch = domainResult.match(/\[[\s\S]*\]/);
+                    if (jsonMatch) mappings = JSON.parse(jsonMatch[0]);
+                } catch { /* parse failed */ }
+
+                if (mappings.length > 0) {
+                    // Build a lookup by lowercase name
+                    const domainLookup = new Map<string, string>();
+                    for (const m of mappings) {
+                        if (m.name && m.domain) {
+                            domainLookup.set(m.name.toLowerCase().trim(), m.domain.toLowerCase().trim());
+                        }
+                    }
+
+                    // Apply to leads
+                    for (const lead of needDomain) {
+                        if (lead.companyDomain) continue; // already has domain
+                        const mapped = domainLookup.get(lead.companyName!.toLowerCase().trim());
+                        if (mapped && mapped.includes('.')) {
+                            lead.companyDomain = mapped;
+                            lead.companyWebsite = `https://www.${mapped}`;
+                            claudeMappedCount++;
+                            console.log(`[LeadGen-Domain] AI: ${lead.companyName} → ${mapped}`);
+                        }
+                    }
+                }
+                console.log(`[LeadGen-Domain] AI batch ${batchNum}: mapped ${mappings.length} domains (cumulative: ${claudeMappedCount})`);
+            } catch (e: any) {
+                console.error(`[LeadGen-Domain] AI domain mapping batch ${batchNum} failed:`, e.message);
+            }
+        }
+
+        console.log(`[LeadGen-Domain] Strategy 1 (AI mapping): ${claudeMappedCount}/${companyNamesNeedingDomain.length} companies mapped`);
+
+        // ===== STRATEGY 2: Google search for remaining unknowns =====
+        // Only for companies that Claude couldn't map (very niche/obscure ones)
+        if (apiKeys.serpApi) {
+            const stillNeedDomain = needDomain.filter(l => !l.companyDomain);
+            const MAX_GOOGLE_LOOKUPS = 50;
+            const toSearch = stillNeedDomain.slice(0, MAX_GOOGLE_LOOKUPS);
+            if (toSearch.length > 0) {
+                console.log(`[LeadGen-Domain] Strategy 2: Google search for ${toSearch.length} remaining companies`);
+                emit({
+                    phase: 'domain',
+                    message: `Google: ricerca domini per ${toSearch.length} aziende non mappate...`,
+                    progress: 43,
+                });
+                const BATCH_SIZE = 10;
+                for (let i = 0; i < toSearch.length; i += BATCH_SIZE) {
+                    const batch = toSearch.slice(i, i + BATCH_SIZE);
+                    const domainPromises = batch.map(async (lead) => {
+                        try {
+                            const resultStr = await executeToolCall('searchGoogleWeb', {
+                                query: `"${lead.companyName}" sito ufficiale OR official website`,
+                                num: 3,
+                            }, companyId, apiKeys as any, conversationId);
+                            const parsed = JSON.parse(resultStr);
+                            const skipDomains = ['linkedin.com', 'wikipedia', 'facebook.com', 'twitter.com', 'youtube.com', 'amazon.', 'bloomberg.com', 'crunchbase.com', 'glassdoor.', 'indeed.'];
+                            for (const r of (parsed.results || [])) {
+                                if (!r.link) continue;
+                                const d = extractDomain(r.link);
+                                if (d && !skipDomains.some(s => d.includes(s))) {
+                                    lead.companyDomain = d;
+                                    lead.companyWebsite = r.link;
+                                    console.log(`[LeadGen-Domain] Google: ${lead.companyName} → ${d}`);
+                                    break;
+                                }
+                            }
+                        } catch { /* skip */ }
+                    });
+                    await Promise.all(domainPromises);
+                }
+            }
+        }
+
+        // ===== STRATEGY 3: Simple fallback for any still-unmapped =====
+        const finalNeedDomain = needDomain.filter(l => !l.companyDomain);
+        if (finalNeedDomain.length > 0) {
+            console.log(`[LeadGen-Domain] Strategy 3: Simple fallback for ${finalNeedDomain.length} companies`);
+            for (const lead of finalNeedDomain) {
+                const cleanName = lead.companyName!
+                    .replace(/\b(s\.?p\.?a\.?|s\.?r\.?l\.?|s\.?a\.?s\.?|s\.?n\.?c\.?|ltd|gmbh|inc|corp|co\.?|italia|italy|group|spa|srl|e\.v\.|a\.s\.|co\.,?\s*ltd)\b/gi, '')
+                    .replace(/[^a-zA-Z0-9\-]/g, '')
+                    .toLowerCase()
+                    .trim();
+                if (cleanName && cleanName.length >= 3) {
+                    lead.companyDomain = `${cleanName}.com`;
+                    lead.companyWebsite = `https://www.${cleanName}.com`;
+                    console.log(`[LeadGen-Domain] Fallback: ${lead.companyName} → ${cleanName}.com`);
+                }
+            }
+        }
+
+        const totalFound = needDomain.filter(l => l.companyDomain).length;
+        console.log(`[LeadGen-Domain] Domain discovery complete: ${totalFound}/${needDomain.length} (AI: ${claudeMappedCount}, Google+Fallback: ${totalFound - claudeMappedCount})`);
+        emit({
+            phase: 'domain',
+            message: `Domini trovati: ${totalFound}/${needDomain.length} aziende (${claudeMappedCount} da AI). Avvio ricerca contatti...`,
+            companiesFound: new Set(allLeads.filter(l => l.companyName).map(l => l.companyName!.toLowerCase())).size,
+            progress: 45,
+        });
+    }
+
     // ===================== ENRICHMENT PIPELINE =====================
     console.log(`[LeadGen-Exec] === ENRICHMENT PIPELINE === ${allLeads.length} raw leads`);
 
@@ -2132,6 +2964,440 @@ JSON:`;
             lead.companyDomain = `${cleanName}.it`;
             lead.companyWebsite = `https://${cleanName}.it`;
             console.log(`[LeadGen-Enrich] Guessed domain for "${lead.companyName}": ${cleanName}.it`);
+        }
+    }
+
+    // ENRICHMENT PASS 0.9 (FREE — Website scraping): Visit each company's contact/team page
+    // Runs BEFORE paid APIs so we get free emails first
+    {
+        const companiesWithDomain = uniqueLeads.filter(l =>
+            l.companyName && l.companyDomain && (!l.email || isGenericEmail(l.email))
+        );
+        // Deduplicate by domain
+        const domainMap = new Map<string, any>();
+        for (const l of companiesWithDomain) {
+            const key = l.companyDomain!.toLowerCase();
+            if (!domainMap.has(key)) domainMap.set(key, l);
+        }
+        const companiesToScrape = [...domainMap.values()];
+
+        if (companiesToScrape.length > 0) {
+            console.log(`[LeadGen-WebScrape] Pass 0.9: Scraping contact pages for ${companiesToScrape.length} companies`);
+            emit({
+                phase: 'enrich',
+                message: `Visito i siti web di ${companiesToScrape.length} aziende per trovare email nelle pagine contatti (gratis)...`,
+                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                progress: 42,
+            });
+
+            try {
+                const { chromium } = await import('playwright');
+                const browser = await chromium.launch({
+                    headless: true,
+                    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+                });
+
+                const SCRAPE_BATCH = 5;
+                let scrapedCount = 0;
+                let foundCount = 0;
+                const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+                const contactPaths = ['/contatti', '/contact', '/contact-us', '/chi-siamo', '/team', '/about-us', '/about', '/azienda', '/kontakt', '/impressum'];
+
+                for (let i = 0; i < companiesToScrape.length; i += SCRAPE_BATCH) {
+                    const batch = companiesToScrape.slice(i, i + SCRAPE_BATCH);
+                    const batchNum = Math.floor(i / SCRAPE_BATCH) + 1;
+                    const totalBatches = Math.ceil(companiesToScrape.length / SCRAPE_BATCH);
+
+                    emit({
+                        phase: 'enrich',
+                        message: `🌐 Siti web [${batchNum}/${totalBatches}]: ${batch.map(l => l.companyName).join(', ')}`,
+                        leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                        progress: 42 + Math.round((i / companiesToScrape.length) * 6),
+                    });
+
+                    const scrapePromises = batch.map(async (lead) => {
+                        const context = await browser.newContext({
+                            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            viewport: { width: 1280, height: 800 },
+                        });
+                        const page = await context.newPage();
+                        page.setDefaultTimeout(10000);
+                        const domain = lead.companyDomain!;
+                        let bestPersonalEmail: string | null = null;
+                        let bestGenericEmail: string | null = null;
+                        let bestName: string | null = null;
+                        let bestPhone: string | null = null;
+                        let companyDescription = ''; // What the company does
+                        let companyDetails: string[] = []; // Revenue, employees, year, etc.
+
+                        // Helper to emit browser activity with optional screenshot
+                        const emitBrowser = async (action: string, takeScreenshot = false) => {
+                            let screenshot: string | undefined;
+                            if (takeScreenshot) {
+                                try {
+                                    const buf = await page.screenshot({ type: 'jpeg', quality: 40, fullPage: false });
+                                    screenshot = buf.toString('base64');
+                                } catch { /* screenshot failed, skip */ }
+                            }
+                            const currentUrl = page.url();
+                            emit({
+                                phase: 'enrich',
+                                message: `🌐 ${lead.companyName}: ${action}`,
+                                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                                progress: 42 + Math.round((scrapedCount / companiesToScrape.length) * 6),
+                                browserUrl: currentUrl !== 'about:blank' ? currentUrl : undefined,
+                                browserScreenshot: screenshot,
+                            });
+                        };
+
+                        try {
+                            // First try homepage to verify domain is alive
+                            try {
+                                await emitBrowser(`Apro https://www.${domain}`);
+                                await page.goto(`https://www.${domain}`, { waitUntil: 'domcontentloaded', timeout: 8000 });
+                                await emitBrowser(`Homepage caricata`, true);
+                                const homeText = await page.innerText('body').catch(() => '');
+                                if (homeText.length < 30) {
+                                    await page.goto(`https://${domain}`, { waitUntil: 'domcontentloaded', timeout: 8000 });
+                                    await emitBrowser(`Homepage (no www)`, true);
+                                }
+                            } catch {
+                                try {
+                                    await page.goto(`https://${domain}`, { waitUntil: 'domcontentloaded', timeout: 8000 });
+                                    await emitBrowser(`Homepage (fallback)`, true);
+                                } catch {
+                                    await emitBrowser(`❌ Sito non raggiungibile`);
+                                    await context.close().catch(() => {});
+                                    scrapedCount++;
+                                    return;
+                                }
+                            }
+
+                            // === EXTRACT COMPANY INFO from homepage ===
+                            try {
+                                const homeText = await page.innerText('body').catch(() => '');
+                                if (homeText.length > 50) {
+                                    // Extract meta description or first meaningful paragraph as company description
+                                    const metaDesc = await page.$eval('meta[name="description"]', el => el.getAttribute('content')).catch(() => null);
+                                    const ogDesc = await page.$eval('meta[property="og:description"]', el => el.getAttribute('content')).catch(() => null);
+                                    companyDescription = metaDesc || ogDesc || '';
+
+                                    // If no meta description, try to grab first substantial paragraph
+                                    if (!companyDescription || companyDescription.length < 20) {
+                                        const paragraphs = await page.$$eval('p', els => els.map(el => (el.textContent || '').trim()).filter(t => t.length > 40 && t.length < 500));
+                                        if (paragraphs.length > 0) companyDescription = paragraphs[0];
+                                    }
+
+                                    // Extract structured data: revenue, employees, year founded
+                                    const revenueMatch = homeText.match(/fatturato[:\s]+[€$]?\s*([\d.,]+)\s*(milion[ie]|mln|M|billion[ie]|miliard[ie])/i);
+                                    if (revenueMatch) companyDetails.push(`Fatturato: ${revenueMatch[0].trim()}`);
+
+                                    const employeeMatch = homeText.match(/(\d[\d.]*)\s*(dipendent[ie]|collaborator[ie]|employees|mitarbeiter)/i);
+                                    if (employeeMatch) companyDetails.push(`Dipendenti: ${employeeMatch[1]} ${employeeMatch[2]}`);
+
+                                    const yearMatch = homeText.match(/(fondат?a?|founded|seit|established|dal)\s*(nel\s+)?(\d{4})/i);
+                                    if (yearMatch) companyDetails.push(`Fondata: ${yearMatch[3]}`);
+
+                                    const certMatch = homeText.match(/(ISO\s*\d{3,5}(?:[:-]\d+)?)/gi);
+                                    if (certMatch) companyDetails.push(`Certificazioni: ${[...new Set(certMatch)].slice(0, 3).join(', ')}`);
+
+                                    if (companyDescription) {
+                                        await emitBrowser(`📋 Info: ${companyDescription.substring(0, 80)}...`);
+                                    }
+                                }
+                            } catch { /* homepage info extraction failed */ }
+
+                            // === VISIT "chi siamo" / "about" page for more details ===
+                            const aboutPaths = ['/chi-siamo', '/about', '/about-us', '/azienda', '/company', '/ueber-uns'];
+                            for (const aboutPath of aboutPaths) {
+                                if (companyDetails.length >= 3) break; // Already have enough info
+                                try {
+                                    await page.goto(`https://www.${domain}${aboutPath}`, { waitUntil: 'domcontentloaded', timeout: 8000 });
+                                    const aboutText = await page.innerText('body').catch(() => '');
+                                    if (aboutText.length < 50) continue;
+
+                                    await emitBrowser(`Leggo ${aboutPath}`, true);
+
+                                    // Better description from about page
+                                    if (!companyDescription || companyDescription.length < 30) {
+                                        const metaDesc = await page.$eval('meta[name="description"]', el => el.getAttribute('content')).catch(() => null);
+                                        if (metaDesc && metaDesc.length > 30) companyDescription = metaDesc;
+                                        else {
+                                            const paragraphs = await page.$$eval('p', els => els.map(el => (el.textContent || '').trim()).filter(t => t.length > 40 && t.length < 500));
+                                            if (paragraphs.length > 0 && paragraphs[0].length > (companyDescription?.length || 0)) {
+                                                companyDescription = paragraphs[0];
+                                            }
+                                        }
+                                    }
+
+                                    // Extract additional details
+                                    if (!companyDetails.some(d => d.startsWith('Fatturato'))) {
+                                        const rev = aboutText.match(/fatturato[:\s]+[€$]?\s*([\d.,]+)\s*(milion[ie]|mln|M|billion[ie]|miliard[ie])/i);
+                                        if (rev) companyDetails.push(`Fatturato: ${rev[0].trim()}`);
+                                    }
+                                    if (!companyDetails.some(d => d.startsWith('Dipendenti'))) {
+                                        const emp = aboutText.match(/(\d[\d.]*)\s*(dipendent[ie]|collaborator[ie]|employees|mitarbeiter)/i);
+                                        if (emp) companyDetails.push(`Dipendenti: ${emp[1]} ${emp[2]}`);
+                                    }
+                                    if (!companyDetails.some(d => d.startsWith('Fondata'))) {
+                                        const yr = aboutText.match(/(fondat?a?|founded|seit|established|dal)\s*(nel\s+)?(\d{4})/i);
+                                        if (yr) companyDetails.push(`Fondata: ${yr[3]}`);
+                                    }
+                                    // Sede / location
+                                    if (!companyDetails.some(d => d.startsWith('Sede'))) {
+                                        const sedeMatch = aboutText.match(/sede[:\s]+([\w\s,]+(?:Italia|Italy|Germany|Deutschland|France))/i);
+                                        if (sedeMatch) companyDetails.push(`Sede: ${sedeMatch[1].trim()}`);
+                                    }
+                                    // Settori / markets served
+                                    const settoriMatch = aboutText.match(/settor[ie][:\s]+([^.]{10,100})/i);
+                                    if (settoriMatch && !companyDetails.some(d => d.startsWith('Settori'))) {
+                                        companyDetails.push(`Settori: ${settoriMatch[1].trim()}`);
+                                    }
+
+                                    if (companyDetails.length > 0) {
+                                        await emitBrowser(`📊 ${companyDetails[companyDetails.length - 1]}`);
+                                    }
+                                    break; // Got the about page, no need to try others
+                                } catch { /* about page not found, try next */ }
+                            }
+
+                            // Scan contact paths for emails
+                            for (const path of contactPaths) {
+                                if (bestPersonalEmail) break;
+                                try {
+                                    const url = `https://www.${domain}${path}`;
+                                    await emitBrowser(`Navigo ${path}`);
+                                    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 8000 });
+                                    await emitBrowser(`Pagina ${path} caricata`, true);
+                                    const text = await page.innerText('body').catch(() => '');
+                                    if (text.length < 30) continue;
+
+                                    // Extract emails
+                                    const emails: string[] = [...new Set<string>((text.match(emailRegex) as string[] | null) || [])];
+                                    // Filter: must look like a real email, not image filenames etc.
+                                    const validEmails = emails.filter(e =>
+                                        !e.match(/\.(png|jpg|jpeg|gif|svg|webp|css|js)$/i) &&
+                                        !e.includes('example.com') &&
+                                        !e.includes('sentry') &&
+                                        e.length < 60
+                                    );
+
+                                    const personal = validEmails.filter(e => !isGenericEmail(e) && e.toLowerCase().includes(domain.split('.')[0]));
+                                    const domainEmails = validEmails.filter(e => e.toLowerCase().includes(domain.split('.')[0]));
+                                    const anyValid = validEmails.filter(e => !isGenericEmail(e));
+
+                                    if (personal.length > 0) {
+                                        bestPersonalEmail = personal[0];
+                                        // Try to extract name from local part
+                                        const localPart = bestPersonalEmail.split('@')[0];
+                                        const parts = localPart.split(/[._-]/);
+                                        if (parts.length >= 2) {
+                                            bestName = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
+                                        }
+                                        await emitBrowser(`✅ Trovato ${bestPersonalEmail} su ${path}`);
+                                        break;
+                                    } else if (anyValid.length > 0 && !bestPersonalEmail) {
+                                        bestPersonalEmail = anyValid[0];
+                                        await emitBrowser(`📧 Trovato ${anyValid[0]} su ${path}`);
+                                    } else if (domainEmails.length > 0 && !bestGenericEmail) {
+                                        bestGenericEmail = domainEmails[0];
+                                        await emitBrowser(`📧 Email generica: ${domainEmails[0]} su ${path}`);
+                                    }
+
+                                    // Also try to extract phone numbers
+                                    if (!bestPhone) {
+                                        const phoneMatch = text.match(/(?:\+39\s?|0)\d{2,4}[\s.-]?\d{4,8}/);
+                                        if (phoneMatch) bestPhone = phoneMatch[0];
+                                    }
+                                } catch { /* page not found, try next */ }
+                            }
+
+                            // Also try to find emails by clicking "Contatti" link on homepage
+                            if (!bestPersonalEmail) {
+                                try {
+                                    await page.goto(`https://www.${domain}`, { waitUntil: 'domcontentloaded', timeout: 8000 });
+                                    const contactLink = await page.$('a[href*="contatt"], a[href*="contact"], a[href*="about"]');
+                                    if (contactLink) {
+                                        const href = await contactLink.getAttribute('href');
+                                        if (href) {
+                                            await emitBrowser(`Seguo link "${href}"`);
+                                            await contactLink.click();
+                                            await page.waitForLoadState('domcontentloaded', { timeout: 6000 }).catch(() => {});
+                                            await emitBrowser(`Pagina contatti via link`, true);
+                                            const text = await page.innerText('body').catch(() => '');
+                                            const emails: string[] = [...new Set<string>((text.match(emailRegex) as string[] | null) || [])];
+                                            const personal = emails.filter(e => !isGenericEmail(e) && e.length < 60 && !e.match(/\.(png|jpg)$/i));
+                                            if (personal.length > 0) {
+                                                bestPersonalEmail = personal[0];
+                                                await emitBrowser(`✅ Trovato ${personal[0]} via link contatti`);
+                                            }
+                                        }
+                                    }
+                                } catch { /* navigation failed */ }
+                            }
+                        } catch (e: any) {
+                            await emitBrowser(`⚠️ Errore: ${e.message?.substring(0, 50)}`);
+                        } finally {
+                            await context.close().catch(() => {});
+                        }
+
+                        // Apply findings
+                        const foundEmail = bestPersonalEmail || bestGenericEmail;
+                        if (foundEmail) {
+                            lead.email = foundEmail.toLowerCase();
+                            lead.emailStatus = isGenericEmail(foundEmail) ? 'generic' : 'scraped';
+                            lead._sources = lead._sources || new Set();
+                            lead._sources.add('website');
+                            lead._enriched = true;
+                            foundCount++;
+                        }
+                        if (bestName && !lead.fullName) {
+                            const nameParts = bestName.split(' ');
+                            lead.firstName = lead.firstName || nameParts[0] || null;
+                            lead.lastName = lead.lastName || nameParts.slice(1).join(' ') || null;
+                            lead.fullName = bestName;
+                        }
+                        if (bestPhone && !lead.phone) {
+                            lead.phone = bestPhone;
+                        }
+
+                        // Save company intelligence for email personalization
+                        const noteParts: string[] = [];
+                        if (foundEmail) noteParts.push(`Email da sito web (${domain})`);
+                        if (companyDescription) {
+                            // Truncate to 300 chars max
+                            const desc = companyDescription.length > 300 ? companyDescription.substring(0, 297) + '...' : companyDescription;
+                            noteParts.push(`Attività: ${desc}`);
+                        }
+                        if (companyDetails.length > 0) {
+                            noteParts.push(companyDetails.join(' | '));
+                        }
+                        if (noteParts.length > 0) {
+                            lead.notes = (lead.notes || '') + (lead.notes ? ' | ' : '') + noteParts.join(' | ');
+                        }
+
+                        // Set industry/sector from website description
+                        if (companyDescription && !lead.companyIndustry) {
+                            lead.companyIndustry = companyDescription.substring(0, 100);
+                        }
+                        // Set company size from employee count found on site
+                        const empDetail = companyDetails.find(d => d.startsWith('Dipendenti'));
+                        if (empDetail && !lead.companySize) {
+                            lead.companySize = empDetail;
+                        }
+                        // Set revenue if found
+                        const revDetail = companyDetails.find(d => d.startsWith('Fatturato'));
+                        if (revDetail && !lead.revenueYear1) {
+                            lead.revenueYear1 = revDetail;
+                        }
+
+                        scrapedCount++;
+                    });
+
+                    await Promise.all(scrapePromises);
+                }
+
+                await browser.close();
+                console.log(`[LeadGen-WebScrape] Pass 0.9 complete: scraped ${scrapedCount} sites, found emails for ${foundCount}`);
+                emit({
+                    phase: 'enrich',
+                    message: `Siti web visitati: ${foundCount} email trovate su ${scrapedCount} aziende navigate (gratis).`,
+                    leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                    progress: 48,
+                });
+            } catch (e: any) {
+                console.error(`[LeadGen-WebScrape] Playwright failed:`, e.message);
+                emit({
+                    phase: 'enrich',
+                    message: `⚠️ Browser non disponibile: ${e.message?.substring(0, 60)}. Salto scraping siti web.`,
+                    progress: 48,
+                });
+            }
+        }
+    }
+
+    // ENRICHMENT PASS 0.8: For fair searches, batch-search Apollo/Vibe by company names
+    // This finds actual people/contacts at the companies we've identified
+    if (isFairSearch) {
+        const companiesWithoutContacts = uniqueLeads.filter(l =>
+            l.companyName && !l.fullName && !l.email
+        );
+        const companyNamesForSearch = [...new Set(companiesWithoutContacts.map(l => l.companyName!))];
+
+        if (companyNamesForSearch.length > 0 && apiKeys.apollo) {
+            console.log(`[LeadGen-Enrich] Pass 0.8a: Apollo batch search for ${companyNamesForSearch.length} companies`);
+            emit({ phase: 'enrich', message: `Ricerca contatti Apollo per ${companyNamesForSearch.length} aziende...`, progress: 48 });
+            // Apollo search by company name batches (max ~10 per query for best results)
+            const APOLLO_BATCH = 10;
+            for (let i = 0; i < companyNamesForSearch.length; i += APOLLO_BATCH) {
+                const batch = companyNamesForSearch.slice(i, i + APOLLO_BATCH);
+                try {
+                    const resultStr = await executeToolCall('searchPeopleApollo', {
+                        jobTitles: ['Sales Manager', 'Area Manager', 'Business Development Manager', 'Key Account Manager', 'Commercial Director', 'Export Manager', 'Direttore Commerciale'],
+                        keywords: batch.join(', '),
+                        locations: ['Italy'],
+                        limit: Math.min(batch.length * 3, 25),
+                    }, companyId, apiKeys as any, conversationId);
+                    const parsed = JSON.parse(resultStr);
+                    const people = parsed.people || [];
+                    for (const p of people) {
+                        if (p.email || p.companyName) {
+                            const newLead = normalizeLead(p, 'searchPeopleApollo');
+                            // Try to merge with existing company-only lead
+                            const existing = uniqueLeads.find(l =>
+                                l.companyName && newLead.companyName &&
+                                l.companyName.toLowerCase().includes(newLead.companyName.toLowerCase().split(' ')[0]) &&
+                                !l.fullName
+                            );
+                            if (existing) {
+                                Object.assign(existing, mergeLeadData(existing, newLead));
+                                existing._enriched = true;
+                            } else {
+                                uniqueLeads.push(newLead);
+                            }
+                        }
+                    }
+                    if (people.length > 0) {
+                        console.log(`[LeadGen-Enrich] Apollo batch ${Math.floor(i / APOLLO_BATCH) + 1}: found ${people.length} contacts`);
+                    }
+                } catch { /* skip batch */ }
+            }
+        }
+
+        if (companyNamesForSearch.length > 0 && apiKeys.vibeProspect) {
+            console.log(`[LeadGen-Enrich] Pass 0.8b: Vibe batch search for ${companyNamesForSearch.length} companies`);
+            emit({ phase: 'enrich', message: `Ricerca contatti Vibe per ${companyNamesForSearch.length} aziende...`, progress: 52 });
+            // Vibe supports company_names directly — search in batches of 20
+            const VIBE_BATCH = 20;
+            for (let i = 0; i < companyNamesForSearch.length; i += VIBE_BATCH) {
+                const batch = companyNamesForSearch.slice(i, i + VIBE_BATCH);
+                try {
+                    const resultStr = await executeToolCall('searchProspectsVibe', {
+                        company_names: batch,
+                        has_email: true,
+                        limit: batch.length * 3,
+                    }, companyId, apiKeys as any, conversationId);
+                    const parsed = JSON.parse(resultStr);
+                    const people = parsed.people || [];
+                    for (const p of people) {
+                        const newLead = normalizeLead(p, 'searchProspectsVibe');
+                        const existing = uniqueLeads.find(l =>
+                            l.companyName && newLead.companyName &&
+                            l.companyName.toLowerCase().includes(newLead.companyName.toLowerCase().split(' ')[0]) &&
+                            !l.fullName
+                        );
+                        if (existing) {
+                            Object.assign(existing, mergeLeadData(existing, newLead));
+                            existing._enriched = true;
+                        } else {
+                            uniqueLeads.push(newLead);
+                        }
+                    }
+                    if (people.length > 0) {
+                        console.log(`[LeadGen-Enrich] Vibe batch ${Math.floor(i / VIBE_BATCH) + 1}: found ${people.length} contacts`);
+                    }
+                } catch { /* skip batch */ }
+            }
         }
     }
 
@@ -2161,40 +3427,82 @@ JSON:`;
             }
         }
 
-        // Increased cap to handle fair scenarios (30+ companies)
-        const domainsToSearch = [...byDomain.keys(), ...allDomains].slice(0, 40);
+        // Rimosso il cap a 40 per supportare richieste massive come "tutti i contatti"
+        const domainsToSearch = [...byDomain.keys(), ...allDomains];
         if (domainsToSearch.length > 0) {
             console.log(`[LeadGen-Enrich] Pass 1: Hunter domain search on ${domainsToSearch.length} domains`);
-            const hunterPromises = domainsToSearch.map(async (domain) => {
-                try {
-                    const resultStr = await executeToolCall('findEmailsHunter', { domain, type: 'personal' }, companyId, apiKeys as any, conversationId);
-                    const parsed = JSON.parse(resultStr);
-                    if (!parsed.error && parsed.emails?.length > 0) {
-                        return { domain, emails: parsed.emails, organization: parsed.organization };
-                    }
-                } catch { /* skip */ }
-                return null;
+            emit({
+                phase: 'enrich',
+                message: `Hunter: ricerca contatti su ${domainsToSearch.length} domini aziendali...`,
+                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                progress: 55,
             });
 
-            const hunterResultsRaw = await Promise.all(hunterPromises);
+            // Batch Hunter requests (15 parallel per batch) with progress updates
+            const HUNTER_BATCH = 15;
+            const hunterResultsRaw: (any | null)[] = [];
+            for (let batchStart = 0; batchStart < domainsToSearch.length; batchStart += HUNTER_BATCH) {
+                const batch = domainsToSearch.slice(batchStart, batchStart + HUNTER_BATCH);
+                const batchNum = Math.floor(batchStart / HUNTER_BATCH) + 1;
+                const totalBatches = Math.ceil(domainsToSearch.length / HUNTER_BATCH);
+                const progressBase = 55;
+                const progressRange = 15; // 55% → 70%
+                const batchProgress = progressBase + Math.round((batchStart / domainsToSearch.length) * progressRange);
 
-            // RETRY: for .it domains with no results, try .com
-            const retryPromises = domainsToSearch
-                .filter((domain, i) => domain.endsWith('.it') && !hunterResultsRaw[i])
-                .map(async (domain) => {
-                    const comDomain = domain.replace(/\.it$/, '.com');
+                emit({
+                    phase: 'enrich',
+                    message: `Hunter [${batchNum}/${totalBatches}]: ${batch.slice(0, 4).join(', ')}${batch.length > 4 ? ` +${batch.length - 4}` : ''}...`,
+                    detail: batch.join(', '),
+                    leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                    progress: batchProgress,
+                });
+
+                const batchPromises = batch.map(async (domain) => {
                     try {
-                        const resultStr = await executeToolCall('findEmailsHunter', { domain: comDomain, type: 'personal' }, companyId, apiKeys as any, conversationId);
+                        const resultStr = await executeToolCall('findEmailsHunter', { domain, type: 'personal' }, companyId, apiKeys as any, conversationId);
                         const parsed = JSON.parse(resultStr);
                         if (!parsed.error && parsed.emails?.length > 0) {
-                            // Update the leads' domain to .com since .it didn't work
+                            return { domain, emails: parsed.emails, organization: parsed.organization };
+                        }
+                    } catch { /* skip */ }
+                    return null;
+                });
+                const batchResults = await Promise.all(batchPromises);
+                hunterResultsRaw.push(...batchResults);
+            }
+
+            // RETRY: for domains with no results, try alternate TLD (.it↔.com)
+            const failedDomains = domainsToSearch.filter((domain, i) => !hunterResultsRaw[i]);
+            const retryCount = failedDomains.length;
+            if (retryCount > 0) {
+                console.log(`[LeadGen-Enrich] Hunter retry: ${retryCount} domains failed, trying alternate TLDs...`);
+                emit({
+                    phase: 'enrich',
+                    message: `Hunter retry: ${retryCount} domini senza risultati, provo TLD alternativo (.it↔.com)...`,
+                    progress: 68,
+                });
+            }
+            const retryPromises = failedDomains
+                .map(async (domain) => {
+                    // Try .it → .com OR .com → .it
+                    let altDomain: string | null = null;
+                    if (domain.endsWith('.it')) altDomain = domain.replace(/\.it$/, '.com');
+                    else if (domain.endsWith('.com')) altDomain = domain.replace(/\.com$/, '.it');
+                    else return null; // no alternate to try
+
+                    try {
+                        const resultStr = await executeToolCall('findEmailsHunter', { domain: altDomain, type: 'personal' }, companyId, apiKeys as any, conversationId);
+                        const parsed = JSON.parse(resultStr);
+                        if (!parsed.error && parsed.emails?.length > 0) {
+                            // Update the leads' domain to the working alternate
                             for (const lead of uniqueLeads) {
                                 if (lead.companyDomain === domain) {
-                                    lead.companyDomain = comDomain;
-                                    lead.companyWebsite = `https://${comDomain}`;
+                                    lead.companyDomain = altDomain;
+                                    lead.companyWebsite = `https://${altDomain}`;
                                 }
                             }
-                            return { domain: comDomain, emails: parsed.emails, organization: parsed.organization };
+                            console.log(`[LeadGen-Enrich] Retry ${domain} → ${altDomain}: found ${parsed.emails.length} contacts`);
+                            return { domain: altDomain, emails: parsed.emails, organization: parsed.organization };
                         }
                     } catch { /* skip */ }
                     return null;
@@ -2210,7 +3518,13 @@ JSON:`;
                     && (!l.email || isGenericEmail(l.email))
                 );
 
+                // Cap at 2 contacts per domain to maximize company breadth
+                const MAX_CONTACTS_PER_DOMAIN = 2;
+                let addedForDomain = 0;
+
                 for (const contact of hr.emails) {
+                    if (addedForDomain >= MAX_CONTACTS_PER_DOMAIN) break;
+
                     // Hunter executeToolCall maps: e.value→email, e.first_name→firstName, e.last_name→lastName, e.position→position, e.linkedin→linkedinUrl, e.confidence→confidence
                     const contactEmail = contact.email || contact.value;
                     const contactFirstName = contact.firstName || contact.first_name;
@@ -2234,6 +3548,7 @@ JSON:`;
                         matchingLead.jobTitle = matchingLead.jobTitle || contactPosition;
                         matchingLead._sources.add('hunter');
                         matchingLead._enriched = true;
+                        addedForDomain++;
                         console.log(`[LeadGen-Enrich]   → Enriched ${matchingLead.fullName || matchingLead.companyName} with ${contactEmail}`);
                     } else {
                         // New lead from Hunter
@@ -2246,10 +3561,11 @@ JSON:`;
                             emailStatus: contactConfidence > 80 ? 'valid' : 'unknown',
                         }, 'findEmailsHunter');
                         uniqueLeads.push(newLead);
+                        addedForDomain++;
                         console.log(`[LeadGen-Enrich]   → New lead: ${newLead.fullName} <${contactEmail}> @ ${hr.domain}`);
                     }
                 }
-                console.log(`[LeadGen-Enrich] ${hr.domain}: found ${hr.emails.length} contacts`);
+                console.log(`[LeadGen-Enrich] ${hr.domain}: found ${hr.emails.length} contacts, kept ${addedForDomain} (cap: ${MAX_CONTACTS_PER_DOMAIN})`);
             }
         }
     }
@@ -2259,10 +3575,16 @@ JSON:`;
         const needPersonalEmail = uniqueLeads.filter(l =>
             l.firstName && l.lastName && (l.companyDomain || l.companyWebsite)
             && (!l.email || isGenericEmail(l.email))
-        ).slice(0, 20); // cap to avoid burning credits
+        ).slice(0, 200); // cap alzato a 200 per massimizzare la ricerca
 
         if (needPersonalEmail.length > 0) {
             console.log(`[LeadGen-Enrich] Pass 2: Hunter email-finder for ${needPersonalEmail.length} people`);
+            emit({
+                phase: 'enrich',
+                message: `Hunter: ricerca email personali per ${needPersonalEmail.length} persone...`,
+                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                progress: 70,
+            });
             const finderPromises = needPersonalEmail.map(async (lead) => {
                 const domain = lead.companyDomain || extractDomain(lead.companyWebsite);
                 if (!domain) return null;
@@ -2291,10 +3613,16 @@ JSON:`;
     if (apiKeys.hunter) {
         const unverified = uniqueLeads.filter(l =>
             l.email && !isGenericEmail(l.email) && l.emailStatus !== 'valid'
-        ).slice(0, 20);
+        ).slice(0, 200);
 
         if (unverified.length > 0) {
             console.log(`[LeadGen-Enrich] Pass 3: Verifying ${unverified.length} emails`);
+            emit({
+                phase: 'verify',
+                message: `Verifica ${unverified.length} email...`,
+                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                progress: 80,
+            });
             const verifyPromises = unverified.map(async (lead) => {
                 try {
                     const resultStr = await executeToolCall('verifyEmail', { email: lead.email }, companyId, apiKeys as any, conversationId);
@@ -2321,9 +3649,15 @@ JSON:`;
             const companyNames = companiesWithoutContacts
                 .map(l => l.companyName)
                 .filter((v, i, a) => a.indexOf(v) === i) // unique
-                .slice(0, 30); // up to 30 companies for fair scenarios
+                .slice(0, 200); // Rimosso limite di 30 per ricercare massivamente
 
             console.log(`[LeadGen-Enrich] Pass 4: Vibe Prospecting for ${companyNames.length} companies without contacts`);
+            emit({
+                phase: 'enrich',
+                message: `Vibe: ricerca contatti per ${companyNames.length} aziende senza email...`,
+                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                progress: 85,
+            });
             try {
                 const resultStr = await executeToolCall('searchProspectsVibe', {
                     company_names: companyNames,
@@ -2353,13 +3687,190 @@ JSON:`;
         }
     }
 
+    // ENRICHMENT PASS 5 (SerpApi): Google search + LinkedIn for ALL companies missing personal contacts
+    // Uses SerpApi (structured API, no bot detection) instead of Playwright for Google searches
+    // Searches Google for emails AND LinkedIn for real people names/roles
+    {
+        const companiesNeedEnrich = uniqueLeads.filter(l =>
+            l.companyName && (l.companyDomain || l.companyWebsite) &&
+            (!l.fullName || !l.email || isGenericEmail(l.email))
+        );
+        // Deduplicate by company
+        const uniqueCompanies = new Map<string, any>();
+        for (const l of companiesNeedEnrich) {
+            const key = l.companyName!.toLowerCase();
+            if (!uniqueCompanies.has(key)) uniqueCompanies.set(key, l);
+        }
+        const companiesToSearch = [...uniqueCompanies.values()];
+
+        if (companiesToSearch.length > 0 && apiKeys.serpApi) {
+            console.log(`[LeadGen-SerpApi] Pass 5: SerpApi Google + LinkedIn search for ${companiesToSearch.length} companies`);
+            emit({
+                phase: 'enrich',
+                message: `SerpApi: ricerca Google + LinkedIn per ${companiesToSearch.length} aziende ancora senza contatti...`,
+                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                progress: 87,
+            });
+
+            const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+            const SERP_BATCH = 5;
+            let searchedCount = 0;
+            let foundCount = 0;
+
+            for (let i = 0; i < companiesToSearch.length; i += SERP_BATCH) {
+                const batch = companiesToSearch.slice(i, i + SERP_BATCH);
+                const batchNum = Math.floor(i / SERP_BATCH) + 1;
+                const totalBatches = Math.ceil(companiesToSearch.length / SERP_BATCH);
+
+                emit({
+                    phase: 'enrich',
+                    message: `🔍 SerpApi [${batchNum}/${totalBatches}]: ${batch.map(l => l.companyName).join(', ')}`,
+                    leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                    progress: 87 + Math.round((i / companiesToSearch.length) * 8),
+                });
+
+                const searchPromises = batch.map(async (lead) => {
+                    const domain = lead.companyDomain || extractDomain(lead.companyWebsite);
+                    let bestEmail: string | null = null;
+                    let bestName: string | null = null;
+                    let bestTitle: string | null = null;
+                    let bestLinkedin: string | null = null;
+
+                    try {
+                        // STRATEGY 1: Google search for email contacts via SerpApi
+                        try {
+                            const query = `"${lead.companyName}" email contatto commerciale OR sales OR "area manager" OR direttore`;
+                            const resultStr = await executeToolCall('searchGoogleWeb', {
+                                query, num: 10, gl: 'it', hl: 'it',
+                            }, companyId, apiKeys as any, conversationId);
+                            const parsed = JSON.parse(resultStr);
+                            const results = parsed.results || [];
+
+                            // Extract emails from snippets and titles
+                            const allText = results.map((r: any) => `${r.title} ${r.snippet} ${r.displayedLink}`).join(' ');
+                            const googleEmails: string[] = [...new Set<string>((allText.match(emailRegex) as string[] | null) || [])];
+                            const domainEmails = domain ? googleEmails.filter(e => !isGenericEmail(e) && e.toLowerCase().includes(domain.split('.')[0])) : [];
+                            const anyPersonal = googleEmails.filter(e =>
+                                !isGenericEmail(e) && !e.includes('google') && !e.includes('example') &&
+                                !e.match(/\.(png|jpg|css|js)$/i) && e.length < 60
+                            );
+                            // Also accept generic emails from the domain if no personal found
+                            const genericDomainEmails = domain ? googleEmails.filter(e => isGenericEmail(e) && e.toLowerCase().includes(domain.split('.')[0])) : [];
+
+                            if (domainEmails.length > 0) {
+                                bestEmail = domainEmails[0];
+                                emit({ phase: 'enrich', message: `✅ ${lead.companyName}: Google trovato ${bestEmail}`, progress: 87 + Math.round((searchedCount / companiesToSearch.length) * 8), browserUrl: `https://www.google.com/search?q=${encodeURIComponent(query)}` });
+                            } else if (anyPersonal.length > 0) {
+                                bestEmail = anyPersonal[0];
+                                emit({ phase: 'enrich', message: `✅ ${lead.companyName}: Google trovato ${bestEmail} (esterno)`, progress: 87 + Math.round((searchedCount / companiesToSearch.length) * 8), browserUrl: `https://www.google.com/search?q=${encodeURIComponent(query)}` });
+                            } else if (genericDomainEmails.length > 0 && !lead.email) {
+                                bestEmail = genericDomainEmails[0];
+                                emit({ phase: 'enrich', message: `📧 ${lead.companyName}: Google trovato ${bestEmail} (generica)`, progress: 87 + Math.round((searchedCount / companiesToSearch.length) * 8), browserUrl: `https://www.google.com/search?q=${encodeURIComponent(query)}` });
+                            }
+                        } catch { /* Google search failed */ }
+
+                        // STRATEGY 2: LinkedIn search via SerpApi for people names
+                        // Use a single combined query to save API credits
+                        if (!bestName) {
+                            try {
+                                const linkedinQuery = `site:linkedin.com/in "${lead.companyName}" sales OR commerciale OR manager OR direttore OR CEO Italy`;
+                                const resultStr = await executeToolCall('searchGoogleWeb', {
+                                    query: linkedinQuery, num: 5, gl: 'it', hl: 'it',
+                                }, companyId, apiKeys as any, conversationId);
+                                const parsed = JSON.parse(resultStr);
+                                const results = parsed.results || [];
+
+                                for (const r of results.slice(0, 5)) {
+                                    const title = r.title || '';
+                                    // Match patterns like "Nome Cognome - Ruolo" or "Nome Cognome | Ruolo" or "Nome Cognome – Ruolo"
+                                    const match = title.match(/^([A-ZÀ-Ú][a-zà-ú]+)\s+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)?)\s*[-–|]/);
+                                    if (match) {
+                                        bestName = `${match[1]} ${match[2]}`;
+                                        // Extract LinkedIn URL from the result link
+                                        if (r.link && r.link.includes('linkedin.com/in/')) {
+                                            bestLinkedin = r.link;
+                                        }
+                                        // Extract role from after the dash
+                                        const titleMatch = title.match(/[-–|]\s*(.+?)(?:\s*[-–|]|$)/);
+                                        if (titleMatch) bestTitle = titleMatch[1].trim();
+                                        emit({ phase: 'enrich', message: `👤 ${lead.companyName}: LinkedIn trovato ${bestName}${bestTitle ? ` (${bestTitle})` : ''}`, progress: 87 + Math.round((searchedCount / companiesToSearch.length) * 8), browserUrl: r.link });
+                                        break;
+                                    }
+                                    // Also try: "Nome Cognome on LinkedIn" pattern (English results)
+                                    const match2 = title.match(/^([A-ZÀ-Ú][a-zà-ú]+)\s+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)?)\s/);
+                                    if (match2 && r.link?.includes('linkedin.com/in/')) {
+                                        bestName = `${match2[1]} ${match2[2]}`;
+                                        bestLinkedin = r.link;
+                                        // Try to extract role from snippet
+                                        const snippetRoleMatch = (r.snippet || '').match(/(Sales|Commercial|Area Manager|Business Development|Key Account|Export|CEO|CTO|Direttore|Responsabile|Managing Director|Founder)[^.]{0,40}/i);
+                                        if (snippetRoleMatch) bestTitle = snippetRoleMatch[0].trim();
+                                        emit({ phase: 'enrich', message: `👤 ${lead.companyName}: LinkedIn trovato ${bestName}${bestTitle ? ` (${bestTitle})` : ''}`, progress: 87 + Math.round((searchedCount / companiesToSearch.length) * 8), browserUrl: r.link });
+                                        break;
+                                    }
+                                }
+                            } catch { /* LinkedIn search failed */ }
+                        }
+                    } catch (e: any) {
+                        console.warn(`[LeadGen-SerpApi] Error for ${lead.companyName}:`, e.message?.substring(0, 80));
+                    }
+
+                    // Apply findings
+                    if (bestEmail) {
+                        lead.email = bestEmail.toLowerCase();
+                        lead.emailStatus = isGenericEmail(bestEmail) ? 'generic' : 'scraped';
+                        lead._sources = lead._sources || new Set();
+                        lead._sources.add('serpapi-google');
+                        lead._enriched = true;
+                        foundCount++;
+                    }
+                    if (bestName) {
+                        const nameParts = bestName.split(' ');
+                        lead.firstName = lead.firstName || nameParts[0] || null;
+                        lead.lastName = lead.lastName || nameParts.slice(1).join(' ') || null;
+                        lead.fullName = lead.fullName || bestName;
+                    }
+                    if (bestTitle) lead.jobTitle = lead.jobTitle || bestTitle;
+                    if (bestLinkedin) lead.linkedinUrl = lead.linkedinUrl || bestLinkedin;
+                    searchedCount++;
+                });
+
+                await Promise.all(searchPromises);
+            }
+
+            console.log(`[LeadGen-SerpApi] Pass 5 complete: searched ${searchedCount} companies, found contacts for ${foundCount}`);
+            emit({
+                phase: 'enrich',
+                message: `SerpApi Google+LinkedIn completato: ${foundCount} contatti trovati su ${searchedCount} aziende.`,
+                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+                progress: 95,
+            });
+        } else if (companiesToSearch.length > 0 && !apiKeys.serpApi) {
+            console.log(`[LeadGen-SerpApi] Pass 5 SKIPPED: no SerpApi key configured (${companiesToSearch.length} companies need enrichment)`);
+            emit({
+                phase: 'enrich',
+                message: `⚠️ SerpApi non configurato: ${companiesToSearch.length} aziende senza contatto non potranno essere arricchite via Google/LinkedIn.`,
+                progress: 95,
+            });
+        }
+    }
+
     // FINAL: Compute confidence scores and clean up
     const finalLeads: any[] = [];
     for (const lead of uniqueLeads) {
-        // Skip leads without personal email
-        if (!lead.email || isGenericEmail(lead.email)) continue;
-        // Skip existing
-        if (existingEmails.has(lead.email.toLowerCase())) continue;
+        // Skip existing emails
+        if (lead.email && existingEmails.has(lead.email.toLowerCase())) continue;
+
+        // For fair searches: keep ALL leads with company name + domain, even without email
+        // User wants ALL exhibitors saved with whatever info was found
+        if (!isFairSearch) {
+            if (!lead.email || isGenericEmail(lead.email)) continue;
+        } else {
+            // For fairs: keep everything that has at least a company name and domain/website
+            // Companies without email still have value (descriptions, industry info, domain for future outreach)
+            if (!lead.email && !lead.companyDomain && !lead.companyWebsite) continue;
+            // At minimum need a company name
+            if (!lead.companyName) continue;
+        }
 
         // Compute confidence
         lead.confidence = scoreLeadCompleteness(lead);
@@ -2377,6 +3888,14 @@ JSON:`;
     finalLeads.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
 
     console.log(`[LeadGen-Exec] Final: ${finalLeads.length} high-quality leads (from ${allLeads.length} raw)`);
+    emit({
+        phase: 'save',
+        message: `${finalLeads.length} lead trovati. Salvataggio nel database...`,
+        leadsFound: finalLeads.length,
+        leadsWithEmail: finalLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
+        companiesFound: new Set(finalLeads.filter(l => l.companyName).map(l => l.companyName!.toLowerCase())).size,
+        progress: 90,
+    });
 
     // Auto-save
     if (finalLeads.length > 0) {
@@ -2422,8 +3941,9 @@ function synthesizeResults(
         return `- ${t.description}: ${count} risultati`;
     }).join('\n');
 
-    // Format leads for presentation
-    const leadsSummary = allLeads.slice(0, 50).map((l, i) => {
+    // Format leads for presentation (up to 100 for fair searches, 50 otherwise)
+    const displayLimit = allLeads.length > 50 ? 100 : 50;
+    const leadsSummary = allLeads.slice(0, displayLimit).map((l, i) => {
         const parts = [
             `${i + 1}. **${l.fullName || 'N/A'}**`,
             l.jobTitle ? `Ruolo: ${l.jobTitle}` : null,
@@ -2474,7 +3994,8 @@ LEAD TROVATI (${allLeads.length} totali, ordinati per completezza):
 ${leadsSummary || 'Nessun lead trovato.'}
 
 COMPITO: Presenta i risultati all'utente in modo chiaro e professionale.
-- INIZIA con un breve riepilogo: quanti lead trovati, fonti usate, qualita complessiva
+- INIZIA OBBLIGATORIAMENTE con la sezione "📜 Diario di Bordo": riassumi a tuo modo o tramite bullet point il percorso che hai effettuato analizzando il "PIANO ESEGUITO". Racconta all'utente le tue scelte strategiche (ad esempio "Per prima cosa ho tentato una ricerca Vibe", "Poiché Vibe ha dato avviso di limite, ho preferito affidarmi ad Hunter e allo scraping del sito") in formato narrativo, logico ed esaustivo. L'utente deve capire ESATTAMENTE come hai lavorato dietro le quinte!
+- DOPO il diario, fornisci il consueto riepilogo quantitativo: quanti lead trovati, fonti usate, qualita complessiva.
 - Per OGNI lead mostra: nome, ruolo, azienda, email, stato email, telefono, LinkedIn, citta, settore, completezza %
 - Usa formato ### per ogni lead con campi ben formattati
 - AGGIUNGI una tabella riepilogativa markdown alla fine con colonne: #, Nome, Ruolo, Azienda, Email, Citta, Completezza
@@ -2506,8 +4027,10 @@ COMPITO: Presenta i risultati all'utente in modo chiaro e professionale.
  * Main Claude CLI flow: Plan → Execute → Enrich → Synthesize
  */
 async function leadGeneratorFlowClaude(input: LeadGeneratorInput): Promise<LeadGeneratorResult> {
+    console.log('[LeadGen-Claude] ✅ ENTERED leadGeneratorFlowClaude — the correct flow with Firecrawl + Playwright');
     const apiKeys = input.leadGenApiKeys || {};
     const model = input.model || 'claude-sonnet-4-6';
+    const emit = input.onProgress || (() => {});
 
     // Build conversation history as text for context
     const MAX_HISTORY_MESSAGES = 10;
@@ -2547,11 +4070,14 @@ async function leadGeneratorFlowClaude(input: LeadGeneratorInput): Promise<LeadG
 
         // PHASE 1: PLAN
         console.log(`[LeadGen-Claude] === PHASE 1: PLAN === request: "${userRequest.slice(0, 100)}..."`);
+        emit({ phase: 'plan', message: 'Analizzo la richiesta e creo il piano di ricerca...', progress: 5 });
         const plan = await generatePlan(userRequest, conversationHistory, model, apiKeys, input.companyId);
+        emit({ phase: 'plan', message: `Piano creato: ${plan.summary} (${plan.tasks.length} operazioni)`, progress: 10 });
 
         // PHASE 2: EXECUTE + ENRICH
         console.log(`[LeadGen-Claude] === PHASE 2: EXECUTE + ENRICH === ${plan.tasks.length} tasks`);
-        const { results, allLeads } = await executePlan(plan, input.companyId, apiKeys, input.conversationId);
+        emit({ phase: 'execute', message: `Avvio ${plan.tasks.length} ricerche in parallelo...`, progress: 12 });
+        const { results, allLeads } = await executePlan(plan, input.companyId, apiKeys, input.conversationId, input.onProgress);
 
         // PHASE 2.5: RE-PLAN if results are poor
         if (allLeads.length < 3 && plan.tasks.some(t => t.status === 'error')) {
@@ -2612,8 +4138,9 @@ async function leadGeneratorFlowClaude(input: LeadGeneratorInput): Promise<LeadG
             }
 
             if (fallbackTasks.length > 0) {
+                emit({ phase: 'execute', message: `Risultati scarsi. Riprovo con ${fallbackTasks.length} strategie alternative...`, progress: 25 });
                 const fallbackPlan: ExecutionPlan = { summary: `Re-plan: ${fallbackTasks.length} fallback tasks`, tasks: fallbackTasks };
-                const fallbackResult = await executePlan(fallbackPlan, input.companyId, apiKeys, input.conversationId);
+                const fallbackResult = await executePlan(fallbackPlan, input.companyId, apiKeys, input.conversationId, input.onProgress);
                 // Merge new leads into allLeads
                 allLeads.push(...fallbackResult.allLeads);
                 for (const [k, v] of fallbackResult.results) {
@@ -2625,7 +4152,14 @@ async function leadGeneratorFlowClaude(input: LeadGeneratorInput): Promise<LeadG
 
         // PHASE 3: SYNTHESIZE
         console.log(`[LeadGen-Claude] === PHASE 3: SYNTHESIZE === ${allLeads.length} leads collected`);
+        emit({
+            phase: 'synthesize',
+            message: `Preparo il report finale con ${allLeads.length} lead...`,
+            leadsFound: allLeads.length,
+            progress: 95,
+        });
         const text = synthesizeResults(plan, allLeads, results, userRequest, model);
+        emit({ phase: 'done', message: `Completato! ${allLeads.length} lead trovati.`, leadsFound: allLeads.length, progress: 100 });
 
         return { text, cost: 0, totalTokens: 0 };
     } catch (e: any) {
