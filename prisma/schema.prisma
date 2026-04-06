@@ -621,6 +621,8 @@ model LeadGeneratorConversation {
   title        String?
   messages     Json
   totalCost    Float        @default(0)
+  totalTokens  Int          @default(0)
+  model        String?
   companyId    String
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt

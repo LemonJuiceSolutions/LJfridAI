@@ -4,10 +4,10 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
     Send, Bot, Loader2, Trash2, UserSearch, Download, Search,
     Users, Building2, Mail, Phone, Linkedin, Globe, FileSpreadsheet,
-    ChevronRight, ChevronLeft, RefreshCw, ChevronsUpDown, Check,
+    ChevronRight, ChevronLeft, RefreshCw, ChevronsUpDown, Check, ArrowUpDown, ArrowUp, ArrowDown,
     Plus, MessageSquare, Clock, MoreHorizontal, Star, X, Tag,
     PenLine, ExternalLink, ShieldCheck, Info, CheckCircle2,
-    Target, AtSign, TrendingUp, BarChart3, ArrowLeft, FolderOpen, Copy, Pencil, Save, Sparkles,
+    Target, AtSign, TrendingUp, BarChart3, ArrowLeft, FolderOpen, Copy, Pencil, Save, Sparkles, Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,6 +77,8 @@ type ConversationMeta = {
     id: string;
     title: string | null;
     totalCost: number;
+    totalTokens: number;
+    model: string | null;
     createdAt: string;
     updatedAt: string;
 };
@@ -839,6 +841,8 @@ export default function LeadGeneratorPage() {
     const [conversations, setConversations] = useState<ConversationMeta[]>([]);
     const [showHistory, setShowHistory] = useState(true);
     const [currentCost, setCurrentCost] = useState<number>(0);
+    const [currentTokens, setCurrentTokens] = useState<number>(0);
+    const [currentModel, setCurrentModel] = useState<string | null>(null);
 
     // Provider API keys status (which are configured)
     const [configuredProviders, setConfiguredProviders] = useState<Record<string, boolean>>({});
@@ -858,6 +862,9 @@ export default function LeadGeneratorPage() {
     const [isLeadDialogOpen, setIsLeadDialogOpen] = useState(false);
     const [deleteSearchTarget, setDeleteSearchTarget] = useState<any>(null);
     const [leadsTab, setLeadsTab] = useState('leads');
+    const [activeKpiFilter, setActiveKpiFilter] = useState<string | null>(null);
+    const [sortConfig, setSortConfig] = useState<{ col: string; dir: 'asc' | 'desc' } | null>(null);
+    const [colFilters, setColFilters] = useState<Record<string, string>>({});
     const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
     const [isDeletingLeads, setIsDeletingLeads] = useState(false);
     const activeSearchIdRef = useRef<string | null>(null);
@@ -964,6 +971,8 @@ export default function LeadGeneratorPage() {
             if (data.success && data.conversation) {
                 setConversationId(data.conversation.id);
                 setCurrentCost(data.conversation.totalCost || 0);
+                setCurrentTokens(data.conversation.totalTokens || 0);
+                setCurrentModel(data.conversation.model || null);
                 const msgs = (data.conversation.messages as any[]) || [];
                 const chatMessages: Message[] = msgs
                     .filter((m: any) => m.role === 'user' || m.role === 'model')
@@ -977,6 +986,8 @@ export default function LeadGeneratorPage() {
                 setConversationId(null);
                 setMessages([]);
                 setCurrentCost(0);
+                setCurrentTokens(0);
+                setCurrentModel(null);
             }
         } catch (e) {
             console.error('Failed to load conversation:', e);
@@ -986,14 +997,18 @@ export default function LeadGeneratorPage() {
     const handleSwitchConversation = async (id: string) => {
         if (id === conversationId && viewMode === 'detail') return;
         await loadConversation(id);
-        // Find searches linked to this conversation and auto-select the first one
+        // Find ALL searches linked to this conversation
         const convSearches = searches.filter((s: any) => s.conversationId === id);
-        if (convSearches.length > 0) {
-            const firstSearchId = convSearches[0].id;
-            activeSearchIdRef.current = firstSearchId;
-            setActiveSearchId(firstSearchId);
-            setLeadsTab('leads');
-            loadLeads(firstSearchId);
+        if (convSearches.length === 1) {
+            // Single search: select it normally
+            activeSearchIdRef.current = convSearches[0].id;
+            setActiveSearchId(convSearches[0].id);
+            loadLeads(convSearches[0].id);
+        } else if (convSearches.length > 1) {
+            // Multiple batches: load ALL via conversationId filter (backend joins search→lead)
+            activeSearchIdRef.current = null;
+            setActiveSearchId(null);
+            loadLeads(null, id); // pass convId explicitly since state update is async
         } else {
             activeSearchIdRef.current = null;
             setActiveSearchId(null);
@@ -1007,6 +1022,8 @@ export default function LeadGeneratorPage() {
         setConversationId(null);
         setMessages([]);
         setCurrentCost(0);
+        setCurrentTokens(0);
+        setCurrentModel(null);
         activeSearchIdRef.current = null;
         setActiveSearchId(null);
         setLeads([]);
@@ -1070,13 +1087,15 @@ export default function LeadGeneratorPage() {
                 setConversationId(null);
                 setMessages([]);
                 setCurrentCost(0);
+                setCurrentTokens(0);
+                setCurrentModel(null);
             }
         } catch (err) {
             console.error('Failed to delete conversation:', err);
         }
     };
 
-    const loadLeads = async (searchId?: string | null) => {
+    const loadLeads = async (searchId?: string | null, convId?: string | null) => {
         // Cancel any in-flight request to prevent stale responses
         if (loadLeadsAbortRef.current) {
             loadLeadsAbortRef.current.abort();
@@ -1087,9 +1106,16 @@ export default function LeadGeneratorPage() {
         setLeadsLoading(true);
         try {
             const effectiveSearchId = searchId !== undefined ? searchId : activeSearchIdRef.current;
+            const effectiveConvId = convId !== undefined ? convId : conversationId;
             const params = new URLSearchParams();
-            if (effectiveSearchId) params.set('searchId', effectiveSearchId);
+            if (effectiveSearchId) {
+                params.set('searchId', effectiveSearchId);
+            } else if (effectiveConvId) {
+                // No single searchId → filter by conversationId to get all batches
+                params.set('conversationId', effectiveConvId);
+            }
             if (leadsSearch) params.set('search', leadsSearch);
+            params.set('limit', '1000');
             const res = await fetch(`/api/lead-generator/leads?${params}`, {
                 cache: 'no-store',
                 signal: controller.signal,
@@ -1280,6 +1306,11 @@ export default function LeadGeneratorPage() {
         setBrowserUrl('');
         setBrowserScreenshot('');
 
+        // Auto-refresh leads every 15s while agent is running
+        const leadPollingInterval = setInterval(() => {
+            loadLeads();
+        }, 15000);
+
         try {
             const res = await fetch('/api/lead-generator', {
                 method: 'POST',
@@ -1332,19 +1363,19 @@ export default function LeadGeneratorPage() {
                                         leads: data.leadsFound,
                                         leadsWithEmail: data.leadsWithEmail,
                                     });
-                                    // Capture browser activity logs + screenshots
-                                    if (data.message && data.message.startsWith('🌐')) {
+                                    // Capture all tool activity in browser logs panel
+                                    if (data.message) {
                                         setBrowserLogs(prev => {
                                             const next = [...prev, data.message];
-                                            return next.length > 100 ? next.slice(-100) : next;
+                                            return next.length > 200 ? next.slice(-200) : next;
                                         });
                                     }
                                     if (data.browserUrl) setBrowserUrl(data.browserUrl);
                                     if (data.browserScreenshot) setBrowserScreenshot(data.browserScreenshot);
-                                    // Clear screenshot when no browser activity
-                                    if (data.message && !data.message.startsWith('🌐') && !data.browserScreenshot) {
+                                    // Keep browserUrl visible during scraping, clear otherwise
+                                    if (!data.browserUrl && !data.browserScreenshot) {
                                         setBrowserScreenshot('');
-                                        setBrowserUrl('');
+                                        if (!['scrape'].includes(data.phase)) setBrowserUrl('');
                                     }
                                 } else if (currentEvent === 'conversationId') {
                                     if (data.conversationId) setConversationId(data.conversationId);
@@ -1365,6 +1396,8 @@ export default function LeadGeneratorPage() {
 
                 if (finalData.conversationId) setConversationId(finalData.conversationId);
                 if (finalData.totalCost != null) setCurrentCost(finalData.totalCost);
+                if (finalData.totalTokens != null) setCurrentTokens(finalData.totalTokens);
+                if (finalData.model !== undefined) setCurrentModel(finalData.model);
 
                 const assistantMessage: Message = {
                     role: 'assistant',
@@ -1380,11 +1413,16 @@ export default function LeadGeneratorPage() {
                     const searchResult = await getLeadSearchesAction();
                     if (searchResult.searches) {
                         setSearches(searchResult.searches);
-                        const convSearch = searchResult.searches.find((s: any) => s.conversationId === currentConvId);
-                        if (convSearch) {
-                            activeSearchIdRef.current = convSearch.id;
-                            setActiveSearchId(convSearch.id);
-                            loadLeads(convSearch.id);
+                        const convSearches = searchResult.searches.filter((s: any) => s.conversationId === currentConvId);
+                        if (convSearches.length === 1) {
+                            activeSearchIdRef.current = convSearches[0].id;
+                            setActiveSearchId(convSearches[0].id);
+                            loadLeads(convSearches[0].id);
+                        } else if (convSearches.length > 1) {
+                            // Multiple batches: show ALL leads without searchId filter
+                            activeSearchIdRef.current = null;
+                            setActiveSearchId(null);
+                            loadLeads(null);
                         } else {
                             loadLeads(activeSearchIdRef.current);
                         }
@@ -1399,6 +1437,8 @@ export default function LeadGeneratorPage() {
 
                 if (data.conversationId) setConversationId(data.conversationId);
                 if (data.totalCost != null) setCurrentCost(data.totalCost);
+                if (data.totalTokens != null) setCurrentTokens(data.totalTokens);
+                if (data.model !== undefined) setCurrentModel(data.model);
 
                 const assistantMessage: Message = {
                     role: 'assistant',
@@ -1413,11 +1453,16 @@ export default function LeadGeneratorPage() {
                     const searchResult = await getLeadSearchesAction();
                     if (searchResult.searches) {
                         setSearches(searchResult.searches);
-                        const convSearch = searchResult.searches.find((s: any) => s.conversationId === currentConvId);
-                        if (convSearch) {
-                            activeSearchIdRef.current = convSearch.id;
-                            setActiveSearchId(convSearch.id);
-                            loadLeads(convSearch.id);
+                        const convSearches = searchResult.searches.filter((s: any) => s.conversationId === currentConvId);
+                        if (convSearches.length === 1) {
+                            activeSearchIdRef.current = convSearches[0].id;
+                            setActiveSearchId(convSearches[0].id);
+                            loadLeads(convSearches[0].id);
+                        } else if (convSearches.length > 1) {
+                            // Multiple batches: show ALL leads without searchId filter
+                            activeSearchIdRef.current = null;
+                            setActiveSearchId(null);
+                            loadLeads(null);
                         } else {
                             loadLeads(activeSearchIdRef.current);
                         }
@@ -1438,11 +1483,14 @@ export default function LeadGeneratorPage() {
                 timestamp: Date.now(),
             }]);
         } finally {
+            clearInterval(leadPollingInterval);
             setIsLoading(false);
             setProgressMessage('');
             setProgressPercent(0);
             setProgressPhase('');
             setProgressStats({});
+            // Final refresh to make sure all leads are loaded
+            setTimeout(() => loadLeads(), 500);
         }
     };
 
@@ -1458,13 +1506,51 @@ export default function LeadGeneratorPage() {
         setMessages([]);
         setConversationId(null);
         setCurrentCost(0);
+        setCurrentTokens(0);
+        setCurrentModel(null);
     };
 
-    const formatCost = (cost: number) => {
-        if (cost === 0) return '$0.00';
-        if (cost < 0.01) return `$${cost.toFixed(4)}`;
-        return `$${cost.toFixed(2)}`;
+    const USD_TO_EUR = 0.92;
+    const formatCost = (costUsd: number) => {
+        const eur = costUsd * USD_TO_EUR;
+        if (eur === 0) return '€0.00';
+        if (eur < 0.001) return `€${eur.toFixed(5)}`;
+        if (eur < 0.01) return `€${eur.toFixed(4)}`;
+        if (eur < 1) return `€${eur.toFixed(3)}`;
+        return `€${eur.toFixed(2)}`;
     };
+
+    // Format OpenRouter price per 1M tokens in EUR (pricing.prompt is $/token)
+    const formatModelPrice = (m: any): string | null => {
+        if (!m?.pricing) return null;
+        const inpPerM = parseFloat(m.pricing.prompt || '0') * 1_000_000 * USD_TO_EUR;
+        const outPerM = parseFloat(m.pricing.completion || '0') * 1_000_000 * USD_TO_EUR;
+        if (inpPerM === 0 && outPerM === 0) return 'free';
+        const fmt = (v: number) => v < 0.1 ? `€${v.toFixed(3)}` : `€${v.toFixed(2)}`;
+        return `${fmt(inpPerM)} · ${fmt(outPerM)}`;
+    };
+
+    const shortModelName = (m: string | null | undefined): string => {
+        if (!m) return 'AI';
+        if (m === 'claude-cli') return 'Claude CLI';
+        const parts = m.split('/');
+        const name = parts[parts.length - 1];
+        return name.length > 22 ? name.slice(0, 20) + '…' : name;
+    };
+
+    const costByModel = useMemo(() => {
+        const map: Record<string, { cost: number; tokens: number; count: number }> = {};
+        for (const conv of conversations) {
+            const key = conv.model || 'unknown';
+            if (!map[key]) map[key] = { cost: 0, tokens: 0, count: 0 };
+            map[key].cost += conv.totalCost || 0;
+            map[key].tokens += conv.totalTokens || 0;
+            map[key].count += 1;
+        }
+        return Object.entries(map)
+            .map(([model, stats]) => ({ model, ...stats }))
+            .sort((a, b) => b.cost - a.cost);
+    }, [conversations]);
 
     const handleExport = async (format: 'csv' | 'excel') => {
         try {
@@ -1549,6 +1635,56 @@ export default function LeadGeneratorPage() {
         setIsSkillsSaving(false);
     };
 
+    const handleExportSkills = () => {
+        try {
+            const json = JSON.stringify(skillsData, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `leadgen-skills-${skillsData.companyName?.replace(/\s+/g, '-').toLowerCase() || 'export'}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            toast({ title: 'Skills esportate', description: 'File JSON scaricato.' });
+        } catch {
+            toast({ variant: 'destructive', title: 'Errore', description: 'Errore durante l\'esportazione.' });
+        }
+    };
+
+    const handleImportSkills = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const data = JSON.parse(ev.target?.result as string);
+                    // Validate that it has at least some expected fields
+                    const validKeys = ['companyName', 'tagline', 'sector', 'location', 'founded', 'teamSize', 'website', 'description', 'products', 'targetCustomers', 'uniqueValue', 'tone'];
+                    const hasValidKey = validKeys.some(k => k in data);
+                    if (!hasValidKey) {
+                        toast({ variant: 'destructive', title: 'File non valido', description: 'Il file non contiene un profilo skills valido.' });
+                        return;
+                    }
+                    const merged = { ...skillsData };
+                    for (const k of validKeys) {
+                        if (data[k] !== undefined) (merged as any)[k] = data[k];
+                    }
+                    setSkillsData(merged);
+                    localStorage.setItem('leadgen-skills', JSON.stringify(merged));
+                    toast({ title: 'Skills importate', description: `Profilo "${data.companyName || 'senza nome'}" caricato.` });
+                } catch {
+                    toast({ variant: 'destructive', title: 'Errore', description: 'Il file non è un JSON valido.' });
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    };
+
     // Build skills context string for the AI agent
     const skillsContext = useMemo(() => {
         const s = skillsData;
@@ -1585,15 +1721,135 @@ export default function LeadGeneratorPage() {
         return { totalLeads, uniqueCompanies, withPersonalEmail, withGenericEmail, withAnyEmail, withPhone, withLinkedin, withContact, avgConfidence, emailRate };
     }, [leads]);
 
-    // Compute per-conversation lead counts from searches
+    // Client-side filtered leads based on active KPI filter
+    const filteredLeads = useMemo(() => {
+        if (!activeKpiFilter) return leads;
+        const genericRe = /^(info|admin|support|hello|contact|sales|marketing|office|noreply|segreteria|amministrazione|contatti|ordini|orders|customer|service|webstore|press|hr)@/i;
+        switch (activeKpiFilter) {
+            case 'email-personal':
+                return leads.filter(l => l.email && !genericRe.test(l.email));
+            case 'email-generic':
+                return leads.filter(l => l.email && genericRe.test(l.email));
+            case 'no-email':
+                return leads.filter(l => !l.email);
+            case 'phone':
+                return leads.filter(l => l.phone);
+            case 'linkedin':
+                return leads.filter(l => l.linkedinUrl);
+            case 'with-contact':
+                return leads.filter(l => l.fullName || (l.firstName && l.lastName));
+            default:
+                return leads;
+        }
+    }, [leads, activeKpiFilter]);
+
+    // Apply per-column text filters + sort on top of filteredLeads
+    const tableLeads = useMemo(() => {
+        const genericRe = /^(info|admin|support|hello|contact|sales|marketing|office|noreply|segreteria|amministrazione|contatti|ordini|orders|customer|service|webstore|press|hr)@/i;
+        const getContact = (lead: any) => {
+            const raw: any[] = Array.isArray(lead.contacts) ? lead.contacts : [];
+            const name = lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim();
+            return raw.length > 0 ? raw[0] : { fullName: name || null, jobTitle: lead.jobTitle, email: lead.email, phone: lead.phone };
+        };
+        let result = filteredLeads.filter(lead => {
+            const c = getContact(lead);
+            for (const [col, val] of Object.entries(colFilters)) {
+                if (!val.trim()) continue;
+                const v = val.toLowerCase();
+                if (col === 'company' && !lead.companyName?.toLowerCase().includes(v)) return false;
+                if (col === 'contact' && !(c.fullName || '').toLowerCase().includes(v)) return false;
+                if (col === 'role' && !(c.jobTitle || '').toLowerCase().includes(v)) return false;
+                if (col === 'email' && !(c.email || '').toLowerCase().includes(v)) return false;
+                if (col === 'phone' && !(c.phone || '').toLowerCase().includes(v)) return false;
+                if (col === 'city' && !lead.companyCity?.toLowerCase().includes(v)) return false;
+                if (col === 'industry' && !lead.companyIndustry?.toLowerCase().includes(v)) return false;
+            }
+            return true;
+        });
+        if (sortConfig) {
+            result = [...result].sort((a, b) => {
+                const ca = getContact(a), cb = getContact(b);
+                let va = '', vb = '';
+                if (sortConfig.col === 'company') { va = a.companyName || ''; vb = b.companyName || ''; }
+                else if (sortConfig.col === 'contact') { va = ca.fullName || ''; vb = cb.fullName || ''; }
+                else if (sortConfig.col === 'role') { va = ca.jobTitle || ''; vb = cb.jobTitle || ''; }
+                else if (sortConfig.col === 'email') {
+                    const ha = !!(ca.email && !genericRe.test(ca.email));
+                    const hb = !!(cb.email && !genericRe.test(cb.email));
+                    return sortConfig.dir === 'asc' ? (ha === hb ? 0 : ha ? -1 : 1) : (ha === hb ? 0 : ha ? 1 : -1);
+                }
+                else if (sortConfig.col === 'phone') {
+                    const ha = !!ca.phone, hb = !!cb.phone;
+                    return sortConfig.dir === 'asc' ? (ha === hb ? 0 : ha ? -1 : 1) : (ha === hb ? 0 : ha ? 1 : -1);
+                }
+                else if (sortConfig.col === 'city') { va = a.companyCity || ''; vb = b.companyCity || ''; }
+                else if (sortConfig.col === 'industry') { va = a.companyIndustry || ''; vb = b.companyIndustry || ''; }
+                else if (sortConfig.col === 'confidence') {
+                    const na = (a.confidence || 0), nb = (b.confidence || 0);
+                    return sortConfig.dir === 'asc' ? na - nb : nb - na;
+                }
+                const cmp = va.localeCompare(vb, 'it');
+                return sortConfig.dir === 'asc' ? cmp : -cmp;
+            });
+        }
+        return result;
+    }, [filteredLeads, colFilters, sortConfig]);
+
+    // Group tableLeads by company so multiple lead records for the same company
+    // show as ONE company row with all contacts underneath (↳)
+    const groupedTableLeads = useMemo(() => {
+        const groups = new Map<string, any[]>();
+        for (const lead of tableLeads) {
+            const key = (lead.companyName || '').toLowerCase().trim() || lead.id;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key)!.push(lead);
+        }
+        return Array.from(groups.values()).map(group => {
+            if (group.length === 1) return group[0];
+            // Pick base lead (most data: email > fullName > first)
+            const base = group.reduce((best: any, l: any) => {
+                const bs = (best.email && !/^(info|admin|support|contact|sales|marketing|noreply)@/i.test(best.email) ? 3 : 0) + (best.fullName ? 1 : 0);
+                const ls = (l.email && !/^(info|admin|support|contact|sales|marketing|noreply)@/i.test(l.email) ? 3 : 0) + (l.fullName ? 1 : 0);
+                return ls > bs ? l : best;
+            });
+            // Merge all contacts from all leads in group
+            const merged: any[] = [];
+            const seen = new Set<string>();
+            for (const lead of group) {
+                const lc: any[] = Array.isArray(lead.contacts) ? lead.contacts : [];
+                const pn = lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim();
+                if (lc.length > 0) {
+                    for (const c of lc) {
+                        const k = (c.email || c.fullName || '').toLowerCase();
+                        if (!seen.has(k)) { seen.add(k); merged.push(c); }
+                    }
+                } else if (pn || lead.email) {
+                    const k = (lead.email || pn || '').toLowerCase();
+                    if (!seen.has(k)) {
+                        seen.add(k);
+                        merged.push({ fullName: pn || null, jobTitle: lead.jobTitle, email: lead.email, phone: lead.phone, linkedinUrl: lead.linkedinUrl, emailStatus: lead.emailStatus });
+                    }
+                }
+            }
+            return { ...base, contacts: merged, _groupIds: group.map((l: any) => l.id) };
+        });
+    }, [tableLeads]);
+
+    // Compute per-conversation lead counts (total, with email, with named contact, unique companies) from searches
     const convLeadCounts = useMemo(() => {
-        const map: Record<string, number> = {};
+        const totals: Record<string, number> = {};
+        const withEmail: Record<string, number> = {};
+        const withContact: Record<string, number> = {};
+        const uniqueCompanies: Record<string, number> = {};
         for (const s of searches) {
             if (s.conversationId) {
-                map[s.conversationId] = (map[s.conversationId] || 0) + (s._count?.leads || 0);
+                totals[s.conversationId] = (totals[s.conversationId] || 0) + (s._count?.leads || 0);
+                withEmail[s.conversationId] = (withEmail[s.conversationId] || 0) + (s._count?.leadsWithEmail || 0);
+                withContact[s.conversationId] = (withContact[s.conversationId] || 0) + (s._count?.leadsWithContact || 0);
+                uniqueCompanies[s.conversationId] = (uniqueCompanies[s.conversationId] || 0) + (s._count?.uniqueCompanies || 0);
             }
         }
-        return map;
+        return { totals, withEmail, withContact, uniqueCompanies };
     }, [searches]);
 
     // ============================================================
@@ -1642,12 +1898,22 @@ export default function LeadGeneratorPage() {
                                             <CommandList>
                                                 <CommandEmpty>Nessun modello trovato.</CommandEmpty>
                                                 <CommandGroup heading={aiProvider === 'claude-cli' ? 'Modelli Claude' : 'Modelli OpenRouter'}>
-                                                    {(aiProvider === 'claude-cli' ? CLAUDE_CLI_MODELS : availableModels).map(m => (
-                                                        <CommandItem key={m.id} value={m.id} onSelect={() => handleModelChange(m.id)} className="text-xs">
-                                                            <Check className={cn("mr-2 h-3 w-3", activeModel === m.id ? "opacity-100" : "opacity-0")} />
-                                                            <span className="truncate">{m.name}</span>
-                                                        </CommandItem>
-                                                    ))}
+                                                    {(aiProvider === 'claude-cli' ? CLAUDE_CLI_MODELS : availableModels).map(m => {
+                                                        const price = formatModelPrice(m);
+                                                        return (
+                                                            <CommandItem key={m.id} value={m.id} onSelect={() => handleModelChange(m.id)} className="text-xs flex items-center justify-between gap-2">
+                                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                                    <Check className={cn("h-3 w-3 shrink-0", activeModel === m.id ? "opacity-100" : "opacity-0")} />
+                                                                    <span className="truncate">{m.name}</span>
+                                                                </div>
+                                                                {price && (
+                                                                    <span className={cn("text-[9px] font-mono shrink-0 tabular-nums", price === 'free' ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-muted-foreground')}>
+                                                                        {price}
+                                                                    </span>
+                                                                )}
+                                                            </CommandItem>
+                                                        );
+                                                    })}
                                                 </CommandGroup>
                                             </CommandList>
                                         </Command>
@@ -1688,6 +1954,29 @@ export default function LeadGeneratorPage() {
                     </div>
                 </div>
 
+                {/* Cost by model summary */}
+                {costByModel.length > 0 && costByModel.some(m => m.cost > 0) && (
+                    <div className="px-6 pb-3">
+                        <div className="rounded-lg border bg-muted/30 p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Costi AI</span>
+                                <span className="text-[10px] text-muted-foreground ml-auto">Totale: <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{formatCost(costByModel.reduce((s, m) => s + m.cost, 0))}</span></span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {costByModel.filter(m => m.cost > 0).map(({ model, cost, tokens, count }) => (
+                                    <div key={model} className="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-[10px]">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-violet-500 shrink-0" />
+                                        <span className="font-mono text-muted-foreground max-w-[130px] truncate" title={model}>{shortModelName(model)}</span>
+                                        <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{formatCost(cost)}</span>
+                                        {tokens > 0 && <span className="text-muted-foreground/60">{(tokens / 1000).toFixed(0)}k tok</span>}
+                                        <span className="text-muted-foreground/50">×{count}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Search cards grid */}
                 <ScrollArea className="flex-1">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -1709,7 +1998,12 @@ export default function LeadGeneratorPage() {
 
                         {/* Existing search cards */}
                         {conversations.map((conv) => {
-                            const leadCount = convLeadCounts[conv.id] || 0;
+                            const leadCount = convLeadCounts.totals[conv.id] || 0;
+                            const emailCount = convLeadCounts.withEmail[conv.id] || 0;
+                            const contactCount = convLeadCounts.withContact[conv.id] || 0;
+                            const uniqueCompanyCount = convLeadCounts.uniqueCompanies[conv.id] || 0;
+                            // Show unique companies if available and different from total leads, else fall back to named contacts
+                            const companyCount = uniqueCompanyCount > 0 ? uniqueCompanyCount : contactCount;
                             const matchingSearch = searches.find(s => s.conversationId === conv.id);
                             return (
                                 <Card
@@ -1723,9 +2017,17 @@ export default function LeadGeneratorPage() {
                                                 <CardTitle className="text-base font-bold truncate leading-tight">
                                                     {conv.title || 'Ricerca senza titolo'}
                                                 </CardTitle>
-                                                <CardDescription className="text-[10px] mt-1">
+                                                <CardDescription className="text-[10px] mt-1 flex items-center gap-1.5 flex-wrap">
                                                     {formatDate(conv.updatedAt)}
-                                                    {conv.totalCost > 0 && <span className="ml-1.5 font-mono">{formatCost(conv.totalCost)}</span>}
+                                                    {conv.model && (
+                                                        <span className="inline-flex items-center rounded-sm bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 px-1 py-0 font-mono text-[9px] truncate max-w-[110px]" title={conv.model}>
+                                                            {shortModelName(conv.model)}
+                                                        </span>
+                                                    )}
+                                                    {conv.totalCost > 0
+                                                        ? <span className="font-mono text-emerald-700 dark:text-emerald-400">{formatCost(conv.totalCost)}</span>
+                                                        : conv.model && <span className="font-mono text-muted-foreground/60">free</span>
+                                                    }
                                                 </CardDescription>
                                             </div>
                                             <DropdownMenu>
@@ -1744,16 +2046,25 @@ export default function LeadGeneratorPage() {
                                     </CardHeader>
                                     <CardContent className="pt-0">
                                         {/* Mini KPI row */}
-                                        <div className="flex items-center gap-3 mb-2">
+                                        <div className="flex items-center gap-2 mb-2 flex-wrap">
                                             <div className="flex items-center gap-1 text-violet-600 dark:text-violet-400">
                                                 <Users className="h-3 w-3" />
                                                 <span className="text-sm font-bold tabular-nums">{leadCount}</span>
                                                 <span className="text-[10px] text-muted-foreground">lead</span>
                                             </div>
-                                            {matchingSearch?.name && matchingSearch.name !== conv.title && (
-                                                <Badge variant="outline" className="text-[8px] h-4 px-1.5 truncate max-w-[120px]">
-                                                    {matchingSearch.name}
-                                                </Badge>
+                                            {companyCount > 0 && (
+                                                <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                                                    <Building2 className="h-3 w-3" />
+                                                    <span className="text-sm font-bold tabular-nums">{companyCount}</span>
+                                                    <span className="text-[10px] text-muted-foreground">aziende</span>
+                                                </div>
+                                            )}
+                                            {emailCount > 0 && (
+                                                <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                                    <Mail className="h-3 w-3" />
+                                                    <span className="text-sm font-bold tabular-nums">{emailCount}</span>
+                                                    <span className="text-[10px] text-muted-foreground">email</span>
+                                                </div>
                                             )}
                                         </div>
                                         {/* Open button hint */}
@@ -1840,19 +2151,40 @@ export default function LeadGeneratorPage() {
                                         <CommandList>
                                             <CommandEmpty>Nessun modello.</CommandEmpty>
                                             <CommandGroup>
-                                                {(aiProvider === 'claude-cli' ? CLAUDE_CLI_MODELS : availableModels).map(m => (
-                                                    <CommandItem key={m.id} value={m.id} onSelect={() => handleModelChange(m.id)} className="text-xs">
-                                                        <Check className={cn("mr-2 h-3 w-3", activeModel === m.id ? "opacity-100" : "opacity-0")} />
-                                                        <span className="truncate">{m.name}</span>
-                                                    </CommandItem>
-                                                ))}
+                                                {(aiProvider === 'claude-cli' ? CLAUDE_CLI_MODELS : availableModels).map(m => {
+                                                    const price = formatModelPrice(m);
+                                                    return (
+                                                        <CommandItem key={m.id} value={m.id} onSelect={() => handleModelChange(m.id)} className="text-xs flex items-center justify-between gap-2">
+                                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                                <Check className={cn("h-3 w-3 shrink-0", activeModel === m.id ? "opacity-100" : "opacity-0")} />
+                                                                <span className="truncate">{m.name}</span>
+                                                            </div>
+                                                            {price && (
+                                                                <span className={cn("text-[9px] font-mono shrink-0 tabular-nums", price === 'free' ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-muted-foreground')}>
+                                                                    {price}
+                                                                </span>
+                                                            )}
+                                                        </CommandItem>
+                                                    );
+                                                })}
                                             </CommandGroup>
                                         </CommandList>
                                     </Command>
                                 </PopoverContent>
                             </Popover>
                         </div>
-                        {currentCost > 0 && <Badge variant="secondary" className="text-[10px] font-mono">{formatCost(currentCost)}</Badge>}
+                        <Badge variant="secondary" className="text-[10px] font-mono gap-1.5 items-center">
+                            {/* model name: saved in DB or fall back to currently selected model */}
+                            <span className="text-violet-600 dark:text-violet-400 max-w-[130px] truncate" title={currentModel || activeModel}>
+                                {shortModelName(currentModel || activeModel)}
+                            </span>
+                            {currentCost > 0
+                                ? <span className="text-emerald-700 dark:text-emerald-400">{formatCost(currentCost)}</span>
+                                : currentTokens > 0
+                                    ? <span className="text-muted-foreground">{(currentTokens / 1000).toFixed(1)}k tok</span>
+                                    : <span className="text-muted-foreground">$0.00</span>
+                            }
+                        </Badge>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { loadLeads(activeSearchIdRef.current); loadSearches(); }} title="Aggiorna"><RefreshCw className="h-3.5 w-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleClearChat} title="Elimina"><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
@@ -1950,26 +2282,42 @@ export default function LeadGeneratorPage() {
                     <div className="px-4 pb-3">
                         <div className="flex gap-2 overflow-x-auto">
                             {[
-                                { icon: Users, label: 'Lead', value: kpiData.totalLeads, color: 'text-violet-600 dark:text-violet-400', iconBg: 'bg-violet-500/10' },
-                                { icon: Building2, label: 'Aziende', value: kpiData.uniqueCompanies, color: 'text-blue-600 dark:text-blue-400', iconBg: 'bg-blue-500/10' },
-                                { icon: Target, label: 'Con nome', value: kpiData.withContact, color: 'text-emerald-600 dark:text-emerald-400', iconBg: 'bg-emerald-500/10' },
-                                { icon: Mail, label: 'Email pers.', value: kpiData.withPersonalEmail, color: 'text-green-600 dark:text-green-400', iconBg: 'bg-green-500/10' },
-                                { icon: AtSign, label: 'Email gen.', value: kpiData.withGenericEmail, color: 'text-amber-600 dark:text-amber-400', iconBg: 'bg-amber-500/10' },
-                                { icon: Phone, label: 'Telefono', value: kpiData.withPhone, color: 'text-sky-600 dark:text-sky-400', iconBg: 'bg-sky-500/10' },
-                                { icon: Linkedin, label: 'LinkedIn', value: kpiData.withLinkedin, color: 'text-[#0A66C2]', iconBg: 'bg-[#0A66C2]/10' },
-                                { icon: TrendingUp, label: 'Qualita', value: `${kpiData.avgConfidence}%`, color: kpiData.avgConfidence >= 60 ? 'text-green-600 dark:text-green-400' : kpiData.avgConfidence >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400', iconBg: kpiData.avgConfidence >= 60 ? 'bg-green-500/10' : kpiData.avgConfidence >= 30 ? 'bg-amber-500/10' : 'bg-red-500/10' },
-                                { icon: BarChart3, label: 'Email rate', value: `${kpiData.emailRate}%`, color: kpiData.emailRate >= 60 ? 'text-green-600 dark:text-green-400' : kpiData.emailRate >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400', iconBg: kpiData.emailRate >= 60 ? 'bg-green-500/10' : kpiData.emailRate >= 30 ? 'bg-amber-500/10' : 'bg-red-500/10' },
-                            ].filter(k => k.value !== 0 && k.value !== '0%').map(kpi => (
-                                <div key={kpi.label} className="flex-1 min-w-[90px] flex items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5">
-                                    <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center shrink-0', kpi.iconBg)}>
-                                        <kpi.icon className={cn('h-4.5 w-4.5', kpi.color)} />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <span className={cn('text-lg font-bold tabular-nums leading-none block', kpi.color)}>{kpi.value}</span>
-                                        <span className="text-[10px] text-muted-foreground leading-tight">{kpi.label}</span>
-                                    </div>
-                                </div>
-                            ))}
+                                { icon: Users, label: 'Lead', value: kpiData.totalLeads, color: 'text-violet-600 dark:text-violet-400', iconBg: 'bg-violet-500/10', filterId: null },
+                                { icon: Building2, label: 'Aziende', value: kpiData.uniqueCompanies, color: 'text-blue-600 dark:text-blue-400', iconBg: 'bg-blue-500/10', filterId: null },
+                                { icon: Target, label: 'Con nome', value: kpiData.withContact, color: 'text-emerald-600 dark:text-emerald-400', iconBg: 'bg-emerald-500/10', filterId: 'with-contact' },
+                                { icon: Mail, label: 'Email pers.', value: kpiData.withPersonalEmail, color: 'text-green-600 dark:text-green-400', iconBg: 'bg-green-500/10', filterId: 'email-personal' },
+                                { icon: AtSign, label: 'Email gen.', value: kpiData.withGenericEmail, color: 'text-amber-600 dark:text-amber-400', iconBg: 'bg-amber-500/10', filterId: 'email-generic' },
+                                { icon: Phone, label: 'Telefono', value: kpiData.withPhone, color: 'text-sky-600 dark:text-sky-400', iconBg: 'bg-sky-500/10', filterId: 'phone' },
+                                { icon: Linkedin, label: 'LinkedIn', value: kpiData.withLinkedin, color: 'text-[#0A66C2]', iconBg: 'bg-[#0A66C2]/10', filterId: 'linkedin' },
+                                { icon: TrendingUp, label: 'Qualita', value: `${kpiData.avgConfidence}%`, color: kpiData.avgConfidence >= 60 ? 'text-green-600 dark:text-green-400' : kpiData.avgConfidence >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400', iconBg: kpiData.avgConfidence >= 60 ? 'bg-green-500/10' : kpiData.avgConfidence >= 30 ? 'bg-amber-500/10' : 'bg-red-500/10', filterId: null },
+                                { icon: BarChart3, label: 'Email rate', value: `${kpiData.emailRate}%`, color: kpiData.emailRate >= 60 ? 'text-green-600 dark:text-green-400' : kpiData.emailRate >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400', iconBg: kpiData.emailRate >= 60 ? 'bg-green-500/10' : kpiData.emailRate >= 30 ? 'bg-amber-500/10' : 'bg-red-500/10', filterId: null },
+                            ].filter(k => k.value !== 0 && k.value !== '0%').map(kpi => {
+                                const isActive = activeKpiFilter === kpi.filterId && kpi.filterId !== null;
+                                const isClickable = kpi.filterId !== null;
+                                return (
+                                    <button
+                                        key={kpi.label}
+                                        onClick={() => {
+                                            if (!isClickable) return;
+                                            setActiveKpiFilter(isActive ? null : kpi.filterId);
+                                            setActiveTab('leads');
+                                        }}
+                                        className={cn(
+                                            'flex-1 min-w-[90px] flex items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5 transition-all',
+                                            isClickable ? 'cursor-pointer hover:shadow-sm hover:border-foreground/30' : 'cursor-default',
+                                            isActive && 'ring-2 ring-offset-1 ring-current border-transparent shadow-sm'
+                                        )}
+                                    >
+                                        <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center shrink-0', kpi.iconBg)}>
+                                            <kpi.icon className={cn('h-4.5 w-4.5', kpi.color)} />
+                                        </div>
+                                        <div className="min-w-0 text-left">
+                                            <span className={cn('text-lg font-bold tabular-nums leading-none block', kpi.color)}>{kpi.value}</span>
+                                            <span className="text-[10px] text-muted-foreground leading-tight">{kpi.label}{isActive ? ' ✓' : ''}</span>
+                                        </div>
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                 )}
@@ -2093,9 +2441,24 @@ export default function LeadGeneratorPage() {
 
                 {/* ===== LEADS TAB ===== */}
                 {activeTab === 'leads' && (
-                    <div className="h-full flex flex-col p-4">
-                        <div className="flex items-center gap-2 mb-3 flex-wrap">
-                            <Input placeholder="Cerca lead..." value={leadsSearch} onChange={(e) => setLeadsSearch(e.target.value)} className="h-8 text-xs w-64" />
+                    <div className="h-full flex flex-col">
+                        {/* Toolbar */}
+                        <div className="flex items-center gap-2 px-3 py-2 border-b flex-wrap shrink-0">
+                            <Input placeholder="Cerca azienda, nome, email..." value={leadsSearch} onChange={(e) => setLeadsSearch(e.target.value)} className="h-7 text-xs w-52" />
+                            {activeKpiFilter && (
+                                <button
+                                    onClick={() => setActiveKpiFilter(null)}
+                                    className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-200 transition-colors"
+                                >
+                                    <span>{activeKpiFilter === 'email-personal' ? 'Email personale' : activeKpiFilter === 'email-generic' ? 'Email generica' : activeKpiFilter === 'no-email' ? 'Senza email' : activeKpiFilter === 'phone' ? 'Con telefono' : activeKpiFilter === 'linkedin' ? 'Con LinkedIn' : activeKpiFilter === 'with-contact' ? 'Con nome' : activeKpiFilter}</span>
+                                    <X className="h-2.5 w-2.5" />
+                                </button>
+                            )}
+                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                                {groupedTableLeads.length} aziende
+                                {tableLeads.length !== groupedTableLeads.length && <span className="ml-1 text-muted-foreground/60">· {tableLeads.length} contatti</span>}
+                                {(activeKpiFilter || Object.values(colFilters).some(v=>v.trim())) && <span className="ml-1 text-muted-foreground/60">/ {leads.length} tot</span>}
+                            </span>
                             <div className="flex items-center gap-1 ml-auto">
                                 {leads.length > 0 && (
                                     <>
@@ -2112,53 +2475,225 @@ export default function LeadGeneratorPage() {
                                 )}
                             </div>
                         </div>
-                        <ScrollArea className="flex-1">
-                            {leadsLoading ? (
-                                <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
-                            ) : leads.length === 0 ? (
-                                <div className="text-center py-16 text-muted-foreground">
-                                    <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                                    <p className="text-sm font-medium">Nessun lead salvato</p>
-                                    <p className="text-xs mt-1">Avvia una ricerca nella tab Chat</p>
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                                    {leads.map((lead) => {
-                                        const leadContacts: any[] = lead.contacts || [];
-                                        const contactCount = leadContacts.length;
-                                        const bestContact = leadContacts[0] || { fullName: lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim(), jobTitle: lead.jobTitle, email: lead.email };
-                                        const isGenericEmail = lead.email && /^(info|admin|support|hello|contact|sales|marketing|office|noreply|segreteria|amministrazione|contatti|ordini|orders|customer|service|webstore)@/i.test(lead.email);
-                                        const confidencePct = lead.confidence != null ? Math.round(lead.confidence * 100) : null;
-                                        return (
-                                            <div key={lead.id} className={cn("border rounded-lg p-2.5 text-xs hover:bg-muted/30 transition-colors cursor-pointer", selectedLeadIds.has(lead.id) && "ring-1 ring-violet-400 bg-violet-50/50 dark:bg-violet-900/20")} onClick={() => { setSelectedLead(lead); setIsLeadDialogOpen(true); }}>
-                                                <div className="flex items-center gap-1.5 mb-0.5">
-                                                    <input type="checkbox" checked={selectedLeadIds.has(lead.id)} onChange={(e) => { e.stopPropagation(); toggleLeadSelection(lead.id); }} onClick={(e) => e.stopPropagation()} className="h-3 w-3 rounded border-gray-300 accent-violet-500 shrink-0 cursor-pointer" />
-                                                    <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
-                                                    <div className="font-medium truncate flex-1 text-[11px]">{lead.companyName || bestContact.fullName || 'Lead'}</div>
-                                                    {contactCount > 0 && <Badge variant="outline" className="text-[8px] h-4 px-1 shrink-0 gap-0.5"><Users className="h-2 w-2" />{contactCount}</Badge>}
-                                                    {lead.rating > 0 && <div className="flex shrink-0">{[1,2,3,4,5].map(i => <Star key={i} className={cn('h-2 w-2', i <= lead.rating ? 'fill-amber-400 text-amber-400' : 'text-transparent')} />)}</div>}
-                                                </div>
-                                                <div className="flex items-center gap-1 mt-0.5 pl-[26px]">
-                                                    <div className="truncate flex-1 text-[10px] text-muted-foreground">{bestContact.fullName || 'N/A'}{bestContact.jobTitle && <span> · {bestContact.jobTitle}</span>}</div>
-                                                </div>
-                                                <div className="flex items-center gap-1.5 mt-1 pl-[26px] flex-wrap">
-                                                    {lead.email && <div className={cn("flex items-center gap-0.5 text-[10px]", isGenericEmail ? 'text-amber-500' : 'text-blue-500')} title={lead.email}><Mail className="h-2.5 w-2.5" />{isGenericEmail && <span className="text-[8px] font-medium">GEN</span>}</div>}
-                                                    {lead.phone && <div className="text-[10px] text-green-500"><Phone className="h-2.5 w-2.5" /></div>}
-                                                    {lead.linkedinUrl && <div className="text-[10px] text-blue-600"><Linkedin className="h-2.5 w-2.5" /></div>}
-                                                    {lead.companyWebsite && <div className="text-[10px] text-purple-500"><Globe className="h-2.5 w-2.5" /></div>}
-                                                    <div className="flex items-center gap-1 ml-auto">
-                                                        {lead.source && <Badge variant="outline" className="text-[8px] h-4 px-1">{lead.source}</Badge>}
-                                                        {confidencePct != null && <Badge variant="outline" className={cn("text-[8px] h-4 px-1 font-mono gap-0.5", confidencePct >= 70 ? 'border-green-500/50 text-green-600' : confidencePct >= 40 ? 'border-amber-500/50 text-amber-600' : 'border-red-500/50 text-red-500')}><ShieldCheck className="h-2 w-2" />{confidencePct}%</Badge>}
-                                                    </div>
-                                                </div>
-                                                {(lead.revenueYear3 || lead.revenueYear2) && <div className="text-[9px] text-muted-foreground mt-1 pl-[26px] truncate">Fatt: {lead.revenueYear3 || lead.revenueYear2 || '-'}</div>}
-                                                {lead.tags?.length > 0 && <div className="flex flex-wrap gap-0.5 mt-1 pl-[26px]">{lead.tags.slice(0, 3).map((tag: string) => <Badge key={tag} variant="default" className="text-[7px] h-3.5 px-1">{tag}</Badge>)}{lead.tags.length > 3 && <Badge variant="secondary" className="text-[7px] h-3.5 px-1">+{lead.tags.length - 3}</Badge>}</div>}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </ScrollArea>
+
+                        {/* Table */}
+                        {leadsLoading ? (
+                            <div className="flex items-center justify-center flex-1 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+                        ) : leads.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center flex-1 text-muted-foreground">
+                                <Users className="h-10 w-10 mb-3 opacity-30" />
+                                <p className="text-sm font-medium">Nessun lead salvato</p>
+                                <p className="text-xs mt-1">Avvia una ricerca nella tab Chat</p>
+                            </div>
+                        ) : filteredLeads.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center flex-1 text-muted-foreground">
+                                <Search className="h-10 w-10 mb-3 opacity-30" />
+                                <p className="text-sm font-medium">Nessun lead con questo filtro</p>
+                                <button onClick={() => setActiveKpiFilter(null)} className="text-xs mt-2 text-emerald-600 hover:underline">Rimuovi filtro</button>
+                            </div>
+                        ) : (
+                            <div className="flex-1 overflow-auto">
+                                <table className="w-full text-xs border-collapse">
+                                    <thead className="sticky top-0 z-10 bg-muted/90 backdrop-blur border-b">
+                                        {/* Sort row */}
+                                        <tr>
+                                            <th className="w-7 px-2 py-1.5 text-left">
+                                                <input type="checkbox" className="h-3 w-3 rounded accent-violet-500"
+                                                    checked={selectedLeadIds.size === tableLeads.length && tableLeads.length > 0}
+                                                    onChange={() => {
+                                                        if (selectedLeadIds.size === tableLeads.length) setSelectedLeadIds(new Set());
+                                                        else setSelectedLeadIds(new Set(tableLeads.map((l: any) => l.id)));
+                                                    }}
+                                                />
+                                            </th>
+                                            {([
+                                                { col: 'company', label: 'Azienda', cls: 'min-w-[155px]' },
+                                                { col: 'contact', label: 'Contatto', cls: 'min-w-[125px]' },
+                                                { col: 'role', label: 'Ruolo', cls: 'min-w-[95px]' },
+                                                { col: 'email', label: 'Email', cls: 'min-w-[165px]' },
+                                                { col: 'phone', label: 'Telefono', cls: 'min-w-[90px]' },
+                                                { col: 'city', label: 'Città', cls: 'min-w-[80px]' },
+                                                { col: 'industry', label: 'Settore', cls: 'min-w-[115px]' },
+                                                { col: 'links', label: 'Link', cls: 'w-14', noSort: true },
+                                                { col: 'confidence', label: 'Qual.', cls: 'w-12' },
+                                            ] as any[]).map(({ col, label, cls, noSort }) => {
+                                                const isActive = sortConfig?.col === col;
+                                                const SortIcon = isActive ? (sortConfig!.dir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+                                                return (
+                                                    <th key={col} className={cn('px-3 py-1.5 text-left font-semibold text-[10px] uppercase tracking-wide text-muted-foreground', cls)}>
+                                                        {noSort ? label : (
+                                                            <button
+                                                                className={cn('flex items-center gap-1 hover:text-foreground transition-colors', isActive && 'text-foreground')}
+                                                                onClick={() => setSortConfig(prev =>
+                                                                    prev !== null && prev.col === col
+                                                                        ? prev.dir === 'asc' ? { col, dir: 'desc' } : null
+                                                                        : { col, dir: 'asc' }
+                                                                )}
+                                                            >
+                                                                {label}
+                                                                <SortIcon className={cn('h-3 w-3 shrink-0', isActive ? 'opacity-100' : 'opacity-30')} />
+                                                            </button>
+                                                        )}
+                                                    </th>
+                                                );
+                                            })}
+                                        </tr>
+                                        {/* Filter row */}
+                                        <tr className="border-t border-border/40">
+                                            <td className="px-2 py-1" />
+                                            {(['company','contact','role','email','phone','city','industry'] as const).map(col => (
+                                                <td key={col} className="px-2 py-1">
+                                                    <input
+                                                        type="text"
+                                                        value={colFilters[col] || ''}
+                                                        onChange={e => setColFilters(prev => ({ ...prev, [col]: e.target.value }))}
+                                                        placeholder="Filtra..."
+                                                        className="w-full h-5 text-[10px] px-1.5 rounded border border-border/60 bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-muted-foreground/40"
+                                                    />
+                                                </td>
+                                            ))}
+                                            <td className="px-2 py-1" />
+                                            <td className="px-2 py-1">
+                                                {Object.values(colFilters).some(v => v.trim()) && (
+                                                    <button onClick={() => setColFilters({})} className="text-[9px] text-red-500 hover:text-red-700 whitespace-nowrap flex items-center gap-0.5">
+                                                        <X className="h-2.5 w-2.5" />reset
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {groupedTableLeads.map((lead: any, rowIdx: number) => {
+                                            const rawContacts: any[] = Array.isArray(lead.contacts) ? lead.contacts : [];
+                                            const primaryName = lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim();
+                                            const allContacts: any[] = rawContacts.length > 0 ? rawContacts : (primaryName || lead.email ? [{ fullName: primaryName || null, jobTitle: lead.jobTitle, email: lead.email, phone: lead.phone, linkedinUrl: lead.linkedinUrl, emailStatus: lead.emailStatus }] : []);
+                                            const isGenericEmail = (email?: string) => !!email && /^(info|admin|support|hello|contact|sales|marketing|office|noreply|segreteria|amministrazione|contatti|ordini|orders|customer|service|webstore|press|hr)@/i.test(email);
+                                            const confidencePct = lead.confidence != null ? Math.round(lead.confidence * 100) : null;
+                                            const rowCount = Math.max(allContacts.length, 1);
+                                            const isSelected = selectedLeadIds.has(lead.id);
+                                            const baseRowClass = cn(
+                                                'border-b transition-colors',
+                                                rowIdx % 2 === 0 ? 'bg-background' : 'bg-muted/20',
+                                                isSelected && 'bg-violet-50/60 dark:bg-violet-900/20'
+                                            );
+                                            if (allContacts.length <= 1) {
+                                                const c = allContacts[0] || {};
+                                                const generic = isGenericEmail(c.email);
+                                                return (
+                                                    <tr key={lead.id} className={cn(baseRowClass, 'hover:bg-muted/40 cursor-pointer')} onClick={() => { setSelectedLead(lead); setIsLeadDialogOpen(true); }}>
+                                                        <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
+                                                            <input type="checkbox" className="h-3 w-3 rounded accent-violet-500" checked={isSelected} onChange={() => toggleLeadSelection(lead.id)} />
+                                                        </td>
+                                                        <td className="px-3 py-1.5 font-semibold text-[11px]">
+                                                            <div className="flex items-center gap-1">
+                                                                <Building2 className="h-3 w-3 text-violet-500 shrink-0" />
+                                                                <span className="truncate max-w-[145px]" title={lead.companyName}>{lead.companyName || '—'}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[11px]">
+                                                            {c.fullName && c.fullName !== 'Unknown' ? <span className="font-medium">{c.fullName}</span> : <span className="text-muted-foreground/40">—</span>}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[10px] text-muted-foreground">
+                                                            <span className="truncate max-w-[95px] block" title={c.jobTitle}>{c.jobTitle || '—'}</span>
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[10px]">
+                                                            {c.email ? (
+                                                                <span className={cn("flex items-center gap-0.5 truncate max-w-[165px]", generic ? 'text-amber-500' : 'text-blue-500')} title={c.email}>
+                                                                    {c.emailStatus === 'valid' && <CheckCircle2 className="h-2.5 w-2.5 shrink-0 text-green-500" />}
+                                                                    {generic && <span className="text-[7px] font-bold shrink-0 text-amber-500">GEN</span>}
+                                                                    <span className="truncate">{c.email}</span>
+                                                                </span>
+                                                            ) : <span className="text-muted-foreground/40">—</span>}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[10px] text-green-700 dark:text-green-400">
+                                                            <span className="truncate max-w-[95px] block" title={c.phone}>{c.phone || '—'}</span>
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[10px] text-muted-foreground">
+                                                            <span className="truncate max-w-[85px] block">{lead.companyCity || '—'}</span>
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[10px] text-muted-foreground">
+                                                            <span className="truncate max-w-[115px] block" title={lead.companyIndustry}>{lead.companyIndustry || '—'}</span>
+                                                        </td>
+                                                        <td className="px-3 py-1.5">
+                                                            <div className="flex items-center gap-1">
+                                                                {lead.companyWebsite && <a href={lead.companyWebsite} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-purple-500 hover:text-purple-700" title={lead.companyWebsite}><Globe className="h-3 w-3" /></a>}
+                                                                {c.linkedinUrl && <a href={c.linkedinUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[#0A66C2] hover:opacity-80"><Linkedin className="h-3 w-3" /></a>}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-3 py-1.5">
+                                                            {confidencePct != null && (
+                                                                <span className={cn("text-[9px] font-mono font-bold", confidencePct >= 70 ? 'text-green-600' : confidencePct >= 40 ? 'text-amber-600' : 'text-red-500')}>{confidencePct}%</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            }
+                                            // Multiple contacts: first row has company info + first contact; subsequent rows just contact data
+                                            return allContacts.map((c: any, cIdx: number) => {
+                                                const generic = isGenericEmail(c.email);
+                                                const isFirst = cIdx === 0;
+                                                return (
+                                                    <tr key={`${lead.id}-${cIdx}`} className={cn(baseRowClass, 'hover:bg-muted/40 cursor-pointer', !isFirst && 'border-t-0')} onClick={() => { setSelectedLead(lead); setIsLeadDialogOpen(true); }}>
+                                                        <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
+                                                            {isFirst && <input type="checkbox" className="h-3 w-3 rounded accent-violet-500" checked={isSelected} onChange={() => toggleLeadSelection(lead.id)} />}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 font-semibold text-[11px]">
+                                                            {isFirst ? (
+                                                                <div className="flex items-center gap-1">
+                                                                    <Building2 className="h-3 w-3 text-violet-500 shrink-0" />
+                                                                    <span className="truncate max-w-[145px]" title={lead.companyName}>{lead.companyName || '—'}</span>
+                                                                    <span className="ml-1 text-[8px] font-normal text-emerald-600 dark:text-emerald-400 shrink-0 tabular-nums bg-emerald-500/10 px-1 rounded-full">{rowCount}</span>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-muted-foreground/30 pl-4 text-[9px]">↳</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[11px]">
+                                                            {c.fullName && c.fullName !== 'Unknown' ? <span className="font-medium">{c.fullName}</span> : <span className="text-muted-foreground/40">—</span>}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[10px] text-muted-foreground">
+                                                            <span className="truncate max-w-[95px] block" title={c.jobTitle}>{c.jobTitle || '—'}</span>
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[10px]">
+                                                            {c.email ? (
+                                                                <span className={cn("flex items-center gap-0.5 truncate max-w-[165px]", generic ? 'text-amber-500' : 'text-blue-500')} title={c.email}>
+                                                                    {c.emailStatus === 'valid' && <CheckCircle2 className="h-2.5 w-2.5 shrink-0 text-green-500" />}
+                                                                    {generic && <span className="text-[7px] font-bold shrink-0 text-amber-500">GEN</span>}
+                                                                    <span className="truncate">{c.email}</span>
+                                                                </span>
+                                                            ) : <span className="text-muted-foreground/40">—</span>}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[10px] text-green-700 dark:text-green-400">
+                                                            <span className="truncate max-w-[95px] block" title={c.phone}>{c.phone || '—'}</span>
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[10px] text-muted-foreground">
+                                                            {isFirst ? <span className="truncate max-w-[85px] block">{lead.companyCity || '—'}</span> : null}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-[10px] text-muted-foreground">
+                                                            {isFirst ? <span className="truncate max-w-[115px] block" title={lead.companyIndustry}>{lead.companyIndustry || '—'}</span> : null}
+                                                        </td>
+                                                        <td className="px-3 py-1.5">
+                                                            {isFirst && (
+                                                                <div className="flex items-center gap-1">
+                                                                    {lead.companyWebsite && <a href={lead.companyWebsite} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-purple-500 hover:text-purple-700" title={lead.companyWebsite}><Globe className="h-3 w-3" /></a>}
+                                                                    {c.linkedinUrl && <a href={c.linkedinUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[#0A66C2] hover:opacity-80"><Linkedin className="h-3 w-3" /></a>}
+                                                                </div>
+                                                            )}
+                                                            {!isFirst && c.linkedinUrl && <a href={c.linkedinUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[#0A66C2] hover:opacity-80"><Linkedin className="h-3 w-3" /></a>}
+                                                        </td>
+                                                        <td className="px-3 py-1.5">
+                                                            {isFirst && confidencePct != null && (
+                                                                <span className={cn("text-[9px] font-mono font-bold", confidencePct >= 70 ? 'text-green-600' : confidencePct >= 40 ? 'text-amber-600' : 'text-red-500')}>{confidencePct}%</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            });
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -2334,8 +2869,18 @@ export default function LeadGeneratorPage() {
                                 </div>
                             )}
 
-                            {/* Save button */}
-                            <div className="flex justify-end pt-2 pb-4">
+                            {/* Save / Export / Import buttons */}
+                            <div className="flex items-center justify-between pt-2 pb-4">
+                                <div className="flex items-center gap-2">
+                                    <Button variant="outline" size="sm" onClick={handleImportSkills} className="gap-1.5">
+                                        <Upload className="h-3.5 w-3.5" />
+                                        Importa
+                                    </Button>
+                                    <Button variant="outline" size="sm" onClick={handleExportSkills} className="gap-1.5">
+                                        <Download className="h-3.5 w-3.5" />
+                                        Esporta
+                                    </Button>
+                                </div>
                                 <Button onClick={handleSaveSkills} disabled={isSkillsSaving} className="gap-2 bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700">
                                     {isSkillsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                     Salva Skills

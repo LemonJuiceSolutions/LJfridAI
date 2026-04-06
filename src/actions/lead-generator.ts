@@ -218,12 +218,57 @@ export async function getLeadSearchesAction(): Promise<{
     if (!user) return { error: "Non autorizzato" };
 
     try {
-        const searches = await db.leadSearch.findMany({
-            where: { companyId: user.company!.id },
-            orderBy: { createdAt: 'desc' },
-            include: { _count: { select: { leads: true } } },
+        const companyId = user.company!.id;
+        const [searches, emailCounts, contactCounts, allLeadsForCompanies] = await Promise.all([
+            db.leadSearch.findMany({
+                where: { companyId },
+                orderBy: { createdAt: 'desc' },
+                include: { _count: { select: { leads: true } } },
+            }),
+            db.lead.groupBy({
+                by: ['searchId'],
+                where: { companyId, email: { not: null, notIn: [''] } },
+                _count: { _all: true },
+            }),
+            db.lead.groupBy({
+                by: ['searchId'],
+                where: { companyId, fullName: { not: null, notIn: [''] } },
+                _count: { _all: true },
+            }),
+            // Fetch company names per search to count unique companies
+            db.lead.findMany({
+                where: { companyId },
+                select: { searchId: true, companyName: true },
+            }),
+        ]);
+
+        // Build lookup maps by searchId
+        const emailCountMap: Record<string, number> = {};
+        emailCounts.forEach((r: any) => { if (r.searchId) emailCountMap[r.searchId] = r._count._all; });
+        const contactCountMap: Record<string, number> = {};
+        contactCounts.forEach((r: any) => { if (r.searchId) contactCountMap[r.searchId] = r._count._all; });
+
+        // Count unique companies per searchId
+        const uniqueCompaniesMap: Record<string, Set<string>> = {};
+        allLeadsForCompanies.forEach((l: any) => {
+            if (!l.searchId) return;
+            if (!uniqueCompaniesMap[l.searchId]) uniqueCompaniesMap[l.searchId] = new Set();
+            if (l.companyName) uniqueCompaniesMap[l.searchId].add(l.companyName.toLowerCase().trim());
         });
-        return { searches };
+        const uniqueCompanyCountMap: Record<string, number> = {};
+        Object.entries(uniqueCompaniesMap).forEach(([sid, set]) => { uniqueCompanyCountMap[sid] = set.size; });
+
+        const enrichedSearches = searches.map((s: any) => ({
+            ...s,
+            _count: {
+                ...s._count,
+                leadsWithEmail: emailCountMap[s.id] || 0,
+                leadsWithContact: contactCountMap[s.id] || 0,
+                uniqueCompanies: uniqueCompanyCountMap[s.id] || 0,
+            },
+        }));
+
+        return { searches: enrichedSearches };
     } catch (error) {
         console.error("Failed to get lead searches:", error);
         return { error: "Impossibile caricare le ricerche" };

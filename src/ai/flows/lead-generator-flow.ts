@@ -1,7 +1,11 @@
 'use server';
 
 import { db } from '@/lib/db';
-import { execSync } from 'child_process';
+import { spawn } from 'child_process';
+import { randomUUID } from 'crypto';
+import { createInterface } from 'readline';
+import { activeSessions } from '@/ai/flows/lead-generator-sessions';
+import type { ToolSession } from '@/ai/flows/lead-generator-sessions';
 
 // ===================== TYPES =====================
 
@@ -50,6 +54,14 @@ function buildSystemPrompt(companyId: string, skillsContext?: string): string {
 
 DATA DI OGGI: ${new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 Company ID: ${companyId}
+
+## ⛔ REGOLA ASSOLUTA N.1 — ARRICCHIMENTO LEAD ESISTENTI:
+Quando l'utente chiede di trovare contatti/email/LinkedIn per le aziende già salvate nel DB:
+→ Chiama **enrichLeadsAutomatically** UNA SOLA VOLTA. Fine.
+→ **NON** chiamare getLeadsToEnrich poi browsePage su ogni sito: causerebbe overflow del contesto e 0 risultati.
+→ **NON** navigare le homepage delle aziende: sono inutili, vanno le sottopagine /team /about.
+→ enrichLeadsAutomatically fa TUTTO server-side: visita siti, cerca LinkedIn, chiama Hunter, salva nel DB.
+→ Se hai già chiamato getLeadsToEnrich e hai la lista: chiama enrichLeadsAutomatically(limit=N) ADESSO.
 ${skillsContext ? `
 ## PROFILO AZIENDALE DELL'UTENTE (usa queste info per personalizzare email, pitch e ricerche):
 ${skillsContext}
@@ -69,6 +81,40 @@ Per ogni ricerca di lead, segui questo processo mentale:
 5. **ARRICCHISCI**: Per ogni lead incompleto, cerca info aggiuntive con altri tool
 6. **PRESENTA**: Solo dopo la verifica, mostra i risultati con tutti i campi compilati
 
+## ARRICCHIMENTO LEAD ESISTENTI (quando l'utente dice "cerca contatti per le aziende che hai già" o "vai su linkedin" o "trova contatti" o "trova la mail"):
+Segui ESATTAMENTE questa procedura — NON chiedere nulla, NON fermarti, NON proporre alternative:
+
+**PASSO 1 — USA enrichLeadsAutomatically**: Chiama SUBITO **enrichLeadsAutomatically** con limit=20 (o più se richiesto). Questo tool fa TUTTO da solo server-side: visita i siti, estrae email, chiama Hunter, salva nel DB. UNA SOLA chiamata sostituisce 50 tool call manuali. Aspetta il risultato e mostralo all'utente.
+
+**Se l'utente vuole più dettagli o vuole iterare manualmente:**
+
+**PASSO 2**: Per OGNI azienda, esegui IN SEQUENZA (max 3 tool per azienda, poi passa alla successiva):
+  - Tool 1: **browsePage** — prova QUESTE URL in ordine finché una funziona:
+    1. [sito]/it/azienda/team  oppure  [sito]/team  oppure  [sito]/chi-siamo
+    2. [sito]/about  oppure  [sito]/management  oppure  [sito]/contatti
+    3. [sito]/it/contatti  oppure  [sito]/en/about
+    (NON navigare la homepage — vai DIRETTAMENTE alle sottopagine con nomi di persone)
+  - Tool 2: **findEmailsHunter** (domain=dominio, type="personal") — anche se browsePage ha trovato qualcosa
+  - Tool 3 (se hai trovato un nome): **findEmailsHunter** con first_name + last_name + domain
+
+**PASSO 3 — SALVA SEMPRE**: Dopo ogni azienda chiama **updateLead** con il leadId e TUTTO quello che hai trovato:
+  - Se hai trovato email personali → salva email + fullName + jobTitle
+  - Se hai trovato solo nomi nel testo → salva fullName + jobTitle (anche senza email)
+  - Se Hunter non ha trovato nulla → salva ugualmente notes="Nessun contatto trovato via Hunter/browsePage"
+  - **MAI saltare updateLead** — ogni azienda elaborata DEVE avere una chiamata updateLead
+
+  **browsePage è SEMPRE disponibile e GRATUITO** — browser Chromium headless che gira sul server, nessun limite di crediti.
+
+**PASSO 3**: Dopo ogni azienda → chiama **updateLead** con il leadId e tutto ciò che hai trovato (anche solo nome o LinkedIn senza email)
+
+**REGOLE ASSOLUTE — MODALITÀ AGENTE AUTONOMO**:
+- **NON scrivere NULLA finché non hai finito TUTTE le aziende** — zero rapporti intermedi, zero "procederò a...", zero "attualmente sto..."
+- **FRASI ASSOLUTAMENTE VIETATE**: "fammi sapere", "fammelo sapere", "ti fornirò aggiornamenti", "in caso tu abbia", "come vuoi procedere", "prossimi passi", "azione in corso", "attualmente sto avviando", "avvierò", "procederò"
+- **NON spiegare mai cosa farai** — fallo e basta. Zero annunci, zero promesse, zero piani scritti nella risposta
+- MAI fermarti perché SerpApi è esaurita — hai browsePage e Hunter che funzionano senza Google
+- SE un sito blocca → prova Hunter sul dominio, poi passa alla prossima azienda in silenzio
+- **Scrivi testo SOLO alla fine**, dopo aver elaborato tutte le aziende: riepilogo conciso (quante elaborate, quanti contatti trovati)
+
 ## AUTONOMIA (REGOLA FONDAMENTALE):
 - NON chiedere MAI all'utente quale API, approccio o strategia usare
 - Decidi AUTONOMAMENTE la strategia migliore in base ai dati disponibili
@@ -77,6 +123,12 @@ Per ogni ricerca di lead, segui questo processo mentale:
 - Strategia default: Apollo (dati strutturati) -> Vibe Prospecting (contatti arricchiti + intent data) -> scrapeWebsite (contatti dal sito) -> Hunter (email personali) -> Google Maps (attivita' locali) -> Apify (scraping avanzato)
 - Se una fonte non ha dati, passa alla successiva SENZA chiedere all'utente
 - L'utente ti da' un obiettivo, tu AGISCI. Non fare domande tecniche su come farlo.
+- **QUANDO UN TOOL FALLISCE**: passa silenziosamente al tool successivo. NON menzionare all'utente che SerpApi/Google è esaurita — usa Firecrawl e Hunter che non dipendono da Google.
+- **VIETATO nelle risposte**: "fammi sapere", "come vuoi procedere", "cosa preferisci", "puoi indicarmi", "hai altre istruzioni", "fammi sapere come procedere" — agisci e basta.
+- **browsePage = browser Chromium integrato GRATIS**: lancia un browser Chromium headless sul server, visita la pagina, legge il DOM renderizzato (anche React/Vue/JS). Zero API key, zero costi. Usa SEMPRE questo come prima scelta per navigare siti aziendali.
+- **searchGooglePlaywright = ricerca Google GRATIS con Chromium**: cerca su Google senza SerpApi. Perfetto per LinkedIn dorking: searchGooglePlaywright('"NomeAzienda" site:linkedin.com/in'). Mostra il browser in tempo reale mentre cerca.
+- **fetchWebPage**: HTTP fetch semplice, più veloce ma non esegue JavaScript — usalo come fallback veloce.
+- **Firecrawl**: scrapeWithFirecrawl(url) potente ma costa crediti — usa solo se browsePage e fetchWebPage falliscono entrambi.
 
 ## WORKFLOW (segui SEMPRE questi passi):
 1. CHIEDI all'utente di descrivere che contatti cerca (solo se non lo ha gia' fatto). Max 1-2 domande brevi:
@@ -108,16 +160,22 @@ Per ogni ricerca di lead, segui questo processo mentale:
   1. Se Apollo/Google Maps restituisce solo email generica, NON salvare ancora il lead
   2. Cerca SUBITO email personale con findEmailsHunter type="personal" sul dominio dell'azienda
   3. Se Hunter non trova, usa scrapeWebsite sulla pagina "Team"/"About"/"Chi siamo"/"Contatti" del sito per trovare nomi e ruoli di persone reali
-  4. Se trovi un nome reale ma non la sua email, prova findEmailsHunter con first_name e last_name sul dominio
-  5. **Se dopo tutti questi tentativi NON hai trovato un'email personale: SCARTA il lead completamente e cercane un altro**
-  6. NON salvare MAI lead con solo email generica. Trova un'azienda alternativa con contatti reali al suo posto.
-- L'obiettivo e' avere TUTTI i lead con email personali. Meglio 3 lead con email reali che 10 con info@
+  4. **LINKEDIN DORKING (OBBLIGATORIO)**: NON aprire mai linkedin.com direttamente (richiede login). Usa una di queste alternative GRATIS:
+     - **searchGooglePlaywright** (PREFERITO, GRATIS): query \`"[nome azienda]" site:linkedin.com/in\` oppure \`"[nome azienda]" direttore OR CEO site:linkedin.com/in\`
+     - **searchGoogleWeb** (richiede SerpApi): stessa query, ma solo se hai SerpApi configurata
+     Dall'URL LinkedIn (es: linkedin.com/in/mario-rossi-milano) estrai: nome = "Mario Rossi", ruolo dal titolo del risultato.
+     **Se searchGooglePlaywright non trova LinkedIn**: usa browsePage sul sito dell'azienda cercando pagine /team /about /chi-siamo /management. Oppure prova Hunter findEmailsHunter senza nome.
+  5. Se trovi un nome reale (da sito o LinkedIn), prova findEmailsHunter con first_name e last_name sul dominio
+  6. Anche se non trovi l'email, salva comunque il lead con: fullName, jobTitle, linkedinUrl e companyName (meglio un contatto senza email che nessun contatto)
+  7. NON salvare MAI lead con SOLO email generica e NESSUN nome. Trova almeno il nome della persona.
+  8. **QUANDO L'UTENTE DICE "vai su LinkedIn"**: significa SEMPRE usare **searchGooglePlaywright** (GRATIS) con query \`"NomeAzienda" site:linkedin.com/in\` — non aprire linkedin.com direttamente (login richiesto, bloccato).
+- L'obiettivo e' avere lead COMPLETI: email personale + nome + LinkedIn. Meglio 3 lead con email reali che 10 con info@. Ma non scartare mai un lead che ha nome + LinkedIn anche senza email.
 - Verifica le email trovate con verifyEmail quando possibile
 - NON inventare MAI email o contatti. Solo dati reali verificati dalle API.
 
 ## RECUPERA SEMPRE TUTTI I DATI (DI DEFAULT):
 Non aspettare che l'utente ti chieda specifici dati. OGNI volta che cerchi lead, recupera AUTOMATICAMENTE TUTTI i dati disponibili:
-- Dati anagrafici (nome, cognome, ruolo, email personale, telefono, LinkedIn)
+- Dati anagrafici (nome, cognome, ruolo, email personale, telefono, LinkedIn) — usa Google dorking "site:linkedin.com/in" per trovare profili LinkedIn
 - Dati aziendali (nome azienda, sito web, settore, citta', dimensione, paese, dominio)
 - Dati finanziari (fatturato e utile ultimi 3 anni)
 - Descrizione azienda e note
@@ -423,12 +481,109 @@ const leadGenTools = [
     {
         type: 'function' as const,
         function: {
+            name: 'getLeadsToEnrich',
+            description: 'Recupera le aziende/lead dal database che mancano di email personale, LinkedIn o nome contatto. Usalo per sapere su quali aziende devi cercare contatti. Ritorna lista con companyName, companyWebsite, companyDomain, leadId.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    limit: { type: 'number', description: 'Quante aziende restituire (default 50, max 200)' },
+                    missingField: { type: 'string', enum: ['email', 'linkedinUrl', 'fullName', 'any'], description: 'Filtra per campo mancante (default: email)' },
+                },
+                required: [],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'enrichLeadsAutomatically',
+            description: 'Arricchisce AUTOMATICAMENTE tutti i lead nel DB senza email/contatti. Esegue server-side: per ogni azienda visita il sito con browser reale, cerca /team /about /chi-siamo, estrae email e nomi, chiama Hunter per email personali, salva tutto nel DB. Una sola chiamata fa tutto. Usalo quando l\'utente chiede di trovare contatti per le aziende esistenti.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    limit: { type: 'number', description: 'Quante aziende processare (default 20, max 50)' },
+                    useHunter: { type: 'boolean', description: 'Usa Hunter.io per trovare email (default: true se API key disponibile)' },
+                },
+                required: [],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'searchGooglePlaywright',
+            description: 'Cerca su Google usando un browser Chromium reale (GRATUITO, nessuna API key). Restituisce i primi risultati con titolo, URL e descrizione. Usa questo per cercare profili LinkedIn (query: "NomeAzienda" site:linkedin.com/in), siti di aziende, persone, o qualsiasi ricerca web. Alternativa GRATIS a searchGoogleWeb (che richiede SerpApi).',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Query di ricerca Google (es. "Mario Rossi" site:linkedin.com/in, oppure "automazione industriale Italia" direttore)' },
+                    numResults: { type: 'number', description: 'Numero di risultati da restituire (default 10, max 20)' },
+                },
+                required: ['query'],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'browsePage',
+            description: 'Apre una pagina web con un browser Chromium reale (headless) interno al server — GRATUITO, nessuna API esterna. Funziona anche su siti JavaScript, React, Vue, Angular. Estrae testo, email, nomi dal DOM renderizzato. Usa questo per siti che fetchWebPage non riesce a leggere.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    url: { type: 'string', description: 'URL completo da visitare' },
+                    waitForText: { type: 'string', description: 'Testo da aspettare prima di estrarre (opzionale)' },
+                    clickSelector: { type: 'string', description: 'Selettore CSS da cliccare prima di leggere (opzionale, es. "button.cookie-accept")' },
+                },
+                required: ['url'],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'fetchWebPage',
+            description: 'Scarica e legge il contenuto di qualsiasi pagina web GRATUITAMENTE, senza API esterne. Funziona su molti siti aziendali. Usa questo come prima scelta per navigare siti web — è gratuito e non consuma crediti. Non funziona su siti con Cloudflare o login richiesto.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    url: { type: 'string', description: 'URL completo della pagina da leggere (es. https://azienda.it/team)' },
+                    extractEmails: { type: 'boolean', description: 'Se true, estrae automaticamente tutte le email trovate nel testo (default: true)' },
+                },
+                required: ['url'],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
             name: 'getExistingLeadEmails',
             description: 'Recupera tutte le email dei lead gia\' salvati nel database per questa azienda. Usalo PRIMA di cercare nuovi lead per evitare duplicati.',
             parameters: {
                 type: 'object',
                 properties: {},
                 required: [],
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'updateLead',
+            description: 'Aggiorna campi specifici di un lead esistente nel database (es. aggiunge email, LinkedIn, nome contatto trovati dopo). Usa leadId restituito da getLeadsToEnrich.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    leadId: { type: 'string', description: 'ID del lead da aggiornare' },
+                    fullName: { type: 'string', description: 'Nome completo del contatto' },
+                    email: { type: 'string', description: 'Email personale del contatto' },
+                    jobTitle: { type: 'string', description: 'Ruolo/titolo del contatto' },
+                    linkedinUrl: { type: 'string', description: 'URL profilo LinkedIn' },
+                    phone: { type: 'string', description: 'Telefono' },
+                    notes: { type: 'string', description: 'Note aggiuntive' },
+                    confidence: { type: 'number', description: 'Affidabilità 0-100' },
+                },
+                required: ['leadId'],
             },
         },
     },
@@ -579,13 +734,15 @@ const leadGenTools = [
 
 // ===================== TOOL DISPATCHER =====================
 
-async function executeToolCall(
+export async function executeToolCall(
     name: string,
     args: any,
     companyId: string,
     apiKeys: { apollo?: string; hunter?: string; serpApi?: string; apify?: string; vibeProspect?: string; firecrawl?: string },
-    conversationId?: string
+    conversationId?: string,
+    emit?: (evt: any) => void
 ): Promise<string> {
+    const _emit = emit || (() => {});
     switch (name) {
         case 'searchPeopleApollo': {
             if (!apiKeys.apollo) {
@@ -969,18 +1126,38 @@ async function executeToolCall(
 
                 console.log(`[saveLeads] Grouped ${rawLeads.length} raw leads into ${companyMap.size} companies, ${companiesWithContacts.length} with personal contacts, ${companiesWithDomainOnly.length} with domain only`);
 
-                // Create the search record
-                const search = await db.leadSearch.create({
-                    data: {
-                        name: args.searchName || 'Ricerca Lead',
-                        criteria: args.criteria || {},
-                        status: 'completed',
-                        resultCount: allCompaniesToSave.length,
-                        companyId,
-                        ...(conversationId ? { conversationId } : {}),
-                    },
-                });
-                console.log(`[saveLeads] Created search ${search.id}`);
+                // Reuse existing search for this conversation (all batches go into one search)
+                let search = conversationId
+                    ? await db.leadSearch.findFirst({
+                        where: { conversationId, companyId },
+                        orderBy: { createdAt: 'asc' },
+                    })
+                    : null;
+
+                if (search) {
+                    // Update existing search count
+                    search = await db.leadSearch.update({
+                        where: { id: search.id },
+                        data: {
+                            resultCount: { increment: allCompaniesToSave.length },
+                            status: 'completed',
+                        },
+                    });
+                    console.log(`[saveLeads] Reusing search ${search.id} (conversationId: ${conversationId})`);
+                } else {
+                    // Create new search record
+                    search = await db.leadSearch.create({
+                        data: {
+                            name: args.searchName || 'Ricerca Lead',
+                            criteria: args.criteria || {},
+                            status: 'completed',
+                            resultCount: allCompaniesToSave.length,
+                            companyId,
+                            ...(conversationId ? { conversationId } : {}),
+                        },
+                    });
+                    console.log(`[saveLeads] Created new search ${search.id}`);
+                }
 
                 // Create one lead per company, with contacts array + best contact as primary
                 const leadsData = allCompaniesToSave.map(([_, { companyData, contacts }]) => {
@@ -1058,6 +1235,99 @@ async function executeToolCall(
             } catch (e: any) {
                 console.error(`[saveLeads] ERROR:`, e);
                 return JSON.stringify({ error: `Errore salvataggio: ${e.message}` });
+            }
+        }
+
+        case 'getLeadsToEnrich': {
+            try {
+                const limit = Math.min(args.limit || 50, 200);
+                const missingField = args.missingField || 'email';
+
+                // Build where clause based on what's missing
+                let whereExtra: any = {};
+                if (missingField === 'email' || missingField === 'any') {
+                    whereExtra = { OR: [{ email: null }, { email: '' }] };
+                } else if (missingField === 'linkedinUrl') {
+                    whereExtra = { OR: [{ linkedinUrl: null }, { linkedinUrl: '' }] };
+                } else if (missingField === 'fullName') {
+                    whereExtra = { OR: [{ fullName: null }, { fullName: '' }] };
+                }
+
+                const leads = await db.lead.findMany({
+                    where: { companyId, ...whereExtra },
+                    select: {
+                        id: true,
+                        companyName: true,
+                        companyWebsite: true,
+                        companyDomain: true,
+                        fullName: true,
+                        email: true,
+                        linkedinUrl: true,
+                        jobTitle: true,
+                        companyCity: true,
+                        companyIndustry: true,
+                    },
+                    take: limit,
+                    orderBy: { createdAt: 'desc' },
+                });
+
+                // Deduplicate by company
+                const seen = new Set<string>();
+                const companies = leads
+                    .filter((l: any) => {
+                        const key = l.companyName?.toLowerCase() || l.id;
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    })
+                    .map((l: any) => ({
+                        leadId: l.id,
+                        companyName: l.companyName || '',
+                        companyWebsite: l.companyWebsite || '',
+                        companyDomain: l.companyDomain || (l.companyWebsite ? l.companyWebsite.replace(/^https?:\/\//, '').split('/')[0] : ''),
+                        companyCity: l.companyCity || '',
+                        companyIndustry: l.companyIndustry || '',
+                        existingContact: l.fullName || '',
+                        hasEmail: !!(l.email),
+                        hasLinkedin: !!(l.linkedinUrl),
+                    }));
+
+                return JSON.stringify({
+                    total: companies.length,
+                    companies,
+                    // CRITICAL instruction embedded in response so the model reads it
+                    AZIONE_OBBLIGATORIA: `⚠️ HAI LA LISTA. ORA CHIAMA IMMEDIATAMENTE enrichLeadsAutomatically(limit=${companies.length}) — NON fare browsePage manualmente su ogni sito, causerebbe overflow del contesto e 0 risultati. enrichLeadsAutomatically fa tutto in UNA sola chiamata: visita i siti, cerca LinkedIn, chiama Hunter, salva nel DB. CHIAMALO ORA.`,
+                });
+            } catch (e: any) {
+                return JSON.stringify({ error: `Errore getLeadsToEnrich: ${e.message}` });
+            }
+        }
+
+        case 'updateLead': {
+            try {
+                if (!args.leadId) return JSON.stringify({ error: 'leadId obbligatorio' });
+                const updateData: any = {};
+                if (args.fullName !== undefined) updateData.fullName = args.fullName;
+                if (args.email !== undefined) updateData.email = args.email;
+                if (args.jobTitle !== undefined) updateData.jobTitle = args.jobTitle;
+                if (args.linkedinUrl !== undefined) updateData.linkedinUrl = args.linkedinUrl;
+                if (args.phone !== undefined) updateData.phone = args.phone;
+                if (args.notes !== undefined) updateData.notes = args.notes;
+                if (args.confidence !== undefined) updateData.confidence = args.confidence;
+
+                // Verify the lead belongs to this company
+                const existing = await db.lead.findFirst({ where: { id: args.leadId, companyId } });
+                if (!existing) return JSON.stringify({ error: 'Lead non trovato o non autorizzato' });
+
+                await db.lead.update({ where: { id: args.leadId }, data: updateData });
+                return JSON.stringify({
+                    success: true,
+                    leadId: args.leadId,
+                    updated: Object.keys(updateData),
+                    message: `Lead aggiornato: ${Object.keys(updateData).join(', ')}`,
+                });
+            } catch (e: any) {
+                return JSON.stringify({ error: `Errore updateLead: ${e.message}` });
             }
         }
 
@@ -1451,8 +1721,574 @@ async function executeToolCall(
             }
         }
 
+        case 'enrichLeadsAutomatically': {
+            try {
+                const limit = Math.min(args.limit || 20, 50);
+                const useHunter = args.useHunter !== false && !!apiKeys.hunter;
+
+                // 1. Get leads to enrich
+                const leads = await db.lead.findMany({
+                    where: { companyId, OR: [{ email: null }, { email: '' }] },
+                    select: { id: true, companyName: true, companyWebsite: true, companyDomain: true, fullName: true, companyCity: true },
+                    take: limit,
+                    orderBy: { createdAt: 'desc' },
+                });
+
+                const seen = new Set<string>();
+                const companies = leads.filter((l: any) => {
+                    const key = (l.companyName || '').toLowerCase();
+                    if (seen.has(key) || !l.companyWebsite) return false;
+                    seen.add(key);
+                    return true;
+                });
+
+                _emit({ phase: 'plan', message: `🚀 Avvio arricchimento automatico di ${companies.length} aziende...`, progress: 5 });
+
+                const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+                const genericPatterns = /^(info|contact|support|admin|noreply|no-reply|hello|sales|marketing|office|hr|jobs|press|webmaster|help|service|team|privacy|dpo|legal|commerciale|segreteria|amministrazione|contatti|ordini)@/i;
+                const nameRegex = /([A-ZÀÁÂÃÄÅ][a-zàáâãäå]{2,}(?:\s+[A-ZÀÁÂÃÄÅ][a-zàáâãäå]{2,}){1,2})/g;
+
+                const results: { company: string; found: string[]; linkedinUrl?: string; foundName?: string }[] = [];
+                const { chromium } = await import('playwright');
+
+                for (let i = 0; i < companies.length; i++) {
+                    const lead = companies[i];
+                    const site = lead.companyWebsite!;
+                    const domain = lead.companyDomain || site.replace(/^https?:\/\//, '').split('/')[0];
+                    const companyName = lead.companyName || domain;
+                    const progress = Math.round(10 + (i / companies.length) * 80);
+
+                    _emit({ phase: 'scrape', message: `🔍 [${i+1}/${companies.length}] ${companyName}`, browserUrl: site, progress });
+
+                    const foundEmails: string[] = [];
+                    const foundNames: string[] = [];
+                    let linkedinUrl = '';
+
+                    // ── Step 1: Visit company website subpages ──
+                    const subpages = ['/team', '/about', '/chi-siamo', '/management', '/it/azienda/team', '/en/about', '/contatti', '/it/contatti'];
+                    const baseUrl = site.replace(/\/$/, '');
+
+                    for (const sub of subpages) {
+                        const url = `${baseUrl}${sub}`;
+                        _emit({ phase: 'scrape', message: `  🌐 Navigando ${url}`, browserUrl: url });
+                        try {
+                            const res = await fetch(url, {
+                                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
+                                signal: AbortSignal.timeout(6000),
+                            });
+                            if (!res.ok) continue;
+                            const html = await res.text();
+                            const emails = (html.match(emailRegex) || []).filter(e => !genericPatterns.test(e));
+                            foundEmails.push(...emails);
+                            const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 4000);
+                            const nameMatches = [...text.matchAll(nameRegex)];
+                            for (const m of nameMatches) {
+                                const n = m[1].trim();
+                                if (n.split(' ').length >= 2 && !foundNames.includes(n)) foundNames.push(n);
+                                if (foundNames.length >= 5) break;
+                            }
+                            if (foundEmails.length > 0) break;
+                        } catch { continue; }
+                    }
+
+                    // ── Step 2: Google → LinkedIn via Playwright (free, no SerpApi, stealth) ──
+                    if (!linkedinUrl) {
+                        const linkedinQuery = `${companyName} site:linkedin.com/in`;
+                        const linkedinSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(linkedinQuery)}&hl=it&gl=it`;
+                        _emit({ phase: 'scrape', message: `  🔎 Google LinkedIn: ${linkedinQuery}`, browserUrl: linkedinSearchUrl });
+                        const lisBrowser = await chromium.launch({
+                            headless: true,
+                            args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
+                        });
+                        try {
+                            const lisContext = await lisBrowser.newContext({
+                                userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                                locale: 'it-IT',
+                                viewport: { width: 1280, height: 800 },
+                                extraHTTPHeaders: { 'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8' },
+                            });
+                            await lisContext.addInitScript(() => {
+                                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                                (window as any).chrome = { runtime: {} };
+                            });
+                            const lisPage = await lisContext.newPage();
+                            await lisPage.goto(linkedinSearchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                            await lisPage.waitForTimeout(2000);
+                            // Accept cookie consent
+                            for (const sel of ['button:has-text("Accetta tutto")', '#L2AGLb', 'button:has-text("Accept all")']) {
+                                try { await lisPage.click(sel, { timeout: 2000 }); await lisPage.waitForTimeout(800); break; } catch { /* ignore */ }
+                            }
+                            // 📸 Screenshot Google results
+                            try {
+                                const ssBuf = await lisPage.screenshot({ type: 'jpeg', quality: 50, clip: { x: 0, y: 0, width: 1280, height: 600 } });
+                                _emit({ phase: 'scrape', message: `📸 Google: ${linkedinQuery}`, browserUrl: linkedinSearchUrl, browserScreenshot: ssBuf.toString('base64') });
+                            } catch { /* ignore */ }
+                            // Extract LinkedIn profile URLs
+                            const items = await lisPage.evaluate(() => {
+                                const links: { href: string; text: string }[] = [];
+                                document.querySelectorAll('a[href*="linkedin.com/in"]').forEach(a => {
+                                    const href = (a as HTMLAnchorElement).href;
+                                    if (href && !links.find(l => l.href === href)) {
+                                        links.push({ href, text: (a as HTMLElement).textContent?.trim() || '' });
+                                    }
+                                });
+                                // Also try h3 near linkedin links
+                                document.querySelectorAll('h3').forEach(h3 => {
+                                    const parent = h3.closest('div');
+                                    const a = parent?.querySelector('a[href*="linkedin.com/in"]') as HTMLAnchorElement;
+                                    if (a?.href && !links.find(l => l.href === a.href)) {
+                                        links.push({ href: a.href, text: h3.textContent?.trim() || '' });
+                                    }
+                                });
+                                return links.slice(0, 5);
+                            });
+                            if (items.length > 0) {
+                                linkedinUrl = items[0].href;
+                                const slug = linkedinUrl.match(/\/in\/([^/?]+)/)?.[1] || '';
+                                const nameFromSlug = slug.replace(/-\d+$/, '').split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                                if (nameFromSlug && nameFromSlug.split(' ').length >= 2) foundNames.unshift(nameFromSlug);
+                                _emit({ phase: 'execute', message: `  ✅ LinkedIn trovato: ${linkedinUrl}` });
+                            }
+                        } catch { /* ignore */ } finally {
+                            await lisBrowser.close();
+                        }
+                    }
+
+                    // ── Step 3: Hunter ──
+                    if (useHunter && domain) {
+                        _emit({ phase: 'execute', message: `  📧 Hunter: ${domain}` });
+                        try {
+                            const hRes = await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&type=personal&limit=3&api_key=${apiKeys.hunter}`);
+                            if (hRes.ok) {
+                                const hData = await hRes.json();
+                                const hEmails = (hData.data?.emails || []).map((e: any) => e.value).filter(Boolean);
+                                foundEmails.push(...hEmails);
+                                const hNames = (hData.data?.emails || []).filter((e: any) => e.first_name).map((e: any) => `${e.first_name} ${e.last_name}`.trim());
+                                foundNames.push(...hNames);
+                            }
+                        } catch { /* ignore */ }
+
+                        // Hunter email-finder with first found name
+                        if (foundNames.length > 0) {
+                            const [first, ...rest] = foundNames[0].split(' ');
+                            const last = rest.join(' ');
+                            if (first && last) {
+                                try {
+                                    const hRes = await fetch(`https://api.hunter.io/v2/email-finder?domain=${domain}&first_name=${encodeURIComponent(first)}&last_name=${encodeURIComponent(last)}&api_key=${apiKeys.hunter}`);
+                                    if (hRes.ok) {
+                                        const hData = await hRes.json();
+                                        if (hData.data?.email) foundEmails.push(hData.data.email);
+                                    }
+                                } catch { /* ignore */ }
+                            }
+                        }
+                    }
+
+                    // ── Step 4: Save to DB ──
+                    const uniqueEmails = [...new Set(foundEmails.filter(e => !genericPatterns.test(e)))];
+                    const updateData: any = {
+                        notes: `Arricchito il ${new Date().toLocaleDateString('it-IT')}. Email: ${uniqueEmails.length > 0 ? uniqueEmails.join(', ') : 'nessuna'}. Nomi: ${foundNames.slice(0,3).join(', ') || 'nessuno'}.`,
+                    };
+                    if (uniqueEmails.length > 0) updateData.email = uniqueEmails[0];
+                    if (foundNames.length > 0 && !lead.fullName) updateData.fullName = foundNames[0];
+                    if (linkedinUrl) updateData.linkedinUrl = linkedinUrl;
+
+                    await db.lead.update({ where: { id: lead.id }, data: updateData });
+
+                    const status = uniqueEmails.length > 0 ? `✅ email: ${uniqueEmails[0]}` : linkedinUrl ? `🔗 solo LinkedIn` : `❌ nessun contatto`;
+                    _emit({ phase: 'execute', message: `  → ${companyName}: ${status}` });
+                    results.push({ company: companyName, found: uniqueEmails, linkedinUrl, foundName: foundNames[0] });
+                }
+
+                const withEmail = results.filter(r => r.found.length > 0).length;
+                const withLinkedin = results.filter(r => r.linkedinUrl).length;
+                _emit({ phase: 'save', message: `✅ Completato: ${withEmail} email, ${withLinkedin} LinkedIn trovati su ${results.length} aziende`, progress: 100 });
+
+                return JSON.stringify({
+                    success: true,
+                    processed: results.length,
+                    withEmailFound: withEmail,
+                    withLinkedin,
+                    results: results.slice(0, 30),
+                    summary: `Elaborate ${results.length} aziende: ${withEmail} con email, ${withLinkedin} con LinkedIn. Tutti i lead aggiornati nel DB.`,
+                });
+            } catch (e: any) {
+                return JSON.stringify({ error: `Errore enrichLeadsAutomatically: ${e.message}` });
+            }
+        }
+
+        case 'searchGooglePlaywright': {
+            try {
+                const query = args.query as string;
+                if (!query?.trim()) {
+                    return JSON.stringify({ error: 'Query di ricerca mancante' });
+                }
+                const numResults = Math.min(args.numResults || 10, 20);
+                const isLinkedinSearch = query.includes('linkedin.com');
+
+                // ── Helper: parse HTML links into result items ──────────────────
+                const parseLinks = (html: string, skipDomains: string[]): { title: string; url: string; description: string }[] => {
+                    const items: { title: string; url: string; description: string }[] = [];
+                    const seen = new Set<string>();
+                    // Extract href + surrounding text via regex (no DOM needed server-side)
+                    const linkRe = /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([^<]*(?:<[^/][^>]*>[^<]*<\/[^>]*>)*[^<]*)<\/a>/gi;
+                    let m: RegExpExecArray | null;
+                    while ((m = linkRe.exec(html)) !== null && items.length < numResults) {
+                        const url = m[1].split('&amp;')[0]; // DDG redirects, clean
+                        const rawTitle = m[2].replace(/<[^>]+>/g, '').trim();
+                        if (!url || skipDomains.some(d => url.includes(d)) || seen.has(url) || rawTitle.length < 5) continue;
+                        seen.add(url);
+                        items.push({ title: rawTitle, url, description: '' });
+                    }
+                    return items;
+                };
+
+                // ── Step 1: DuckDuckGo HTML (no browser, no bot detection) ──────
+                const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=it-it`;
+                _emit({ phase: 'scrape', message: `🔎 DDG: ${query}`, browserUrl: `https://duckduckgo.com/?q=${encodeURIComponent(query)}` });
+                let results: { title: string; url: string; description: string }[] = [];
+                let usedEngine = 'DuckDuckGo';
+
+                try {
+                    const ddgRes = await fetch(ddgUrl, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+                            'Accept': 'text/html,application/xhtml+xml',
+                            'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8',
+                        },
+                        signal: AbortSignal.timeout(12000),
+                    });
+                    if (ddgRes.ok) {
+                        const html = await ddgRes.text();
+                        // DDG HTML results are in <a class="result__a"> tags
+                        const ddgResults: { title: string; url: string; description: string }[] = [];
+                        const ddgRe = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+                        // Also extract from redirect URLs: uddg= param
+                        const uddgRe = /uddg=([^&"]+)/gi;
+                        let dm: RegExpExecArray | null;
+                        while ((dm = ddgRe.exec(html)) !== null && ddgResults.length < numResults) {
+                            let url = dm[1];
+                            // DDG wraps real URLs in //duckduckgo.com/l/?uddg=
+                            const uddgMatch = url.match(/uddg=([^&]+)/);
+                            if (uddgMatch) url = decodeURIComponent(uddgMatch[1]);
+                            const title = dm[2].replace(/<[^>]+>/g, '').trim();
+                            const skipDomains = ['duckduckgo.com', 'google.com', 'bing.com'];
+                            if (url.startsWith('http') && !skipDomains.some(d => url.includes(d)) && title.length > 3) {
+                                ddgResults.push({ title, url, description: '' });
+                            }
+                        }
+                        // Fallback: extract any linkedin.com/in links
+                        if (ddgResults.length === 0 && isLinkedinSearch) {
+                            const liRe = /href="(https?:\/\/[^"]*linkedin\.com\/in\/[^"]+)"/gi;
+                            let lm: RegExpExecArray | null;
+                            while ((lm = liRe.exec(html)) !== null) {
+                                const url = lm[1].split('?')[0];
+                                if (!ddgResults.find(r => r.url === url)) {
+                                    ddgResults.push({ title: url, url, description: '' });
+                                }
+                            }
+                        }
+                        if (ddgResults.length > 0) results = ddgResults;
+                    }
+                } catch { /* fall through to Bing */ }
+
+                // ── Step 2: Bing fallback via simple fetch (if DDG got 0) ────────
+                if (results.length === 0) {
+                    usedEngine = 'Bing';
+                    const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${numResults}&setlang=IT`;
+                    _emit({ phase: 'scrape', message: `  🔎 Bing fallback: ${query}`, browserUrl: bingUrl });
+                    try {
+                        const bRes = await fetch(bingUrl, {
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+                                'Accept': 'text/html',
+                                'Accept-Language': 'it-IT,it;q=0.9',
+                            },
+                            signal: AbortSignal.timeout(12000),
+                        });
+                        if (bRes.ok) {
+                            const html = await bRes.text();
+                            // Bing results: <h2><a href="...">title</a></h2>
+                            const bingRe = /<h2[^>]*><a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([^<]+)<\/a>/gi;
+                            let bm: RegExpExecArray | null;
+                            const skipDomains = ['bing.com', 'microsoft.com', 'msn.com'];
+                            while ((bm = bingRe.exec(html)) !== null && results.length < numResults) {
+                                const url = bm[1], title = bm[2].trim();
+                                if (!skipDomains.some(d => url.includes(d)) && title.length > 3) {
+                                    results.push({ title, url, description: '' });
+                                }
+                            }
+                            // LinkedIn links from Bing
+                            if (isLinkedinSearch && results.length === 0) {
+                                const liRe = /href="(https?:\/\/[^"]*linkedin\.com\/in\/[^"]+)"/gi;
+                                let lm: RegExpExecArray | null;
+                                while ((lm = liRe.exec(html)) !== null && results.length < numResults) {
+                                    const url = lm[1].split('?')[0];
+                                    if (!results.find(r => r.url === url)) results.push({ title: url, url, description: '' });
+                                }
+                            }
+                        }
+                    } catch { /* ignore */ }
+                }
+
+                // ── Step 3: Playwright + Bing as last resort ────────────────────
+                if (results.length === 0) {
+                    usedEngine = 'Playwright/Bing';
+                    const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${numResults}`;
+                    _emit({ phase: 'scrape', message: `  🔎 Playwright Bing: ${query}`, browserUrl: bingUrl });
+                    try {
+                        const { chromium } = await import('playwright');
+                        const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+                        try {
+                            const page = await browser.newPage({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124 Safari/537.36' });
+                            await page.goto(bingUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                            await page.waitForTimeout(2000);
+                            // Screenshot
+                            try {
+                                const ss = await page.screenshot({ type: 'jpeg', quality: 50, clip: { x: 0, y: 0, width: 1280, height: 600 } });
+                                _emit({ phase: 'scrape', message: `📸 Bing: ${query}`, browserUrl: bingUrl, browserScreenshot: ss.toString('base64') });
+                            } catch { /* ignore */ }
+                            results = await page.evaluate((params: { max: number; isLI: boolean }) => {
+                                const items: { title: string; url: string; description: string }[] = [];
+                                const seen = new Set<string>();
+                                document.querySelectorAll('h2 > a[href^="http"], li.b_algo a[href^="http"]').forEach(a => {
+                                    const url = (a as HTMLAnchorElement).href;
+                                    const title = (a as HTMLElement).textContent?.trim() || '';
+                                    if (!url.includes('bing.com') && !url.includes('microsoft.com') && title && !seen.has(url)) {
+                                        seen.add(url);
+                                        items.push({ title, url, description: '' });
+                                    }
+                                });
+                                if (params.isLI) {
+                                    document.querySelectorAll('a[href*="linkedin.com/in"]').forEach(a => {
+                                        const url = (a as HTMLAnchorElement).href.split('?')[0];
+                                        if (!seen.has(url)) { seen.add(url); items.push({ title: url, url, description: '' }); }
+                                    });
+                                }
+                                return items.slice(0, params.max);
+                            }, { max: numResults, isLI: isLinkedinSearch });
+                        } finally { await browser.close(); }
+                    } catch { /* ignore */ }
+                }
+
+                const linkedinResults = results.filter(r => r.url.includes('linkedin.com/in'));
+                _emit({ phase: 'execute', message: `  ✅ ${usedEngine}: ${results.length} risultati${linkedinResults.length > 0 ? `, ${linkedinResults.length} LinkedIn` : ''} per "${query.slice(0, 60)}"` });
+
+                return JSON.stringify({
+                    query,
+                    engine: usedEngine,
+                    resultsCount: results.length,
+                    linkedinProfilesFound: linkedinResults.length,
+                    results: results.slice(0, numResults),
+                    tip: linkedinResults.length > 0
+                        ? `LinkedIn trovati! Estrai nome dallo slug (es. /in/mario-rossi-123 → "Mario Rossi") poi findEmailHunter(domain, first_name, last_name).`
+                        : results.length === 0
+                        ? 'Nessun risultato su DDG/Bing. Prova: browsePage sul sito /team /about, oppure findEmailsHunter sul dominio.'
+                        : 'Risultati trovati ma nessun profilo LinkedIn. Prova query più specifica.',
+                }, null, 2);
+            } catch (e: any) {
+                return JSON.stringify({ error: `Errore searchGooglePlaywright: ${e.message}` });
+            }
+        }
+
+        case 'browsePage': {
+            try {
+                const url = args.url as string;
+                if (!url || !url.startsWith('http')) {
+                    return JSON.stringify({ error: 'URL non valido' });
+                }
+                const blockedDomains = ['linkedin.com', 'facebook.com', 'instagram.com', 'twitter.com', 'x.com'];
+                if (blockedDomains.some(d => url.includes(d))) {
+                    return JSON.stringify({ error: `Non posso navigare ${url} — richiede login. Per trovare profili LinkedIn usa enrichLeadsAutomatically oppure searchGooglePlaywright con query '"NomeAzienda" site:linkedin.com/in'` });
+                }
+
+                // Emit browser URL so the panel shows navigation
+                _emit({ phase: 'scrape', message: `🌐 Navigando: ${url}`, browserUrl: url });
+
+                const { chromium } = await import('playwright');
+                const browser = await chromium.launch({ headless: true });
+                const context = await browser.newContext({
+                    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    locale: 'it-IT',
+                    viewport: { width: 1280, height: 800 },
+                });
+                const page = await context.newPage();
+
+                try {
+                    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+
+                    // Click cookie banner if selector provided
+                    if (args.clickSelector) {
+                        try { await page.click(args.clickSelector, { timeout: 3000 }); } catch { /* ignore */ }
+                    }
+
+                    // Auto-dismiss common cookie banners
+                    const cookieSelectors = [
+                        'button[id*="accept"]', 'button[class*="accept"]', 'button[class*="cookie"]',
+                        'a[id*="accept"]', '#CybotCookiebotDialogBodyButtonAccept',
+                        '.cookie-accept', '.accept-cookies', '[data-cookiebanner="accept"]',
+                    ];
+                    for (const sel of cookieSelectors) {
+                        try { await page.click(sel, { timeout: 1000 }); break; } catch { /* ignore */ }
+                    }
+
+                    // Wait for optional text
+                    if (args.waitForText) {
+                        try { await page.waitForSelector(`text=${args.waitForText}`, { timeout: 5000 }); } catch { /* ignore */ }
+                    } else {
+                        await page.waitForTimeout(1500);
+                    }
+
+                    // 📸 Take screenshot and emit to browser panel
+                    try {
+                        const screenshotBuf = await page.screenshot({ type: 'jpeg', quality: 55, clip: { x: 0, y: 0, width: 1280, height: 600 } });
+                        const screenshotB64 = screenshotBuf.toString('base64');
+                        _emit({ phase: 'scrape', message: `📸 ${url}`, browserUrl: url, browserScreenshot: screenshotB64 });
+                    } catch { /* ignore screenshot errors */ }
+
+                    // Extract visible text
+                    const text = await page.evaluate(() => {
+                        // Remove scripts, styles, nav, footer
+                        ['script','style','nav','footer','header'].forEach(tag => {
+                            document.querySelectorAll(tag).forEach(el => el.remove());
+                        });
+                        return (document.body?.innerText || '').replace(/\s{3,}/g, '\n\n').trim().slice(0, 800);
+                    });
+
+                    // Extract all emails from full HTML
+                    const html = await page.content();
+                    const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+                    const allEmails = html.match(emailRegex) || [];
+                    const genericPatterns = /^(info|contact|support|admin|noreply|no-reply|hello|sales|marketing|office|hr|jobs|press|webmaster|help|service|team|privacy|dpo|legal)@/i;
+                    const emails = [...new Set(allEmails)].filter(e => !genericPatterns.test(e)).slice(0, 20);
+
+                    // Extract page title
+                    const title = await page.title();
+
+                    return JSON.stringify({
+                        url,
+                        title,
+                        textLength: text.length,
+                        emails,
+                        emailsFound: emails.length,
+                        text,
+                        note: emails.length > 0
+                            ? `✅ Trovate ${emails.length} email personali nella pagina`
+                            : 'Nessuna email trovata — cerca nomi nel testo e usa Hunter per trovarle',
+                    });
+                } finally {
+                    await browser.close();
+                }
+            } catch (e: any) {
+                return JSON.stringify({ error: `Errore browsePage: ${e.message}`, url: args.url });
+            }
+        }
+
+        case 'fetchWebPage': {
+            try {
+                const url = args.url as string;
+                if (!url || !url.startsWith('http')) {
+                    return JSON.stringify({ error: 'URL non valido. Deve iniziare con http:// o https://' });
+                }
+                // Block social networks that require login
+                const blockedDomains = ['linkedin.com', 'facebook.com', 'instagram.com', 'twitter.com', 'x.com'];
+                if (blockedDomains.some(d => url.includes(d))) {
+                    return JSON.stringify({ error: `Non posso navigare ${url} — richiede login. Per trovare profili LinkedIn usa enrichLeadsAutomatically oppure searchGooglePlaywright con query '"NomeAzienda" site:linkedin.com/in'` });
+                }
+
+                // Emit browser URL so the panel shows the fetch
+                _emit({ phase: 'scrape', message: `🌐 Fetching: ${url}`, browserUrl: url });
+
+                const response = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8',
+                    },
+                    signal: AbortSignal.timeout(15000),
+                });
+
+                if (!response.ok) {
+                    return JSON.stringify({ error: `HTTP ${response.status} — pagina non accessibile`, url });
+                }
+
+                const contentType = response.headers.get('content-type') || '';
+                if (!contentType.includes('html') && !contentType.includes('text')) {
+                    return JSON.stringify({ error: `Contenuto non testuale (${contentType}), non leggibile`, url });
+                }
+
+                const html = await response.text();
+
+                // Strip HTML tags and clean up text
+                const text = html
+                    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                    .replace(/<[^>]+>/g, ' ')
+                    .replace(/&nbsp;/g, ' ')
+                    .replace(/&amp;/g, '&')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&quot;/g, '"')
+                    .replace(/\s{3,}/g, '\n\n')
+                    .trim()
+                    .slice(0, 800); // Limit to avoid context overflow
+
+                // Auto-extract emails if requested
+                const extractEmails = args.extractEmails !== false;
+                let emails: string[] = [];
+                if (extractEmails) {
+                    const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+                    const allEmails = html.match(emailRegex) || [];
+                    // Filter out generic/noreply emails
+                    const genericPatterns = /^(info|contact|support|admin|noreply|no-reply|hello|sales|marketing|office|hr|jobs|press|webmaster|help|service|team)@/i;
+                    emails = [...new Set(allEmails)].filter(e => !genericPatterns.test(e)).slice(0, 20);
+                }
+
+                return JSON.stringify({
+                    url,
+                    status: response.status,
+                    textLength: text.length,
+                    emails,
+                    emailsFound: emails.length,
+                    text,
+                    note: emails.length > 0 ? `Trovate ${emails.length} email personali nella pagina` : 'Nessuna email personale trovata — cerca nomi nel testo e usa Hunter',
+                });
+            } catch (e: any) {
+                if (e.name === 'TimeoutError') return JSON.stringify({ error: 'Timeout — sito troppo lento o non raggiungibile', url: args.url });
+                return JSON.stringify({ error: `Errore fetchWebPage: ${e.message}`, url: args.url });
+            }
+        }
+
         default:
-            return JSON.stringify({ error: `Tool sconosciuto: ${name}` });
+            return JSON.stringify({
+                error: `Tool "${name}" non esiste. Usa SOLO i tool elencati qui sotto.`,
+                available_tools: [
+                    'enrichLeadsAutomatically',
+                    'getExistingLeadEmails',
+                    'getLeadsToEnrich',
+                    'updateLead',
+                    'browsePage',
+                    'fetchWebPage',
+                    'searchGooglePlaywright',
+                    'searchGoogleWeb',
+                    'scrapeWithFirecrawl',
+                    'mapWebsiteFirecrawl',
+                    'scrapeWebsite',
+                    'findEmailsHunter',
+                    'findEmailHunter',
+                    'verifyEmail',
+                    'searchPeopleApollo',
+                    'searchCompaniesApollo',
+                    'searchProspectsVibe',
+                    'searchBusinessesVibe',
+                    'searchGoogleMaps',
+                    'runApifyActor',
+                    'saveLeads',
+                    'getLeadStats',
+                    'exportLeads',
+                ],
+                hint: 'Per navigare il web usa browsePage(url) o fetchWebPage(url). Per cercare su Google GRATIS usa searchGooglePlaywright(query). Per cercare LinkedIn: searchGooglePlaywright con query "NomeAzienda" site:linkedin.com/in. Per arricchire lead esistenti usa enrichLeadsAutomatically. NON usare fetch, browser_navigate, ddg_search o altri tool non in lista.',
+            });
     }
 }
 
@@ -1467,22 +2303,6 @@ export interface LeadGeneratorResult {
 export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<LeadGeneratorResult> {
     // Route to Claude CLI (Anthropic API) if selected
     if (input.aiProvider === 'claude-cli') {
-        return leadGeneratorFlowClaude(input);
-    }
-
-    // For fair/event searches, ALWAYS use Claude CLI flow — it has the full Playwright browser
-    // pipeline (scrape exhibitor page, visit each website, Google+LinkedIn search) that the
-    // OpenRouter tool-calling loop doesn't support
-    const allMsgTexts = input.messages.map(m => {
-        if (typeof m.content === 'string') return m.content;
-        if (Array.isArray(m.content)) return m.content.map((c: any) => c.text || c).filter(Boolean).join(' ');
-        return '';
-    }).join(' ');
-    const fairRegex = /fiera|sps|expo|esposi|mecspe|salone|fair|exhibit|event|espositor|exhibitor/i;
-    const isFairRequest = fairRegex.test(allMsgTexts);
-    console.log(`[LeadGen] Fair detection: isFairRequest=${isFairRequest}, aiProvider=${input.aiProvider}, textSample="${allMsgTexts.substring(0, 100)}"`);
-    if (isFairRequest) {
-        console.log('[LeadGen] ✅ Fair search detected — routing to Claude CLI flow (Firecrawl + Playwright pipeline)');
         return leadGeneratorFlowClaude(input);
     }
 
@@ -1511,14 +2331,79 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
         return { role, content: text };
     });
 
-    const MAX_TOOL_ROUNDS = 50;
+    const activityLog: string[] = [];
+    const emit = (evt: any) => {
+        if (input.onProgress) input.onProgress(evt);
+        if (evt.message) activityLog.push(evt.message);
+    };
+    const MAX_TOOL_ROUNDS = 150;
     let lastError = '';
     let accumulatedCost = 0;
     let accumulatedTokens = 0;
+    let totalLeadsFound = 0;
+    let totalLeadsWithEmail = 0;
+
+    const modelName = input.model || 'google/gemini-2.5-flash';
+    emit({ phase: 'plan', message: `Avvio ricerca con ${modelName}...`, progress: 2 });
+
+    // ── PRE-FLIGHT: verify model supports tool calling ──────────────────────
+    try {
+        const testRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: modelName,
+                messages: [{ role: 'user', content: 'Chiama il tool getLeadStats.' }],
+                tools: leadGenTools,
+                tool_choice: 'auto',
+                max_tokens: 100,
+            }),
+        });
+        if (testRes.ok) {
+            const testData = await testRes.json();
+            const testChoice = testData.choices?.[0];
+            const hasToolCall = !!(testChoice?.message?.tool_calls?.length);
+            const hasContent = !!(testChoice?.message?.content);
+            if (!hasToolCall && !hasContent) {
+                // Empty response — model likely doesn't support tool calling
+                return {
+                    text: `❌ Il modello **${modelName}** non supporta tool calling (risposta vuota al test).\n\nModelli compatibili con il Lead Generator:\n• \`google/gemini-2.5-flash-preview\` 🟢 gratis, ottimo\n• \`google/gemini-flash-1.5\` 🟢 gratis, veloce\n• \`google/gemini-2.0-flash-001\` 🟢 gratis\n• \`meta-llama/llama-3.3-70b-instruct\` 🟢 gratis\n• \`openai/gpt-4o-mini\` 🟡 economico\n• \`openai/gpt-4o\` 🟡 potente\n\nCambia modello nel selettore in alto a destra e riprova.`,
+                    cost: 0, totalTokens: 0,
+                };
+            }
+            if (!hasToolCall && hasContent) {
+                // Model responded with text instead of tool call
+                return {
+                    text: `❌ Il modello **${modelName}** non esegue tool calling: ha risposto con testo invece di chiamare un tool.\n\nQuesto modello non è compatibile con il Lead Generator.\n\nModelli compatibili:\n• \`google/gemini-2.5-flash-preview\` 🟢 gratis, ottimo\n• \`google/gemini-flash-1.5\` 🟢 gratis, veloce\n• \`google/gemini-2.0-flash-001\` 🟢 gratis\n• \`meta-llama/llama-3.3-70b-instruct\` 🟢 gratis\n• \`openai/gpt-4o-mini\` 🟡 economico\n• \`openai/gpt-4o\` 🟡 potente\n\nCambia modello nel selettore in alto a destra e riprova.`,
+                    cost: 0, totalTokens: 0,
+                };
+            }
+            // hasToolCall = true → model works, proceed
+            emit({ phase: 'plan', message: `✅ ${modelName} supporta tool calling — avvio ricerca...`, progress: 5 });
+        } else {
+            const errData = await testRes.json().catch(() => ({}));
+            const errMsg = errData?.error?.message || `HTTP ${testRes.status}`;
+            const errLower = errMsg.toLowerCase();
+            if (errLower.includes('tool') || errLower.includes('function') || testRes.status === 400) {
+                return {
+                    text: `❌ Il modello **${modelName}** ha rifiutato il tool calling: "${errMsg}"\n\nModelli compatibili:\n• \`google/gemini-2.5-flash-preview\` 🟢 gratis\n• \`google/gemini-flash-1.5\` 🟢 gratis\n• \`openai/gpt-4o-mini\` 🟡 economico\n\nCambia modello e riprova.`,
+                    cost: 0, totalTokens: 0,
+                };
+            }
+            // Other error (auth, quota) — let the main loop handle it
+        }
+    } catch (e: any) {
+        // Network error during test — skip test, let main loop handle
+        console.warn('[LeadGen] Pre-flight test failed:', e.message);
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     // Track search results and whether saveLeads was called
     let saveLeadsCalled = false;
     const collectedLeads: any[] = [];
+    let consecutiveTextRounds = 0; // detect models that refuse to call tools
+    let unknownToolCount = 0; // detect models that invent tool names
+    let totalToolCallsMade = 0; // total tool calls executed across all rounds
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
         try {
@@ -1543,6 +2428,14 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
                     await new Promise(r => setTimeout(r, 2000));
                     continue;
                 }
+                // Detect tool calling not supported errors
+                const errLower = lastError.toLowerCase();
+                if (
+                    response.status === 400 &&
+                    (errLower.includes('tool') || errLower.includes('function') || errLower.includes('tool_choice'))
+                ) {
+                    throw new Error(TOOL_NOT_SUPPORTED_ERROR(input.model || 'questo modello'));
+                }
                 throw new Error(lastError);
             }
 
@@ -1558,21 +2451,34 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
             if (generationId && input.apiKey) {
                 try {
                     // Small delay to let OpenRouter finalize generation stats
-                    await new Promise(r => setTimeout(r, 500));
+                    await new Promise(r => setTimeout(r, 800));
                     const costRes = await fetch(`https://openrouter.ai/api/v1/generation?id=${generationId}`, {
                         headers: { 'Authorization': `Bearer ${input.apiKey}` },
                     });
                     if (costRes.ok) {
                         const costData = await costRes.json();
-                        const genCost = costData.data?.total_cost || 0;
+                        const genCost = costData.data?.total_cost ?? costData.data?.usage?.cost ?? 0;
+                        console.log(`[LeadGen-Cost] id=${generationId} cost=${genCost}`, JSON.stringify(costData.data).slice(0, 200));
                         if (genCost > 0) accumulatedCost += genCost;
+                    } else {
+                        console.warn(`[LeadGen-Cost] generation stats failed: ${costRes.status}`);
                     }
-                } catch { /* ignore - cost tracking is best-effort */ }
+                } catch (e) {
+                    console.warn('[LeadGen-Cost] cost fetch error:', e);
+                }
             }
 
             const choice = data.choices?.[0];
-            if (!choice) {
+            if (!choice || (!choice.message?.content && !choice.message?.tool_calls?.length)) {
+                // Some models return empty choices when they can't proceed
                 lastError = 'Nessuna risposta dal modello';
+                consecutiveTextRounds++;
+                if (consecutiveTextRounds >= 3 && totalToolCallsMade === 0) {
+                    throw new Error(TOOL_NOT_SUPPORTED_ERROR(input.model || 'questo modello'));
+                }
+                // If we already did some work, just exit gracefully
+                if (totalToolCallsMade > 0) break;
+                await new Promise(r => setTimeout(r, 1000));
                 continue;
             }
 
@@ -1580,6 +2486,8 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
 
             // If the model made tool calls, execute them and continue
             if (message.tool_calls && message.tool_calls.length > 0) {
+                consecutiveTextRounds = 0; // reset — model is cooperating
+                totalToolCallsMade += message.tool_calls.length;
                 openaiMessages.push(message);
 
                 for (const toolCall of message.tool_calls) {
@@ -1589,11 +2497,69 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
 
                     console.log(`[LeadGen] Tool call: ${fnName}`, fnName === 'saveLeads' ? `(${fnArgs.leads?.length || 0} leads)` : '');
 
+                    // Emit progress before executing tool
+                    const isScrape = ['scrapeWithFirecrawl', 'scrapeWebsite', 'mapWebsiteFirecrawl', 'browsePage', 'fetchWebPage'].includes(fnName);
+                    const isSearch = ['searchGoogleWeb', 'searchGoogleMaps', 'searchPeopleApollo', 'searchCompaniesApollo', 'searchProspectsVibe', 'searchBusinessesVibe'].includes(fnName);
+                    const detail = fnArgs.url || fnArgs.domain || fnArgs.query || fnArgs.searchName || '';
+
+                    const toolMsg: Record<string, string> = {
+                        browsePage: `🌐 Browser: ${fnArgs.url || ''}`,
+                        fetchWebPage: `🌐 Fetch: ${fnArgs.url || ''}`,
+                        getLeadsToEnrich: '📋 Caricando lista aziende da arricchire...',
+                        updateLead: `✏️ Aggiornando lead ${fnArgs.leadId || ''}`,
+                        searchPeopleApollo: '🔍 Apollo: cercando persone...',
+                        searchCompaniesApollo: '🔍 Apollo: cercando aziende...',
+                        findEmailsHunter: `📧 Hunter: scansione dominio ${fnArgs.domain || ''}`,
+                        findEmailHunter: `📧 Hunter: email per ${fnArgs.first_name || ''} ${fnArgs.last_name || ''}`,
+                        verifyEmail: `✉️ Verificando ${fnArgs.email || ''}`,
+                        searchGoogleWeb: `🔍 Google: "${(fnArgs.query || '').substring(0, 60)}"`,
+                        searchGoogleMaps: `🗺️ Maps: "${fnArgs.query || ''}"`,
+                        scrapeWithFirecrawl: `🌐 Navigando: ${fnArgs.url || ''}`,
+                        mapWebsiteFirecrawl: `🌐 Mappando: ${fnArgs.url || ''}`,
+                        scrapeWebsite: `🌐 Navigando: ${fnArgs.url || ''}`,
+                        runApifyActor: '🤖 Apify: scraping avanzato...',
+                        searchProspectsVibe: '🔍 Vibe: cercando contatti...',
+                        searchBusinessesVibe: '🔍 Vibe: cercando aziende...',
+                        saveLeads: `💾 Salvando ${fnArgs.leads?.length || 0} lead...`,
+                        getExistingLeadEmails: '🔎 Controllo duplicati nel DB...',
+                    };
+
+                    const msg = toolMsg[fnName] || `⚙️ ${fnName}${detail ? ': ' + detail.substring(0, 50) : ''}`;
+                    emit({
+                        phase: fnName === 'saveLeads' ? 'save' : isScrape ? 'scrape' : 'execute',
+                        message: msg,
+                        detail,
+                        browserUrl: isScrape ? (fnArgs.url || undefined) : undefined,
+                        leadsFound: totalLeadsFound,
+                        leadsWithEmail: totalLeadsWithEmail,
+                    });
+
                     if (fnName === 'saveLeads') saveLeadsCalled = true;
+
+                    // Track unknown tools
+                    const knownTools = ['enrichLeadsAutomatically','getExistingLeadEmails','getLeadsToEnrich','updateLead','browsePage','fetchWebPage','searchGooglePlaywright','searchGoogleWeb','scrapeWithFirecrawl','mapWebsiteFirecrawl','scrapeWebsite','findEmailsHunter','findEmailHunter','verifyEmail','searchPeopleApollo','searchCompaniesApollo','searchProspectsVibe','searchBusinessesVibe','searchGoogleMaps','runApifyActor','saveLeads','getLeadStats','exportLeads'];
+                    if (!knownTools.includes(fnName)) {
+                        unknownToolCount++;
+                        emit({ phase: 'execute', message: `⚠️ Tool "${fnName}" non valido (${unknownToolCount}/5) — correggo...` });
+                        if (unknownToolCount >= 5) {
+                            throw new Error(TOOL_NOT_SUPPORTED_ERROR(input.model || 'questo modello'));
+                        }
+                    }
 
                     let result: string;
                     try {
-                        result = await executeToolCall(fnName, fnArgs, input.companyId, apiKeys, input.conversationId);
+                        result = await executeToolCall(fnName, fnArgs, input.companyId, apiKeys, input.conversationId, emit);
+                        // Update counters + notify after saveLeads
+                        if (fnName === 'saveLeads' && fnArgs.leads?.length) {
+                            totalLeadsFound += fnArgs.leads.length;
+                            totalLeadsWithEmail += fnArgs.leads.filter((l: any) => l.email).length;
+                            emit({
+                                phase: 'save',
+                                message: `✅ Salvati ${fnArgs.leads.length} lead — totale: ${totalLeadsFound} (${totalLeadsWithEmail} con email)`,
+                                leadsFound: totalLeadsFound,
+                                leadsWithEmail: totalLeadsWithEmail,
+                            });
+                        }
                     } catch (e: any) {
                         console.error(`[LeadGen] Tool error: ${fnName}:`, e.message);
                         result = JSON.stringify({ error: e.message, suggestion: 'Prova un approccio diverso o controlla le chiavi API nelle Impostazioni.' });
@@ -1616,13 +2582,71 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
                         } catch { /* ignore parse errors */ }
                     }
 
+                    // Truncate ALL tool results aggressively to avoid context overflow
+                    let storedResult = result;
+                    try {
+                        const parsed = JSON.parse(result);
+                        const heavyTools = ['browsePage', 'fetchWebPage', 'scrapeWithFirecrawl', 'scrapeWebsite', 'mapWebsiteFirecrawl', 'searchGooglePlaywright'];
+                        if (heavyTools.includes(fnName)) {
+                            // Heavy tools: keep only structured data + 500 chars of text
+                            storedResult = JSON.stringify({
+                                url: parsed.url,
+                                query: parsed.query,
+                                emails: parsed.emails || [],
+                                emailsFound: parsed.emailsFound || 0,
+                                resultsCount: parsed.resultsCount,
+                                results: (parsed.results || []).slice(0, 5),
+                                linkedinProfilesFound: parsed.linkedinProfilesFound,
+                                text: (parsed.text || parsed.content || '').slice(0, 500),
+                                note: parsed.note || parsed.tip || '',
+                                error: parsed.error,
+                            });
+                        } else if (result.length > 1000) {
+                            // Other large results: truncate to 1000 chars
+                            storedResult = result.slice(0, 1000) + '…[troncato]';
+                        }
+                    } catch { /* keep original if parse fails */ }
+
                     openaiMessages.push({
                         role: 'tool',
-                        content: result,
+                        content: storedResult,
                         tool_call_id: toolCall.id,
                     } as any);
                 }
+
+                // Prune old messages aggressively to prevent context overflow
+                if (openaiMessages.length > 30) {
+                    const systemMsg = openaiMessages[0];
+                    const recent = openaiMessages.slice(-20);
+                    openaiMessages.length = 0;
+                    openaiMessages.push(systemMsg, ...recent);
+                    emit({ phase: 'execute', message: `♻️ Contesto potato (tengo ultimi 20 messaggi)` });
+                }
+
                 continue;
+            }
+
+            // Model returned text without tool calls
+            consecutiveTextRounds++;
+
+            // Force tool use if model is writing text mid-work instead of calling tools
+            const isJustStarting = totalToolCallsMade < 3;
+            const isWritingReportMidWork = totalToolCallsMade >= 3 && consecutiveTextRounds <= 1 && round < MAX_TOOL_ROUNDS - 5;
+            if ((isJustStarting && consecutiveTextRounds <= 2) || isWritingReportMidWork) {
+                emit({ phase: 'execute', message: '⚡ Forzo continuazione lavoro...' });
+                openaiMessages.push(message);
+                openaiMessages.push({
+                    role: 'user',
+                    content: isJustStarting
+                        ? 'SMETTI DI SCRIVERE PIANI. Chiama SUBITO getLeadsToEnrich poi browsePage. NON scrivere altro testo. AGISCI ORA.'
+                        : 'NON scrivere rapporti intermedi. Hai ancora aziende da elaborare. Chiama SUBITO il prossimo tool (browsePage o findEmailsHunter) sulla prossima azienda. CONTINUA SENZA FERMARTI.',
+                } as any);
+                continue;
+            }
+
+            // After 3 consecutive text-only rounds at startup → model doesn't support tools
+            if (isJustStarting && consecutiveTextRounds >= 3) {
+                throw new Error(TOOL_NOT_SUPPORTED_ERROR(input.model || 'questo modello'));
             }
 
             // No tool calls - auto-save collected leads if model didn't call saveLeads
@@ -1669,282 +2693,22 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
         }
     }
 
+    // Don't show "tool not supported" error if the model clearly did work
+    const isToolSupportError = lastError?.includes('non supporta') || lastError?.includes('tool calling');
+    const relevantError = (lastError && !isToolSupportError) ? lastError : '';
+
+    // Build log summary for the chat message
+    const logSummary = activityLog.length > 0
+        ? `\n\n---\n**Log operazioni:**\n\`\`\`\n${activityLog.slice(-80).join('\n')}\n\`\`\``
+        : '';
+
     return {
-        text: `Non sono riuscito a completare la ricerca dopo ${MAX_TOOL_ROUNDS} tentativi. Ultimo errore: ${lastError}. Puoi riprovare con criteri diversi.`,
+        text: totalToolCallsMade > 0
+            ? `Ho completato ${totalToolCallsMade} operazioni e trovato ${totalLeadsFound} lead.${relevantError ? ` Nota: ${relevantError}` : ''}${logSummary}`
+            : `❌ Il modello non ha eseguito nessuna operazione dopo ${MAX_TOOL_ROUNDS} tentativi.\n\nPossibili cause:\n• Il modello selezionato non supporta tool calling\n• Quota API esaurita\n• Errore: ${lastError || 'sconosciuto'}\n\nProva con: google/gemini-flash-1.5 o openai/gpt-4o-mini${logSummary}`,
         cost: accumulatedCost,
         totalTokens: accumulatedTokens,
     };
-}
-
-// ===================== CLAUDE CODE CLI PATH =====================
-// Architecture: Plan → Execute → Synthesize
-// - PLAN: One Claude CLI call to break user request into micro-tasks
-// - EXECUTE: Pure Node.js tool execution (no Claude CLI needed)
-// - SYNTHESIZE: One Claude CLI call to format results for the user
-// This reduces Claude CLI calls from ~30 to 2-3, eliminating timeouts.
-
-interface MicroTask {
-    id: number;
-    tool: string;
-    args: Record<string, any>;
-    description: string;
-    dependsOn?: number[]; // task IDs this depends on
-    status?: 'pending' | 'running' | 'done' | 'error';
-    result?: any;
-    error?: string;
-}
-
-interface ExecutionPlan {
-    summary: string;
-    tasks: MicroTask[];
-}
-
-/**
- * Call Claude CLI with a focused prompt. Returns the raw text response.
- */
-function callClaudeCli(prompt: string, model: string, timeoutMs: number = 120_000): string {
-    const claudePath = process.env.CLAUDE_PATH || '/opt/homebrew/bin/claude';
-    const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
-    const fullPath = [...extraPaths, process.env.PATH || ''].join(':');
-
-    return execSync(
-        `${claudePath} -p --model ${model} --output-format text --permission-mode bypassPermissions --max-turns 1`,
-        {
-            input: prompt,
-            encoding: 'utf-8',
-            timeout: timeoutMs,
-            maxBuffer: 10 * 1024 * 1024,
-            env: { ...process.env, TERM: 'dumb', FORCE_COLOR: '0', NO_COLOR: '1', PATH: fullPath },
-        }
-    ).trim();
-}
-
-/**
- * Available tools description for the planner
- */
-function getToolCatalog(apiKeys: Record<string, string | undefined>): string {
-    const tools: string[] = [];
-    if (apiKeys.apollo) {
-        tools.push('- searchPeopleApollo: cerca persone per ruolo, settore, localita. Args: {jobTitles:[], industries:[], locations:[], companySize?, keywords?, limit?}');
-        tools.push('- searchCompaniesApollo: cerca aziende per settore, localita, dimensione. Args: {industries:[], locations:[], companySize?, keywords?, limit?}');
-    }
-    if (apiKeys.hunter) {
-        tools.push('- findEmailsHunter: trova TUTTE le email di un dominio. Args: {domain:string, type?:"personal"|"generic"}');
-        tools.push('- findEmailHunter: trova email di UNA persona specifica. Args: {domain:string, first_name:string, last_name:string, company?:string}');
-        tools.push('- verifyEmail: verifica email. Args: {email:string}');
-    }
-    if (apiKeys.serpApi) {
-        tools.push('- searchGoogleMaps: cerca attivita su Google Maps. Args: {query:string, location?:string}');
-        tools.push('- searchGoogleWeb: cerca su Google Web. Ottimo per trovare liste espositori, directory, elenchi aziende. Args: {query:string, num?:number}');
-    }
-    if (apiKeys.vibeProspect) {
-        tools.push('- searchProspectsVibe: cerca contatti con Vibe Prospecting/Explorium. Args: {job_titles:[], country_codes?:[], company_country_codes?:[], company_names?:[], company_sizes?:[], linkedin_categories?:[], has_email?:boolean, limit?}');
-        tools.push('- searchBusinessesVibe: cerca aziende con Vibe Prospecting. Args: {country_codes?:[], company_sizes?:[], company_revenues?:[], linkedin_categories?:[], google_categories?:[], website_keywords?:[], limit?}');
-    }
-    if (apiKeys.firecrawl) {
-        tools.push('- scrapeWithFirecrawl: scraping pagina web. Args: {url:string, formats?:["markdown"], onlyMainContent?:boolean}');
-        tools.push('- mapWebsiteFirecrawl: scopri URL di un sito. Args: {url:string, search?:string, limit?}');
-    }
-    if (apiKeys.apify) {
-        tools.push('- runApifyActor: scraping avanzato. Args: {actorId:string, input:object}');
-    }
-    // Always available
-    tools.push('- scrapeWebsite: scraping base (Python backend). Args: {url:string, extractType?:"contacts"|"about"|"team"|"all"}');
-    tools.push('- getExistingLeadEmails: recupera email gia salvate nel DB (nessun argomento)');
-    tools.push('- saveLeads: salva lead nel DB. Args: {searchName:string, leads:[{firstName,lastName,fullName,jobTitle,email,phone,linkedinUrl,companyName,companyDomain,companyWebsite,companySize,companyIndustry,companyCity,companyCountry,source,notes,confidence,emailStatus}]}');
-    tools.push('- getLeadStats: statistiche lead esistenti (nessun argomento)');
-    tools.push('- exportLeads: esporta lead in CSV. Args: {searchId?:string}');
-
-    return tools.join('\n');
-}
-
-/**
- * PHASE 1: Generate execution plan from user request
- */
-async function generatePlan(
-    userRequest: string,
-    conversationHistory: string,
-    model: string,
-    apiKeys: Record<string, string | undefined>,
-    companyId: string
-): Promise<ExecutionPlan> {
-    const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    const toolCatalog = getToolCatalog(apiKeys);
-
-    const planPrompt = `Sei un planner AI per ricerche lead B2B. Data: ${today}. Company ID: ${companyId}.
-
-CONVERSAZIONE PRECEDENTE:
-${conversationHistory || '(nessuna)'}
-
-RICHIESTA UTENTE: ${userRequest}
-
-TOOL DISPONIBILI:
-${toolCatalog}
-
-COMPITO: Genera un piano di esecuzione in JSON. Ogni task e' un singolo tool call.
-
-REGOLE GENERALI:
-- Il PRIMO task deve SEMPRE essere getExistingLeadEmails per evitare duplicati
-- Usa TUTTE le API disponibili in combinazione per massimizzare i risultati
-- NON aggiungere task saveLeads — il sistema salva automaticamente dopo l'enrichment
-- NON aggiungere task per arricchimento email (Hunter domain search, email finder, verifica) — il sistema li fa automaticamente dopo il piano
-- Concentrati SOLO sulle ricerche principali: Apollo, Vibe, Google Maps, scraping
-- Massimo 15 task. Sii efficiente — meglio poche task mirate che tante generiche
-- Il sistema dopo il piano esegue AUTOMATICAMENTE: Hunter domain search, Hunter email finder, verifica email, Vibe enrichment per aziende senza contatti
-
-REGOLE PER FIERE/EVENTI (CRITICO):
-- Se l'utente chiede contatti di espositori di una fiera/evento, usa questa strategia multi-fonte:
-  1. ${apiKeys.firecrawl ? 'Usa mapWebsiteFirecrawl per trovare la pagina espositori, poi scrapeWithFirecrawl per estrarre la lista' : 'Usa scrapeWebsite sul sito della fiera'}
-  2. ${apiKeys.serpApi ? 'IN PARALLELO usa searchGoogleWeb per cercare "lista espositori [nome fiera] [anno]" per trovare pagine con elenchi' : ''}
-  3. Se il sito ufficiale non funziona, cerca su Google le liste espositori con searchGoogleWeb
-  4. Dopo lo scraping, il sistema AUTOMATICAMENTE: estrae nomi aziende → cerca contatti su Hunter/Vibe → verifica email
-  5. Usa ANCHE searchProspectsVibe/searchPeopleApollo con company_names specifiche di aziende note del settore
-- Per SPS Italia Parma: URL principale https://sps.messefrankfurt.it/espositori-prodotti/lista-espositori.html
-- Strategia alternativa: searchGoogleWeb con query "espositori SPS Italia Parma 2026 lista" oppure "SPS IPC Drives Italia exhibitors list"
-
-REGOLE PER HUNTER.IO (IMPORTANTE):
-- Per aziende italiane, cerca SEMPRE prima sul dominio .it (es: abb.it, siemens.it, festo.it) — restituisce contatti della filiale italiana
-- Solo se il dominio .it non esiste o non ha risultati, usa il dominio globale (.com)
-- Usa SEMPRE type:"personal" per avere email nominative, non generiche
-
-REGOLE PER VIBE PROSPECTING:
-- company_country_codes: usa SEMPRE codici ISO a 2 lettere: ["IT"], ["US"], ["DE"], etc.
-- company_sizes: usa ESATTAMENTE questi valori: "1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5001-10000", "10001+"
-- NON usare MAI il campo linkedin_categories (spesso genera errori API 422). Usa piuttosto job_titles e company_names.
-- has_email: metti SEMPRE true per avere solo prospect con email
-- Per cercare aziende specifiche usa company_names con i nomi esatti (piu affidabile delle categorie)
-- Se usi company_names, eviterai filtri troppo restrittivi.
-
-REGOLE PER GOOGLE MAPS (SerpApi):
-- query: scrivi la ricerca completa (es: "automazione industriale Parma")
-- NON usare il parametro location, metti la localita nella query stessa
-
-REGOLE PER GOOGLE MAPS (CRITICO):
-- NON usare MAI searchGoogleMaps per ricerche di fiere/eventi/espositori!
-- Google Maps trova aziende LOCALI nella citta della fiera, NON gli espositori (che vengono da tutto il mondo)
-- Usa searchGoogleMaps SOLO per ricerche locali esplicite ("aziende di automazione a Bologna")
-
-REGOLE PER RICERCHE ITALIA:
-- Per ricerche in Italia usa country_codes: ["IT"] (Vibe), locations: ["Italy"] (Apollo)
-- Cerca contatti con titoli SIA in italiano SIA in inglese: ["Direttore Tecnico", "Technical Director", "CTO", "Responsabile Ufficio Tecnico", "Head of Engineering", "R&D Manager"]
-
-Rispondi SOLO con JSON valido (no markdown, no commenti):
-{"summary":"breve descrizione del piano","tasks":[{"id":1,"tool":"nome_tool","args":{...},"description":"cosa fa questo step"},{"id":2,"tool":"...","args":{...},"description":"...","dependsOn":[1]}]}`;
-
-    const isOpus = model.includes('opus');
-    const timeoutMs = isOpus ? 180_000 : 90_000;
-
-    console.log(`[LeadGen-Plan] Generating plan with ${model}...`);
-    const response = callClaudeCli(planPrompt, model, timeoutMs);
-
-    // Parse plan JSON
-    let plan: ExecutionPlan;
-    try {
-        let jsonStr = response;
-        // Strip markdown code blocks if present
-        const jsonMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-        if (jsonMatch) jsonStr = jsonMatch[1].trim();
-        // Try to find JSON object in response
-        const objMatch = jsonStr.match(/\{[\s\S]*"tasks"[\s\S]*\}/);
-        if (objMatch) jsonStr = objMatch[0];
-        plan = JSON.parse(jsonStr);
-        if (!plan.tasks || !Array.isArray(plan.tasks)) {
-            throw new Error('Piano senza tasks');
-        }
-    } catch (e: any) {
-        console.error('[LeadGen-Plan] Failed to parse plan:', e.message, 'Response:', response.slice(0, 500));
-        // Fallback: create a simple default plan
-        plan = createDefaultPlan(userRequest, apiKeys);
-    }
-
-    console.log(`[LeadGen-Plan] Plan: "${plan.summary}" with ${plan.tasks.length} tasks`);
-    return plan;
-}
-
-/**
- * Default plan when Claude fails to generate one
- */
-function createDefaultPlan(userRequest: string, apiKeys: Record<string, string | undefined>): ExecutionPlan {
-    const tasks: MicroTask[] = [
-        { id: 1, tool: 'getExistingLeadEmails', args: {}, description: 'Recupera email esistenti per evitare duplicati' },
-    ];
-    let id = 2;
-
-    const reqLower = userRequest.toLowerCase();
-    const isItaly = reqLower.match(/ital|parma|milano|roma|torino|bologna/i);
-    const isFair = reqLower.match(/fiera|sps|expo|esposi|mecspe|salone/i);
-
-    // If it's a fair/event, try to scrape the exhibitor page AND Google search
-    if (isFair) {
-        if (apiKeys.firecrawl) {
-            if (reqLower.includes('sps')) {
-                tasks.push({
-                    id: id++, tool: 'scrapeWithFirecrawl',
-                    args: { url: 'https://sps.messefrankfurt.it/espositori-prodotti/lista-espositori.html', formats: ['markdown'] },
-                    description: 'Scraping lista espositori SPS Italia', dependsOn: [1],
-                });
-            }
-        }
-        // Always search Google for exhibitor lists as backup/additional source
-        if (apiKeys.serpApi) {
-            const fairName = reqLower.includes('sps') ? 'SPS Italia Parma' : reqLower.includes('mecspe') ? 'MECSPE' : 'fiera';
-            tasks.push({
-                id: id++, tool: 'searchGoogleWeb',
-                args: { query: `lista espositori ${fairName} 2026`, num: 20 },
-                description: `Google search lista espositori ${fairName}`, dependsOn: [1],
-            });
-        }
-    }
-
-    // Job titles in Italian + English — use commercial/sales roles for fairs, technical for general
-    const jobTitles = isFair
-        ? ['Sales Manager', 'Area Manager', 'Business Development Manager', 'Key Account Manager', 'Commercial Director', 'Export Manager', 'Direttore Commerciale', 'Responsabile Vendite']
-        : ['Direttore Tecnico', 'Responsabile Ufficio Tecnico', 'CTO', 'Technical Director', 'Head of Engineering', 'R&D Manager'];
-
-    if (apiKeys.apollo) {
-        tasks.push({
-            id: id++, tool: 'searchPeopleApollo',
-            args: {
-                jobTitles,
-                industries: isFair ? ['Industrial Automation', 'Manufacturing', 'Electrical Equipment', 'Machinery'] : [],
-                locations: isItaly ? ['Italy'] : [],
-                limit: isFair ? 50 : 25,
-            },
-            description: 'Cerca contatti su Apollo', dependsOn: [1],
-        });
-    }
-    if (apiKeys.vibeProspect) {
-        tasks.push({
-            id: id++, tool: 'searchProspectsVibe',
-            args: {
-                job_titles: isFair
-                    ? ['Sales Manager', 'Business Development Manager', 'Key Account Manager', 'Commercial Director']
-                    : ['Technical Director', 'CTO', 'Head of Engineering', 'R&D Director'],
-                company_country_codes: isItaly ? ['IT'] : [],
-                has_email: true,
-                limit: isFair ? 50 : 25,
-            },
-            description: 'Cerca contatti su Vibe Prospecting', dependsOn: [1],
-        });
-    }
-
-    // For fairs: add MULTIPLE Google web searches with different queries for max coverage
-    if (apiKeys.serpApi && isFair) {
-        const fairName = reqLower.includes('sps') ? 'SPS Italia Parma' : reqLower.includes('mecspe') ? 'MECSPE' : 'fiera';
-        tasks.push({
-            id: id++, tool: 'searchGoogleWeb',
-            args: { query: `${fairName} 2025 espositori elenco completo`, num: 20 },
-            description: `Google search espositori ${fairName} 2025 (anno precedente)`, dependsOn: [1],
-        });
-        tasks.push({
-            id: id++, tool: 'searchGoogleWeb',
-            args: { query: `${fairName} exhibitors list companies`, num: 20 },
-            description: `Google search exhibitors ${fairName} (English)`, dependsOn: [1],
-        });
-    }
-
-    // Note: Hunter enrichment + email verification are handled automatically by the enrichment pipeline
-    return { summary: `Ricerca automatica per: ${userRequest.slice(0, 100)}`, tasks };
 }
 
 // ===================== LEAD QUALITY ENGINE =====================
@@ -1974,34 +2738,26 @@ function extractDomain(urlOrDomain: string | null | undefined): string | null {
     } catch { return urlOrDomain.replace(/^www\./, '').split('/')[0]; }
 }
 
-/** Calculate lead completeness score (0-100) */
 function scoreLeadCompleteness(lead: any): number {
     let score = 0;
-    // Personal email (not generic) = most important
     if (lead.email && !isGenericEmail(lead.email)) score += 25;
     else if (lead.email) score += 5;
-    // Email verified
     if (lead.emailStatus === 'valid') score += 10;
-    // Contact data
     if (lead.fullName && lead.fullName.trim().split(/\s+/).length >= 2) score += 12;
     if (lead.jobTitle) score += 8;
     if (lead.phone) score += 8;
     if (lead.linkedinUrl) score += 7;
-    // Company data
     if (lead.companyName) score += 8;
     if (lead.companyWebsite || lead.companyDomain) score += 5;
     if (lead.companyIndustry) score += 5;
     if (lead.companyCity) score += 4;
     if (lead.companyCountry) score += 3;
     if (lead.companySize) score += 3;
-    // Financial data bonus
     if (lead.revenueYear3 || lead.revenueYear2) score += 2;
-    // Company intelligence bonus (notes with description/info)
     if (lead.notes && lead.notes.length > 30) score += 3;
     return Math.min(100, score);
 }
 
-/** Normalize a lead: consistent casing, fill derivable fields, set source */
 function normalizeLead(raw: any, toolName: string): any {
     const firstName = raw.firstName || raw.first_name || null;
     const lastName = raw.lastName || raw.last_name || null;
@@ -2009,7 +2765,6 @@ function normalizeLead(raw: any, toolName: string): any {
     if (!fullName && (firstName || lastName)) {
         fullName = `${firstName || ''} ${lastName || ''}`.trim();
     }
-    // Capitalize names
     if (fullName) fullName = fullName.replace(/\b\w/g, (c: string) => c.toUpperCase());
 
     const companyWebsite = raw.companyWebsite || raw.company_website || raw.website || null;
@@ -2030,15 +2785,14 @@ function normalizeLead(raw: any, toolName: string): any {
         phone: raw.phone || raw.direct_phone || null,
         linkedinUrl: raw.linkedinUrl || raw.linkedin_url || raw.linkedin || null,
         companyName: raw.companyName || raw.company_name || raw.organization || null,
-        companyDomain,
-        companyWebsite,
+        companyDomain, companyWebsite,
         companySize: raw.companySize || raw.company_size || raw.number_of_employees_range || null,
         companyIndustry: raw.companyIndustry || raw.company_industry || raw.industry || raw.naics_description || raw.type || null,
         companyCity: raw.companyCity || raw.company_city || raw.city || raw.city_name || null,
         companyCountry: raw.companyCountry || raw.company_country || raw.country || raw.country_name || null,
         source,
         notes: raw.notes || raw.description || raw.business_description || null,
-        confidence: null, // Will be computed after enrichment
+        confidence: null,
         emailStatus: raw.emailStatus || raw.email_status || null,
         revenueYear1: raw.revenueYear1 || null,
         revenueYear2: raw.revenueYear2 || null,
@@ -2046,12 +2800,9 @@ function normalizeLead(raw: any, toolName: string): any {
         profitYear1: raw.profitYear1 || null,
         profitYear2: raw.profitYear2 || null,
         profitYear3: raw.profitYear3 || null,
-        _enriched: false, // internal tracking
-        _sources: new Set<string>([source]), // multi-source tracking
     };
 }
 
-/** Merge two lead records (enrichment), preferring non-null values from enricher */
 function mergeLeadData(base: any, enricher: any): any {
     const merged = { ...base };
     for (const key of Object.keys(enricher)) {
@@ -2060,34 +2811,22 @@ function mergeLeadData(base: any, enricher: any): any {
             merged[key] = enricher[key];
         }
     }
-    // Merge sources
-    if (enricher._sources) {
-        merged._sources = new Set([...(base._sources || []), ...enricher._sources]);
-    }
     return merged;
 }
 
-/** Deduplicate leads by email (case-insensitive), merge data from duplicates */
 function deduplicateLeads(leads: any[], existingEmails: Set<string>): any[] {
     const byEmail = new Map<string, any>();
     const noEmail: any[] = [];
-
     for (const lead of leads) {
-        if (!lead.email) {
-            noEmail.push(lead);
-            continue;
-        }
+        if (!lead.email) { noEmail.push(lead); continue; }
         const key = lead.email.toLowerCase();
-        if (existingEmails.has(key)) continue; // skip existing
+        if (existingEmails.has(key)) continue;
         if (byEmail.has(key)) {
-            // Merge duplicate → combine fields
             byEmail.set(key, mergeLeadData(byEmail.get(key), lead));
         } else {
             byEmail.set(key, lead);
         }
     }
-
-    // Add no-email leads only if they have a company with domain (for enrichment)
     const result = [...byEmail.values()];
     for (const lead of noEmail) {
         if (lead.companyDomain || lead.companyWebsite) {
@@ -2098,2085 +2837,509 @@ function deduplicateLeads(leads: any[], existingEmails: Set<string>): any[] {
     return result;
 }
 
-// ===================== EXECUTION ENGINE =====================
-
-/**
- * PHASE 2: Execute all tasks with PARALLEL execution for independent tasks
- */
-async function executePlan(
-    plan: ExecutionPlan,
-    companyId: string,
-    apiKeys: Record<string, string | undefined>,
-    conversationId?: string,
-    onProgress?: ProgressCallback
-): Promise<{ results: Map<number, any>; allLeads: any[] }> {
-    const emit = onProgress || (() => {});
-    const results = new Map<number, any>();
-    const allLeads: any[] = [];
-    const existingEmails = new Set<string>();
-
-    const completed = new Set<number>();
-    const pending = new Set(plan.tasks.map(t => t.id));
-    let maxWaves = 20; // safety limit
-
-    // ===================== FAIR MODE: PHASE 1 — AI EXHIBITOR LIST =====================
-    // For fair/event searches, the FIRST thing we do is generate a massive list of exhibitors
-    // with real domains using Claude's knowledge. This replaces scraping (which always fails on
-    // JS-heavy fair websites) and gives us a solid list to search contacts for.
-    const isFairSearch = plan.summary?.toLowerCase().match(/fiera|sps|expo|esposi|mecspe|salone|fair|exhibit|event/i)
-        || plan.tasks.some(t => t.description?.toLowerCase().match(/fiera|espositor|exhibitor/i));
-
-    console.log(`[LeadGen-ExecutePlan] isFairSearch=${!!isFairSearch}, plan.summary="${plan.summary?.substring(0, 80)}", tasks=${plan.tasks.length}`);
-    console.log(`[LeadGen-ExecutePlan] apiKeys available: ${Object.keys(apiKeys).filter(k => apiKeys[k]).join(', ')}`);
-
-    if (isFairSearch) {
-        // Extract fair context from plan
-        const fairContext = [
-            plan.summary || '',
-            ...plan.tasks.map(t => t.description || ''),
-            ...plan.tasks.map(t => JSON.stringify(t.args || {})),
-        ].join(' ');
-
-        const allExhibitors: Array<{ name: string; domain: string; country?: string }> = [];
-        const existingNames = new Set<string>();
-
-        // Helper to add company names (deduplicated)
-        const addExhibitor = (name: string, domain = '', country?: string): boolean => {
-            const clean = name.trim();
-            const key = clean.toLowerCase();
-            if (existingNames.has(key)) return false;
-            if (clean.length < 2 || clean.length > 100) return false;
-            if (/^(home|contatti?|about|chi siamo|news|event|prodott|search|menu|login|register|cookie|privacy)/i.test(clean)) return false;
-            existingNames.add(key);
-            allExhibitors.push({ name: clean, domain, country });
-            return true;
-        };
-
-        // Helper to extract company names from raw text using Claude
-        const extractCompaniesFromText = (text: string, source: string): number => {
-            if (text.length < 100) return 0;
-            try {
-                const extractPrompt = `Estrai TUTTI i nomi di AZIENDE ESPOSITRICI da questo testo di una pagina web di una fiera.
-Rispondi SOLO con un JSON array di stringhe con i nomi delle aziende.
-Non includere testo generico, titoli di pagina, elementi di navigazione, nomi di persone — solo NOMI DI AZIENDE.
-Se non trovi aziende, rispondi con [].
-
-TESTO (da ${source}):
-${text.substring(0, 20000)}`;
-                const result = callClaudeCli(extractPrompt, 'claude-haiku-4-5', 60_000);
-                const jsonMatch = result.match(/\[[\s\S]*\]/);
-                if (jsonMatch) {
-                    const names: string[] = JSON.parse(jsonMatch[0]);
-                    let added = 0;
-                    for (const n of names) {
-                        if (addExhibitor(n)) added++;
-                    }
-                    return added;
-                }
-            } catch { /* extraction failed */ }
-            return 0;
-        };
-
-        // ===================== PHASE 0: SCRAPE EXHIBITOR LIST using available providers =====================
-        // Strategy cascade: Firecrawl (JS rendering) → SerpApi (Google) → Apify → Claude knowledge
-        // apiKeys is already available as a parameter of executePlan()
-        console.log(`[LeadGen-Phase0] ✅ ENTERED PHASE 0 — firecrawl=${!!apiKeys.firecrawl}, serpApi=${!!apiKeys.serpApi}, apify=${!!apiKeys.apify}`);
-
-        // Find exhibitor page URLs
-        const exhibitorUrls = new Set<string>();
-        const urlMatches = fairContext.match(/https?:\/\/[^\s"'<>]+/gi);
-        if (urlMatches) urlMatches.forEach(u => exhibitorUrls.add(u.replace(/[.,;)]+$/, '')));
-        if (fairContext.toLowerCase().includes('sps') && fairContext.toLowerCase().match(/parma|italia/)) {
-            exhibitorUrls.add('https://www.spsitalia.it/it/elenco-ricerca-espositori');
-        }
-
-        // --- STRATEGY 1: Firecrawl (handles JS-rendered pages) ---
-        if (apiKeys.firecrawl && allExhibitors.length < 50) {
-            emit({ phase: 'knowledge', message: `Fase 0: Uso Firecrawl per leggere il sito ufficiale della fiera...`, progress: 2 });
-
-            // First, map the fair website to find exhibitor/espositori pages
-            try {
-                const mapResult = await executeToolCall('mapWebsiteFirecrawl', {
-                    url: [...exhibitorUrls][0] || 'https://www.spsitalia.it',
-                    search: 'espositori exhibitor elenco list',
-                    limit: 50,
-                }, companyId, apiKeys as any, conversationId);
-                const mapData = JSON.parse(mapResult);
-                if (mapData.links?.length > 0) {
-                    // Add exhibitor-related URLs
-                    for (const link of mapData.links) {
-                        if (typeof link === 'string' && link.match(/espositor|exhibitor|aussteller|elenco|list|company|aziend/i)) {
-                            exhibitorUrls.add(link);
-                        }
-                    }
-                    console.log(`[LeadGen-Phase0] Firecrawl map found ${mapData.links.length} URLs, ${exhibitorUrls.size} exhibitor-related`);
-                }
-            } catch (e: any) {
-                console.error(`[LeadGen-Phase0] Firecrawl map failed:`, e.message);
-            }
-
-            // Scrape each exhibitor URL
-            for (const url of exhibitorUrls) {
-                if (allExhibitors.length >= 200) break; // Enough from scraping
-                try {
-                    emit({ phase: 'knowledge', message: `🌐 Firecrawl: scraping ${url}...`, browserUrl: url, progress: 3 });
-
-                    const scrapeResult = await executeToolCall('scrapeWithFirecrawl', {
-                        url,
-                        formats: ['markdown'],
-                        onlyMainContent: true,
-                        waitFor: 5000,
-                        timeout: 60000,
-                    }, companyId, apiKeys as any, conversationId);
-                    const scrapeData = JSON.parse(scrapeResult);
-
-                    if (scrapeData.markdown && scrapeData.markdown.length > 200) {
-                        const added = extractCompaniesFromText(scrapeData.markdown, url);
-                        emit({
-                            phase: 'knowledge',
-                            message: `🌐 Firecrawl: ${added} aziende estratte da ${url}`,
-                            companiesFound: allExhibitors.length,
-                            progress: 4,
-                        });
-                        console.log(`[LeadGen-Phase0] Firecrawl scraped ${url}: ${added} new companies (total: ${allExhibitors.length})`);
-                    }
-                } catch (e: any) {
-                    console.error(`[LeadGen-Phase0] Firecrawl scrape ${url} failed:`, e.message);
-                }
-            }
-        }
-
-        // --- STRATEGY 2: SerpApi Google search for exhibitor lists ---
-        if (apiKeys.serpApi && allExhibitors.length < 100) {
-            emit({ phase: 'knowledge', message: `Fase 0: Cerco lista espositori su Google (SerpApi)...`, progress: 5 });
-
-            const googleQueries = [
-                `"SPS 2026" OR "SPS Parma 2026" elenco espositori lista completa`,
-                `"SPS Italia 2026" exhibitors list companies`,
-                `spsitalia.it espositori 2026 elenco aziende`,
-                `"SPS 2025" OR "SPS 2024" Parma elenco completo espositori`, // Previous editions have similar exhibitors
-            ];
-
-            for (const query of googleQueries) {
-                if (allExhibitors.length >= 200) break;
-                try {
-                    emit({ phase: 'knowledge', message: `🔍 Google: "${query.substring(0, 50)}..."`, progress: 5 });
-
-                    const searchResult = await executeToolCall('searchGoogleWeb', {
-                        query,
-                        num: 10,
-                        gl: 'it',
-                        hl: 'it',
-                    }, companyId, apiKeys as any, conversationId);
-                    const searchData = JSON.parse(searchResult);
-                    const results = searchData.organic_results || searchData.results || [];
-
-                    // For each result, if it looks like an exhibitor list, scrape it
-                    for (const r of results.slice(0, 5)) {
-                        if (allExhibitors.length >= 300) break;
-                        const resultUrl = r.link || r.url;
-                        if (!resultUrl) continue;
-                        // Skip PDFs, videos, social media
-                        if (resultUrl.match(/\.(pdf|mp4|youtube|facebook|twitter|instagram)/i)) continue;
-
-                        // Check if snippet contains company names
-                        const snippet = (r.snippet || r.description || '') + ' ' + (r.title || '');
-                        if (snippet.length > 50) {
-                            const addedFromSnippet = extractCompaniesFromText(snippet, 'Google snippet');
-                            if (addedFromSnippet > 0) {
-                                console.log(`[LeadGen-Phase0] Google snippet: ${addedFromSnippet} companies from "${resultUrl}"`);
-                            }
-                        }
-
-                        // Scrape the page with Firecrawl if available
-                        if (apiKeys.firecrawl && resultUrl.match(/espositor|exhibitor|list|elenco|companies|aziend/i)) {
-                            try {
-                                emit({ phase: 'knowledge', message: `🌐 Scraping: ${resultUrl.substring(0, 60)}...`, browserUrl: resultUrl, progress: 6 });
-
-                                const pageResult = await executeToolCall('scrapeWithFirecrawl', {
-                                    url: resultUrl,
-                                    formats: ['markdown'],
-                                    onlyMainContent: true,
-                                    timeout: 30000,
-                                }, companyId, apiKeys as any, conversationId);
-                                const pageData = JSON.parse(pageResult);
-
-                                if (pageData.markdown && pageData.markdown.length > 200) {
-                                    const added = extractCompaniesFromText(pageData.markdown, resultUrl);
-                                    if (added > 5) {
-                                        emit({
-                                            phase: 'knowledge',
-                                            message: `✅ ${added} aziende trovate da ${resultUrl.substring(0, 50)}`,
-                                            companiesFound: allExhibitors.length,
-                                            progress: 7,
-                                        });
-                                    }
-                                }
-                            } catch { /* scrape failed, continue */ }
-                        }
-                    }
-                } catch (e: any) {
-                    console.error(`[LeadGen-Phase0] Google search failed:`, e.message);
-                }
-            }
-        }
-
-        // --- STRATEGY 3: Apify Google Search Scraper for deeper results ---
-        if (apiKeys.apify && allExhibitors.length < 100) {
-            emit({ phase: 'knowledge', message: `Fase 0: Apify search per lista espositori...`, progress: 7 });
-            try {
-                const apifyResult = await executeToolCall('runApifyActor', {
-                    actorId: 'apify/google-search-scraper',
-                    input: {
-                        queries: `SPS 2026 Parma elenco completo espositori\nSPS Italia 2026 exhibitors full list\nSPS Parma 2025 lista espositori aziende`,
-                        maxPagesPerQuery: 3,
-                        languageCode: 'it',
-                        countryCode: 'it',
-                    },
-                }, companyId, apiKeys as any, conversationId);
-                const apifyData = JSON.parse(apifyResult);
-                const items = apifyData.items || apifyData.results || [];
-                for (const item of items) {
-                    const text = (item.title || '') + ' ' + (item.description || '') + ' ' + (item.snippet || '');
-                    if (text.length > 30) {
-                        extractCompaniesFromText(text, 'Apify Google');
-                    }
-                    // Also scrape promising URLs
-                    const itemUrl = item.url || item.link;
-                    if (itemUrl && apiKeys.firecrawl && itemUrl.match(/espositor|exhibitor|list|elenco/i) && allExhibitors.length < 200) {
-                        try {
-                            const scrapeR = await executeToolCall('scrapeWithFirecrawl', {
-                                url: itemUrl,
-                                formats: ['markdown'],
-                                onlyMainContent: true,
-                            }, companyId, apiKeys as any, conversationId);
-                            const scrapeD = JSON.parse(scrapeR);
-                            if (scrapeD.markdown) extractCompaniesFromText(scrapeD.markdown, itemUrl);
-                        } catch { /* skip */ }
-                    }
-                }
-                console.log(`[LeadGen-Phase0] Apify search: total ${allExhibitors.length} companies after processing`);
-            } catch (e: any) {
-                console.error(`[LeadGen-Phase0] Apify failed:`, e.message);
-            }
-        }
-
-        emit({
-            phase: 'knowledge',
-            message: allExhibitors.length > 0
-                ? `Fase 0 completata: ${allExhibitors.length} espositori trovati online. Integro con AI...`
-                : 'Nessun espositore trovato online. Genero lista con AI...',
-            companiesFound: allExhibitors.length,
-            progress: allExhibitors.length > 0 ? 10 : 5,
-        });
-        const MAX_BATCHES = 10; // safety limit (10 batches × ~100 each = ~1000 companies max)
-        const MIN_NEW_PER_BATCH = 5; // stop if a batch adds fewer than this (Claude is running out)
-
-        for (let batch = 1; batch <= MAX_BATCHES; batch++) {
-            const isFirstBatch = batch === 1;
-            const alreadyFoundList = allExhibitors.map(e => e.name);
-            // Only send last 200 names to avoid exceeding token limits
-            const alreadyFoundStr = alreadyFoundList.slice(-200).join(', ');
-
-            const batchPrompt = isFirstBatch
-                ? `Sei un esperto di fiere industriali. Genera la lista PIU' COMPLETA POSSIBILE di aziende REALI che espongono o che tipicamente espongono alla fiera descritta.
-
-CONTESTO FIERA: ${fairContext}
-${alreadyFoundList.length > 0 ? `\nAZIENDE GIA' TROVATE dal sito ufficiale (${alreadyFoundList.length}):\n${alreadyFoundStr}\n\nPer le aziende qui sopra che NON hanno ancora un dominio email, INCLUDILE nella tua risposta CON il dominio email corretto.\nGenera anche ALTRE aziende espositrici non ancora in lista.\n` : ''}
-Per OGNI azienda indica:
-- name: nome ufficiale
-- domain: dominio EMAIL aziendale (quello usato per le email dei dipendenti, NON il sito generico). Es: "siemens.com", "festo.com", "sew-eurodrive.it". OBBLIGATORIO.
-- country: paese (es: "Germany", "Italy")
-
-REGOLE:
-- GENERA IL MAGGIOR NUMERO POSSIBILE. Non fermarti a 50 o 100 — vai avanti finche ne conosci
-- SOLO aziende REALI che esistono davvero e sono plausibili espositori
-- Includi TUTTE le dimensioni: multinazionali, medie imprese, PMI italiane, startup
-- Il dominio DEVE essere quello usato per le email aziendali
-- Per aziende con filiale italiana, preferisci .it se usato per email (sew-eurodrive.it, lenze.it)
-- Per multinazionali globali: siemens.com, festo.com, abb.com, schneider-electric.com
-- Nomi composti: "BOSCH REXROTH"=boschrexroth.com, "ENDRESS+HAUSER"=endress.com, "NORD DRIVESYSTEMS"=nord.com
-- Per SPS/automazione copri TUTTI i settori: PLC, sensori, drives, motori, robotica, pneumatica, connettori, cavi, software industriale, HMI, SCADA, safety, visione, motion control, fieldbus, IO-Link, edge computing, cobot, encoder, inverter, riduttori, switch Ethernet industriale, alimentatori, morsettiere, quadri elettrici, sistemi di trasporto, AGV, magazzini automatici, stampa 3D industriale, digital twin, cybersecurity OT, MES, ERP industriale
-
-Rispondi SOLO con JSON array. Nessun testo prima o dopo.`
-                : `Genera ALTRE aziende REALI espositrici della stessa fiera. Devono essere TUTTE DIVERSE da quelle gia trovate.
-
-CONTESTO FIERA: ${fairContext}
-
-AZIENDE GIA' TROVATE (${alreadyFoundList.length} — NON ripeterle):
-${alreadyFoundStr}
-
-Cerca aziende che NON hai ancora elencato:
-${batch <= 3 ? '- Medie aziende europee del settore, PMI italiane specializzate, fornitori di componenti, distributori' :
-  batch <= 5 ? '- Aziende di nicchia: integratori di sistema, produttori di connettori/cavi specializzati, aziende di visione artificiale, produttori di sensori di processo, pneumatica/oleodinamica, sicurezza macchine' :
-  batch <= 7 ? '- Startup industriali, aziende di software MES/SCADA/digital twin, cybersecurity OT, cloud industriale, aziende asiatiche con presenza europea, distributori di componenti' :
-  '- Qualsiasi altra azienda del settore automazione/industria che non hai ancora nominato, anche piccole o di nicchia'}
-
-Stesse regole: name, domain (OBBLIGATORIO, email domain reale), country.
-Se non hai piu aziende da aggiungere, rispondi con un array vuoto: []
-Rispondi SOLO con JSON array.`;
-
-            try {
-                emit({
-                    phase: 'knowledge',
-                    message: `Fase 1: Generazione espositori [batch ${batch}]... ${allExhibitors.length} aziende trovate`,
-                    companiesFound: allExhibitors.length,
-                    progress: 5 + Math.min(15, batch * 2),
-                });
-
-                const result = callClaudeCli(batchPrompt, 'claude-sonnet-4-6', 120_000);
-                let companies: Array<{ name: string; domain: string; country?: string }> = [];
-                try {
-                    const jsonMatch = result.match(/\[[\s\S]*\]/);
-                    if (jsonMatch) companies = JSON.parse(jsonMatch[0]);
-                } catch { /* parse failed */ }
-
-                let newInBatch = 0;
-                for (const co of companies) {
-                    if (!co.name || !co.domain) continue;
-                    const key = co.name.toLowerCase().trim();
-                    if (existingNames.has(key)) continue;
-                    if (!co.domain.includes('.')) continue;
-                    allExhibitors.push(co);
-                    existingNames.add(key);
-                    newInBatch++;
-                }
-
-                console.log(`[LeadGen-FairMode] Batch ${batch}: Claude returned ${companies.length}, ${newInBatch} new unique → total: ${allExhibitors.length}`);
-
-                // Stop if Claude is running out of companies
-                if (newInBatch < MIN_NEW_PER_BATCH) {
-                    console.log(`[LeadGen-FairMode] Batch ${batch} added only ${newInBatch} new companies (< ${MIN_NEW_PER_BATCH}). Stopping.`);
-                    break;
-                }
-            } catch (e: any) {
-                console.error(`[LeadGen-FairMode] Batch ${batch} failed:`, e.message);
-                break; // stop on error
-            }
-        }
-
-        // Convert exhibitors to leads
-        if (allExhibitors.length > 0) {
-            for (const co of allExhibitors) {
-                allLeads.push({
-                    firstName: null, lastName: null, fullName: null,
-                    jobTitle: null, email: null, phone: null, linkedinUrl: null,
-                    companyName: co.name,
-                    companyDomain: co.domain.toLowerCase(),
-                    companyWebsite: `https://www.${co.domain.toLowerCase()}`,
-                    companySize: null, companyIndustry: null,
-                    companyCity: null, companyCountry: co.country || null,
-                    source: 'knowledge', notes: 'Espositore generato da AI (fase 1)',
-                    confidence: null, emailStatus: null,
-                    _enriched: false, _sources: new Set(['knowledge']),
-                });
-            }
-
-            console.log(`[LeadGen-FairMode] Phase 1 complete: ${allExhibitors.length} exhibitors with domains ready for contact search`);
-            emit({
-                phase: 'knowledge',
-                message: `Fase 1 completata: ${allExhibitors.length} espositori con domini pronti. Avvio fase 2: ricerca contatti...`,
-                companiesFound: allExhibitors.length,
-                progress: 20,
-            });
-
-            // Remove scraping tasks from plan — we don't need them, we have the list already
-            const scrapingTools = ['scrapeWithFirecrawl', 'scrapeWebsite', 'mapWebsiteFirecrawl'];
-            plan.tasks = plan.tasks.filter(t => !scrapingTools.includes(t.tool));
-            // Re-index pending set
-            pending.clear();
-            for (const t of plan.tasks) pending.add(t.id);
-        }
-    }
-
-    async function executeTask(task: MicroTask): Promise<void> {
-        console.log(`[LeadGen-Exec] Task ${task.id}/${plan.tasks.length}: ${task.tool} - ${task.description}`);
-        task.status = 'running';
-
-        try {
-            // Special handling for saveLeads — inject collected leads
-            let args = { ...task.args };
-            if (task.tool === 'saveLeads' && allLeads.length > 0 && (!args.leads || args.leads.length === 0)) {
-                const cleanLeads = deduplicateLeads(allLeads, existingEmails).filter(l => l.email && !isGenericEmail(l.email));
-                args = { ...args, leads: cleanLeads, searchName: args.searchName || plan.summary || 'Ricerca Lead' };
-            }
-
-            const resultStr = await executeToolCall(task.tool, args, companyId, apiKeys as any, conversationId);
-            const parsed = JSON.parse(resultStr);
-            results.set(task.id, parsed);
-
-            // Check if the tool returned an error in its response body
-            if (parsed.error) {
-                console.warn(`[LeadGen-Exec] Task ${task.id} (${task.tool}) returned error: ${parsed.error}`);
-                task.status = 'error';
-                task.error = parsed.error;
-            } else {
-                task.status = 'done';
-            }
-            task.result = parsed;
-
-            // Collect existing emails
-            if (task.tool === 'getExistingLeadEmails' && parsed.leads) {
-                for (const l of parsed.leads) {
-                    if (l.email) existingEmails.add(l.email.toLowerCase());
-                }
-            }
-
-            // Collect leads from search results
-            const searchTools = ['searchPeopleApollo', 'searchCompaniesApollo', 'findEmailsHunter',
-                'findEmailHunter', 'searchGoogleMaps', 'searchProspectsVibe', 'searchBusinessesVibe'];
-            if (searchTools.includes(task.tool)) {
-                const people = parsed.people || parsed.emails || parsed.results || parsed.organizations || parsed.businesses || [];
-                // findEmailHunter returns a single person, not array
-                const items = task.tool === 'findEmailHunter' && parsed.email ? [parsed] : people;
-
-                for (const p of items) {
-                    if (p.email || p.companyName || p.fullName || p.companyWebsite) {
-                        allLeads.push(normalizeLead(p, task.tool));
-                    }
-                }
-                console.log(`[LeadGen-Exec] Task ${task.id} collected ${items.length} leads (total: ${allLeads.length})`);
-            }
-
-            // Extract contacts from scraped pages
-            if (['scrapeWithFirecrawl', 'scrapeWebsite'].includes(task.tool) && parsed.markdown) {
-                console.log(`[LeadGen-Exec] Task ${task.id} scraped ${parsed.url}, markdown: ${parsed.markdown?.length || 0} chars`);
-            }
-
-        } catch (e: any) {
-            const causeMsg = e.cause ? ` | cause: ${e.cause?.code || e.cause?.message || JSON.stringify(e.cause).slice(0, 200)}` : '';
-            console.error(`[LeadGen-Exec] Task ${task.id} (${task.tool}) ERROR: ${e.message}${causeMsg}`);
-            task.status = 'error';
-            task.error = e.message;
-            results.set(task.id, { error: e.message });
-        }
-
-        pending.delete(task.id);
-        completed.add(task.id);
-    }
-
-    // Execute tasks in waves — parallel within each wave
-    while (pending.size > 0 && maxWaves-- > 0) {
-        const ready = plan.tasks.filter(t =>
-            pending.has(t.id) &&
-            (!t.dependsOn?.length || t.dependsOn.every(d => completed.has(d)))
-        );
-
-        if (ready.length === 0 && pending.size > 0) {
-            // Break deadlock
-            const first = plan.tasks.find(t => pending.has(t.id));
-            if (first) ready.push(first);
-            else break;
-        }
-
-        if (ready.length === 0) break;
-
-        // Execute all ready tasks in parallel
-        console.log(`[LeadGen-Exec] Wave: ${ready.length} parallel tasks [${ready.map(t => t.tool).join(', ')}]`);
-        emit({
-            phase: 'execute',
-            message: `Esecuzione ricerche: ${ready.map(t => t.description || t.tool).join(', ')}`,
-            detail: ready.map(t => t.tool).join(', '),
-            leadsFound: allLeads.length,
-            progress: Math.round((completed.size / plan.tasks.length) * 20), // 0-20% for plan execution
-        });
-        await Promise.all(ready.map(t => executeTask(t)));
-    }
-
-    // ===================== GOOGLE WEB → FOLLOW-UP SCRAPE =====================
-    // If Google Web search found exhibitor list pages, scrape the top results
-    const googleWebTasks = plan.tasks.filter(t => t.tool === 'searchGoogleWeb' && t.status === 'done');
-    if (googleWebTasks.length > 0 && (apiKeys.firecrawl || true)) {
-        for (const gwTask of googleWebTasks) {
-            const gwResult = results.get(gwTask.id);
-            if (!gwResult?.results?.length) continue;
-
-            // Find exhibitor list URLs from Google results
-            const exhibitorUrls = gwResult.results
-                .filter((r: any) => {
-                    const lowerTitle = (r.title || '').toLowerCase();
-                    const lowerSnippet = (r.snippet || '').toLowerCase();
-                    return lowerTitle.match(/espositor|exhibitor|lista|elenco|partecipan/) ||
-                           lowerSnippet.match(/espositor|exhibitor|lista|elenco|partecipan/);
-                })
-                .map((r: any) => r.link)
-                .slice(0, 3); // Scrape top 3 exhibitor pages
-
-            if (exhibitorUrls.length > 0) {
-                console.log(`[LeadGen-Exec] Scraping ${exhibitorUrls.length} exhibitor pages from Google results`);
-                emit({ phase: 'scrape', message: `Scraping ${exhibitorUrls.length} pagine espositori trovate su Google...`, progress: 22 });
-                const scrapePromises = exhibitorUrls.map(async (url: string) => {
-                    try {
-                        const toolName = apiKeys.firecrawl ? 'scrapeWithFirecrawl' : 'scrapeWebsite';
-                        const args = apiKeys.firecrawl
-                            ? { url, formats: ['markdown'] }
-                            : { url, extractType: 'all' };
-                        const resultStr = await executeToolCall(toolName, args, companyId, apiKeys as any, conversationId);
-                        const parsed = JSON.parse(resultStr);
-                        if (parsed.markdown && parsed.markdown.length > 200) {
-                            // Store result so the company extraction phase can process it
-                            const fakeTaskId = 9000 + Math.random() * 1000;
-                            results.set(fakeTaskId, { ...parsed, url });
-                            plan.tasks.push({
-                                id: fakeTaskId, tool: toolName,
-                                args: { url }, description: `Scraping follow-up: ${url}`,
-                                status: 'done', result: parsed,
-                            });
-                            console.log(`[LeadGen-Exec] Scraped ${url}: ${parsed.markdown.length} chars`);
-                        }
-                    } catch { /* skip */ }
-                });
-                await Promise.all(scrapePromises);
-            }
-        }
-    }
-
-    // ===================== SCRAPE → COMPANY EXTRACTION =====================
-    // If we scraped pages (e.g. exhibitor lists), extract company names and create leads
-    for (const task of plan.tasks) {
-        if (!['scrapeWithFirecrawl', 'scrapeWebsite'].includes(task.tool) || task.status !== 'done') continue;
-        const scraped = results.get(task.id);
-        if (!scraped?.markdown || scraped.markdown.length < 100) continue;
-
-        console.log(`[LeadGen-Extract] Parsing companies from scraped content (${scraped.markdown.length} chars)`);
-
-        // Use Claude CLI to extract company names from scraped exhibitor lists
-        try {
-            const extractPrompt = `Estrai i NOMI delle aziende dal seguente testo (lista espositori di una fiera).
-Rispondi SOLO con un JSON array di oggetti con campi: name (nome azienda), website (URL se presente, altrimenti null).
-Estrai TUTTE le aziende che trovi, senza limite. Se non trovi aziende, rispondi con [].
-NON inventare aziende. Solo quelle presenti nel testo.
-
-TESTO:
-${scraped.markdown.slice(0, 30000)}
-
-JSON:`;
-            const extractResult = callClaudeCli(extractPrompt, 'claude-haiku-4-5', 60_000);
-            let companies: Array<{ name: string; website?: string | null }> = [];
-            try {
-                const jsonMatch = extractResult.match(/\[[\s\S]*\]/);
-                if (jsonMatch) companies = JSON.parse(jsonMatch[0]);
-            } catch { /* parse failed */ }
-
-            if (companies.length > 0) {
-                console.log(`[LeadGen-Extract] Found ${companies.length} companies from scraping`);
-                for (const co of companies) {
-                    const domain = co.website ? extractDomain(co.website) : null;
-                    allLeads.push({
-                        firstName: null, lastName: null, fullName: null,
-                        jobTitle: null, email: null, phone: null, linkedinUrl: null,
-                        companyName: co.name,
-                        companyDomain: domain,
-                        companyWebsite: co.website || null,
-                        companySize: null, companyIndustry: null,
-                        companyCity: null, companyCountry: null,
-                        source: 'scraping', notes: `Espositore trovato da ${scraped.url || task.args?.url || 'scraping'}`,
-                        confidence: null, emailStatus: null,
-                        _enriched: false, _sources: new Set(['scraping']),
-                    });
-                }
-            }
-        } catch (e: any) {
-            console.error('[LeadGen-Extract] Failed to extract companies:', e.message);
-        }
-    }
-
-    // ===================== KNOWLEDGE-BASED EXHIBITOR GENERATION (TOP-UP) =====================
-    // If fair mode phase 1 didn't generate enough, or for non-fair searches that still match fair patterns
-    // isFairSearch is already defined at the top of executePlan
-    // Only count companies from scraping/knowledge (NOT Google Maps local businesses, which are irrelevant for fairs)
-    const realExhibitorSources = ['scraping', 'knowledge', 'apollo', 'vibe_prospecting'];
-    const companiesFromScraping = allLeads.filter(l => l.source === 'scraping' && l.companyName).length;
-    const realExhibitorCompanies = new Set(
-        allLeads.filter(l => l.companyName && realExhibitorSources.includes(l.source))
-            .map(l => l.companyName!.toLowerCase())
-    ).size;
-    const totalCompanies = new Set(allLeads.filter(l => l.companyName).map(l => l.companyName!.toLowerCase())).size;
-
-    // For fairs: ALWAYS generate knowledge if we have fewer than 100 real exhibitors
-    // (SPS alone has 400+ exhibitors, so 100 is still conservative)
-    const realExhibitorCompaniesWithDomain = new Set(
-        allLeads.filter(l => l.companyName && l.companyDomain && realExhibitorSources.includes(l.source))
-            .map(l => l.companyName!.toLowerCase())
-    ).size;
-
-    if (isFairSearch && realExhibitorCompaniesWithDomain < 80) {
-        console.log(`[LeadGen-Knowledge] Fair search: ${realExhibitorCompaniesWithDomain} companies with domains (${realExhibitorCompanies} total real exhibitors, ${totalCompanies} total incl. local). Generating known exhibitors...`);
-        emit({
-            phase: 'knowledge',
-            message: `${realExhibitorCompanies} aziende espositrici trovate (${totalCompanies} totali). Genero lista massiva espositori noti del settore...`,
-            companiesFound: realExhibitorCompanies,
-            progress: 30,
-        });
-
-        // Build context about which companies we already have
-        const existingCompanyNames = [...new Set(allLeads.filter(l => l.companyName).map(l => l.companyName!))];
-
-        // Extract fair name and sector from plan summary + task descriptions
-        const fairContext = [
-            plan.summary || '',
-            ...plan.tasks.map(t => t.description || ''),
-            ...plan.tasks.map(t => JSON.stringify(t.args || {})),
-        ].join(' ');
-
-        try {
-            const knowledgePrompt = `Sei un esperto di fiere industriali. Genera una lista MASSIVA di aziende espositrici.
-
-CONTESTO FIERA: ${fairContext}
-
-AZIENDE GIA' TROVATE (${existingCompanyNames.length}): ${existingCompanyNames.slice(0, 50).join(', ')}
-
-COMPITO: Genera una lista di almeno 80 aziende REALI che sono tipici espositori di questa fiera o del settore correlato.
-Per ogni azienda indica:
-- name: nome ufficiale dell'azienda
-- website: sito web ufficiale (OBBLIGATORIO - es: "https://www.siemens.com"). Questo campo e' CRITICO perche' lo useremo per cercare contatti. Per aziende con filiale italiana usa il dominio .it se esiste (es: "https://www.abb.it", "https://www.festo.it"). Se non conosci il sito, prova il pattern https://www.[nomeazienda].com o .it
-- domain: dominio email dell'azienda (es: "siemens.com", "abb.it", "festo.com"). Per aziende italiane o con filiale italiana, PREFERISCI il dominio .it
-- country: paese sede principale (es: "Germany", "Italy", "Japan")
-
-REGOLE:
-- INCLUDI aziende di TUTTE le dimensioni: multinazionali, medie imprese, PMI italiane
-- Per SPS/automazione includi: PLC, sensori, drives, robotica, pneumatica, connettori, cavi, software industriale, HMI, SCADA, safety, visione artificiale, motion control, bus di campo, IO-Link, edge computing industriale, cobot
-- Includi sia aziende internazionali (Siemens, ABB, Schneider) che italiane (Datalogic, Gefran, Sew-Eurodrive Italia, Lenze Italia, Camozzi, Pizzato, Pneumax, Lovato Electric, Seneca, Telmotor)
-- NON includere aziende gia' nella lista "GIA' TROVATE"
-- SOLO aziende REALI che esistono davvero
-- Il website e' FONDAMENTALE: senza di esso non possiamo cercare contatti. Mettilo SEMPRE.
-
-Rispondi SOLO con un JSON array. Nessun testo prima o dopo.
-Esempio: [{"name":"Siemens","website":"https://www.siemens.com","domain":"siemens.it","country":"Germany"},{"name":"Gefran","website":"https://www.gefran.com","domain":"gefran.com","country":"Italy"}]`;
-
-            const knowledgeResult = callClaudeCli(knowledgePrompt, 'claude-sonnet-4-6', 120_000);
-            let knownCompanies: Array<{ name: string; website?: string | null; domain?: string | null; country?: string | null }> = [];
-            try {
-                const jsonMatch = knowledgeResult.match(/\[[\s\S]*\]/);
-                if (jsonMatch) knownCompanies = JSON.parse(jsonMatch[0]);
-            } catch { /* parse failed */ }
-
-            if (knownCompanies.length > 0) {
-                console.log(`[LeadGen-Knowledge] Generated ${knownCompanies.length} known exhibitor companies`);
-                const existingLower = new Set(existingCompanyNames.map(n => n.toLowerCase()));
-                let added = 0;
-                for (const co of knownCompanies) {
-                    if (!co.name || existingLower.has(co.name.toLowerCase())) continue;
-                    // Use explicit domain field if provided, otherwise extract from website
-                    const domain = co.domain || (co.website ? extractDomain(co.website) : null);
-                    allLeads.push({
-                        firstName: null, lastName: null, fullName: null,
-                        jobTitle: null, email: null, phone: null, linkedinUrl: null,
-                        companyName: co.name,
-                        companyDomain: domain,
-                        companyWebsite: co.website || (domain ? `https://www.${domain}` : null),
-                        companySize: null, companyIndustry: null,
-                        companyCity: null, companyCountry: co.country || null,
-                        source: 'knowledge', notes: `Espositore noto del settore — generato da conoscenza AI`,
-                        confidence: null, emailStatus: null,
-                        _enriched: false, _sources: new Set(['knowledge']),
-                    });
-                    added++;
-                }
-                console.log(`[LeadGen-Knowledge] Added ${added} new companies (total leads: ${allLeads.length})`);
-                const withDomain = allLeads.filter(l => l.source === 'knowledge' && l.companyDomain).length;
-                console.log(`[LeadGen-Knowledge] ${withDomain}/${added} companies have domains → ready for Hunter enrichment`);
-                emit({
-                    phase: 'knowledge',
-                    message: `Generati ${added} espositori noti. ${withDomain} hanno già il dominio web.`,
-                    companiesFound: totalCompanies + added,
-                    progress: 35,
-                });
-            }
-        } catch (e: any) {
-            console.error('[LeadGen-Knowledge] Failed to generate known exhibitors:', e.message);
-        }
-    }
-
-    // ===================== DOMAIN DISCOVERY =====================
-    // For companies without a domain, use Claude to map company names → real domains
-    // This is the #1 most critical step: without correct domains, Hunter can't find contacts
-    const needDomain = allLeads.filter(l => l.companyName && !l.companyDomain && !l.companyWebsite);
-    if (needDomain.length > 0) {
-        console.log(`[LeadGen-Domain] ${needDomain.length} companies need domain discovery`);
-        emit({
-            phase: 'domain',
-            message: `Ricerca domini reali per ${needDomain.length} aziende con AI...`,
-            companiesFound: new Set(allLeads.filter(l => l.companyName).map(l => l.companyName!.toLowerCase())).size,
-            progress: 38,
-        });
-
-        // ===== STRATEGY 1 (PRIMARY): Claude AI domain mapping =====
-        // Ask Claude to provide the real corporate email domain for each company.
-        // This is FREE (no API credits) and far more accurate than string guessing.
-        // Claude knows that "SIEMENS" = siemens.com, "FESTO" = festo.com, "SEW-EURODRIVE ITALIA" = sew-eurodrive.it, etc.
-        const companyNamesNeedingDomain = [...new Set(needDomain.filter(l => !l.companyDomain).map(l => l.companyName!))];
-        const CLAUDE_DOMAIN_BATCH = 60; // Process 60 companies per Claude call
-        let claudeMappedCount = 0;
-
-        for (let batchStart = 0; batchStart < companyNamesNeedingDomain.length; batchStart += CLAUDE_DOMAIN_BATCH) {
-            const batch = companyNamesNeedingDomain.slice(batchStart, batchStart + CLAUDE_DOMAIN_BATCH);
-            const batchNum = Math.floor(batchStart / CLAUDE_DOMAIN_BATCH) + 1;
-            const totalBatches = Math.ceil(companyNamesNeedingDomain.length / CLAUDE_DOMAIN_BATCH);
-
-            emit({
-                phase: 'domain',
-                message: `AI: mappatura domini [${batchNum}/${totalBatches}] — ${batch.length} aziende...`,
-                progress: 38 + Math.round((batchStart / companyNamesNeedingDomain.length) * 5),
-            });
-
-            try {
-                const domainPrompt = `Per ciascuna delle seguenti aziende, indica il DOMINIO EMAIL AZIENDALE corretto (quello usato per le email dei dipendenti, NON necessariamente il sito web).
-
-REGOLE CRITICHE:
-- Rispondi SOLO con un JSON array
-- Per ogni azienda: {"name":"NOME ESATTO","domain":"dominio.com"}
-- Se l'azienda ha una filiale italiana con dominio .it usato per email, usa quello (es: sew-eurodrive.it, lenze.it, sick.it)
-- Se l'azienda usa un dominio .com globale per le email, usa .com (es: siemens.com, festo.com, abb.com)
-- Per aziende piccole/sconosciute, prova il pattern nomeazienda.it o nomeazienda.com
-- Se non sei sicuro del dominio, indica comunque la tua migliore stima — NON lasciare null
-- Per consorzi, università, associazioni: usa il loro dominio reale (es: unipr.it, profibus.com)
-- ATTENZIONE ai nomi composti: "BOSCH REXROTH" = boschrexroth.com, "NORD DRIVESYSTEMS" = nord.com, "ENDRESS + HAUSER" = endress.com
-
-AZIENDE:
-${batch.map((name, i) => `${i + 1}. ${name}`).join('\n')}
-
-JSON:`;
-
-                const domainResult = callClaudeCli(domainPrompt, 'claude-haiku-4-5', 60_000);
-                let mappings: Array<{ name: string; domain: string }> = [];
-                try {
-                    const jsonMatch = domainResult.match(/\[[\s\S]*\]/);
-                    if (jsonMatch) mappings = JSON.parse(jsonMatch[0]);
-                } catch { /* parse failed */ }
-
-                if (mappings.length > 0) {
-                    // Build a lookup by lowercase name
-                    const domainLookup = new Map<string, string>();
-                    for (const m of mappings) {
-                        if (m.name && m.domain) {
-                            domainLookup.set(m.name.toLowerCase().trim(), m.domain.toLowerCase().trim());
-                        }
-                    }
-
-                    // Apply to leads
-                    for (const lead of needDomain) {
-                        if (lead.companyDomain) continue; // already has domain
-                        const mapped = domainLookup.get(lead.companyName!.toLowerCase().trim());
-                        if (mapped && mapped.includes('.')) {
-                            lead.companyDomain = mapped;
-                            lead.companyWebsite = `https://www.${mapped}`;
-                            claudeMappedCount++;
-                            console.log(`[LeadGen-Domain] AI: ${lead.companyName} → ${mapped}`);
-                        }
-                    }
-                }
-                console.log(`[LeadGen-Domain] AI batch ${batchNum}: mapped ${mappings.length} domains (cumulative: ${claudeMappedCount})`);
-            } catch (e: any) {
-                console.error(`[LeadGen-Domain] AI domain mapping batch ${batchNum} failed:`, e.message);
-            }
-        }
-
-        console.log(`[LeadGen-Domain] Strategy 1 (AI mapping): ${claudeMappedCount}/${companyNamesNeedingDomain.length} companies mapped`);
-
-        // ===== STRATEGY 2: Google search for remaining unknowns =====
-        // Only for companies that Claude couldn't map (very niche/obscure ones)
-        if (apiKeys.serpApi) {
-            const stillNeedDomain = needDomain.filter(l => !l.companyDomain);
-            const MAX_GOOGLE_LOOKUPS = 50;
-            const toSearch = stillNeedDomain.slice(0, MAX_GOOGLE_LOOKUPS);
-            if (toSearch.length > 0) {
-                console.log(`[LeadGen-Domain] Strategy 2: Google search for ${toSearch.length} remaining companies`);
-                emit({
-                    phase: 'domain',
-                    message: `Google: ricerca domini per ${toSearch.length} aziende non mappate...`,
-                    progress: 43,
-                });
-                const BATCH_SIZE = 10;
-                for (let i = 0; i < toSearch.length; i += BATCH_SIZE) {
-                    const batch = toSearch.slice(i, i + BATCH_SIZE);
-                    const domainPromises = batch.map(async (lead) => {
-                        try {
-                            const resultStr = await executeToolCall('searchGoogleWeb', {
-                                query: `"${lead.companyName}" sito ufficiale OR official website`,
-                                num: 3,
-                            }, companyId, apiKeys as any, conversationId);
-                            const parsed = JSON.parse(resultStr);
-                            const skipDomains = ['linkedin.com', 'wikipedia', 'facebook.com', 'twitter.com', 'youtube.com', 'amazon.', 'bloomberg.com', 'crunchbase.com', 'glassdoor.', 'indeed.'];
-                            for (const r of (parsed.results || [])) {
-                                if (!r.link) continue;
-                                const d = extractDomain(r.link);
-                                if (d && !skipDomains.some(s => d.includes(s))) {
-                                    lead.companyDomain = d;
-                                    lead.companyWebsite = r.link;
-                                    console.log(`[LeadGen-Domain] Google: ${lead.companyName} → ${d}`);
-                                    break;
-                                }
-                            }
-                        } catch { /* skip */ }
-                    });
-                    await Promise.all(domainPromises);
-                }
-            }
-        }
-
-        // ===== STRATEGY 3: Simple fallback for any still-unmapped =====
-        const finalNeedDomain = needDomain.filter(l => !l.companyDomain);
-        if (finalNeedDomain.length > 0) {
-            console.log(`[LeadGen-Domain] Strategy 3: Simple fallback for ${finalNeedDomain.length} companies`);
-            for (const lead of finalNeedDomain) {
-                const cleanName = lead.companyName!
-                    .replace(/\b(s\.?p\.?a\.?|s\.?r\.?l\.?|s\.?a\.?s\.?|s\.?n\.?c\.?|ltd|gmbh|inc|corp|co\.?|italia|italy|group|spa|srl|e\.v\.|a\.s\.|co\.,?\s*ltd)\b/gi, '')
-                    .replace(/[^a-zA-Z0-9\-]/g, '')
-                    .toLowerCase()
-                    .trim();
-                if (cleanName && cleanName.length >= 3) {
-                    lead.companyDomain = `${cleanName}.com`;
-                    lead.companyWebsite = `https://www.${cleanName}.com`;
-                    console.log(`[LeadGen-Domain] Fallback: ${lead.companyName} → ${cleanName}.com`);
-                }
-            }
-        }
-
-        const totalFound = needDomain.filter(l => l.companyDomain).length;
-        console.log(`[LeadGen-Domain] Domain discovery complete: ${totalFound}/${needDomain.length} (AI: ${claudeMappedCount}, Google+Fallback: ${totalFound - claudeMappedCount})`);
-        emit({
-            phase: 'domain',
-            message: `Domini trovati: ${totalFound}/${needDomain.length} aziende (${claudeMappedCount} da AI). Avvio ricerca contatti...`,
-            companiesFound: new Set(allLeads.filter(l => l.companyName).map(l => l.companyName!.toLowerCase())).size,
-            progress: 45,
-        });
-    }
-
-    // ===================== ENRICHMENT PIPELINE =====================
-    console.log(`[LeadGen-Exec] === ENRICHMENT PIPELINE === ${allLeads.length} raw leads`);
-
-    // Deduplicate first
-    const uniqueLeads = deduplicateLeads(allLeads, existingEmails);
-    console.log(`[LeadGen-Exec] After dedup: ${uniqueLeads.length} unique leads`);
-
-    // ENRICHMENT PASS 0.5: For Google Maps/scraping leads without domain, try to guess Italian domain
-    for (const lead of uniqueLeads) {
-        if (lead.companyDomain || lead.companyWebsite) continue;
-        if (!lead.companyName) continue;
-        // Guess domain: "Festo S.p.A." → "festo.it", "ABB" → "abb.it"
-        const cleanName = lead.companyName
-            .replace(/\b(s\.?p\.?a\.?|s\.?r\.?l\.?|s\.?a\.?s\.?|s\.?n\.?c\.?|ltd|gmbh|inc|corp|co\.?)\b/gi, '')
-            .replace(/[^a-zA-Z0-9]/g, '')
-            .toLowerCase()
-            .trim();
-        if (cleanName && cleanName.length >= 2) {
-            lead.companyDomain = `${cleanName}.it`;
-            lead.companyWebsite = `https://${cleanName}.it`;
-            console.log(`[LeadGen-Enrich] Guessed domain for "${lead.companyName}": ${cleanName}.it`);
-        }
-    }
-
-    // ENRICHMENT PASS 0.9 (FREE — Website scraping): Visit each company's contact/team page
-    // Runs BEFORE paid APIs so we get free emails first
-    {
-        const companiesWithDomain = uniqueLeads.filter(l =>
-            l.companyName && l.companyDomain && (!l.email || isGenericEmail(l.email))
-        );
-        // Deduplicate by domain
-        const domainMap = new Map<string, any>();
-        for (const l of companiesWithDomain) {
-            const key = l.companyDomain!.toLowerCase();
-            if (!domainMap.has(key)) domainMap.set(key, l);
-        }
-        const companiesToScrape = [...domainMap.values()];
-
-        if (companiesToScrape.length > 0) {
-            console.log(`[LeadGen-WebScrape] Pass 0.9: Scraping contact pages for ${companiesToScrape.length} companies`);
-            emit({
-                phase: 'enrich',
-                message: `Visito i siti web di ${companiesToScrape.length} aziende per trovare email nelle pagine contatti (gratis)...`,
-                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                progress: 42,
-            });
-
-            try {
-                const { chromium } = await import('playwright');
-                const browser = await chromium.launch({
-                    headless: true,
-                    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-                });
-
-                const SCRAPE_BATCH = 5;
-                let scrapedCount = 0;
-                let foundCount = 0;
-                const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-                const contactPaths = ['/contatti', '/contact', '/contact-us', '/chi-siamo', '/team', '/about-us', '/about', '/azienda', '/kontakt', '/impressum'];
-
-                for (let i = 0; i < companiesToScrape.length; i += SCRAPE_BATCH) {
-                    const batch = companiesToScrape.slice(i, i + SCRAPE_BATCH);
-                    const batchNum = Math.floor(i / SCRAPE_BATCH) + 1;
-                    const totalBatches = Math.ceil(companiesToScrape.length / SCRAPE_BATCH);
-
-                    emit({
-                        phase: 'enrich',
-                        message: `🌐 Siti web [${batchNum}/${totalBatches}]: ${batch.map(l => l.companyName).join(', ')}`,
-                        leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                        progress: 42 + Math.round((i / companiesToScrape.length) * 6),
-                    });
-
-                    const scrapePromises = batch.map(async (lead) => {
-                        const context = await browser.newContext({
-                            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                            viewport: { width: 1280, height: 800 },
-                        });
-                        const page = await context.newPage();
-                        page.setDefaultTimeout(10000);
-                        const domain = lead.companyDomain!;
-                        let bestPersonalEmail: string | null = null;
-                        let bestGenericEmail: string | null = null;
-                        let bestName: string | null = null;
-                        let bestPhone: string | null = null;
-                        let companyDescription = ''; // What the company does
-                        let companyDetails: string[] = []; // Revenue, employees, year, etc.
-
-                        // Helper to emit browser activity with optional screenshot
-                        const emitBrowser = async (action: string, takeScreenshot = false) => {
-                            let screenshot: string | undefined;
-                            if (takeScreenshot) {
-                                try {
-                                    const buf = await page.screenshot({ type: 'jpeg', quality: 40, fullPage: false });
-                                    screenshot = buf.toString('base64');
-                                } catch { /* screenshot failed, skip */ }
-                            }
-                            const currentUrl = page.url();
-                            emit({
-                                phase: 'enrich',
-                                message: `🌐 ${lead.companyName}: ${action}`,
-                                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                                progress: 42 + Math.round((scrapedCount / companiesToScrape.length) * 6),
-                                browserUrl: currentUrl !== 'about:blank' ? currentUrl : undefined,
-                                browserScreenshot: screenshot,
-                            });
-                        };
-
-                        try {
-                            // First try homepage to verify domain is alive
-                            try {
-                                await emitBrowser(`Apro https://www.${domain}`);
-                                await page.goto(`https://www.${domain}`, { waitUntil: 'domcontentloaded', timeout: 8000 });
-                                await emitBrowser(`Homepage caricata`, true);
-                                const homeText = await page.innerText('body').catch(() => '');
-                                if (homeText.length < 30) {
-                                    await page.goto(`https://${domain}`, { waitUntil: 'domcontentloaded', timeout: 8000 });
-                                    await emitBrowser(`Homepage (no www)`, true);
-                                }
-                            } catch {
-                                try {
-                                    await page.goto(`https://${domain}`, { waitUntil: 'domcontentloaded', timeout: 8000 });
-                                    await emitBrowser(`Homepage (fallback)`, true);
-                                } catch {
-                                    await emitBrowser(`❌ Sito non raggiungibile`);
-                                    await context.close().catch(() => {});
-                                    scrapedCount++;
-                                    return;
-                                }
-                            }
-
-                            // === EXTRACT COMPANY INFO from homepage ===
-                            try {
-                                const homeText = await page.innerText('body').catch(() => '');
-                                if (homeText.length > 50) {
-                                    // Extract meta description or first meaningful paragraph as company description
-                                    const metaDesc = await page.$eval('meta[name="description"]', el => el.getAttribute('content')).catch(() => null);
-                                    const ogDesc = await page.$eval('meta[property="og:description"]', el => el.getAttribute('content')).catch(() => null);
-                                    companyDescription = metaDesc || ogDesc || '';
-
-                                    // If no meta description, try to grab first substantial paragraph
-                                    if (!companyDescription || companyDescription.length < 20) {
-                                        const paragraphs = await page.$$eval('p', els => els.map(el => (el.textContent || '').trim()).filter(t => t.length > 40 && t.length < 500));
-                                        if (paragraphs.length > 0) companyDescription = paragraphs[0];
-                                    }
-
-                                    // Extract structured data: revenue, employees, year founded
-                                    const revenueMatch = homeText.match(/fatturato[:\s]+[€$]?\s*([\d.,]+)\s*(milion[ie]|mln|M|billion[ie]|miliard[ie])/i);
-                                    if (revenueMatch) companyDetails.push(`Fatturato: ${revenueMatch[0].trim()}`);
-
-                                    const employeeMatch = homeText.match(/(\d[\d.]*)\s*(dipendent[ie]|collaborator[ie]|employees|mitarbeiter)/i);
-                                    if (employeeMatch) companyDetails.push(`Dipendenti: ${employeeMatch[1]} ${employeeMatch[2]}`);
-
-                                    const yearMatch = homeText.match(/(fondат?a?|founded|seit|established|dal)\s*(nel\s+)?(\d{4})/i);
-                                    if (yearMatch) companyDetails.push(`Fondata: ${yearMatch[3]}`);
-
-                                    const certMatch = homeText.match(/(ISO\s*\d{3,5}(?:[:-]\d+)?)/gi);
-                                    if (certMatch) companyDetails.push(`Certificazioni: ${[...new Set(certMatch)].slice(0, 3).join(', ')}`);
-
-                                    if (companyDescription) {
-                                        await emitBrowser(`📋 Info: ${companyDescription.substring(0, 80)}...`);
-                                    }
-                                }
-                            } catch { /* homepage info extraction failed */ }
-
-                            // === VISIT "chi siamo" / "about" page for more details ===
-                            const aboutPaths = ['/chi-siamo', '/about', '/about-us', '/azienda', '/company', '/ueber-uns'];
-                            for (const aboutPath of aboutPaths) {
-                                if (companyDetails.length >= 3) break; // Already have enough info
-                                try {
-                                    await page.goto(`https://www.${domain}${aboutPath}`, { waitUntil: 'domcontentloaded', timeout: 8000 });
-                                    const aboutText = await page.innerText('body').catch(() => '');
-                                    if (aboutText.length < 50) continue;
-
-                                    await emitBrowser(`Leggo ${aboutPath}`, true);
-
-                                    // Better description from about page
-                                    if (!companyDescription || companyDescription.length < 30) {
-                                        const metaDesc = await page.$eval('meta[name="description"]', el => el.getAttribute('content')).catch(() => null);
-                                        if (metaDesc && metaDesc.length > 30) companyDescription = metaDesc;
-                                        else {
-                                            const paragraphs = await page.$$eval('p', els => els.map(el => (el.textContent || '').trim()).filter(t => t.length > 40 && t.length < 500));
-                                            if (paragraphs.length > 0 && paragraphs[0].length > (companyDescription?.length || 0)) {
-                                                companyDescription = paragraphs[0];
-                                            }
-                                        }
-                                    }
-
-                                    // Extract additional details
-                                    if (!companyDetails.some(d => d.startsWith('Fatturato'))) {
-                                        const rev = aboutText.match(/fatturato[:\s]+[€$]?\s*([\d.,]+)\s*(milion[ie]|mln|M|billion[ie]|miliard[ie])/i);
-                                        if (rev) companyDetails.push(`Fatturato: ${rev[0].trim()}`);
-                                    }
-                                    if (!companyDetails.some(d => d.startsWith('Dipendenti'))) {
-                                        const emp = aboutText.match(/(\d[\d.]*)\s*(dipendent[ie]|collaborator[ie]|employees|mitarbeiter)/i);
-                                        if (emp) companyDetails.push(`Dipendenti: ${emp[1]} ${emp[2]}`);
-                                    }
-                                    if (!companyDetails.some(d => d.startsWith('Fondata'))) {
-                                        const yr = aboutText.match(/(fondat?a?|founded|seit|established|dal)\s*(nel\s+)?(\d{4})/i);
-                                        if (yr) companyDetails.push(`Fondata: ${yr[3]}`);
-                                    }
-                                    // Sede / location
-                                    if (!companyDetails.some(d => d.startsWith('Sede'))) {
-                                        const sedeMatch = aboutText.match(/sede[:\s]+([\w\s,]+(?:Italia|Italy|Germany|Deutschland|France))/i);
-                                        if (sedeMatch) companyDetails.push(`Sede: ${sedeMatch[1].trim()}`);
-                                    }
-                                    // Settori / markets served
-                                    const settoriMatch = aboutText.match(/settor[ie][:\s]+([^.]{10,100})/i);
-                                    if (settoriMatch && !companyDetails.some(d => d.startsWith('Settori'))) {
-                                        companyDetails.push(`Settori: ${settoriMatch[1].trim()}`);
-                                    }
-
-                                    if (companyDetails.length > 0) {
-                                        await emitBrowser(`📊 ${companyDetails[companyDetails.length - 1]}`);
-                                    }
-                                    break; // Got the about page, no need to try others
-                                } catch { /* about page not found, try next */ }
-                            }
-
-                            // Scan contact paths for emails
-                            for (const path of contactPaths) {
-                                if (bestPersonalEmail) break;
-                                try {
-                                    const url = `https://www.${domain}${path}`;
-                                    await emitBrowser(`Navigo ${path}`);
-                                    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 8000 });
-                                    await emitBrowser(`Pagina ${path} caricata`, true);
-                                    const text = await page.innerText('body').catch(() => '');
-                                    if (text.length < 30) continue;
-
-                                    // Extract emails
-                                    const emails: string[] = [...new Set<string>((text.match(emailRegex) as string[] | null) || [])];
-                                    // Filter: must look like a real email, not image filenames etc.
-                                    const validEmails = emails.filter(e =>
-                                        !e.match(/\.(png|jpg|jpeg|gif|svg|webp|css|js)$/i) &&
-                                        !e.includes('example.com') &&
-                                        !e.includes('sentry') &&
-                                        e.length < 60
-                                    );
-
-                                    const personal = validEmails.filter(e => !isGenericEmail(e) && e.toLowerCase().includes(domain.split('.')[0]));
-                                    const domainEmails = validEmails.filter(e => e.toLowerCase().includes(domain.split('.')[0]));
-                                    const anyValid = validEmails.filter(e => !isGenericEmail(e));
-
-                                    if (personal.length > 0) {
-                                        bestPersonalEmail = personal[0];
-                                        // Try to extract name from local part
-                                        const localPart = bestPersonalEmail.split('@')[0];
-                                        const parts = localPart.split(/[._-]/);
-                                        if (parts.length >= 2) {
-                                            bestName = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
-                                        }
-                                        await emitBrowser(`✅ Trovato ${bestPersonalEmail} su ${path}`);
-                                        break;
-                                    } else if (anyValid.length > 0 && !bestPersonalEmail) {
-                                        bestPersonalEmail = anyValid[0];
-                                        await emitBrowser(`📧 Trovato ${anyValid[0]} su ${path}`);
-                                    } else if (domainEmails.length > 0 && !bestGenericEmail) {
-                                        bestGenericEmail = domainEmails[0];
-                                        await emitBrowser(`📧 Email generica: ${domainEmails[0]} su ${path}`);
-                                    }
-
-                                    // Also try to extract phone numbers
-                                    if (!bestPhone) {
-                                        const phoneMatch = text.match(/(?:\+39\s?|0)\d{2,4}[\s.-]?\d{4,8}/);
-                                        if (phoneMatch) bestPhone = phoneMatch[0];
-                                    }
-                                } catch { /* page not found, try next */ }
-                            }
-
-                            // Also try to find emails by clicking "Contatti" link on homepage
-                            if (!bestPersonalEmail) {
-                                try {
-                                    await page.goto(`https://www.${domain}`, { waitUntil: 'domcontentloaded', timeout: 8000 });
-                                    const contactLink = await page.$('a[href*="contatt"], a[href*="contact"], a[href*="about"]');
-                                    if (contactLink) {
-                                        const href = await contactLink.getAttribute('href');
-                                        if (href) {
-                                            await emitBrowser(`Seguo link "${href}"`);
-                                            await contactLink.click();
-                                            await page.waitForLoadState('domcontentloaded', { timeout: 6000 }).catch(() => {});
-                                            await emitBrowser(`Pagina contatti via link`, true);
-                                            const text = await page.innerText('body').catch(() => '');
-                                            const emails: string[] = [...new Set<string>((text.match(emailRegex) as string[] | null) || [])];
-                                            const personal = emails.filter(e => !isGenericEmail(e) && e.length < 60 && !e.match(/\.(png|jpg)$/i));
-                                            if (personal.length > 0) {
-                                                bestPersonalEmail = personal[0];
-                                                await emitBrowser(`✅ Trovato ${personal[0]} via link contatti`);
-                                            }
-                                        }
-                                    }
-                                } catch { /* navigation failed */ }
-                            }
-                        } catch (e: any) {
-                            await emitBrowser(`⚠️ Errore: ${e.message?.substring(0, 50)}`);
-                        } finally {
-                            await context.close().catch(() => {});
-                        }
-
-                        // Apply findings
-                        const foundEmail = bestPersonalEmail || bestGenericEmail;
-                        if (foundEmail) {
-                            lead.email = foundEmail.toLowerCase();
-                            lead.emailStatus = isGenericEmail(foundEmail) ? 'generic' : 'scraped';
-                            lead._sources = lead._sources || new Set();
-                            lead._sources.add('website');
-                            lead._enriched = true;
-                            foundCount++;
-                        }
-                        if (bestName && !lead.fullName) {
-                            const nameParts = bestName.split(' ');
-                            lead.firstName = lead.firstName || nameParts[0] || null;
-                            lead.lastName = lead.lastName || nameParts.slice(1).join(' ') || null;
-                            lead.fullName = bestName;
-                        }
-                        if (bestPhone && !lead.phone) {
-                            lead.phone = bestPhone;
-                        }
-
-                        // Save company intelligence for email personalization
-                        const noteParts: string[] = [];
-                        if (foundEmail) noteParts.push(`Email da sito web (${domain})`);
-                        if (companyDescription) {
-                            // Truncate to 300 chars max
-                            const desc = companyDescription.length > 300 ? companyDescription.substring(0, 297) + '...' : companyDescription;
-                            noteParts.push(`Attività: ${desc}`);
-                        }
-                        if (companyDetails.length > 0) {
-                            noteParts.push(companyDetails.join(' | '));
-                        }
-                        if (noteParts.length > 0) {
-                            lead.notes = (lead.notes || '') + (lead.notes ? ' | ' : '') + noteParts.join(' | ');
-                        }
-
-                        // Set industry/sector from website description
-                        if (companyDescription && !lead.companyIndustry) {
-                            lead.companyIndustry = companyDescription.substring(0, 100);
-                        }
-                        // Set company size from employee count found on site
-                        const empDetail = companyDetails.find(d => d.startsWith('Dipendenti'));
-                        if (empDetail && !lead.companySize) {
-                            lead.companySize = empDetail;
-                        }
-                        // Set revenue if found
-                        const revDetail = companyDetails.find(d => d.startsWith('Fatturato'));
-                        if (revDetail && !lead.revenueYear1) {
-                            lead.revenueYear1 = revDetail;
-                        }
-
-                        scrapedCount++;
-                    });
-
-                    await Promise.all(scrapePromises);
-                }
-
-                await browser.close();
-                console.log(`[LeadGen-WebScrape] Pass 0.9 complete: scraped ${scrapedCount} sites, found emails for ${foundCount}`);
-                emit({
-                    phase: 'enrich',
-                    message: `Siti web visitati: ${foundCount} email trovate su ${scrapedCount} aziende navigate (gratis).`,
-                    leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                    progress: 48,
-                });
-            } catch (e: any) {
-                console.error(`[LeadGen-WebScrape] Playwright failed:`, e.message);
-                emit({
-                    phase: 'enrich',
-                    message: `⚠️ Browser non disponibile: ${e.message?.substring(0, 60)}. Salto scraping siti web.`,
-                    progress: 48,
-                });
-            }
-        }
-    }
-
-    // ENRICHMENT PASS 0.8: For fair searches, batch-search Apollo/Vibe by company names
-    // This finds actual people/contacts at the companies we've identified
-    if (isFairSearch) {
-        const companiesWithoutContacts = uniqueLeads.filter(l =>
-            l.companyName && !l.fullName && !l.email
-        );
-        const companyNamesForSearch = [...new Set(companiesWithoutContacts.map(l => l.companyName!))];
-
-        if (companyNamesForSearch.length > 0 && apiKeys.apollo) {
-            console.log(`[LeadGen-Enrich] Pass 0.8a: Apollo batch search for ${companyNamesForSearch.length} companies`);
-            emit({ phase: 'enrich', message: `Ricerca contatti Apollo per ${companyNamesForSearch.length} aziende...`, progress: 48 });
-            // Apollo search by company name batches (max ~10 per query for best results)
-            const APOLLO_BATCH = 10;
-            for (let i = 0; i < companyNamesForSearch.length; i += APOLLO_BATCH) {
-                const batch = companyNamesForSearch.slice(i, i + APOLLO_BATCH);
-                try {
-                    const resultStr = await executeToolCall('searchPeopleApollo', {
-                        jobTitles: ['Sales Manager', 'Area Manager', 'Business Development Manager', 'Key Account Manager', 'Commercial Director', 'Export Manager', 'Direttore Commerciale'],
-                        keywords: batch.join(', '),
-                        locations: ['Italy'],
-                        limit: Math.min(batch.length * 3, 25),
-                    }, companyId, apiKeys as any, conversationId);
-                    const parsed = JSON.parse(resultStr);
-                    const people = parsed.people || [];
-                    for (const p of people) {
-                        if (p.email || p.companyName) {
-                            const newLead = normalizeLead(p, 'searchPeopleApollo');
-                            // Try to merge with existing company-only lead
-                            const existing = uniqueLeads.find(l =>
-                                l.companyName && newLead.companyName &&
-                                l.companyName.toLowerCase().includes(newLead.companyName.toLowerCase().split(' ')[0]) &&
-                                !l.fullName
-                            );
-                            if (existing) {
-                                Object.assign(existing, mergeLeadData(existing, newLead));
-                                existing._enriched = true;
-                            } else {
-                                uniqueLeads.push(newLead);
-                            }
-                        }
-                    }
-                    if (people.length > 0) {
-                        console.log(`[LeadGen-Enrich] Apollo batch ${Math.floor(i / APOLLO_BATCH) + 1}: found ${people.length} contacts`);
-                    }
-                } catch { /* skip batch */ }
-            }
-        }
-
-        if (companyNamesForSearch.length > 0 && apiKeys.vibeProspect) {
-            console.log(`[LeadGen-Enrich] Pass 0.8b: Vibe batch search for ${companyNamesForSearch.length} companies`);
-            emit({ phase: 'enrich', message: `Ricerca contatti Vibe per ${companyNamesForSearch.length} aziende...`, progress: 52 });
-            // Vibe supports company_names directly — search in batches of 20
-            const VIBE_BATCH = 20;
-            for (let i = 0; i < companyNamesForSearch.length; i += VIBE_BATCH) {
-                const batch = companyNamesForSearch.slice(i, i + VIBE_BATCH);
-                try {
-                    const resultStr = await executeToolCall('searchProspectsVibe', {
-                        company_names: batch,
-                        has_email: true,
-                        limit: batch.length * 3,
-                    }, companyId, apiKeys as any, conversationId);
-                    const parsed = JSON.parse(resultStr);
-                    const people = parsed.people || [];
-                    for (const p of people) {
-                        const newLead = normalizeLead(p, 'searchProspectsVibe');
-                        const existing = uniqueLeads.find(l =>
-                            l.companyName && newLead.companyName &&
-                            l.companyName.toLowerCase().includes(newLead.companyName.toLowerCase().split(' ')[0]) &&
-                            !l.fullName
-                        );
-                        if (existing) {
-                            Object.assign(existing, mergeLeadData(existing, newLead));
-                            existing._enriched = true;
-                        } else {
-                            uniqueLeads.push(newLead);
-                        }
-                    }
-                    if (people.length > 0) {
-                        console.log(`[LeadGen-Enrich] Vibe batch ${Math.floor(i / VIBE_BATCH) + 1}: found ${people.length} contacts`);
-                    }
-                } catch { /* skip batch */ }
-            }
-        }
-    }
-
-    // ENRICHMENT PASS 1: Find emails for leads missing personal email
-    // Use Hunter domain search + email finder for leads with company domain but no/generic email
-    if (apiKeys.hunter) {
-        const needEmail = uniqueLeads.filter(l => (!l.email || isGenericEmail(l.email)) && (l.companyDomain || l.companyWebsite));
-        const domainsSearched = new Set(plan.tasks.filter(t => t.tool === 'findEmailsHunter').map(t => t.args?.domain));
-
-        // Group by domain to avoid duplicate API calls
-        const byDomain = new Map<string, any[]>();
-        for (const lead of needEmail) {
-            const domain = lead.companyDomain || extractDomain(lead.companyWebsite);
-            if (!domain || domainsSearched.has(domain)) continue;
-            if (!byDomain.has(domain)) byDomain.set(domain, []);
-            byDomain.get(domain)!.push(lead);
-        }
-
-        // Also enrich leads from Google Maps / scraping that have domain but no personal contacts
-        const allDomains = new Set<string>();
-        for (const lead of uniqueLeads) {
-            const domain = lead.companyDomain || extractDomain(lead.companyWebsite);
-            if (domain && !domainsSearched.has(domain) && !byDomain.has(domain)) {
-                if (!lead.email || isGenericEmail(lead.email)) {
-                    allDomains.add(domain);
-                }
-            }
-        }
-
-        // Rimosso il cap a 40 per supportare richieste massive come "tutti i contatti"
-        const domainsToSearch = [...byDomain.keys(), ...allDomains];
-        if (domainsToSearch.length > 0) {
-            console.log(`[LeadGen-Enrich] Pass 1: Hunter domain search on ${domainsToSearch.length} domains`);
-            emit({
-                phase: 'enrich',
-                message: `Hunter: ricerca contatti su ${domainsToSearch.length} domini aziendali...`,
-                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                progress: 55,
-            });
-
-            // Batch Hunter requests (15 parallel per batch) with progress updates
-            const HUNTER_BATCH = 15;
-            const hunterResultsRaw: (any | null)[] = [];
-            for (let batchStart = 0; batchStart < domainsToSearch.length; batchStart += HUNTER_BATCH) {
-                const batch = domainsToSearch.slice(batchStart, batchStart + HUNTER_BATCH);
-                const batchNum = Math.floor(batchStart / HUNTER_BATCH) + 1;
-                const totalBatches = Math.ceil(domainsToSearch.length / HUNTER_BATCH);
-                const progressBase = 55;
-                const progressRange = 15; // 55% → 70%
-                const batchProgress = progressBase + Math.round((batchStart / domainsToSearch.length) * progressRange);
-
-                emit({
-                    phase: 'enrich',
-                    message: `Hunter [${batchNum}/${totalBatches}]: ${batch.slice(0, 4).join(', ')}${batch.length > 4 ? ` +${batch.length - 4}` : ''}...`,
-                    detail: batch.join(', '),
-                    leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                    progress: batchProgress,
-                });
-
-                const batchPromises = batch.map(async (domain) => {
-                    try {
-                        const resultStr = await executeToolCall('findEmailsHunter', { domain, type: 'personal' }, companyId, apiKeys as any, conversationId);
-                        const parsed = JSON.parse(resultStr);
-                        if (!parsed.error && parsed.emails?.length > 0) {
-                            return { domain, emails: parsed.emails, organization: parsed.organization };
-                        }
-                    } catch { /* skip */ }
-                    return null;
-                });
-                const batchResults = await Promise.all(batchPromises);
-                hunterResultsRaw.push(...batchResults);
-            }
-
-            // RETRY: for domains with no results, try alternate TLD (.it↔.com)
-            const failedDomains = domainsToSearch.filter((domain, i) => !hunterResultsRaw[i]);
-            const retryCount = failedDomains.length;
-            if (retryCount > 0) {
-                console.log(`[LeadGen-Enrich] Hunter retry: ${retryCount} domains failed, trying alternate TLDs...`);
-                emit({
-                    phase: 'enrich',
-                    message: `Hunter retry: ${retryCount} domini senza risultati, provo TLD alternativo (.it↔.com)...`,
-                    progress: 68,
-                });
-            }
-            const retryPromises = failedDomains
-                .map(async (domain) => {
-                    // Try .it → .com OR .com → .it
-                    let altDomain: string | null = null;
-                    if (domain.endsWith('.it')) altDomain = domain.replace(/\.it$/, '.com');
-                    else if (domain.endsWith('.com')) altDomain = domain.replace(/\.com$/, '.it');
-                    else return null; // no alternate to try
-
-                    try {
-                        const resultStr = await executeToolCall('findEmailsHunter', { domain: altDomain, type: 'personal' }, companyId, apiKeys as any, conversationId);
-                        const parsed = JSON.parse(resultStr);
-                        if (!parsed.error && parsed.emails?.length > 0) {
-                            // Update the leads' domain to the working alternate
-                            for (const lead of uniqueLeads) {
-                                if (lead.companyDomain === domain) {
-                                    lead.companyDomain = altDomain;
-                                    lead.companyWebsite = `https://${altDomain}`;
-                                }
-                            }
-                            console.log(`[LeadGen-Enrich] Retry ${domain} → ${altDomain}: found ${parsed.emails.length} contacts`);
-                            return { domain: altDomain, emails: parsed.emails, organization: parsed.organization };
-                        }
-                    } catch { /* skip */ }
-                    return null;
-                });
-            const retryResults = await Promise.all(retryPromises);
-
-            const hunterResults = [...hunterResultsRaw, ...retryResults].filter(Boolean);
-            for (const hr of hunterResults) {
-                if (!hr) continue;
-                // Find leads needing enrichment for this domain
-                const domainLeads = uniqueLeads.filter(l =>
-                    (l.companyDomain === hr.domain || extractDomain(l.companyWebsite) === hr.domain)
-                    && (!l.email || isGenericEmail(l.email))
-                );
-
-                // Cap at 2 contacts per domain to maximize company breadth
-                const MAX_CONTACTS_PER_DOMAIN = 2;
-                let addedForDomain = 0;
-
-                for (const contact of hr.emails) {
-                    if (addedForDomain >= MAX_CONTACTS_PER_DOMAIN) break;
-
-                    // Hunter executeToolCall maps: e.value→email, e.first_name→firstName, e.last_name→lastName, e.position→position, e.linkedin→linkedinUrl, e.confidence→confidence
-                    const contactEmail = contact.email || contact.value;
-                    const contactFirstName = contact.firstName || contact.first_name;
-                    const contactLastName = contact.lastName || contact.last_name;
-                    const contactPosition = contact.position;
-                    const contactLinkedin = contact.linkedinUrl || contact.linkedin;
-                    const contactConfidence = contact.confidence;
-
-                    if (!contactEmail || isGenericEmail(contactEmail)) continue;
-
-                    const matchingLead = domainLeads.find(l =>
-                        l.firstName && contactFirstName &&
-                        l.firstName.toLowerCase() === contactFirstName.toLowerCase()
-                    );
-
-                    if (matchingLead) {
-                        // Enrich existing lead
-                        matchingLead.email = contactEmail;
-                        matchingLead.emailStatus = contactConfidence > 80 ? 'valid' : 'unknown';
-                        matchingLead.linkedinUrl = matchingLead.linkedinUrl || contactLinkedin;
-                        matchingLead.jobTitle = matchingLead.jobTitle || contactPosition;
-                        matchingLead._sources.add('hunter');
-                        matchingLead._enriched = true;
-                        addedForDomain++;
-                        console.log(`[LeadGen-Enrich]   → Enriched ${matchingLead.fullName || matchingLead.companyName} with ${contactEmail}`);
-                    } else {
-                        // New lead from Hunter
-                        const newLead = normalizeLead({
-                            firstName: contactFirstName, lastName: contactLastName,
-                            email: contactEmail, position: contactPosition,
-                            linkedinUrl: contactLinkedin,
-                            companyName: hr.organization || hr.domain,
-                            companyDomain: hr.domain, companyWebsite: `https://${hr.domain}`,
-                            emailStatus: contactConfidence > 80 ? 'valid' : 'unknown',
-                        }, 'findEmailsHunter');
-                        uniqueLeads.push(newLead);
-                        addedForDomain++;
-                        console.log(`[LeadGen-Enrich]   → New lead: ${newLead.fullName} <${contactEmail}> @ ${hr.domain}`);
-                    }
-                }
-                console.log(`[LeadGen-Enrich] ${hr.domain}: found ${hr.emails.length} contacts, kept ${addedForDomain} (cap: ${MAX_CONTACTS_PER_DOMAIN})`);
-            }
-        }
-    }
-
-    // ENRICHMENT PASS 2: Use Hunter Email Finder for specific people with name+domain but no email
-    if (apiKeys.hunter) {
-        const needPersonalEmail = uniqueLeads.filter(l =>
-            l.firstName && l.lastName && (l.companyDomain || l.companyWebsite)
-            && (!l.email || isGenericEmail(l.email))
-        ).slice(0, 200); // cap alzato a 200 per massimizzare la ricerca
-
-        if (needPersonalEmail.length > 0) {
-            console.log(`[LeadGen-Enrich] Pass 2: Hunter email-finder for ${needPersonalEmail.length} people`);
-            emit({
-                phase: 'enrich',
-                message: `Hunter: ricerca email personali per ${needPersonalEmail.length} persone...`,
-                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                progress: 70,
-            });
-            const finderPromises = needPersonalEmail.map(async (lead) => {
-                const domain = lead.companyDomain || extractDomain(lead.companyWebsite);
-                if (!domain) return null;
-                try {
-                    const resultStr = await executeToolCall('findEmailHunter', {
-                        domain, first_name: lead.firstName, last_name: lead.lastName,
-                        company: lead.companyName || undefined,
-                    }, companyId, apiKeys as any, conversationId);
-                    const parsed = JSON.parse(resultStr);
-                    if (parsed.email && !isGenericEmail(parsed.email)) {
-                        lead.email = parsed.email;
-                        lead.emailStatus = parsed.score > 80 ? 'valid' : 'unknown';
-                        lead.linkedinUrl = lead.linkedinUrl || parsed.linkedinUrl;
-                        lead._sources.add('hunter');
-                        lead._enriched = true;
-                        console.log(`[LeadGen-Enrich] Found email for ${lead.fullName}: ${parsed.email} (score: ${parsed.score})`);
-                    }
-                    return parsed;
-                } catch { return null; }
-            });
-            await Promise.all(finderPromises);
-        }
-    }
-
-    // ENRICHMENT PASS 3: Verify unverified emails (batch, up to 20)
-    if (apiKeys.hunter) {
-        const unverified = uniqueLeads.filter(l =>
-            l.email && !isGenericEmail(l.email) && l.emailStatus !== 'valid'
-        ).slice(0, 200);
-
-        if (unverified.length > 0) {
-            console.log(`[LeadGen-Enrich] Pass 3: Verifying ${unverified.length} emails`);
-            emit({
-                phase: 'verify',
-                message: `Verifica ${unverified.length} email...`,
-                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                progress: 80,
-            });
-            const verifyPromises = unverified.map(async (lead) => {
-                try {
-                    const resultStr = await executeToolCall('verifyEmail', { email: lead.email }, companyId, apiKeys as any, conversationId);
-                    const parsed = JSON.parse(resultStr);
-                    if (parsed.result) {
-                        lead.emailStatus = parsed.result; // 'deliverable', 'risky', 'undeliverable'
-                        if (parsed.result === 'deliverable') lead.emailStatus = 'valid';
-                        else if (parsed.result === 'undeliverable') lead.emailStatus = 'invalid';
-                    }
-                } catch { /* skip */ }
-            });
-            await Promise.all(verifyPromises);
-        }
-    }
-
-    // ENRICHMENT PASS 4: For leads from Google Maps/scraping with company but no contacts,
-    // try Vibe Prospecting to find decision makers
-    if (apiKeys.vibeProspect) {
-        const companiesWithoutContacts = uniqueLeads.filter(l =>
-            l.companyName && !l.fullName && l.source !== 'vibe_prospecting'
-        );
-
-        if (companiesWithoutContacts.length > 0) {
-            const companyNames = companiesWithoutContacts
-                .map(l => l.companyName)
-                .filter((v, i, a) => a.indexOf(v) === i) // unique
-                .slice(0, 200); // Rimosso limite di 30 per ricercare massivamente
-
-            console.log(`[LeadGen-Enrich] Pass 4: Vibe Prospecting for ${companyNames.length} companies without contacts`);
-            emit({
-                phase: 'enrich',
-                message: `Vibe: ricerca contatti per ${companyNames.length} aziende senza email...`,
-                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                progress: 85,
-            });
-            try {
-                const resultStr = await executeToolCall('searchProspectsVibe', {
-                    company_names: companyNames,
-                    has_email: true,
-                    limit: companyNames.length * 3,
-                }, companyId, apiKeys as any, conversationId);
-                const parsed = JSON.parse(resultStr);
-                if (parsed.people?.length > 0) {
-                    for (const p of parsed.people) {
-                        const newLead = normalizeLead(p, 'searchProspectsVibe');
-                        // Try to merge with existing company-only lead
-                        const existing = uniqueLeads.find(l =>
-                            l.companyName && newLead.companyName &&
-                            l.companyName.toLowerCase() === newLead.companyName.toLowerCase() &&
-                            !l.fullName
-                        );
-                        if (existing) {
-                            Object.assign(existing, mergeLeadData(existing, newLead));
-                            existing._enriched = true;
-                        } else {
-                            uniqueLeads.push(newLead);
-                        }
-                    }
-                    console.log(`[LeadGen-Enrich] Vibe added ${parsed.people.length} contacts for companies`);
-                }
-            } catch { /* skip */ }
-        }
-    }
-
-    // ENRICHMENT PASS 5 (SerpApi): Google search + LinkedIn for ALL companies missing personal contacts
-    // Uses SerpApi (structured API, no bot detection) instead of Playwright for Google searches
-    // Searches Google for emails AND LinkedIn for real people names/roles
-    {
-        const companiesNeedEnrich = uniqueLeads.filter(l =>
-            l.companyName && (l.companyDomain || l.companyWebsite) &&
-            (!l.fullName || !l.email || isGenericEmail(l.email))
-        );
-        // Deduplicate by company
-        const uniqueCompanies = new Map<string, any>();
-        for (const l of companiesNeedEnrich) {
-            const key = l.companyName!.toLowerCase();
-            if (!uniqueCompanies.has(key)) uniqueCompanies.set(key, l);
-        }
-        const companiesToSearch = [...uniqueCompanies.values()];
-
-        if (companiesToSearch.length > 0 && apiKeys.serpApi) {
-            console.log(`[LeadGen-SerpApi] Pass 5: SerpApi Google + LinkedIn search for ${companiesToSearch.length} companies`);
-            emit({
-                phase: 'enrich',
-                message: `SerpApi: ricerca Google + LinkedIn per ${companiesToSearch.length} aziende ancora senza contatti...`,
-                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                progress: 87,
-            });
-
-            const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-            const SERP_BATCH = 5;
-            let searchedCount = 0;
-            let foundCount = 0;
-
-            for (let i = 0; i < companiesToSearch.length; i += SERP_BATCH) {
-                const batch = companiesToSearch.slice(i, i + SERP_BATCH);
-                const batchNum = Math.floor(i / SERP_BATCH) + 1;
-                const totalBatches = Math.ceil(companiesToSearch.length / SERP_BATCH);
-
-                emit({
-                    phase: 'enrich',
-                    message: `🔍 SerpApi [${batchNum}/${totalBatches}]: ${batch.map(l => l.companyName).join(', ')}`,
-                    leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                    progress: 87 + Math.round((i / companiesToSearch.length) * 8),
-                });
-
-                const searchPromises = batch.map(async (lead) => {
-                    const domain = lead.companyDomain || extractDomain(lead.companyWebsite);
-                    let bestEmail: string | null = null;
-                    let bestName: string | null = null;
-                    let bestTitle: string | null = null;
-                    let bestLinkedin: string | null = null;
-
-                    try {
-                        // STRATEGY 1: Google search for email contacts via SerpApi
-                        try {
-                            const query = `"${lead.companyName}" email contatto commerciale OR sales OR "area manager" OR direttore`;
-                            const resultStr = await executeToolCall('searchGoogleWeb', {
-                                query, num: 10, gl: 'it', hl: 'it',
-                            }, companyId, apiKeys as any, conversationId);
-                            const parsed = JSON.parse(resultStr);
-                            const results = parsed.results || [];
-
-                            // Extract emails from snippets and titles
-                            const allText = results.map((r: any) => `${r.title} ${r.snippet} ${r.displayedLink}`).join(' ');
-                            const googleEmails: string[] = [...new Set<string>((allText.match(emailRegex) as string[] | null) || [])];
-                            const domainEmails = domain ? googleEmails.filter(e => !isGenericEmail(e) && e.toLowerCase().includes(domain.split('.')[0])) : [];
-                            const anyPersonal = googleEmails.filter(e =>
-                                !isGenericEmail(e) && !e.includes('google') && !e.includes('example') &&
-                                !e.match(/\.(png|jpg|css|js)$/i) && e.length < 60
-                            );
-                            // Also accept generic emails from the domain if no personal found
-                            const genericDomainEmails = domain ? googleEmails.filter(e => isGenericEmail(e) && e.toLowerCase().includes(domain.split('.')[0])) : [];
-
-                            if (domainEmails.length > 0) {
-                                bestEmail = domainEmails[0];
-                                emit({ phase: 'enrich', message: `✅ ${lead.companyName}: Google trovato ${bestEmail}`, progress: 87 + Math.round((searchedCount / companiesToSearch.length) * 8), browserUrl: `https://www.google.com/search?q=${encodeURIComponent(query)}` });
-                            } else if (anyPersonal.length > 0) {
-                                bestEmail = anyPersonal[0];
-                                emit({ phase: 'enrich', message: `✅ ${lead.companyName}: Google trovato ${bestEmail} (esterno)`, progress: 87 + Math.round((searchedCount / companiesToSearch.length) * 8), browserUrl: `https://www.google.com/search?q=${encodeURIComponent(query)}` });
-                            } else if (genericDomainEmails.length > 0 && !lead.email) {
-                                bestEmail = genericDomainEmails[0];
-                                emit({ phase: 'enrich', message: `📧 ${lead.companyName}: Google trovato ${bestEmail} (generica)`, progress: 87 + Math.round((searchedCount / companiesToSearch.length) * 8), browserUrl: `https://www.google.com/search?q=${encodeURIComponent(query)}` });
-                            }
-                        } catch { /* Google search failed */ }
-
-                        // STRATEGY 2: LinkedIn search via SerpApi for people names
-                        // Use a single combined query to save API credits
-                        if (!bestName) {
-                            try {
-                                const linkedinQuery = `site:linkedin.com/in "${lead.companyName}" sales OR commerciale OR manager OR direttore OR CEO Italy`;
-                                const resultStr = await executeToolCall('searchGoogleWeb', {
-                                    query: linkedinQuery, num: 5, gl: 'it', hl: 'it',
-                                }, companyId, apiKeys as any, conversationId);
-                                const parsed = JSON.parse(resultStr);
-                                const results = parsed.results || [];
-
-                                for (const r of results.slice(0, 5)) {
-                                    const title = r.title || '';
-                                    // Match patterns like "Nome Cognome - Ruolo" or "Nome Cognome | Ruolo" or "Nome Cognome – Ruolo"
-                                    const match = title.match(/^([A-ZÀ-Ú][a-zà-ú]+)\s+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)?)\s*[-–|]/);
-                                    if (match) {
-                                        bestName = `${match[1]} ${match[2]}`;
-                                        // Extract LinkedIn URL from the result link
-                                        if (r.link && r.link.includes('linkedin.com/in/')) {
-                                            bestLinkedin = r.link;
-                                        }
-                                        // Extract role from after the dash
-                                        const titleMatch = title.match(/[-–|]\s*(.+?)(?:\s*[-–|]|$)/);
-                                        if (titleMatch) bestTitle = titleMatch[1].trim();
-                                        emit({ phase: 'enrich', message: `👤 ${lead.companyName}: LinkedIn trovato ${bestName}${bestTitle ? ` (${bestTitle})` : ''}`, progress: 87 + Math.round((searchedCount / companiesToSearch.length) * 8), browserUrl: r.link });
-                                        break;
-                                    }
-                                    // Also try: "Nome Cognome on LinkedIn" pattern (English results)
-                                    const match2 = title.match(/^([A-ZÀ-Ú][a-zà-ú]+)\s+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)?)\s/);
-                                    if (match2 && r.link?.includes('linkedin.com/in/')) {
-                                        bestName = `${match2[1]} ${match2[2]}`;
-                                        bestLinkedin = r.link;
-                                        // Try to extract role from snippet
-                                        const snippetRoleMatch = (r.snippet || '').match(/(Sales|Commercial|Area Manager|Business Development|Key Account|Export|CEO|CTO|Direttore|Responsabile|Managing Director|Founder)[^.]{0,40}/i);
-                                        if (snippetRoleMatch) bestTitle = snippetRoleMatch[0].trim();
-                                        emit({ phase: 'enrich', message: `👤 ${lead.companyName}: LinkedIn trovato ${bestName}${bestTitle ? ` (${bestTitle})` : ''}`, progress: 87 + Math.round((searchedCount / companiesToSearch.length) * 8), browserUrl: r.link });
-                                        break;
-                                    }
-                                }
-                            } catch { /* LinkedIn search failed */ }
-                        }
-                    } catch (e: any) {
-                        console.warn(`[LeadGen-SerpApi] Error for ${lead.companyName}:`, e.message?.substring(0, 80));
-                    }
-
-                    // Apply findings
-                    if (bestEmail) {
-                        lead.email = bestEmail.toLowerCase();
-                        lead.emailStatus = isGenericEmail(bestEmail) ? 'generic' : 'scraped';
-                        lead._sources = lead._sources || new Set();
-                        lead._sources.add('serpapi-google');
-                        lead._enriched = true;
-                        foundCount++;
-                    }
-                    if (bestName) {
-                        const nameParts = bestName.split(' ');
-                        lead.firstName = lead.firstName || nameParts[0] || null;
-                        lead.lastName = lead.lastName || nameParts.slice(1).join(' ') || null;
-                        lead.fullName = lead.fullName || bestName;
-                    }
-                    if (bestTitle) lead.jobTitle = lead.jobTitle || bestTitle;
-                    if (bestLinkedin) lead.linkedinUrl = lead.linkedinUrl || bestLinkedin;
-                    searchedCount++;
-                });
-
-                await Promise.all(searchPromises);
-            }
-
-            console.log(`[LeadGen-SerpApi] Pass 5 complete: searched ${searchedCount} companies, found contacts for ${foundCount}`);
-            emit({
-                phase: 'enrich',
-                message: `SerpApi Google+LinkedIn completato: ${foundCount} contatti trovati su ${searchedCount} aziende.`,
-                leadsFound: uniqueLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-                progress: 95,
-            });
-        } else if (companiesToSearch.length > 0 && !apiKeys.serpApi) {
-            console.log(`[LeadGen-SerpApi] Pass 5 SKIPPED: no SerpApi key configured (${companiesToSearch.length} companies need enrichment)`);
-            emit({
-                phase: 'enrich',
-                message: `⚠️ SerpApi non configurato: ${companiesToSearch.length} aziende senza contatto non potranno essere arricchite via Google/LinkedIn.`,
-                progress: 95,
-            });
-        }
-    }
-
-    // FINAL: Compute confidence scores and clean up
-    const finalLeads: any[] = [];
-    for (const lead of uniqueLeads) {
-        // Skip existing emails
-        if (lead.email && existingEmails.has(lead.email.toLowerCase())) continue;
-
-        // For fair searches: keep ALL leads with company name + domain, even without email
-        // User wants ALL exhibitors saved with whatever info was found
-        if (!isFairSearch) {
-            if (!lead.email || isGenericEmail(lead.email)) continue;
-        } else {
-            // For fairs: keep everything that has at least a company name and domain/website
-            // Companies without email still have value (descriptions, industry info, domain for future outreach)
-            if (!lead.email && !lead.companyDomain && !lead.companyWebsite) continue;
-            // At minimum need a company name
-            if (!lead.companyName) continue;
-        }
-
-        // Compute confidence
-        lead.confidence = scoreLeadCompleteness(lead);
-        // Multi-source bonus
-        if (lead._sources?.size > 1) lead.confidence = Math.min(100, lead.confidence + 5);
-
-        // Clean internal fields
-        delete lead._enriched;
-        delete lead._sources;
-
-        finalLeads.push(lead);
-    }
-
-    // Sort by confidence (highest first)
-    finalLeads.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
-
-    console.log(`[LeadGen-Exec] Final: ${finalLeads.length} high-quality leads (from ${allLeads.length} raw)`);
-    emit({
-        phase: 'save',
-        message: `${finalLeads.length} lead trovati. Salvataggio nel database...`,
-        leadsFound: finalLeads.length,
-        leadsWithEmail: finalLeads.filter(l => l.email && !isGenericEmail(l.email)).length,
-        companiesFound: new Set(finalLeads.filter(l => l.companyName).map(l => l.companyName!.toLowerCase())).size,
-        progress: 90,
+// ===================== SESSION MANAGEMENT =====================
+
+function registerSession(input: LeadGeneratorInput): string {
+    const token = randomUUID();
+    activeSessions.set(token, {
+        companyId: input.companyId,
+        apiKeys: (input.leadGenApiKeys || {}) as Record<string, string>,
+        conversationId: input.conversationId,
+        createdAt: Date.now(),
     });
-
-    // Auto-save
-    if (finalLeads.length > 0) {
-        console.log(`[LeadGen-Exec] Auto-saving ${finalLeads.length} leads...`);
-        try {
-            await executeToolCall('saveLeads', {
-                searchName: plan.summary || 'Ricerca Lead',
-                leads: finalLeads,
-            }, companyId, apiKeys as any, conversationId);
-            console.log(`[LeadGen-Exec] Saved ${finalLeads.length} leads`);
-        } catch (e: any) {
-            console.error('[LeadGen-Exec] Auto-save error:', e.message);
-        }
-    }
-
-    return { results, allLeads: finalLeads };
+    // Auto-cleanup after 30 minutes
+    // 4 hours timeout — enough time to process 400+ companies
+    setTimeout(() => activeSessions.delete(token), 4 * 60 * 60 * 1000);
+    return token;
 }
 
-/**
- * PHASE 3: Synthesize results into a rich response
- */
-function synthesizeResults(
-    plan: ExecutionPlan,
-    allLeads: any[],
-    results: Map<number, any>,
-    userRequest: string,
-    model: string,
-    enrichmentStats?: { hunterEnriched: number; vibeEnriched: number; verified: number }
-): string {
-    // Build a compact summary of results
-    const taskSummaries = plan.tasks.map(t => {
-        const result = results.get(t.id);
-        if (t.tool === 'getExistingLeadEmails') {
-            return `- Check duplicati: ${result?.totalExisting || 0} lead gia esistenti`;
-        }
-        if (t.tool === 'saveLeads') {
-            return `- Salvataggio: ${result?.savedCount || 0} lead salvati`;
-        }
-        if (result?.error) {
-            return `- ${t.description}: ERRORE - ${result.error}`;
-        }
-        const count = result?.totalResults || result?.returned || result?.people?.length || result?.businesses?.length || result?.emails?.length || 0;
-        return `- ${t.description}: ${count} risultati`;
-    }).join('\n');
+// ===================== CLI AGENT SYSTEM PROMPT =====================
 
-    // Format leads for presentation (up to 100 for fair searches, 50 otherwise)
-    const displayLimit = allLeads.length > 50 ? 100 : 50;
-    const leadsSummary = allLeads.slice(0, displayLimit).map((l, i) => {
-        const parts = [
-            `${i + 1}. **${l.fullName || 'N/A'}**`,
-            l.jobTitle ? `Ruolo: ${l.jobTitle}` : null,
-            l.companyName ? `Azienda: ${l.companyName}` : null,
-            l.email ? `Email: ${l.email}` : null,
-            l.emailStatus ? `Status: ${l.emailStatus}` : null,
-            l.phone ? `Tel: ${l.phone}` : null,
-            l.linkedinUrl ? `LinkedIn: si` : null,
-            l.companyCity ? `Citta: ${l.companyCity}` : null,
-            l.companyIndustry ? `Settore: ${l.companyIndustry}` : null,
-            l.companySize ? `Dimensione: ${l.companySize}` : null,
-            l.source ? `Fonte: ${l.source}` : null,
-            l.confidence != null ? `Completezza: ${l.confidence}%` : null,
-        ].filter(Boolean).join(' | ');
-        return parts;
-    }).join('\n');
+const TOOL_NOT_SUPPORTED_ERROR = (model: string) =>
+`❌ Il modello "${model}" non supporta il tool calling, necessario per cercare lead.
 
-    // Stats by source
-    const bySource: Record<string, number> = {};
-    for (const l of allLeads) {
-        bySource[l.source || 'unknown'] = (bySource[l.source || 'unknown'] || 0) + 1;
+Modelli OpenRouter compatibili (con tool calling):
+• google/gemini-flash-1.5          (gratuito, ottimo)
+• google/gemini-2.0-flash-001      (gratuito, veloce)
+• google/gemini-2.5-flash-preview  (gratuito, migliore)
+• openai/gpt-4o-mini               (economico)
+• openai/gpt-4o                    (potente)
+• mistral/mistral-small-3.1        (gratuito)
+• meta-llama/llama-3.3-70b-instruct (gratuito)
+• anthropic/claude-haiku-4-5       (veloce)
+
+Cambia modello nel selettore in alto a destra e riprova.`;
+
+function buildCliAgentPrompt(sessionToken: string, input: LeadGeneratorInput): string {
+    const apiKeys = input.leadGenApiKeys || {};
+    const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const baseUrl = 'http://localhost:9002/api/lead-generator/tool-call';
+    const curlBase = `curl -s ${baseUrl} -X POST -H 'Content-Type: application/json'`;
+
+    // Build tool catalog — only show tools with configured API keys
+    const tools: string[] = [];
+
+    tools.push(`### getExistingLeadEmails — Recupera email gia salvate (CHIAMA SEMPRE PER PRIMO)
+${curlBase} -d '{"tool":"getExistingLeadEmails","args":{},"token":"${sessionToken}"}'`);
+
+    if (apiKeys.apollo) {
+        tools.push(`### searchPeopleApollo — Cerca persone per ruolo, settore, localita (Apollo.io)
+${curlBase} -d '{"tool":"searchPeopleApollo","args":{"jobTitles":["CEO","CTO","Sales Director"],"industries":["Industrial Automation"],"locations":["Italy"],"limit":25},"token":"${sessionToken}"}'
+Args: jobTitles (INGLESE!), industries (INGLESE!), locations (INGLESE!), companySize, keywords, limit`);
+
+        tools.push(`### searchCompaniesApollo — Cerca aziende per settore/localita (Apollo.io)
+${curlBase} -d '{"tool":"searchCompaniesApollo","args":{"industries":["Manufacturing"],"locations":["Italy"],"limit":25},"token":"${sessionToken}"}'`);
     }
-    const sourceStats = Object.entries(bySource).map(([k, v]) => `${k}: ${v}`).join(', ');
 
-    // Quality stats
-    const withEmail = allLeads.filter(l => l.email && !isGenericEmail(l.email)).length;
-    const verified = allLeads.filter(l => l.emailStatus === 'valid').length;
-    const withPhone = allLeads.filter(l => l.phone).length;
-    const withLinkedin = allLeads.filter(l => l.linkedinUrl).length;
-    const avgConfidence = allLeads.length > 0 ? Math.round(allLeads.reduce((s, l) => s + (l.confidence || 0), 0) / allLeads.length) : 0;
+    if (apiKeys.hunter) {
+        tools.push(`### findEmailsHunter — Trova TUTTE le email di un dominio (Hunter.io)
+${curlBase} -d '{"tool":"findEmailsHunter","args":{"domain":"siemens.it","type":"personal"},"token":"${sessionToken}"}'
+IMPORTANTE: usa SEMPRE type:"personal". Per aziende italiane prova prima il dominio .it`);
 
-    const synthesizePrompt = `Sei LeadAI, un assistente per lead B2B. Rispondi in italiano.
+        tools.push(`### findEmailHunter — Trova email di UNA persona specifica (nome+cognome+dominio)
+${curlBase} -d '{"tool":"findEmailHunter","args":{"domain":"festo.com","first_name":"Marco","last_name":"Rossi"},"token":"${sessionToken}"}'`);
 
-RICHIESTA ORIGINALE: ${userRequest}
-
-PIANO ESEGUITO:
-${taskSummaries}
-
-STATISTICHE QUALITA':
-- Lead totali con email personale: ${withEmail}/${allLeads.length}
-- Email verificate: ${verified}
-- Con telefono: ${withPhone}
-- Con LinkedIn: ${withLinkedin}
-- Completezza media: ${avgConfidence}%
-- Per fonte: ${sourceStats}
-
-LEAD TROVATI (${allLeads.length} totali, ordinati per completezza):
-${leadsSummary || 'Nessun lead trovato.'}
-
-COMPITO: Presenta i risultati all'utente in modo chiaro e professionale.
-- INIZIA OBBLIGATORIAMENTE con la sezione "📜 Diario di Bordo": riassumi a tuo modo o tramite bullet point il percorso che hai effettuato analizzando il "PIANO ESEGUITO". Racconta all'utente le tue scelte strategiche (ad esempio "Per prima cosa ho tentato una ricerca Vibe", "Poiché Vibe ha dato avviso di limite, ho preferito affidarmi ad Hunter e allo scraping del sito") in formato narrativo, logico ed esaustivo. L'utente deve capire ESATTAMENTE come hai lavorato dietro le quinte!
-- DOPO il diario, fornisci il consueto riepilogo quantitativo: quanti lead trovati, fonti usate, qualita complessiva.
-- Per OGNI lead mostra: nome, ruolo, azienda, email, stato email, telefono, LinkedIn, citta, settore, completezza %
-- Usa formato ### per ogni lead con campi ben formattati
-- AGGIUNGI una tabella riepilogativa markdown alla fine con colonne: #, Nome, Ruolo, Azienda, Email, Citta, Completezza
-- Se ci sono meno di 5 lead, suggerisci come ampliare la ricerca
-- I lead sono GIA' stati salvati nel database automaticamente — comunicalo
-- NON generare bozze email a meno che l'utente non le abbia chieste
-- Sii conciso ma completo`;
-
-    try {
-        const isOpus = model.includes('opus');
-        return callClaudeCli(synthesizePrompt, model, isOpus ? 180_000 : 90_000);
-    } catch (e: any) {
-        console.error('[LeadGen-Synth] Error:', e.message);
-        // Fallback: return raw results
-        if (allLeads.length > 0) {
-            let fallback = `## Risultati ricerca\n\nTrovati **${allLeads.length} lead** con email personale.\n`;
-            fallback += `\n📊 **Qualita**: ${withEmail} email personali, ${verified} verificate, completezza media ${avgConfidence}%\n`;
-            fallback += `📌 **Fonti**: ${sourceStats}\n\n`;
-            fallback += `${taskSummaries}\n\n`;
-            fallback += `${leadsSummary}\n\n`;
-            fallback += `*Lead salvati automaticamente nel database.*`;
-            return fallback;
-        }
-        return `Non sono riuscito a trovare lead per la tua richiesta. Dettaglio piano:\n${taskSummaries}`;
+        tools.push(`### verifyEmail — Verifica se un email e valida
+${curlBase} -d '{"tool":"verifyEmail","args":{"email":"m.rossi@festo.com"},"token":"${sessionToken}"}'`);
     }
+
+    if (apiKeys.vibeProspect) {
+        tools.push(`### searchProspectsVibe — Cerca contatti con Vibe Prospecting (Explorium)
+${curlBase} -d '{"tool":"searchProspectsVibe","args":{"job_titles":["Sales Manager","CTO"],"company_country_codes":["IT"],"has_email":true,"limit":25},"token":"${sessionToken}"}'
+Args: job_titles, job_levels, company_country_codes (ISO-2), company_names, company_sizes, has_email`);
+
+        tools.push(`### searchBusinessesVibe — Cerca aziende con Vibe Prospecting
+${curlBase} -d '{"tool":"searchBusinessesVibe","args":{"country_codes":["IT"],"company_sizes":["51-200","201-500"],"limit":25},"token":"${sessionToken}"}'`);
+    }
+
+    if (apiKeys.serpApi) {
+        tools.push(`### searchGoogleWeb — Cerca su Google (SerpApi)
+${curlBase} -d '{"tool":"searchGoogleWeb","args":{"query":"lista espositori SPS Italia 2026","num":20},"token":"${sessionToken}"}'
+Ottimo per trovare liste espositori, directory aziendali, pagine team`);
+
+        tools.push(`### searchGoogleMaps — Cerca attivita su Google Maps (SerpApi)
+${curlBase} -d '{"tool":"searchGoogleMaps","args":{"query":"automazione industriale Bologna"},"token":"${sessionToken}"}'
+ATTENZIONE: NON usare per fiere/espositori! Google Maps trova aziende LOCALI, non espositori.`);
+    }
+
+    if (apiKeys.firecrawl) {
+        tools.push(`### scrapeWithFirecrawl — Scraping pagina web (Firecrawl, gestisce JS)
+${curlBase} -d '{"tool":"scrapeWithFirecrawl","args":{"url":"https://example.com/team","formats":["markdown"],"waitFor":3000},"token":"${sessionToken}"}'
+Usa waitFor:3000-5000 per pagine JS-heavy (liste espositori)`);
+
+        tools.push(`### mapWebsiteFirecrawl — Scopri tutte le URL di un sito
+${curlBase} -d '{"tool":"mapWebsiteFirecrawl","args":{"url":"https://example.com","search":"team contact about","limit":50},"token":"${sessionToken}"}'`);
+    }
+
+    tools.push(`### scrapeWebsite — Scraping base (Python backend, no JS)
+${curlBase} -d '{"tool":"scrapeWebsite","args":{"url":"https://example.com/contatti","extractType":"contacts"},"token":"${sessionToken}"}'`);
+
+    if (apiKeys.apify) {
+        tools.push(`### runApifyActor — Scraping avanzato (Apify). Puo richiedere 1-2 min.
+${curlBase} -d '{"tool":"runApifyActor","args":{"actorId":"compass/crawler-google-places","input":{"searchStringsArray":["automazione industriale"],"locationQuery":"Italy","maxCrawledPlacesPerSearch":20}},"token":"${sessionToken}"}'`);
+    }
+
+    tools.push(`### saveLeads — Salva lead nel database
+${curlBase} -d '{"tool":"saveLeads","args":{"searchName":"Ricerca X","leads":[{"fullName":"Mario Rossi","jobTitle":"CTO","email":"m.rossi@azienda.it","companyName":"Azienda Srl","companyDomain":"azienda.it","companyWebsite":"https://azienda.it","companyIndustry":"Automazione","companyCity":"Milano","companyCountry":"Italy","source":"hunter","notes":"Descrizione azienda...","confidence":75,"emailStatus":"valid"}]},"token":"${sessionToken}"}'
+⛔ CRITICO — SALVA DOPO OGNI SINGOLA AZIENDA: appena finisci una azienda chiama subito saveLeads con quella azienda. Non accumulare mai più di 1 lead prima di salvare. Se il token scade o il server si riavvia, perdi tutto ciò che non hai salvato.`);
+
+    tools.push(`### updateLead — Aggiorna un lead esistente nel database (usa leadId dalla risposta di saveLeads o getLeadsToEnrich)
+${curlBase} -d '{"tool":"updateLead","args":{"leadId":"clxxx...","email":"m.rossi@azienda.it","fullName":"Mario Rossi","jobTitle":"CTO","linkedinUrl":"https://linkedin.com/in/mario-rossi","notes":"Aggiornato"},"token":"${sessionToken}"}'`);
+
+    tools.push(`### getLeadStats — Statistiche lead nel database
+${curlBase} -d '{"tool":"getLeadStats","args":{},"token":"${sessionToken}"}'`);
+
+    tools.push(`### exportLeads — Esporta lead in CSV
+${curlBase} -d '{"tool":"exportLeads","args":{},"token":"${sessionToken}"}'`);
+
+    return `# REGOLE ASSOLUTE — LEGGILE PRIMA DI TUTTO
+
+## ⛔ REGOLA N.1 — NO AUTONOMIA
+MAI, in nessun caso, chiedere all'utente cosa fare, proporre opzioni, chiedere conferma, o fermarti aspettando risposta.
+L'utente ti ha dato un obiettivo. Raggiungilo completamente PRIMA di rispondere.
+VIETATO: "vuoi che continui?", "quale preferisci?", "cosa vuoi fare?", proporre opzioni numerate, chiedere conferma.
+
+## ⛔ REGOLA N.2 — NO FILE SU DISCO
+NON creare MAI file .md, .json, .txt, .sh, .csv sul filesystem con i dati trovati.
+NON usare Bash per scrivere file (cat >, echo >, tee, etc.) come "accumulator", "master file", "batch status", etc.
+Tutto deve andare nel database via saveLeads o updateLead. Il filesystem è per debug temporaneo, MAI per dati.
+Se hai trovato contatti: salva nel DB. Non in file.
+
+## ⛔ REGOLA N.3 — QUANDO ARRICCHISCI, NON CERCARE NUOVE AZIENDE
+Quando l'utente dice "arricchisci i lead esistenti" / "trova contatti per le aziende in lista" / "vai su LinkedIn":
+1. Chiama getLeadsToEnrich per ottenere la lista
+2. Per OGNI azienda nella lista: cerca contatti LinkedIn/email → saveLeads/updateLead → prossima
+3. NON cercare nuove aziende. NON fare ricerche generiche ("automazione industriale italia"). NON allargare l'obiettivo.
+4. Lavora SOLO sulle aziende già nel DB.
+
+## ⛔ REGOLA N.4 — SALVA DOPO OGNI SINGOLA AZIENDA
+[ricerca azienda X] → [saveLeads o updateLead con azienda X] → [ricerca azienda X+1] → ...
+MAI accumulare più di 1 azienda senza salvare. Se il server si riavvia, perdi tutto.
+
+---
+
+Sei LeadAI, un agente AUTONOMO per la ricerca di lead B2B. Lavori come Claude Code: usi Bash, WebFetch, WebSearch per trovare lead e poi salvi via curl.
+
+DATA: ${today} | Company ID: ${input.companyId}
+${input.skillsContext ? `\nPROFILO AZIENDALE UTENTE:\n${input.skillsContext}\n` : ''}
+
+## TOOL NATIVI (gia abilitati, usali direttamente)
+- **WebSearch**: Cerca su Google. Usalo per trovare liste espositori, pagine team, directory aziendali. Nessun limite di ricerche.
+- **WebFetch**: Scarica il contenuto di qualsiasi URL. Usalo per scrappare pagine web, liste espositori, pagine /team, /contatti, /chi-siamo. Nessun limite di fetch.
+- **Bash**: Esegui comandi. Usalo per chiamare i tool API via curl (vedi sotto).
+
+## TOOL API (chiama via curl con Bash)
+${tools.join('\n\n')}
+
+## STRATEGIA AUTONOMA
+- AGISCI sempre. Non chiedere mai.
+- Se un tool fallisce o da 0 risultati, prova un altro approccio immediatamente.
+- Se le API danno 429/403: CONTINUA con WebFetch e WebSearch sui siti aziendali. Non sono alternative peggiori, sono ugualmente valide.
+- Nessun limite di operazioni, tempo, o API call. Continua finche non hai coperto TUTTO l'obiettivo.
+
+## WORKFLOW OBBLIGATORIO
+1. CHIAMA getExistingLeadEmails per evitare duplicati
+2. ANALIZZA la richiesta: settore, ruoli target, geografia, tipo (fiera vs generico)
+3. ESEGUI ricerche con TUTTI i tool disponibili:
+   - Apollo/Vibe per contatti strutturati
+   - Hunter per email personali da domini aziendali
+   - Google Web per trovare liste, directory, pagine team
+   - Firecrawl per scrappare pagine trovate
+4. PER OGNI azienda trovata senza email personale — SEGUI QUESTO PROCESSO IN ORDINE:
+   a. WebFetch sul sito aziendale: prova /team, /chi-siamo, /about, /about-us, /management, /leadership, /contatti, /contact, /people — cerca nomi, ruoli, email
+   b. Se il sito ha una struttura complessa: usa mapWebsiteFirecrawl per scoprire le pagine /team o /staff e poi WebFetch su quelle pagine
+   c. WebSearch: '[nome azienda] [ruolo target] email' (es. "Festo Italia CTO email")
+   d. WebSearch: '[nome azienda] [ruolo target] site:linkedin.com' — poi WebFetch sulla pagina LinkedIn per estrarre nome, ruolo, info di contatto
+   e. Se hai trovato nome+cognome: Hunter findEmailHunter con nome+cognome+dominio
+   f. Se hai solo il dominio: Hunter findEmailsHunter con type:"personal"
+   g. WebSearch: '[nome cognome] [azienda] contatto' o '[nome cognome] email [azienda]'
+5. VERIFICA email trovate con verifyEmail (se Hunter disponibile)
+6. SALVA con saveLeads PRIMA di rispondere
+7. PRESENTA i risultati nel formato standard
+
+## STRATEGIA PER FIERE/EVENTI — OBIETTIVO: TROVARE TUTTI GLI ESPOSITORI
+Quando l'utente chiede contatti di espositori:
+1. Se l'utente fornisce un URL: usa WebFetch per scaricare la pagina IMMEDIATAMENTE
+2. Se WebFetch non cattura tutto (pagina JS-heavy o paginata):
+   a. Prova scrapeWithFirecrawl con waitFor:5000
+   b. Prova diverse URL: ?page=1, ?page=2, ?limit=500, ?all=true
+   c. Cerca con WebSearch "[nome fiera] [anno] lista completa espositori" / "exhibitor list PDF"
+   d. Usa mapWebsiteFirecrawl per trovare URL alternative
+3. OBIETTIVO: estrarre TUTTI gli espositori, non solo i primi. Se sono 400, ne vuoi 400.
+4. NON usare MAI la tua "conoscenza" per inventare nomi di aziende. Solo dati scrappati o da API.
+5. Una volta estratta la lista completa di aziende:
+   a. FASE 1 — SALVA SUBITO TUTTE LE AZIENDE: Salva IMMEDIATAMENTE tutte le aziende trovate come lead (companyName + companyWebsite/companyDomain). Anche senza email o contatto. Un lead con solo nome azienda e sito web e GIA UTILE.
+   b. FASE 2 — ARRICCHISCI: Per ogni azienda, cerca contatti reali con questo processo SISTEMATICO:
+      STEP 1 - SITO AZIENDALE (prima cosa da fare per ogni azienda):
+        • WebFetch su companyWebsite + /team → cerca nomi, ruoli, foto profilo con nome
+        • WebFetch su companyWebsite + /chi-siamo → stessa cosa
+        • WebFetch su companyWebsite + /about → stessa cosa
+        • WebFetch su companyWebsite + /management → stessa cosa
+        • WebFetch su companyWebsite + /leadership → stessa cosa
+        • WebFetch su companyWebsite + /contatti → a volte ci sono email dirette
+        • Se il sito usa JS: scrapeWithFirecrawl con waitFor:3000
+      STEP 2 - RICERCA WEB (se il sito non ha info):
+        • WebSearch: "[nome azienda] direttore tecnico" oppure "[nome azienda] CEO" oppure "[nome azienda] sales manager"
+        • WebSearch: "[nome azienda] site:linkedin.com/company" per trovare la pagina aziendale LinkedIn
+        • WebFetch sulla pagina LinkedIn dell'azienda per vedere i dipendenti
+        • WebSearch: "[nome azienda] [ruolo] site:linkedin.com/in" per trovare profili individuali
+      STEP 3 - EMAIL DISCOVERY (quando hai un nome):
+        • Hunter findEmailHunter con nome+cognome+dominio
+        • WebSearch: "[nome cognome] [azienda] email" o "[nome cognome] [azienda] contatto"
+        • WebSearch: "[nome cognome] email" (per figure pubbliche tipo CEO)
+      STEP 4 - HUNTER DOMAIN SCAN (sempre):
+        • Hunter findEmailsHunter con domain + type:"personal" — restituisce tutte le email personali del dominio
+        • Apollo searchPeopleApollo con companyName o domain per vedere se Apollo ha contatti
+      ⛔ SALVA DOPO OGNI SINGOLA AZIENDA: appena finisci ricerca su un'azienda → saveLeads SUBITO. Non accumulare mai più di 1 lead. Il server può riavviarsi e perdere tutto ciò che non è stato salvato.
+   c. FASE 3 — AGGIORNA: Salva di nuovo con saveLeads i lead arricchiti (sovrascrivera i precedenti)
+6. ⛔ SALVA DOPO OGNI SINGOLA AZIENDA: trova contatti per un'azienda → saveLeads immediatamente → avanza alla successiva. Mai più di 1 azienda in pending.
+7. NON usare searchGoogleMaps per fiere
+8. Se la lista ha 400 aziende, DEVI processarle TUTTE. Nessun limite. Lavora in batch sistematici.
+9. Se un'API da errore 429/403 (quota esaurita), CONTINUA con le altre API e con WebFetch/WebSearch. Non fermarti MAI.
+
+## ⛔ REGOLA FONDAMENTALE: SALVA DOPO OGNI SINGOLA AZIENDA
+- Sequenza OBBLIGATORIA per ogni azienda: [ricerca] → [saveLeads con 1 lead] → [prossima azienda]
+- MAI accumulare più di 1 azienda prima di salvare
+- Ogni azienda trovata DEVE essere salvata subito, anche con soli dati minimi (companyName + companyWebsite)
+- NON buttare via aziende solo perche non hai trovato un'email personale
+- Un lead con companyName + companyWebsite + companyIndustry e gia prezioso
+- Se le API raggiungono la quota, salva quello che hai e continua con WebFetch/WebSearch
+
+## QUALITA — ZERO DATI INVENTATI
+- NON INVENTARE MAI email, telefoni, LinkedIn o qualsiasi dato di contatto
+- Ogni email DEVE provenire da un tool (Apollo, Hunter, Vibe, WebFetch/scraping). MAI costruire email con pattern "nome.cognome@dominio" a meno che non l'abbia trovata ESPLICITAMENTE scritta su una pagina web o da un'API
+- Se un tool restituisce un'email, usala. Se nessun tool trova un'email per quella persona, lascia il campo email VUOTO (non ometterla, mettila vuota)
+- EMAIL VIETATE come email principale: info@, admin@, support@, hello@, contact@, sales@, marketing@, office@, noreply@, segreteria@, commerciale@, direzione@, hr@, press@
+- Se trovi SOLO email generica: salva il lead comunque MA metti l'email generica nel campo "notes", NON nel campo "email"
+
+## COME USARE LINKEDIN PER TROVARE CONTATTI REALI
+LinkedIn spesso non mostra email, ma ti da nome + ruolo + azienda confermati. Ecco come usarlo:
+1. WebSearch: "[nome azienda] direttore [ruolo] site:linkedin.com/in" → ottieni URL profili LinkedIn individuali
+2. WebFetch sul profilo LinkedIn → spesso mostra nome completo, ruolo, azienda, eventuale sito
+3. Con nome completo ottenuto da LinkedIn: usa Hunter findEmailHunter per trovare l'email
+4. Oppure: WebSearch "[nome cognome] [azienda] email" per trovare email pubblica
+5. Salva il lead con fullName + jobTitle + linkedinUrl anche se non trovi email — è già un contatto di valore
+
+## COME NAVIGARE SITI AZIENDALI PER TROVARE EMAIL
+Molti siti aziendali nascondono le email ma le hanno. Strategia:
+1. WebFetch homepage → cerca pattern email (es. m.rossi@azienda.it scritto nel testo o nei mailto:)
+2. WebFetch /contatti o /contact → spesso ci sono email dirette dei responsabili
+3. WebFetch /team o /chi-siamo → nomi e ruoli, raramente email ma utili per poi cercare con Hunter
+4. Cerca nei meta tag, header e footer delle pagine: spesso ci sono email di contatto
+5. Se vedi scritto "mailto:email@dominio.it" nel codice HTML: quella è un'email reale, usala!
+6. Se il sito ha un form ma nessuna email visibile: note "Solo form di contatto sul sito"
+
+## COMPLETEZZA DATI
+Per ogni lead compila TUTTI i campi che riesci a trovare:
+- SEMPRE: companyName, source
+- DA SCRAPING SITO FIERA: companyWebsite, companyDomain (spesso il sito fiera ha i link!)
+- DA WEB: companyCity, companyIndustry, companySize, companyCountry
+- DA API/SCRAPING: fullName, jobTitle, email, phone, linkedinUrl
+- notes: descrivi cosa hai trovato e da dove
+- Se non trovi email: email resta vuoto, NON omettere il lead
+
+## AFFIDABILITA (confidence 0-100) — SOLO dati reali
+- Azienda con solo nome+sito: 20 (base)
+- + Email verificata con verifyEmail: +35
+- + Email da Apollo/Hunter/Vibe (non verificata): +20
+- + Email da scraping pagina web: +15
+- + Nome completo da API/LinkedIn: +15 | + Ruolo: +10 | + Telefono: +10 | + LinkedIn: +10
+- + Sito web: +5 | + Descrizione/note: +5
+
+## FORMATO RISPOSTA
+Inizia con "# 📋 Diario di Bordo" — racconta le fasi, tool usati, risultati per tool, problemi.
+
+Statistiche chiare:
+- Aziende trovate: X
+- Lead salvati: X (DEVE essere uguale o quasi alle aziende trovate!)
+- Con email personale: X
+- Con contatto nominativo (nome+ruolo): X
+- Solo dati aziendali: X
+
+Poi tabella riepilogativa di TUTTI i lead salvati (usa markdown compatto).
+NON elencare ogni lead singolarmente se sono piu di 20 — usa solo la tabella.
+
+## REGOLE GENERALI
+- Rispondi SEMPRE in italiano
+- NON INVENTARE MAI NESSUN DATO. Solo risultati reali dai tool/API/WebFetch
+- Se un dato non viene da un tool, NON includerlo
+- Se un'API da 429/403: CONTINUA con WebFetch/WebSearch. Non e una scusa per fermarsi.
+- TRASPARENZA: per ogni dato indica la fonte
+- **VIETATO ASSOLUTO**: "vuoi che continui?", "quale preferisci?", proporre opzioni, chiedere conferma
+- **La risposta finale arriva SOLO quando hai finito tutto il lavoro**. Non a meta strada.
+- Se hai 399 aziende, la risposta finale la scrivi dopo aver processato tutte e 399`;
 }
 
+// ===================== CLAUDE CLI AGENT LOOP =====================
+
 /**
- * Main Claude CLI flow: Plan → Execute → Enrich → Synthesize
+ * Claude CLI flow — reinforced as a full agent loop.
+ * Claude uses Bash/curl to call tools via the internal HTTP endpoint,
+ * iterates autonomously until satisfied, then produces a formatted response.
  */
 async function leadGeneratorFlowClaude(input: LeadGeneratorInput): Promise<LeadGeneratorResult> {
-    console.log('[LeadGen-Claude] ✅ ENTERED leadGeneratorFlowClaude — the correct flow with Firecrawl + Playwright');
-    const apiKeys = input.leadGenApiKeys || {};
-    const model = input.model || 'claude-sonnet-4-6';
+    console.log('[LeadGen-CLI] ✅ Starting reinforced CLI agent loop');
     const emit = input.onProgress || (() => {});
 
-    // Build conversation history as text for context
-    const MAX_HISTORY_MESSAGES = 10;
-    const truncated = input.messages.length > MAX_HISTORY_MESSAGES
-        ? input.messages.slice(-MAX_HISTORY_MESSAGES)
-        : input.messages;
-    const conversationHistory = truncated.map(m => {
+    // 1. Register session for tool access
+    const sessionToken = registerSession(input);
+    console.log(`[LeadGen-CLI] Session registered: ${sessionToken.slice(0, 8)}...`);
+
+    // 2. Build system prompt with tool descriptions
+    const systemPrompt = buildCliAgentPrompt(sessionToken, input);
+
+    // 3. Extract user request from messages
+    const lastUserMsg = [...input.messages].reverse().find(m => m.role !== 'model');
+    const userRequest = lastUserMsg?.content?.map((c: any) => c.text).filter(Boolean).join('\n') || '';
+
+    if (!userRequest.trim()) {
+        activeSessions.delete(sessionToken);
+        return { text: 'Non ho ricevuto una richiesta. Cosa vuoi cercare?', cost: 0, totalTokens: 0 };
+    }
+
+    // Build conversation context
+    const MAX_HISTORY = 10;
+    const truncated = input.messages.length > MAX_HISTORY ? input.messages.slice(-MAX_HISTORY) : input.messages;
+    const conversationText = truncated.map(m => {
         const role = m.role === 'model' ? 'Assistant' : 'User';
         const text = m.content?.map((c: any) => c.text).filter(Boolean).join('\n') || '';
         return `${role}: ${text}`;
     }).join('\n\n');
 
-    // Extract last user message
-    const lastUserMsg = [...input.messages].reverse().find(m => m.role !== 'model');
-    const userRequest = lastUserMsg?.content?.map((c: any) => c.text).filter(Boolean).join('\n') || '';
-
-    if (!userRequest.trim()) {
-        return { text: 'Non ho ricevuto una richiesta. Cosa vuoi cercare?', cost: 0, totalTokens: 0 };
-    }
-
-    // Check if this is a simple conversational message (not a search request)
+    // Check if simple conversational message
     const isSimple = userRequest.length < 50 && !userRequest.match(/cerc|trova|scraping|contatt|lead|email|aziend|dirett|responsabil|fiera|expo|sps|mecspe/i);
-    if (isSimple) {
-        try {
-            const simplePrompt = `Sei LeadAI, un assistente per ricerche lead B2B. Rispondi in italiano in modo amichevole e conciso.\n\nConversazione:\n${conversationHistory}\n\nUtente: ${userRequest}`;
-            const response = callClaudeCli(simplePrompt, model, 60_000);
-            return { text: response, cost: 0, totalTokens: 0 };
-        } catch (e: any) {
-            return { text: `Errore: ${e.message}`, cost: 0, totalTokens: 0 };
-        }
-    }
 
-    try {
-        // DEBUG: Log which API keys are available
-        const keyStatus = Object.entries(apiKeys).map(([k, v]) => `${k}:${v ? 'YES(' + String(v).slice(0, 4) + '...)' : 'NO'}`).join(', ');
-        console.log(`[LeadGen-Claude] API Keys: ${keyStatus}`);
+    // 4. Build CLI args
+    const claudePath = process.env.CLAUDE_PATH || '/opt/homebrew/bin/claude';
+    const model = input.model || 'claude-sonnet-4-6';
+    const cliArgs = [
+        '-p',
+        '--verbose',
+        '--output-format', 'stream-json',
+        '--permission-mode', 'bypassPermissions',
+        '--allowedTools', 'Bash,WebFetch,WebSearch',
+        '--model', model,
+        '--effort', 'max',
+        '--system-prompt', systemPrompt,
+    ];
 
-        // PHASE 1: PLAN
-        console.log(`[LeadGen-Claude] === PHASE 1: PLAN === request: "${userRequest.slice(0, 100)}..."`);
-        emit({ phase: 'plan', message: 'Analizzo la richiesta e creo il piano di ricerca...', progress: 5 });
-        const plan = await generatePlan(userRequest, conversationHistory, model, apiKeys, input.companyId);
-        emit({ phase: 'plan', message: `Piano creato: ${plan.summary} (${plan.tasks.length} operazioni)`, progress: 10 });
+    emit({ phase: 'plan', message: `Avvio agente Claude CLI (${model})...`, progress: 5 });
 
-        // PHASE 2: EXECUTE + ENRICH
-        console.log(`[LeadGen-Claude] === PHASE 2: EXECUTE + ENRICH === ${plan.tasks.length} tasks`);
-        emit({ phase: 'execute', message: `Avvio ${plan.tasks.length} ricerche in parallelo...`, progress: 12 });
-        const { results, allLeads } = await executePlan(plan, input.companyId, apiKeys, input.conversationId, input.onProgress);
+    return new Promise<LeadGeneratorResult>((resolve, reject) => {
+        const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
+        const fullPath = [...extraPaths, process.env.PATH || ''].join(':');
 
-        // PHASE 2.5: RE-PLAN if results are poor
-        if (allLeads.length < 3 && plan.tasks.some(t => t.status === 'error')) {
-            console.log(`[LeadGen-Claude] === PHASE 2.5: RE-PLAN === only ${allLeads.length} leads, retrying failed tasks`);
-            const failedTools = plan.tasks.filter(t => t.status === 'error').map(t => t.tool);
-            const availableTools = plan.tasks.filter(t => t.status === 'done' && !['getExistingLeadEmails', 'saveLeads'].includes(t.tool));
-
-            // Try alternative strategies for failed tools
-            const fallbackTasks: MicroTask[] = [];
-            let fallbackId = 100;
-
-            for (const failedTool of failedTools) {
-                if (failedTool.includes('Apollo') && apiKeys.vibeProspect) {
-                    // Apollo failed → try Vibe
-                    const originalTask = plan.tasks.find(t => t.tool === failedTool);
-                    if (originalTask) {
-                        fallbackTasks.push({
-                            id: fallbackId++, tool: 'searchProspectsVibe',
-                            args: {
-                                job_titles: originalTask.args.jobTitles || ['Technical Director', 'CTO', 'Engineering Manager'],
-                                company_country_codes: originalTask.args.locations?.includes('Italy') ? ['IT'] : [],
-                                has_email: true, limit: 25,
-                            },
-                            description: `Fallback Vibe per ${failedTool}`,
-                        });
-                    }
-                }
-                if (failedTool.includes('Vibe') && apiKeys.apollo) {
-                    // Vibe failed → try Apollo
-                    const originalTask = plan.tasks.find(t => t.tool === failedTool);
-                    if (originalTask) {
-                        fallbackTasks.push({
-                            id: fallbackId++, tool: 'searchPeopleApollo',
-                            args: {
-                                jobTitles: originalTask.args.job_titles || ['Technical Director', 'CTO'],
-                                locations: originalTask.args.company_country_codes?.includes('IT') ? ['Italy'] : [],
-                                limit: 25,
-                            },
-                            description: `Fallback Apollo per ${failedTool}`,
-                        });
-                    }
-                }
-                if (failedTool.includes('Firecrawl') || failedTool.includes('scrape')) {
-                    // Scraping failed → try Google Web Search + Google Maps
-                    if (apiKeys.serpApi) {
-                        fallbackTasks.push({
-                            id: fallbackId++, tool: 'searchGoogleWeb',
-                            args: { query: `${userRequest.slice(0, 80)} lista espositori`, num: 20 },
-                            description: 'Fallback Google Web search per scraping fallito',
-                        });
-                        fallbackTasks.push({
-                            id: fallbackId++, tool: 'searchGoogleMaps',
-                            args: { query: userRequest.slice(0, 100) },
-                            description: 'Fallback Google Maps per scraping fallito',
-                        });
-                    }
-                }
-            }
-
-            if (fallbackTasks.length > 0) {
-                emit({ phase: 'execute', message: `Risultati scarsi. Riprovo con ${fallbackTasks.length} strategie alternative...`, progress: 25 });
-                const fallbackPlan: ExecutionPlan = { summary: `Re-plan: ${fallbackTasks.length} fallback tasks`, tasks: fallbackTasks };
-                const fallbackResult = await executePlan(fallbackPlan, input.companyId, apiKeys, input.conversationId, input.onProgress);
-                // Merge new leads into allLeads
-                allLeads.push(...fallbackResult.allLeads);
-                for (const [k, v] of fallbackResult.results) {
-                    results.set(k, v);
-                }
-                console.log(`[LeadGen-Claude] Re-plan added ${fallbackResult.allLeads.length} leads (total: ${allLeads.length})`);
-            }
-        }
-
-        // PHASE 3: SYNTHESIZE
-        console.log(`[LeadGen-Claude] === PHASE 3: SYNTHESIZE === ${allLeads.length} leads collected`);
-        emit({
-            phase: 'synthesize',
-            message: `Preparo il report finale con ${allLeads.length} lead...`,
-            leadsFound: allLeads.length,
-            progress: 95,
+        const child = spawn(claudePath, cliArgs, {
+            env: { ...process.env, TERM: 'dumb', FORCE_COLOR: '0', NO_COLOR: '1', PATH: fullPath },
         });
-        const text = synthesizeResults(plan, allLeads, results, userRequest, model);
-        emit({ phase: 'done', message: `Completato! ${allLeads.length} lead trovati.`, leadsFound: allLeads.length, progress: 100 });
 
-        return { text, cost: 0, totalTokens: 0 };
-    } catch (e: any) {
-        console.error('[LeadGen-Claude] Fatal error:', e.message);
-        const stderr = e.stderr ? (typeof e.stderr === 'string' ? e.stderr : e.stderr.toString()).trim() : '';
-        const detail = stderr ? `${e.message.split('\n')[0]} | ${stderr.slice(0, 200)}` : e.message.split('\n')[0];
+        // Feed the conversation via stdin
+        const stdinContent = conversationText || userRequest;
+        child.stdin.write(stdinContent);
+        child.stdin.end();
 
-        if (e.message.includes('ENOENT') || e.message.includes('No such file')) {
-            return {
-                text: `Errore: Claude CLI non trovato. Verifica che sia installato.\n\nDettaglio: ${detail}`,
-                cost: 0, totalTokens: 0,
-            };
-        }
+        let finalText = '';
+        let toolCallCount = 0;
+        let lastToolName = '';
+        let errorOutput = '';
 
-        return {
-            text: `Errore durante la ricerca: ${detail}\n\nProva a ripetere la richiesta o switcha al provider OpenRouter.`,
-            cost: 0, totalTokens: 0,
-        };
-    }
+        // Parse stream-json output (NDJSON — one JSON object per line)
+        const rl = createInterface({ input: child.stdout });
+        rl.on('line', (line) => {
+            if (!line.trim()) return;
+            try {
+                const data = JSON.parse(line);
+
+                // Handle different message types from Claude CLI stream-json
+                // The format varies — handle common shapes
+                if (data.type === 'assistant' && data.message?.content) {
+                    for (const block of data.message.content) {
+                        if (block.type === 'text') {
+                            finalText += block.text;
+                        }
+                        if (block.type === 'tool_use') {
+                            toolCallCount++;
+
+                            if (block.name === 'WebFetch') {
+                                const url = block.input?.url || '';
+                                lastToolName = 'WebFetch';
+                                emit({
+                                    phase: 'scrape',
+                                    message: `🌐 Navigazione: ${url}`,
+                                    detail: url,
+                                    browserUrl: url,
+                                    progress: Math.min(90, 10 + toolCallCount * 2),
+                                });
+                            } else if (block.name === 'WebSearch') {
+                                const query = block.input?.query || '';
+                                lastToolName = 'WebSearch';
+                                emit({
+                                    phase: 'execute',
+                                    message: `🌐 Ricerca Google: ${query}`,
+                                    detail: query,
+                                    browserUrl: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+                                    progress: Math.min(90, 10 + toolCallCount * 2),
+                                });
+                            } else if (block.name === 'Bash') {
+                                const cmd = block.input?.command || '';
+                                // Extract tool name from curl command
+                                const toolMatch = cmd.match(/"tool"\s*:\s*"([^"]+)"/);
+                                if (toolMatch) {
+                                    lastToolName = toolMatch[1];
+                                    const phase = lastToolName.includes('save') ? 'save'
+                                        : lastToolName.includes('verify') ? 'verify'
+                                        : lastToolName.includes('Email') || lastToolName.includes('Hunter') ? 'enrich'
+                                        : lastToolName.includes('scrape') || lastToolName.includes('Firecrawl') ? 'scrape'
+                                        : 'execute';
+                                    emit({
+                                        phase,
+                                        message: `Tool ${toolCallCount}: ${lastToolName}`,
+                                        detail: lastToolName,
+                                        progress: Math.min(90, 10 + toolCallCount * 2),
+                                    });
+                                } else {
+                                    emit({
+                                        phase: 'execute',
+                                        message: `🔧 Bash: ${cmd.slice(0, 80)}`,
+                                        detail: cmd.slice(0, 120),
+                                        progress: Math.min(90, 10 + toolCallCount * 2),
+                                    });
+                                }
+                            } else {
+                                emit({
+                                    phase: 'execute',
+                                    message: `Tool ${toolCallCount}: ${block.name}`,
+                                    detail: block.name,
+                                    progress: Math.min(90, 10 + toolCallCount * 2),
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Handle content_block_delta (streaming text chunks)
+                if (data.type === 'content_block_delta' && data.delta?.text) {
+                    finalText += data.delta.text;
+                }
+
+                // Handle result message
+                if (data.type === 'result' && data.result) {
+                    if (typeof data.result === 'string') {
+                        finalText = data.result;
+                    }
+                }
+
+                // Handle message with role assistant (alternative format)
+                if (data.role === 'assistant' && data.content) {
+                    const textBlocks = (Array.isArray(data.content) ? data.content : [data.content])
+                        .filter((b: any) => typeof b === 'string' || b.type === 'text');
+                    for (const block of textBlocks) {
+                        const t = typeof block === 'string' ? block : block.text;
+                        if (t && !finalText.includes(t)) finalText += t;
+                    }
+                }
+
+            } catch {
+                // Not JSON — might be raw text output
+                if (line.trim() && !line.startsWith('{')) {
+                    finalText += line + '\n';
+                }
+            }
+        });
+
+        // Capture stderr for error reporting
+        child.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+        });
+
+        child.on('close', (code) => {
+            activeSessions.delete(sessionToken);
+            rl.close();
+
+            if (code !== 0 && !finalText.trim()) {
+                console.error(`[LeadGen-CLI] Process exited with code ${code}. stderr: ${errorOutput.slice(0, 500)}`);
+                reject(new Error(`Claude CLI errore (exit ${code}): ${errorOutput.slice(0, 200) || 'Unknown error'}`));
+                return;
+            }
+
+            if (!finalText.trim()) {
+                finalText = 'Non sono riuscito a completare la ricerca. Riprova con criteri diversi.';
+            }
+
+            console.log(`[LeadGen-CLI] Completed: ${toolCallCount} tool calls, ${finalText.length} chars response`);
+            emit({ phase: 'done', message: `Completato! ${toolCallCount} operazioni eseguite.`, progress: 100 });
+
+            resolve({
+                text: finalText.trim(),
+                cost: 0,
+                totalTokens: 0,
+            });
+        });
+
+        child.on('error', (err) => {
+            activeSessions.delete(sessionToken);
+            console.error('[LeadGen-CLI] Spawn error:', err.message);
+            reject(new Error(`Claude CLI non trovato: ${err.message}. Verifica che sia installato.`));
+        });
+    });
 }

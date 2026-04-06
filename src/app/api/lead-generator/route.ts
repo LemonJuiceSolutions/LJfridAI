@@ -80,6 +80,8 @@ export async function POST(request: NextRequest) {
                     title: autoTitle,
                     messages: [{ role: 'user', content: [{ text: userMessage }] }],
                     totalCost: 0,
+                    totalTokens: 0,
+                    model: model || null,
                     companyId: user.company!.id,
                 },
             });
@@ -124,9 +126,10 @@ export async function POST(request: NextRequest) {
                             { role: 'user', content: [{ text: userMessage }] },
                             { role: 'model', content: [{ text: result.text }] },
                         ];
+                        const newTotalTokens = (existingConversation?.totalTokens || 0) + result.totalTokens;
                         await db.leadGeneratorConversation.update({
                             where: { id: activeConversationId },
-                            data: { messages: updatedHistory, totalCost: newTotalCost, updatedAt: new Date() },
+                            data: { messages: updatedHistory, totalCost: newTotalCost, totalTokens: newTotalTokens, model: model || undefined, updatedAt: new Date() },
                         });
 
                         // Send final result
@@ -136,7 +139,8 @@ export async function POST(request: NextRequest) {
                             conversationId: activeConversationId,
                             cost: result.cost,
                             totalCost: newTotalCost,
-                            totalTokens: result.totalTokens,
+                            totalTokens: newTotalTokens,
+                            model: model || null,
                         });
                     } catch (error: any) {
                         console.error('Error in lead generator SSE:', error);
@@ -178,11 +182,14 @@ export async function POST(request: NextRequest) {
             { role: 'model', content: [{ text: result.text }] },
         ];
 
+        const newTotalTokens = (existingConversation?.totalTokens || 0) + result.totalTokens;
         const savedConversation = await db.leadGeneratorConversation.update({
             where: { id: activeConversationId },
             data: {
                 messages: updatedHistory,
                 totalCost: newTotalCost,
+                totalTokens: newTotalTokens,
+                model: model || undefined,
                 updatedAt: new Date(),
             },
         });
@@ -193,7 +200,8 @@ export async function POST(request: NextRequest) {
             conversationId: savedConversation.id,
             cost: result.cost,
             totalCost: savedConversation.totalCost,
-            totalTokens: result.totalTokens,
+            totalTokens: newTotalTokens,
+            model: model || null,
         });
     } catch (error: any) {
         console.error('Error in lead generator API:', error);
@@ -226,7 +234,7 @@ export async function GET(request: NextRequest) {
             const conversations = await db.leadGeneratorConversation.findMany({
                 where: { companyId: user.company!.id },
                 orderBy: { updatedAt: 'desc' },
-                select: { id: true, title: true, totalCost: true, createdAt: true, updatedAt: true },
+                select: { id: true, title: true, totalCost: true, totalTokens: true, model: true, createdAt: true, updatedAt: true },
                 take: 50,
             });
             return NextResponse.json({ success: true, conversations });
@@ -246,6 +254,8 @@ export async function GET(request: NextRequest) {
                     id: conversation.id,
                     title: conversation.title,
                     totalCost: conversation.totalCost,
+                    totalTokens: conversation.totalTokens,
+                    model: conversation.model,
                     messages: conversation.messages,
                 },
             });
@@ -267,6 +277,8 @@ export async function GET(request: NextRequest) {
                 id: conversation.id,
                 title: conversation.title,
                 totalCost: conversation.totalCost,
+                totalTokens: conversation.totalTokens,
+                model: conversation.model,
                 messages: conversation.messages,
             },
         });

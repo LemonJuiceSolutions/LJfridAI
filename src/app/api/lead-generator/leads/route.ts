@@ -21,12 +21,18 @@ export async function GET(request: NextRequest) {
 
         const { searchParams } = new URL(request.url);
         const searchId = searchParams.get('searchId');
+        const conversationId = searchParams.get('conversationId');
         const page = parseInt(searchParams.get('page') || '1');
-        const limit = parseInt(searchParams.get('limit') || '50');
+        const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 1000);
         const search = searchParams.get('search');
 
         const where: any = { companyId: user.company.id };
-        if (searchId) where.searchId = searchId;
+        if (searchId) {
+            where.searchId = searchId;
+        } else if (conversationId) {
+            // Filter by all searches belonging to this conversation
+            where.search = { conversationId };
+        }
         if (search) {
             where.OR = [
                 { fullName: { contains: search, mode: 'insensitive' } },
