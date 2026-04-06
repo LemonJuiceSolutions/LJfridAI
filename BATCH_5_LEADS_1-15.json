@@ -1,0 +1,162 @@
+{
+  "batch": 5,
+  "companies": 1-15,
+  "date": "2026-04-05",
+  "region": "SPS Parma 2026",
+  "leads": [
+    {
+      "id": 161,
+      "company_name": "PFANNENBERG ITALIA",
+      "website": "www.pfannenberg.it",
+      "email": "info@pfannenberg.it",
+      "phone": "+39 0524 516711",
+      "address": "Via la Bionda, 13, 43036 Fidenza PR",
+      "industry": "Thermal Management / Cooling Solutions",
+      "source": "WebSearch"
+    },
+    {
+      "id": 162,
+      "company_name": "LAS A&S",
+      "website": "https://www.las.ch/admissions/contact-las",
+      "email": "Unclear - appears to be educational institution",
+      "phone": "N/A",
+      "address": "N/A",
+      "industry": "Unclear - multiple results",
+      "source": "WebSearch",
+      "notes": "Searched results returned educational institutions, not industrial company. Requires manual verification."
+    },
+    {
+      "id": 163,
+      "company_name": "SOFTING INDUSTRIAL AUTOMATION",
+      "website": "http://industrial.softing.com",
+      "email": "info.automation@softing.com",
+      "phone": "+39 02 4505171",
+      "address": "Äußere Sulzbacher Str. 159-161, 90491 Nuremberg, Germany",
+      "industry": "Industrial Communication / Automation",
+      "source": "WebSearch"
+    },
+    {
+      "id": 164,
+      "company_name": "INTEREL TRADING",
+      "website": "https://interel-trading.eu/en/contact/",
+      "email": "info@interel-trading.eu",
+      "phone": "0471 633348",
+      "address": "Pillhof 5, 39057 Appiano (BZ)",
+      "industry": "Building Automation",
+      "source": "WebSearch"
+    },
+    {
+      "id": 165,
+      "company_name": "IRINOX",
+      "website": "www.irinox.com",
+      "email": "info@irinoxhome.com",
+      "phone": "+39 0438 5844",
+      "address": "Via Caduti nei Lager, 1 - 31015 Conegliano (TV), Italy",
+      "industry": "Electrical Enclosures & Blast Chillers",
+      "source": "WebSearch"
+    },
+    {
+      "id": 166,
+      "company_name": "SADA CAVI",
+      "website": "www.sadacavi.it",
+      "email": "sadacavi@sadacavi.it",
+      "phone": "+39 0536 991911",
+      "address": "Via dell'Industria 12, 41042 Spezzano di Fiorano (MO), Italy",
+      "industry": "Cable & Wiring Solutions",
+      "source": "WebSearch"
+    },
+    {
+      "id": 167,
+      "company_name": "ADVANCED TECHNOLOGIES",
+      "website": "www.advancedtechinc.com",
+      "email": "info@advancedtech.com",
+      "phone": "855-834-7604",
+      "address": "Multiple locations - USA",
+      "industry": "Industrial Maintenance & Technology Services",
+      "source": "WebSearch",
+      "notes": "Multiple companies with this name - US-based results provided"
+    },
+    {
+      "id": 168,
+      "company_name": "RECOM",
+      "website": "https://recom-power.com/en/contact.html",
+      "email": "N/A - contact form on website",
+      "phone": "N/A",
+      "address": "N/A",
+      "industry": "Power Supply Solutions",
+      "source": "WebSearch"
+    },
+    {
+      "id": 169,
+      "company_name": "EFA AUTOMAZIONE by RELATECH GROUP",
+      "website": "www.efa.it",
+      "email": "info@efa.it",
+      "phone": "02 92 11 31 80",
+      "address": "via Isola Guarnieri, 13 – 20063 Cernusco sul Naviglio (MI)",
+      "industry": "Industrial IoT & Digital Transformation",
+      "source": "WebSearch"
+    },
+    {
+      "id": 170,
+      "company_name": "EUKLEED",
+      "website": "https://www.eukleed.it/en/",
+      "email": "contact@syscom-prorep.com",
+      "phone": "+33-1-60 86 80 04",
+      "address": "F-91090 Lisses, France",
+      "industry": "Electronics Distribution",
+      "source": "WebSearch"
+    },
+    {
+      "id": 171,
+      "company_name": "E.T.A.",
+      "website": "www.e-t-a.com",
+      "email": "N/A - contact form on website",
+      "phone": "847-827-7600",
+      "address": "N/A",
+      "industry": "Automation & Process Control",
+      "source": "WebSearch"
+    },
+    {
+      "id": 172,
+      "company_name": "E.G.O. GROUP",
+      "website": "www.egoproducts.com",
+      "email": "socialmedia@egoproducts.com",
+      "phone": "+49 7045 450",
+      "address": "Oberderdingen, Germany",
+      "industry": "Industrial Products & Components",
+      "source": "WebSearch"
+    },
+    {
+      "id": 173,
+      "company_name": "ANIE AUTOMAZIONE",
+      "website": "anieautomazione.anie.it",
+      "email": "anieautomazione@anie.it",
+      "phone": "T. 023264-337/346",
+      "address": "N/A",
+      "industry": "Industrial Automation Federation",
+      "source": "WebSearch"
+    },
+    {
+      "id": 174,
+      "company_name": "RADIOSISTEMI",
+      "website": "http://www.radiosistemi.it",
+      "email": "N/A - contact form needed",
+      "phone": "N/A",
+      "address": "Via Nuova Provinciale 30/A - 54033 - Carrara (MS), Italy",
+      "industry": "Radio-Controlled Modeling & Components",
+      "source": "WebSearch"
+    },
+    {
+      "id": 175,
+      "company_name": "Bermar",
+      "website": "bermar.it",
+      "email": "info@bermar.it",
+      "phone": "+39 051 812120",
+      "address": "Italy",
+      "industry": "Electric Motors",
+      "source": "WebSearch"
+    }
+  ],
+  "total_leads_batch": 15,
+  "summary": "First batch of 15 leads gathered via WebSearch. Some companies returned multiple results or limited contact information - marked with notes for manual verification."
+}

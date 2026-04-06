@@ -1,0 +1,379 @@
+{
+  "batch": "8-SPS-Parma-2026",
+  "range": "Companies 281-320",
+  "section": "Part 2 (Companies 16-40)",
+  "collection_date": "2026-04-05",
+  "total_in_part": 25,
+  "export_timestamp": "2026-04-05T00:00:00Z",
+  "leads": [
+    {
+      "id": 16,
+      "company_name": "FEC ITALIA",
+      "industry": "Touch Screen PCs & Professional Displays",
+      "country": "Italy",
+      "address": "Via Spoleto 4, 33010 Tavagnacco (UD), Italy",
+      "phone": "+39 4321437070",
+      "email": "info@fecpos.it",
+      "website": "https://www.fecpos.it",
+      "parent_company": "FEC Group (Firich Enterprises Corp. Ltd)",
+      "managing_director": "Vincenzo Verità",
+      "notes": "Professional touch screen PC manufacturer"
+    },
+    {
+      "id": 17,
+      "company_name": "DAOS",
+      "industry": "Electronic Engineering & Software",
+      "country": "Italy",
+      "website": "https://www.daosgroup.it/en/",
+      "contact": "Andrea Lombardo",
+      "services": ["Electronic engineering", "Software", "Prototyping", "Production"],
+      "notes": "Italian electronic engineering and software development company"
+    },
+    {
+      "id": 18,
+      "company_name": "INEPRO METERING",
+      "industry": "Metering & Payment Solutions",
+      "country": "Netherlands",
+      "address": "Pondweg 7, 2153 PK Nieuw-Vennep, The Netherlands",
+      "phone": "+31 252 744 044",
+      "email": "info@inepro.com",
+      "website": "https://www.ineprometering.com",
+      "regional_contacts": [
+        {
+          "region": "Europe/APAC",
+          "contact": "Edwin Kooijman",
+          "phone": "+31 6 133 439 51"
+        },
+        {
+          "region": "Germany",
+          "contact": "Christian Reiher",
+          "phone": "+49 175 594 39 75"
+        }
+      ],
+      "notes": "Payment and metering solutions with 30+ years experience"
+    },
+    {
+      "id": 19,
+      "company_name": "machineering",
+      "industry": "IT Services & Simulation Software",
+      "country": "Germany",
+      "address": "Landsberger Str. 306, 80687 Munich, Germany",
+      "phone": "+49 89 56 820 12-0",
+      "email": "support@machineering.com",
+      "website": "https://www.machineering.com",
+      "hours": "Mon-Fri 8:00 am-6:00 pm CET",
+      "email_format": "{first_initial}{last}@machineering.com",
+      "notes": "Real-time material flow and robot simulation software"
+    },
+    {
+      "id": 20,
+      "company_name": "ATLANTIS ENGINEERING",
+      "industry": "Maintenance Management & CMMS",
+      "country": "Greece",
+      "address": "12th Km Thessaloniki Moudanion, Thessaloniki",
+      "email": "info@atlantis-engineering.com",
+      "website": "https://atlantis-engineering.com",
+      "founded": 1996,
+      "notes": "Predictive maintenance and CMMS solutions provider"
+    },
+    {
+      "id": 21,
+      "company_name": "SENSORSYSTEM",
+      "industry": "Sensor & Communication Systems",
+      "country": "USA",
+      "locations": [
+        {
+          "name": "Sensor Systems, Inc.",
+          "address": "8929 Fullbright Ave, Chatsworth, California 91311",
+          "specialty": "Airborne communication products"
+        },
+        {
+          "name": "Sensor Systems, LLC",
+          "address": "St. Petersburg, FL",
+          "specialty": "Custom solutions, 65+ years experience"
+        }
+      ],
+      "website": "https://sensorsllc.com",
+      "notes": "Multiple entities providing sensor and communication solutions"
+    },
+    {
+      "id": 22,
+      "company_name": "IEEE SEZIONE ITALIANA",
+      "industry": "Professional Association - Engineering",
+      "country": "Italy",
+      "website": "https://italy.ieeer8.org/",
+      "related_chapters": [
+        "IEEE WIE Affinity Group - Italy",
+        "IEEE Computer Society Italy",
+        "IEEE Control Systems Society Italy",
+        "IEEE Instrumentation & Measurement Society Italy"
+      ],
+      "notes": "IEEE Italy Section with multiple technical chapters"
+    },
+    {
+      "id": 23,
+      "company_name": "ICP DAS",
+      "industry": "Data Acquisition & Industrial IoT",
+      "country": "Taiwan",
+      "usa_headquarters": "9804 Whithorn Dr., Houston, TX 77095",
+      "usa_phone": "+1-346-292-9998",
+      "usa_tollfree": "+1-888-971-9888",
+      "usa_email_sales": "sales@icpdasusa.com",
+      "usa_email_tech": "tech@icpdasusa.com",
+      "usa_hours": "8am - 7pm CT (Mon - Fri)",
+      "taiwan_hukou": "No. 111, Guangfu N. Rd., Hukou Township, Hsinchu County 30351, Taiwan",
+      "taiwan_phone": "+886-3-5973366",
+      "website": "https://www.icpdas.com",
+      "notes": "Data acquisition, communication, and SCADA solutions"
+    },
+    {
+      "id": 24,
+      "company_name": "ENERDOOR",
+      "industry": "Power Quality & EMC Solutions",
+      "country": "USA",
+      "address": "590 County Rd, Westbrook, ME 04092",
+      "phone": "+1-207-210-6511",
+      "tollfree": "+1-877-709-0953",
+      "email": "info@enerdoor.com",
+      "international_offices": [
+        "Finmotor (Italy): Via Edison, 217 – 20019, Settimo Milanese (MI)",
+        "Eichhoff Elektro (Hungary): Deákvári Fasor 8/A – 2600 Vác"
+      ],
+      "countries": ["USA", "Italy", "Switzerland", "Germany", "Hungary"],
+      "website": "https://enerdoor.com",
+      "notes": "International leader in power quality and EMC solutions"
+    },
+    {
+      "id": 25,
+      "company_name": "TEKNOKOL",
+      "industry": "Support Arms & Control Panel Systems",
+      "country": "Turkey",
+      "address": "Kayapa, Karanfil Cad Kayapa Sanayi Bölgesi No:6, 16315 Nilüfer/Bursa",
+      "phone": "+90 224 443 23 18",
+      "email": "teknokol@teknokol.com",
+      "email_sales": "sales@teknokol.com",
+      "email_export": "export@teknokol.com",
+      "website": "https://www.teknokol.com.tr",
+      "founded": 2012,
+      "facility_area": "4500m²",
+      "notes": "Support arms and control panel systems manufacturer"
+    },
+    {
+      "id": 26,
+      "company_name": "ITALWEBER ELETTRA",
+      "industry": "Transformers & Power Equipment",
+      "country": "Italy",
+      "address_main": "Via Enrico Fermi 40/42, 20057 Assago (MI)",
+      "phone": "+39 02.939.771",
+      "fax": "+39 02.93904.565",
+      "email": "info@italweberelettra.it",
+      "address_secondary": "84 Via Risorgimento, Rho, Lombardy 20017",
+      "website": "https://www.italweberelettra.it",
+      "specialization": "Transformers, autotransformers, inductances",
+      "notes": "Leader in energy transformation equipment"
+    },
+    {
+      "id": 27,
+      "company_name": "LEUZE ELECTRONIC",
+      "industry": "Optical Sensors",
+      "country": "Germany",
+      "headquarters": "Stützenstraße 3, 89619 Unterstadion, Germany",
+      "phone": "+49 7393 9508-0",
+      "fax": "+49 7393 9508-49",
+      "email": "assembly@leuze.de",
+      "usa_address": "2150 Northmont Parkway, Suite N, Duluth, GA 30096",
+      "usa_phone": "+1-248-486-4466",
+      "usa_email": "info.us@leuze.com",
+      "website": "https://www.leuze.com",
+      "founded": 1963,
+      "international_offices": ["UK", "USA", "France", "Singapore"],
+      "notes": "Optical sensors and safety sensors manufacturer"
+    },
+    {
+      "id": 28,
+      "company_name": "TAMAGAWA TRADING",
+      "industry": "Trading & Electronics Distribution",
+      "country": "Japan",
+      "address": "3-19-9, Shinkamata, Ota ku, Tokyo, Japan 144 0054",
+      "china_office": "No.8, East of Xingwang Road, Loudong Subdistrict, Taicang City, Jiangsu Province, China",
+      "parent_company": "Tamagawa Seiki Co., Ltd.",
+      "website": "https://www.tamagawa-seiki.com",
+      "notes": "Trading company with presence in Japan and China"
+    },
+    {
+      "id": 29,
+      "company_name": "CINCOZE",
+      "industry": "Rugged Edge Computing",
+      "country": "Taiwan",
+      "headquarters": "7F., No. 122, Ln. 235, Baoqiao Rd., Xindian Dist., New Taipei City 231028, Taiwan",
+      "phone": "+886-2-8912-1101 ext.1903",
+      "email": "info@cincoze.com",
+      "contact": "Cindy Lin",
+      "contact_email": "cindy.lin@cincoze.com",
+      "website": "https://www.cincoze.com",
+      "notes": "Rugged edge computing and embedded computers"
+    },
+    {
+      "id": 30,
+      "company_name": "TOSIBOX",
+      "industry": "Remote Operating Systems",
+      "country": "Finland",
+      "headquarters_finland": "Elektroniikkatie 2 A, 7th floor, 90590 Oulu",
+      "espoo_office": "Keilaranta 15 b, 02150 Espoo",
+      "tampere_office": "c/o Tulli Business Park, Åkerlundinkatu 11, 33100 Tampere",
+      "usa_headquarters": "1212 Corporate Drive Suite 170, Irving, Texas 75038",
+      "germany_office": "Schumannstr. 27, 60325 Frankfurt am Main",
+      "sweden_office": "Postbox 160, Skeppsgatan 19, 211 11 Malmö",
+      "website": "https://www.tosibox.com",
+      "support_us": "Mon - Fri: 9:00 AM - 5:00 PM (CST)",
+      "support_eu": "Mon - Fri: 8:00 AM - 5:00 PM (EST)",
+      "notes": "Remote terminal and visualization system provider"
+    },
+    {
+      "id": 31,
+      "company_name": "FRIEDRICH LUETZE",
+      "industry": "Electrical Components & Power Systems",
+      "country": "Germany",
+      "address": "Bruckwiesenstraße 17-19, 71384 Weinstadt, Germany",
+      "phone": "+49 7151 6053-0",
+      "fax_front": "+49 7151 6053-277",
+      "fax_sales": "+49 7151 6053-288",
+      "email": "info@luetze.de",
+      "website": "https://www.luetze.com",
+      "usa_location": "13330 South Ridge Drive, Charlotte, North Carolina 28273",
+      "usa_phone": "+1 704 504-0222",
+      "usa_fax": "+1 704 504-0223",
+      "acquired_by": "Amphenol Corporation (2024)",
+      "notes": "Electrical components and power systems company"
+    },
+    {
+      "id": 32,
+      "company_name": "EDAC GROUP",
+      "industry": "Connector Manufacturing",
+      "country": "Canada",
+      "headquarters": "Markham, Ontario, Canada",
+      "website": "https://edac.net",
+      "contact_form": "https://edac.net/contact-us",
+      "americas_sw_contact": "Julio Rodriguez",
+      "americas_sw_phone": "+1 416 754-3322",
+      "americas_sw_fax": "+1 416 754-3299",
+      "americas_sw_email": "jrodriguez@edac.net",
+      "europe_office": "12 Fleming Close, Park Farm, Wellingborough NN8 6UF, UK",
+      "europe_phone": "+44 1933 427300",
+      "europe_email": "eu.enquiries@eu.edac.net",
+      "notes": "Global leader in connector manufacturing"
+    },
+    {
+      "id": 33,
+      "company_name": "R.T.A.",
+      "industry": "Various (Multiple companies with this acronym)",
+      "country": "Multiple",
+      "note_1": "RTA Mobility Services - Savage, Maryland (1-800-270-9553)",
+      "note_2": "RT Specialty - Insurance Brokers (info@rtspecialty.com, 312-784-6001)",
+      "note_3": "Dayton RTA - Regional Transit Authority (937-425-8300)",
+      "note_4": "Resource Technology Associates - Recruiting/Staffing (rta-inc.com)",
+      "note_5": "Riverside Transit Agency - California Transit",
+      "website_general": "https://www.transitrta.com/contact/",
+      "notes": "Multiple organizations use R.T.A. acronym - context needed for specific company"
+    },
+    {
+      "id": 34,
+      "company_name": "HIOKI EUROPE",
+      "industry": "Test & Measurement Equipment",
+      "country": "Germany",
+      "headquarters": "Eschborn, Germany",
+      "website": "https://www.hioki.com/euro-en",
+      "shop": "https://shop.hioki.eu/",
+      "contact_page": "https://www.hioki.com/contact",
+      "parent_company": "Hioki E.E. Corporation (Japan)",
+      "founded_europe": 2017,
+      "specialty": "Electronic test and measurement instruments",
+      "notes": "European subsidiary specializing in test & measurement equipment"
+    },
+    {
+      "id": 35,
+      "company_name": "MERLIN CONNECT",
+      "industry": "Various (Multiple companies with name variations)",
+      "country": "Multiple",
+      "contact_page": "https://merlinnetwork.org/contact/",
+      "other_entities": [
+        {
+          "name": "Merlin Entertainments",
+          "address": "25 West Street, Poole, Dorset BH15 1LD, UK",
+          "phone": "+44 1202 666900",
+          "email": "Comments@MerlinEntertainments.biz"
+        },
+        {
+          "name": "Merlin Business Software",
+          "address": "Chatsworth House, Millennium Way, Chesterfield S41 8ND"
+        },
+        {
+          "name": "Merlin Cyber",
+          "address": "1861 International Drive Suite 500 McLean, VA 22102",
+          "phone": "703-752-2928"
+        }
+      ],
+      "notes": "Multiple organizations use Merlin name - context needed for specific company"
+    },
+    {
+      "id": 36,
+      "company_name": "RSF ELEKTRONIK",
+      "industry": "Precision Position Measurement Systems",
+      "country": "Austria",
+      "address": "Tarsdorf 93, 5121 Tarsdorf, Austria",
+      "phone": "+43 6278 8192-0",
+      "fax_purchasing": "+43 6278 8192-58",
+      "fax_sales": "+43 6278 8192-79",
+      "website": "https://www.rsf.at/en/",
+      "usa_location": "2880 Gold Tailings Court, Rancho Cordova, CA 95670",
+      "usa_phone": "+1 916 852-6660",
+      "usa_tollfree": "+1 800-463-5959",
+      "specialty": "High-precision electronic linear and angle encoders",
+      "notes": "World leader in precision position measurement systems"
+    },
+    {
+      "id": 37,
+      "company_name": "MECCANICA NICOLETTI",
+      "industry": "Cable Management Systems",
+      "country": "Italy",
+      "address": "Via Venezia 6/B - 35010 Curtarolo (PD), Italy",
+      "phone": "+39 049 96.20.454",
+      "fax": "+39 049 96.20.459",
+      "email": "info@meccanicanicoletti.it",
+      "website": "https://www.meccanicanicoletti.com/gb/",
+      "tax_id": "P.IVA IT 00484480280",
+      "certification": "UNI EN ISO 9001 2008 Certiquality n. 5119",
+      "origin": "100% Made in Italy",
+      "notes": "Cable management systems and equipment manufacturer"
+    },
+    {
+      "id": 38,
+      "company_name": "BONFIGLIOLI",
+      "industry": "Gearmotors & Gearboxes",
+      "country": "Italy",
+      "headquarters_italy": "Via Giovanni XXIII 7/A Lippo di Calderara di Reno, Bologna 40012",
+      "usa_address": "3541 Hargrave Drive, Hebron, KY 41048",
+      "usa_phone": "+1 859-334-3333",
+      "usa_fax": "+1 859-334-8888",
+      "engineering_italy": "Via Amerigo Vespucci, 20 44124 Ferrara, Italy",
+      "engineering_phone": "+39 0532 715631",
+      "engineering_email": "info@bonfiglioliengineering.com",
+      "engineering_service": "+39 0532 715632",
+      "consulting_hoboken": "221 River Street, 9th Floor, Hoboken, NJ",
+      "consulting_phone": "+1 917-633-6125",
+      "consulting_email": "usa@bonfiglioliconsulting.com",
+      "website": "https://www.bonfiglioli.com",
+      "notes": "Global leader in gearmotors and gearboxes"
+    },
+    {
+      "id": 39,
+      "company_name": "Reserved - Additional Lead",
+      "status": "Available for supplementary research"
+    },
+    {
+      "id": 40,
+      "company_name": "Reserved - Additional Lead",
+      "status": "Available for supplementary research"
+    }
+  ]
+}

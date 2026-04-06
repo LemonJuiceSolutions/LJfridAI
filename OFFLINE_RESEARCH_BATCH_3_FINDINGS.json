@@ -1,0 +1,173 @@
+{
+  "batch": 3,
+  "batch_range": "Companies S-U",
+  "status": "completed",
+  "companies_found": [
+    {
+      "companyName": "SACCHI ELETTROFORNITURE",
+      "companyWebsite": "https://www.sacchielettronica.it",
+      "companyDomain": "sacchielettronica.it",
+      "companyIndustry": "Electrical & Automation Distribution",
+      "companyCity": "Northern Italy",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/sacchi-giuseppe-spa",
+      "founded": 1960,
+      "contacts": []
+    },
+    {
+      "companyName": "SACCHI ELETTRONICA",
+      "companyWebsite": "https://www.sacchielettronica.it",
+      "companyDomain": "sacchielettronica.it",
+      "companyIndustry": "Electronic Components & Assembly",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/sacchi-elettronica",
+      "contacts": []
+    },
+    {
+      "companyName": "F.LLI SACCHI",
+      "companyWebsite": "https://www.fllisacchi.it",
+      "companyDomain": "fllisacchi.it",
+      "companyIndustry": "Powder Handling & Automation",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/f-lli-sacchi",
+      "founded": 1920,
+      "contacts": []
+    },
+    {
+      "companyName": "SAFIM SRL",
+      "companyWebsite": "https://www.safim.com",
+      "companyDomain": "safim.com",
+      "companyIndustry": "Hydraulic Components Manufacturing",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/safim-spa/",
+      "contacts": []
+    },
+    {
+      "companyName": "SAFAS GROUP",
+      "companyWebsite": "https://www.safasgroup.com",
+      "companyDomain": "safasgroup.com",
+      "companyIndustry": "Steel & Cast Iron Manufacturing",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/safasgroup",
+      "contacts": []
+    },
+    {
+      "companyName": "SAKURA FINETEK ITALIA",
+      "companyWebsite": "https://www.sakura-finetek.com",
+      "companyDomain": "sakura-finetek.com",
+      "companyIndustry": "Medical Device Automation",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/sakura-finetek",
+      "contacts": [
+        {
+          "fullName": "Valentina Faoro",
+          "linkedinUrl": "https://www.linkedin.com/in/faorovalentina/",
+          "source": "linkedin_web"
+        },
+        {
+          "fullName": "Sarah Toupet",
+          "jobTitle": "Supply Chain Specialist",
+          "linkedinUrl": "https://www.linkedin.com/in/sarahtoupet/",
+          "source": "linkedin_web"
+        }
+      ]
+    },
+    {
+      "companyName": "SALINI IMPREGILO",
+      "companyWebsite": "https://www.saliniimpregilo.it",
+      "companyDomain": "saliniimpregilo.it",
+      "companyIndustry": "Heavy Civil Engineering & Infrastructure",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/salini-impregilo",
+      "founded": 2014,
+      "contacts": []
+    },
+    {
+      "companyName": "SIELCO SRL",
+      "companyWebsite": "https://www.sielco.it",
+      "companyDomain": "sielco.it",
+      "companyIndustry": "LNG & Industrial Automation",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/sielco-srl",
+      "contacts": [
+        {
+          "fullName": "Andrea Tacconi",
+          "source": "linkedin_web"
+        }
+      ]
+    },
+    {
+      "companyName": "FLUIDA EUROPE",
+      "companyWebsite": "https://www.fluidaeurope.com",
+      "companyDomain": "fluidaeurope.com",
+      "companyIndustry": "CRM & Marketing Automation",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/fluida-europe",
+      "contacts": [
+        {
+          "fullName": "Daniele Tadini",
+          "source": "linkedin_web"
+        }
+      ]
+    },
+    {
+      "companyName": "ROCKWELL AUTOMATION ITALY",
+      "companyWebsite": "https://www.rockwellautomation.com",
+      "companyDomain": "rockwellautomation.com",
+      "companyIndustry": "Industrial Automation Solutions",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/rockwell-automation",
+      "contacts": [
+        {
+          "fullName": "Francesca Tagliani",
+          "jobTitle": "Commercial Director",
+          "source": "linkedin_web"
+        }
+      ]
+    },
+    {
+      "companyName": "HONEYWELL PROCESS AUTOMATION ITALY",
+      "companyWebsite": "https://www.honeywell.com",
+      "companyDomain": "honeywell.com",
+      "companyIndustry": "Industrial Automation & Control",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/honeywell",
+      "contacts": [
+        {
+          "fullName": "Francesca Tagliani",
+          "jobTitle": "President Process Automation, Europe",
+          "source": "linkedin_web"
+        }
+      ]
+    },
+    {
+      "companyName": "UBISENSE",
+      "companyWebsite": "https://www.ubisense.com",
+      "companyDomain": "ubisense.com",
+      "companyIndustry": "Manufacturing Digitization & Automation",
+      "companyCountry": "UK (with European operations)",
+      "linkedinUrl": "https://www.linkedin.com/company/ubisense",
+      "customers": 900,
+      "contacts": [
+        {
+          "fullName": "Kevin Fraser",
+          "linkedinUrl": "https://www.linkedin.com/in/kevin-fraser-24107a13/",
+          "source": "linkedin_web"
+        }
+      ]
+    },
+    {
+      "companyName": "UCIMU - SISTEMI PER PRODURRE GROUP",
+      "companyWebsite": "https://www.ucimu.it",
+      "companyDomain": "ucimu.it",
+      "companyIndustry": "Machine Tool & Automation Industry Association",
+      "companyCity": "Milano",
+      "companyCountry": "Italy",
+      "linkedinUrl": "https://www.linkedin.com/company/gruppo-ucimu---sistemi-per-produrre",
+      "organization_type": "Industry Association",
+      "contacts": []
+    }
+  ],
+  "total_contacts_batch_3": 6,
+  "status": "completed"
+}

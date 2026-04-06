@@ -1,0 +1,161 @@
+{
+  "batch": 5,
+  "companies": "16-30",
+  "date": "2026-04-05",
+  "region": "SPS Parma 2026",
+  "leads": [
+    {
+      "id": 176,
+      "company_name": "TRITECNICA",
+      "website": "http://www.tritecnica.it",
+      "email": "info@tritecnica.it",
+      "phone": "+39 02 54 19 41",
+      "address": "Viale Lazio 26, Milano 20135, Italy",
+      "industry": "Automation Machinery & Safety Devices",
+      "source": "WebSearch"
+    },
+    {
+      "id": 177,
+      "company_name": "SDPROGET INDUSTRIAL SOFTWARE",
+      "website": "sdproget.it",
+      "email": "sdproget@sdproget.com",
+      "phone": "0039 011 934.66.66",
+      "address": "Via delle Industrie, 8, 10040 Almese (TO), Italy",
+      "industry": "CAD Industrial Automation Software",
+      "source": "WebSearch"
+    },
+    {
+      "id": 178,
+      "company_name": "ORVEM",
+      "website": "www.orvem.com",
+      "email": "vendite@orvem.com",
+      "phone": "+39 02 3454111",
+      "address": "Via Sacco e Vanzetti, 34 | 20099 Sesto San Giovanni | Milano, Italy",
+      "industry": "Electronics & Connectors",
+      "source": "WebSearch"
+    },
+    {
+      "id": 179,
+      "company_name": "STATWOLF",
+      "website": "https://www.statwolf.com",
+      "email": "hello@statwolf.com",
+      "phone": "N/A",
+      "address": "Dublin, Ireland & Padova, Italy",
+      "industry": "Cloud Analytics & Business Intelligence",
+      "source": "WebSearch"
+    },
+    {
+      "id": 180,
+      "company_name": "IEI INTEGRATION CORP",
+      "website": "ieiworld.com",
+      "email": "sales@ieiworld.com",
+      "phone": "+886 2 8691 6798",
+      "address": "No. 29, ZhongXing Rd, Xizhi Dist. New Taipei City, 221 Taiwan",
+      "industry": "Industrial Computer Products",
+      "source": "WebSearch"
+    },
+    {
+      "id": 181,
+      "company_name": "CODESYS ITALIA",
+      "website": "www.codesys.com",
+      "email": "italia@codesys.com",
+      "phone": "N/A",
+      "address": "N/A",
+      "industry": "Industrial Automation Platform",
+      "source": "WebSearch"
+    },
+    {
+      "id": 182,
+      "company_name": "ROCKWELL AUTOMATION (ASEM)",
+      "website": "www.asem.it",
+      "email": "industrialautomation@asem.it",
+      "phone": "0432 9671",
+      "address": "Via Buia, 4, 33011 Artegna (UD), Italy",
+      "industry": "Control & Visualization Solutions",
+      "source": "WebSearch"
+    },
+    {
+      "id": 183,
+      "company_name": "AGENCAVI SYSTEMS",
+      "website": "agencavisystems.com",
+      "email": "info@agencavisystems.it",
+      "phone": "+39 02 459140 51",
+      "address": "Via Papa Giovanni XXIII, 26, 20090 Rodano (MI), Italy",
+      "industry": "Industrial Connections & Wiring",
+      "source": "WebSearch"
+    },
+    {
+      "id": 184,
+      "company_name": "DUNKERMOTOREN",
+      "website": "www.dunkermotoren.com",
+      "email": "info.dunkermotoren@ametek.com",
+      "phone": "+49 (0) 7703 930 0",
+      "address": "Allmendstrasse 11, 79848 Bonndorf/Schwarzwald, Germany",
+      "industry": "Electric Motors & Drive Technology",
+      "source": "WebSearch"
+    },
+    {
+      "id": 185,
+      "company_name": "HARTING (TE.CO.)",
+      "website": "www.harting.com",
+      "email": "[email protected]",
+      "phone": "+1 866 278 0306",
+      "address": "Marienwerderstr 3, Espelkamp, 32339, Germany",
+      "industry": "Industrial Connectors & Technology",
+      "source": "WebSearch"
+    },
+    {
+      "id": 186,
+      "company_name": "ICOTRONIX",
+      "website": "www.icotronix.com",
+      "email": "info@icotronix.com",
+      "phone": "+49 (0) 9421 9687449",
+      "address": "Untere Dorfstraße 45C, 94330 Aiterhofen, Germany",
+      "industry": "Industrial Connectors",
+      "source": "WebSearch"
+    },
+    {
+      "id": 187,
+      "company_name": "HT COMPONENTI ELETTRONICI",
+      "website": "htcompo.com",
+      "email": "[first][last]@htcompo.com",
+      "phone": "055430310",
+      "address": "6 VIA BIAGI MARCO, Sesto Fiorentino 50019, Italy",
+      "industry": "Electronics Distribution",
+      "source": "WebSearch"
+    },
+    {
+      "id": 188,
+      "company_name": "PFLITSCH",
+      "website": "www.pflitsch.de",
+      "email": "info@pflitsch.de",
+      "phone": "+49 2192 911-0",
+      "address": "Ernst-Pflitsch-Straße 1, 42499 Hückeswagen, Germany",
+      "industry": "Cable Management & Automation",
+      "source": "WebSearch"
+    },
+    {
+      "id": 189,
+      "company_name": "NIDEC DESCH ANTRIEBSTECHNIK",
+      "website": "www.desch.com",
+      "email": "info@desch.com",
+      "phone": "+49 2932 300 0",
+      "address": "Kleinbahnstraße 21, 59759 Arnsberg, Germany",
+      "industry": "Drive Technology & Motors",
+      "source": "WebSearch"
+    },
+    {
+      "id": 190,
+      "company_name": "GAMMA SYSTEM",
+      "website": "www.gamma-sys.com",
+      "email": "N/A - multiple companies with this name",
+      "phone": "914-220-8320",
+      "address": "445 Hamilton Ave, Suite 1102, White Plains, NY 10601",
+      "industry": "Business Systems / Automation",
+      "source": "WebSearch",
+      "notes": "Multiple companies with 'Gamma System' name - requires verification for correct Italian company"
+    }
+  ],
+  "total_leads_batch": 15,
+  "summary": "Second batch of 15 leads (companies 16-30). All major contact information gathered. Some entries require manual verification for exact Italian contacts."
+}

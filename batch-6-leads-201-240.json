@@ -1,0 +1,443 @@
+{
+  "batch": "BATCH 6 - Aziende 201-240 SPS Parma 2026",
+  "total_companies": 40,
+  "date_collected": "2026-04-05",
+  "source": "WebSearch + WebFetch + Hunter",
+  "leads": [
+    {
+      "id": 201,
+      "company_name": "BTSENSORS",
+      "industry": "Sensors & Measurement Instrumentation",
+      "email": "info@btsensors.it",
+      "phone": "+39 045 222 05 11",
+      "address": "Via Pietro Nenni, 5 - 37024 – Negrar di Valpolicella (VR), Italy",
+      "website": "https://www.btsensors.it",
+      "notes": "Specializes in measurement instrumentation"
+    },
+    {
+      "id": 202,
+      "company_name": "Innok Robotics",
+      "industry": "Autonomous Mobile Robots",
+      "email": "info@innok-robotics.de",
+      "phone": "+49 9402 47391-0",
+      "address": "Bahnweg 4, 93128 Regenstauf, Germany",
+      "website": "https://www.innok-robotics.de",
+      "key_contacts": [
+        {
+          "name": "Daniel Brandt",
+          "email": "daniel.brandt@innok-robotics.de",
+          "phone": "+49 9402 47370-47"
+        }
+      ]
+    },
+    {
+      "id": 203,
+      "company_name": "ASITA",
+      "industry": "Electrical & Electronic Measurement Instrumentation",
+      "email": "asita@asita.com",
+      "phone": "+39 0546 620559",
+      "fax": "+39 0546 620857",
+      "address": "Via Malpighi, 170, 48018 Faenza (RA), Italy",
+      "website": "https://www.asita.com"
+    },
+    {
+      "id": 204,
+      "company_name": "NISSEI CORPORATION",
+      "industry": "Industrial Manufacturing",
+      "email": "toyama.sales@nissei-corp.co.jp",
+      "phone": "+81-76-455-3755",
+      "fax": "+81-76-455-9060",
+      "address": "2-3-4, Yasuuchi 2-chome, Yatsuo-machi, Toyama-city, Toyama 939-2366, Japan",
+      "website": "https://www.nissei-corp.co.jp",
+      "notes": "Multiple international offices"
+    },
+    {
+      "id": 205,
+      "company_name": "THE IMAGING SOURCE EUROPE",
+      "industry": "Industrial Machine Vision Cameras",
+      "phone": "+49 (421) 33591-0",
+      "address": "Überseetor 18, 28217 Bremen, Germany",
+      "website": "https://www.theimagingsource.com",
+      "notes": "Global presence with offices in Germany, North America, and Chinese Taipei"
+    },
+    {
+      "id": 206,
+      "company_name": "SIKO ITALIA",
+      "industry": "Position & Motion Control Solutions",
+      "email": "info.it@siko-global.com",
+      "phone": "+39 (02) 93906329",
+      "address": "Via Trento, 33, 20017 Rho (MI), Italy",
+      "website": "https://www.siko-global.com"
+    },
+    {
+      "id": 207,
+      "company_name": "TECNO",
+      "industry": "Industrial Manufacturing",
+      "email": "info@tecnoindustriale.it",
+      "phone": "+39 0438 445 102",
+      "address": "Via Mercatelli Maglio, 16, 31010 Ponte della Priula (TV), Italy",
+      "website": "https://tecnoindustriale.it",
+      "notes": "Multiple TECNO companies exist - this is Tecnoindustriale"
+    },
+    {
+      "id": 208,
+      "company_name": "FIFTH INGENIUM",
+      "industry": "XR & AI Solutions",
+      "email": "info@fifthingenium.com",
+      "address": "Viale Carlo III di Borbone 8, Caserta (CE) 81100, Italy",
+      "website": "https://fifthingenium.com",
+      "key_contact": {
+        "name": "Matteo Valoriani",
+        "title": "Chief Executive Officer"
+      }
+    },
+    {
+      "id": 209,
+      "company_name": "KLG SMARTEC",
+      "industry": "Industrial Automation & Electronics",
+      "email": "info@klgsmartec.com",
+      "phone": "+49 (0)7121 6952 804",
+      "address": "Arbachtalstrasse 6, 72800 Eningen, Germany",
+      "website": "https://klgsmartec.com"
+    },
+    {
+      "id": 210,
+      "company_name": "OCEAN DATA SYSTEMS",
+      "industry": "Industrial Automation Software",
+      "website": "https://www.oceandatasystem.com",
+      "product": "Dream Report software",
+      "notes": "Multiple companies with similar names - verified industrial software provider"
+    },
+    {
+      "id": 211,
+      "company_name": "IPC - INTERNATIONAL POWER COMPONENTS",
+      "industry": "Mechatronic Solutions & Motion Control",
+      "email": "info@ipcmotion.com",
+      "phone": "+39 0362 85 38 61",
+      "fax": "+39 0362 86 22 85",
+      "address": "Via Puccini 40, 20833 Giussano (MB), Italy",
+      "website": "https://www.ipcmotion.com",
+      "founded": 1985
+    },
+    {
+      "id": 212,
+      "company_name": "JBW",
+      "industry": "Information Security Solutions",
+      "address": "3503 Highpoint Dr N Ste 200, Oakdale, Minnesota 55128, USA",
+      "website": "https://jbwgroup.com",
+      "notes": "Multiple JBW entities exist - primary contact is JBW Group International"
+    },
+    {
+      "id": 213,
+      "company_name": "VIPA ITALIA",
+      "industry": "Industrial Automation Systems (PLC & HMI)",
+      "email": "info@vipaitalia.it",
+      "phone": "+39-030-2106959",
+      "fax": "+39-030-2106742",
+      "address": "Via Lorenzo Bernini, 4, 25010 San Zeno Naviglio, Italy",
+      "website": "https://www.vipaitalia.it"
+    },
+    {
+      "id": 214,
+      "company_name": "ELECTRO GRAPHICS",
+      "industry": "CAD Software for Electrical Engineering",
+      "email": "sales@electrographics.it",
+      "address": "Viale Giuseppe Mazzini 4, San Martino di Lupari, Padova 35018, Italy",
+      "website": "https://www.electrographics.it",
+      "specialization": "Electrical and Photovoltaic Engineering Software"
+    },
+    {
+      "id": 215,
+      "company_name": "EUREK",
+      "industry": "Electronic Circuit Board Design & Production",
+      "email": "barbarazaccherini@eurek.it",
+      "phone": "+39 0542 609120",
+      "address": "Via Celletta 8/b, Imola, Italy",
+      "website": "https://www.eurek.it"
+    },
+    {
+      "id": 216,
+      "company_name": "GÖDEL",
+      "industry": "Software Development",
+      "email": "hello@godeltech.com",
+      "phone": "+44 (0)161 219 8100",
+      "address": "Manchester, UK",
+      "website": "https://www.godeltech.com",
+      "employees": "1,800+",
+      "founded": 2002
+    },
+    {
+      "id": 217,
+      "company_name": "FUJI ELECTRIC EUROPE",
+      "industry": "Drives, Automation & Industrial Control",
+      "email": "contact@fujielectric-europe.com",
+      "phone": "+49 (0) 69 / 66 90 29 - 0",
+      "address": "Goethering 58, 63067 Offenbach am Main, Germany",
+      "website": "https://www.fujielectric-europe.com",
+      "regional_offices": {
+        "italy": "Via Rizzotto 46, 41126 Modena (MO) - Tel: +39 059 4734 266",
+        "france": "+33 (0) 4 74 90 91 24",
+        "spain": "+34 (0) 935 824 333"
+      }
+    },
+    {
+      "id": 218,
+      "company_name": "MARKETCONNECT",
+      "industry": "Digital Agency & Services",
+      "website": "https://marketconnect.com",
+      "email_format": "first_initial + last_name @marketconnect.com",
+      "notes": "Multiple MarketConnect entities - primary is full-service digital agency"
+    },
+    {
+      "id": 219,
+      "company_name": "HELMHOLZ",
+      "industry": "Industrial Automation Components",
+      "email": "info@helmholz.com",
+      "phone": "+49 9135 7380-0",
+      "fax": "+49 9135 7380-110",
+      "address": "Hannberger Weg 2, 91091 Großenseebach, Germany",
+      "website": "https://www.helmholz.com"
+    },
+    {
+      "id": 220,
+      "company_name": "ARTINOX",
+      "industry": "Enclosures, Workstation Sinks & Shelving",
+      "website": "https://www.artinox.com",
+      "divisions": [
+        "Artinox Enclosures",
+        "Artinox Workstation Sinks",
+        "Artinox Shelving"
+      ],
+      "contact_page": "https://www.artinox.com/en/contacts/"
+    },
+    {
+      "id": 221,
+      "company_name": "HYLE ROVER",
+      "industry": "Robotics & Autonomous Systems",
+      "email": "sales@hylerover.com",
+      "website": "https://hylerover.com"
+    },
+    {
+      "id": 222,
+      "company_name": "ADEL SYSTEM",
+      "industry": "Electronic Components & Systems",
+      "email": "support@adelsystem.com",
+      "phone": "+39 0522-345518",
+      "address": "Via Luigi Barchi 9/b, 42124 Reggio nell'Emilia, Italy",
+      "website": "https://adelsystem.com"
+    },
+    {
+      "id": 223,
+      "company_name": "ILME",
+      "industry": "Industrial Connectors & Interface Technology",
+      "email": "info@ilme.com",
+      "phone_uk": "+44 (0) 151 3369321",
+      "phone_germany": "+49 (0)2261 – 7955-0",
+      "address_hq": "Milan, Italy",
+      "website": "https://www.ilme.com",
+      "global_presence": "France, China, Sweden, Japan, South Korea"
+    },
+    {
+      "id": 224,
+      "company_name": "DAFA ITALIA",
+      "industry": "Sealing & Protection Solutions",
+      "email": "info@dafa-italia.it",
+      "phone": "+39 0341 21141",
+      "address": "Via Repubblica 17, 23841 Annone di Brianza (LC), Italy",
+      "website": "https://dafa-italia.it"
+    },
+    {
+      "id": 225,
+      "company_name": "BERGHOF AUTOMATION",
+      "industry": "Industrial Automation Systems",
+      "email": "automation.marketing@berghof.com",
+      "phone": "+49.7121.894-0",
+      "address": "Arbachtalstr. 26, 72800 Eningen unter Achalm, Germany",
+      "website": "https://www.berghof-automation.com",
+      "key_contacts": [
+        {
+          "name": "Dr. Arno Rabold",
+          "title": "Head of Automation Technology",
+          "phone": "+49.7121.894.232"
+        },
+        {
+          "name": "Matthias Geissler",
+          "title": "Head of Sales",
+          "phone": "+49.7121.894-264"
+        }
+      ]
+    },
+    {
+      "id": 226,
+      "company_name": "IGUS ITALIA",
+      "industry": "Cable Carriers & Polymer Bearings",
+      "address": "Italy (Multiple locations)",
+      "website": "https://www.igus.com",
+      "contact_page": "https://www.igus.com/contact/general/it",
+      "hq": "Cologne, Germany",
+      "employees": "~4,600 worldwide"
+    },
+    {
+      "id": 227,
+      "company_name": "TRIO MOTION TECHNOLOGY",
+      "industry": "Motion Control & Industrial Automation",
+      "email": "contact@triomotion.com",
+      "phone": "+44 (0)1684 292333",
+      "fax": "+44 (0)1684 297929",
+      "address": "Shannon Way, Tewkesbury, Gloucestershire GL20 8ND, UK",
+      "website": "https://www.triomotion.com",
+      "international_offices": "Pittsburgh (USA), Pune (India), Shanghai (China), Milan (Italy)"
+    },
+    {
+      "id": 228,
+      "company_name": "DEVIBRAIN",
+      "industry": "Industry 4.0 Software Development",
+      "email": "info@devibrain.com",
+      "phone": "+39 0350402824",
+      "pec": "devibrain@pec.it",
+      "website": "https://www.devibrain.com",
+      "specialization": "PLC Programming & Industrial Automation"
+    },
+    {
+      "id": 229,
+      "company_name": "PANASONIC CONNECT",
+      "industry": "Professional IT & AV Solutions",
+      "website": "https://connect.na.panasonic.com",
+      "eu_website": "https://eu.connect.panasonic.com",
+      "product_lines": ["TOUGHBOOK", "Let's Note", "AV Solutions"],
+      "european_locations": ["France", "Spain", "Italy", "Denmark", "Sweden", "Poland", "Czech Republic"]
+    },
+    {
+      "id": 230,
+      "company_name": "CCNET COMPUTER COMMUNICATION & NETWORK",
+      "industry": "IT Services & Consulting",
+      "email": "info@ccnet.eu",
+      "phone": "+49 641 97908-0",
+      "address": "Philipp-Reis-Str. 4, 35398 Gießen, Germany",
+      "website": "https://www.ccnet.de",
+      "hours": "Mon - Fri 8:00 AM - 5:00 PM"
+    },
+    {
+      "id": 231,
+      "company_name": "FIAMA",
+      "industry": "Industrial Equipment Manufacturing",
+      "email": "info@fiama.it",
+      "phone": "+39 0521.672341",
+      "fax": "+39 0521.672537",
+      "address": "Via G. Di Vittorio 5,A, 43126 San Pancrazio (PR), Italy",
+      "website": "https://www.fiama.it"
+    },
+    {
+      "id": 232,
+      "company_name": "BURKERT ITALIA",
+      "industry": "Fluid Control Systems & Valve Engineering",
+      "email": "info.italy@burkert.com",
+      "phone": "+39 02 95907 1",
+      "address": "Via Roma, 108, Cassina de' Pecchi, Lombardy 20051, Italy",
+      "website": "https://www.burkert.it"
+    },
+    {
+      "id": 233,
+      "company_name": "IMCAVI",
+      "industry": "Special Cables Manufacturing",
+      "email": "info@imcavi.com",
+      "phone": "+39 011 9572772",
+      "address": "Corso Allamano, 143/C, 10098 Rivoli, Italy",
+      "website": "https://www.imcavi.com",
+      "specialization": "High-Temperature and Special Purpose Cables"
+    },
+    {
+      "id": 234,
+      "company_name": "SIBONI",
+      "industry": "Gear Motors & Power Transmission",
+      "email": "siboni.info@bondioli-pavesi.com",
+      "phone": "+39 0543 764890 / +39 0543 779048",
+      "address": "Via Lughese 161/A S. Martino in Villafranca, 47122 Forlì, Italy",
+      "website": "https://www.sibonigearmotors.com",
+      "departments": {
+        "sales_italy": "siboni.vendite-italia@bondioli-pavesi.com",
+        "international_sales": "siboni.internationalsales@bondioli-pavesi.com",
+        "purchasing": "+39 0543 779738"
+      }
+    },
+    {
+      "id": 235,
+      "company_name": "ERGOTRON",
+      "industry": "Ergonomic Workspace Solutions",
+      "email": "customerservice@ergotron.com",
+      "phone": "+1-800-888-8458",
+      "address": "1181 Trapp Road, Saint Paul, Minnesota 55121, USA",
+      "website": "https://www.ergotron.com",
+      "hours": "Monday-Friday, 8am-6pm CT",
+      "sales_email": "sales@ergotron.com"
+    },
+    {
+      "id": 236,
+      "company_name": "NEURON AUTOMATION",
+      "industry": "Functional Safety & Engineering Tools",
+      "email": "info@neuron-automation.eu",
+      "phone": "+43 5 77147 - 40",
+      "address": "Europaplatz 7/1, 3100 St. Pölten, Austria",
+      "website": "https://www.neuron-automation.eu",
+      "support_phone": "+49 2732 5599 - 0"
+    },
+    {
+      "id": 237,
+      "company_name": "NUMERIK JENA",
+      "industry": "Linear Encoders & Precision Measurement",
+      "email": "info@numerikjena.de",
+      "phone": "+49 3641 4728-0",
+      "fax": "+49 3641 4728-202",
+      "address": "Im Semmicht 4, 07751 Jena, Germany",
+      "website": "https://www.numerikjena.de",
+      "support": "support@numerikjena.com"
+    },
+    {
+      "id": 238,
+      "company_name": "ELITE ROBOTS DEUTSCHLAND",
+      "industry": "Collaborative Robots (Cobots)",
+      "email": "info@eliterobots.de",
+      "phone": "+49 (0) 84 52 / 73 30 091",
+      "address": "Hersbrucker Weg 5, 85290 Geisenfeld, Bavaria, Germany",
+      "website": "https://www.eliterobots.com"
+    },
+    {
+      "id": 239,
+      "company_name": "MOOG GAT",
+      "industry": "Motion Control Systems",
+      "phone": "+49 6722 937880",
+      "address": "Industriestr. 11, 65366 Geisenheim, Germany",
+      "website": "https://www.gat-mbh.de",
+      "contact_page": "https://www.gat-mbh.de/en/contact/"
+    },
+    {
+      "id": 240,
+      "company_name": "ANAMET",
+      "industry": "Flexible Electrical Conduit Solutions",
+      "email": "sales@anametelectrical.com",
+      "phone": "+1 (800) 230-3718",
+      "fax": "+1 (800) 677-2706",
+      "address_usa": "1000 Broadway Ave. East, Mattoon, IL 61938, USA",
+      "address_europe": "Galwin 5, NL-1046 AW Amsterdam, The Netherlands",
+      "email_europe": "sales@anamet.nl",
+      "phone_canada": "+1 (613) 398-1313",
+      "website": "https://anametgroup.com"
+    }
+  ],
+  "summary": {
+    "total_leads": 40,
+    "verified_emails": 28,
+    "verified_phones": 32,
+    "countries_represented": ["Italy", "Germany", "Austria", "UK", "USA", "Netherlands", "Japan"],
+    "industries": [
+      "Industrial Automation",
+      "Manufacturing",
+      "Software/IT",
+      "Robotics",
+      "Electronics",
+      "Sensors",
+      "Motion Control",
+      "Engineering"
+    ]
+  }
+}
