@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FRIDAI — Agentic Data OS | Lemon Juice Solutions</title>
+    <meta name="description" content="FridAI: la piattaforma che connette, orchestra e automatizza i dati aziendali — senza migrazione, senza lock-in.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Syne:wght@700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Cursor -->
+    <div class="cursor"></div>
+    <div class="cursor-follower"></div>
+
+    <!-- Background effects -->
+    <div class="noise-overlay"></div>
+    <div class="ambient-glow"></div>
+
+    <!-- Header -->
+    <header class="ui-header">
+        <div class="nav-brand">
+            <div class="brand-dot"></div>
+            FRIDAI <span class="brand-subtitle">/ Agentic Data OS</span>
+        </div>
+        <div class="nav-counter">
+            <span class="curr-idx">01</span><span style="color:var(--text-muted);padding:0 0.3rem;">—</span><span class="tot-idx">08</span>
+        </div>
+    </header>
+
+    <div class="nav-hint-wrapper">
+        <div class="nav-hint">
+            <span class="hint-text">↓ PREMI INVIO</span>
+            <div class="hint-line"></div>
+        </div>
+    </div>
+
+    <!-- Main container -->
+    <main class="slider-container">
+
+        <!-- GLOBAL VISUALS (8 Multi-Video Engine) -->
+        <div id="global-visual-container" class="global-visual-container">
+            <div class="visual-mask">
+                <!-- I video sono precaricati e ruoteranno con GSAP transition -->
+                <video class="slide-video active-vid" id="vid-0" src="slide_1.mp4" playsinline muted></video>
+                <video class="slide-video" id="vid-1" src="slide_2.mp4" playsinline muted></video>
+                <video class="slide-video" id="vid-2" src="slide_3.mp4" playsinline muted></video>
+                <video class="slide-video" id="vid-3" src="slide_4.mp4" playsinline muted></video>
+                <video class="slide-video" id="vid-4" src="slide_5.mp4" playsinline muted></video>
+                <video class="slide-video" id="vid-5" src="slide_6.mp4" playsinline muted></video>
+                <video class="slide-video" id="vid-6" src="slide_7.mp4" playsinline muted></video>
+                <video class="slide-video" id="vid-7" src="slide_8.mp4" playsinline muted></video>
+                <div class="visual-overlay"></div>
+            </div>
+        </div>
+
+        <!-- ─────── SLIDE 1: HERO ─────── -->
+        <section class="slide" id="slide-1">
+            <div class="slide-inner split-layout">
+                <div class="layout-left">
+                    <div class="hero-logo-wrapper fade-in">
+                        <img src="../FRIDAI_LOGO.png" alt="FRIDAI" class="hero-logo">
+                    </div>
+                    <div class="kicker fade-in">Lemon Juice Solutions — 2025</div>
+                    <h1 class="giant-title uppercase split-text">
+                        FRIDAI<br>
+                        <span class="gradient-text">AGENTIC</span><br>
+                        DATA OS.
+                    </h1>
+                    <p class="hero-desc split-lines">La piattaforma che connette, orchestra e automatizza i dati aziendali — senza migrazione, senza lock-in.</p>
+                    <div class="hero-badges">
+                        <div class="badge fade-up">Brevetto UIBM 2025</div>
+                        <div class="badge fade-up">4 Layer</div>
+                        <div class="badge fade-up">Zero Migrazione</div>
+                        <div class="badge fade-up">6 mesi Time-to-value</div>
+                    </div>
+                </div>
+                <div class="layout-right"></div>
+            </div>
+        </section>
+
+        <!-- ─────── SLIDE 2: ARCHITETTURA ─────── -->
+        <section class="slide" id="slide-2">
+            <div class="slide-inner split-layout reverse-layout">
+                <div class="layout-left">
+                    <div class="kicker fade-in">Architettura</div>
+                    <h2 class="section-title split-text">
+                        QUATTRO LAYER,<br>UN UNICO<br>
+                        <span class="gradient-text">SISTEMA NERVOSO.</span>
+                    </h2>
+                    <p class="section-desc split-lines">FridAI non è BI, non è un chatbot. È un OS per i dati: si connette a qualsiasi fonte, comprende lo schema semantico e genera automazioni senza spostare un dato.</p>
+                    <div style="margin-top:1.2rem;">
+                        <div class="data-row fade-up"><span class="data-key">Layer 1</span><span class="data-val hl">AI & Agentic Orchestration</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Layer 2</span><span class="data-val">Multi-Source Connector</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Layer 3</span><span class="data-val">Business Rules Engine</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Layer 4</span><span class="data-val">Application Generator</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Connettori</span><span class="data-val">ERP, CRM, DB, API</span></div>
+                        <div class="data-row fade-up"><span class="data-key">IP</span><span class="data-val hl">Brevetto UIBM Depositato</span></div>
+                    </div>
+                </div>
+                <div class="layout-right"></div>
+            </div>
+        </section>
+
+        <!-- ─────── SLIDE 3: TECH ─────── -->
+        <section class="slide" id="slide-3">
+            <div class="slide-inner split-layout">
+                <div class="layout-left">
+                    <div class="kicker fade-in">Come funziona</div>
+                    <h2 class="section-title split-text">
+                        LLM IN INGRESSO.<br>RULES AL CENTRO.<br>
+                        <span class="gradient-text">OUTPUT DETERMINISTICI.</span>
+                    </h2>
+                    <p class="section-desc split-lines">Tra il linguaggio naturale e gli output finali c'è uno strato deterministico che garantisce accuratezza, ripetibilità e compliance.</p>
+                    <div class="tech-flow-container" style="margin-top:1.2rem;">
+                        <div class="tech-flow-node fade-up">
+                            <div class="tech-label">Natural Language</div>
+                            <div class="tech-desc">L'utente chiede in NL</div>
+                        </div>
+                        <div class="tech-flow-node fade-up">
+                            <div class="tech-label">LLM Interpretation</div>
+                            <div class="tech-desc">Intento + schema dati</div>
+                        </div>
+                        <div class="tech-flow-node accent fade-up">
+                            <div class="tech-label">Rules Engine ★</div>
+                            <div class="tech-desc">Valida, filtra, struttura</div>
+                        </div>
+                        <div class="tech-flow-node fade-up">
+                            <div class="tech-label">Output</div>
+                            <div class="tech-desc">Tabelle/alert deterministici</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="layout-right"></div>
+            </div>
+        </section>
+
+        <!-- ─────── SLIDE 4: CASE STUDY QUID ─────── -->
+        <section class="slide" id="slide-4">
+            <div class="slide-inner split-layout reverse-layout">
+                <div class="layout-left">
+                    <div class="kicker fade-in">Case Study — Pilota Operativo</div>
+                    <h2 class="section-title split-text">
+                        QUID: LA PROVA<br>CHE FRIDAI<br>
+                        <span class="gradient-text">FUNZIONA.</span>
+                    </h2>
+                    <p class="section-desc split-lines">Cooperativa Quid (€7.6M ricavi, 147 persone). 6 mesi di co-creazione, risultati misurabili dal giorno uno.</p>
+                    <div class="card-grid">
+                        <div class="card fade-up">
+                            <h3>Markup → 0 errori</h3>
+                            <p>100% commesse sottocosto identificate e corrette.</p>
+                            <div class="card-meta">100% rilevato</div>
+                        </div>
+                        <div class="card fade-up">
+                            <h3>Reporting –70%</h3>
+                            <p>Lavoro manuale su report operativi drasticamente ridotto.</p>
+                            <div class="card-meta">–70% effort</div>
+                        </div>
+                        <div class="card fade-up">
+                            <h3>Pricing +5%</h3>
+                            <p>Efficienza pricing con alert predittivi automatici.</p>
+                            <div class="card-meta">+5% efficienza</div>
+                        </div>
+                        <div class="card fade-up">
+                            <h3>Zero Lock-In</h3>
+                            <p>Connesso a ERP e CRM legacy senza muovere dati.</p>
+                            <div class="card-meta">Live 24/7</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="layout-right"></div>
+            </div>
+        </section>
+
+        <!-- ─────── SLIDE 5: AIDRA ─────── -->
+        <section class="slide" id="slide-5">
+            <div class="slide-inner split-layout">
+                <div class="layout-left">
+                    <div class="kicker fade-in">Verticalizzazione Finance</div>
+                    <h2 class="section-title split-text">
+                        AIDRA: FRIDAI<br>PER IL MONDO<br>
+                        <span class="gradient-text">FINANZIARIO.</span>
+                    </h2>
+                    <p class="section-desc split-lines">Stessa architettura agentica, stessi principi — applicati a compliance, risk management, reporting regolamentare e analisi di portafoglio.</p>
+                    <div style="margin-top:1.2rem;">
+                        <div class="data-row fade-up"><span class="data-key">Base</span><span class="data-val hl">Architettura FridAI</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Settore</span><span class="data-val">Financial Services</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Use Case</span><span class="data-val">Compliance & Risk</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Differenziatore</span><span class="data-val">Multi-Agent No Lock-In</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Validazione</span><span class="data-val hl">Cross-Industry Pilot</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Status</span><span class="data-val">Pipeline Attiva</span></div>
+                    </div>
+                </div>
+                <div class="layout-right"></div>
+            </div>
+        </section>
+
+        <!-- ─────── SLIDE 6: BUSINESS MODEL ─────── -->
+        <section class="slide" id="slide-6">
+            <div class="slide-inner split-layout reverse-layout">
+                <div class="layout-left">
+                    <div class="kicker fade-in">Modello di Business</div>
+                    <h2 class="section-title split-text">
+                        TECNOLOGIA<br>VALIDATA.<br>
+                        <span class="gradient-text">SCALABILITÀ DIMOSTRATA.</span>
+                    </h2>
+                    <div class="chart-container" style="margin-top:1.2rem;">
+                        <div class="chart-bar-group fade-up"><div class="chart-value">1</div><div class="chart-bar" style="height:40px;opacity:0.5;"></div><div class="chart-label">2025</div></div>
+                        <div class="chart-bar-group fade-up"><div class="chart-value">5</div><div class="chart-bar" style="height:70px;"></div><div class="chart-label">Pipeline</div></div>
+                        <div class="chart-bar-group fade-up"><div class="chart-value">AIDRA</div><div class="chart-bar" style="height:90px;"></div><div class="chart-label">Finance</div></div>
+                        <div class="chart-bar-group fade-up"><div class="chart-value">∞</div><div class="chart-bar" style="height:110px;box-shadow:0 0 15px var(--brand-cyan);"></div><div class="chart-label">Scala</div></div>
+                    </div>
+                    <div>
+                        <div class="data-row fade-up"><span class="data-key">Modello</span><span class="data-val hl">SaaS + Setup</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Time-to-Value</span><span class="data-val">6 mesi</span></div>
+                        <div class="data-row fade-up"><span class="data-key">Risultato Pilota</span><span class="data-val">+€141K per Quid</span></div>
+                    </div>
+                </div>
+                <div class="layout-right"></div>
+            </div>
+        </section>
+
+        <!-- ─────── SLIDE 7: ROADMAP ─────── -->
+        <section class="slide" id="slide-7">
+            <div class="slide-inner split-layout">
+                <div class="layout-left">
+                    <div class="kicker fade-in">Roadmap</div>
+                    <h2 class="section-title split-text">
+                        DA PILOTA A<br>PIATTAFORMA<br>
+                        <span class="gradient-text">DI RIFERIMENTO.</span>
+                    </h2>
+                    <div class="timeline" style="margin-top:1.2rem;">
+                        <div class="timeline-item fade-up"><div class="timeline-year">2024</div><div class="timeline-content"><h3>Ideazione & Design</h3><p>Architettura FridAI, prototipi su dati reali.</p></div></div>
+                        <div class="timeline-item fade-up"><div class="timeline-year">2025</div><div class="timeline-content"><h3>Pilota Operativo</h3><p>Deploy Quid. €147K investiti (€27K CDP). Risultati in 6 mesi.</p></div></div>
+                        <div class="timeline-item fade-up"><div class="timeline-year hl">Apr 2025</div><div class="timeline-content"><h3>Brevetto UIBM</h3><p>IP core protetta. Deposito completato.</p></div></div>
+                        <div class="timeline-item fade-up"><div class="timeline-year hl">2026 Q2</div><div class="timeline-content"><h3>AIDRA Finance</h3><p>Lancio verticalizzazione. Pipeline attiva.</p></div></div>
+                        <div class="timeline-item fade-up"><div class="timeline-year hl">2027</div><div class="timeline-content"><h3>Espansione Verticali</h3><p>Nuove industrie. Marketplace distrettuale.</p></div></div>
+                    </div>
+                </div>
+                <div class="layout-right"></div>
+            </div>
+        </section>
+
+        <!-- ─────── SLIDE 8: CLOSING ─────── -->
+        <section class="slide" id="slide-8">
+            <div class="slide-inner split-layout reverse-layout">
+                <div class="layout-left">
+                    <div class="kicker fade-in">Lemon Juice Solutions</div>
+                    <h2 class="section-title split-text">
+                        I DATI SONO<br>OVUNQUE. L'INTELLIGENZA<br>
+                        <span class="gradient-text">PER USARLI, NO.</span>
+                    </h2>
+                    <p class="section-desc split-lines">FridAI rende ogni azienda capace di decisioni data-driven — senza migrazione, senza lock-in, senza complessità insormontabili.</p>
+                    <div class="closing-email fade-up">info@lemonjuicesolutions.it</div>
+                    <div class="closing-meta fade-up">
+                        <span>Lemon Juice Solutions</span>
+                        <span>FridAI — Agentic OS</span>
+                        <span>AIDRA Finance</span>
+                        <span>Brevetto UIBM</span>
+                    </div>
+                </div>
+                <div class="layout-right"></div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://unpkg.com/split-type"></script>
+    <script src="script.js"></script>
+</body>
+</html>

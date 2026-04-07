@@ -1,0 +1,1757 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FridAI — Agentic Data OS | Lemon Juice Solutions</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-base: #050510;
+  --text-light: #e8e8f0;
+  --text-muted: rgba(232,232,240,0.5);
+  --cyan: #00D4FF;
+  --purple: #7B2FBE;
+  --magenta: #E040FB;
+  --gold: #FFD700;
+  --green: #00FF88;
+  --glass-light: rgba(255,255,255,0.035);
+  --glass-border: rgba(255,255,255,0.07);
+  --neon-shadow-cyan: 0 0 8px #00D4FF, 0 0 20px rgba(0,212,255,0.4), 0 0 40px rgba(0,212,255,0.2);
+  --neon-shadow-purple: 0 0 8px #7B2FBE, 0 0 20px rgba(123,47,190,0.4);
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;width:100%;overflow:hidden;}
+body{font-family:'Inter',sans-serif;background:var(--bg-base);color:var(--text-light);-webkit-font-smoothing:antialiased;position:fixed;top:0;left:0;}
+::selection{background:var(--cyan);color:var(--bg-base);}
+
+/* ===== SCANLINES WOW ===== */
+.scanlines{position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.04) 3px,rgba(0,0,0,0.04) 4px);pointer-events:none;z-index:9999;animation:scanMove 8s linear infinite;}
+@keyframes scanMove{from{background-position:0 0;}to{background-position:0 100px;}}
+
+/* ===== PROGRESS BAR ===== */
+.progress-bar-wrap{position:fixed;bottom:0;left:0;width:100%;height:3px;z-index:1000;background:rgba(255,255,255,0.04);}
+.progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--purple),var(--magenta));transition:width 0.8s cubic-bezier(0.22,1,0.36,1);box-shadow:0 0 10px rgba(0,212,255,0.6);}
+
+/* ===== AURORA BG ===== */
+.aurora-bg{position:fixed;inset:0;z-index:0;pointer-events:none;background:var(--bg-base);overflow:hidden;}
+.orb{position:absolute;border-radius:50%;filter:blur(160px);mix-blend-mode:screen;opacity:0.25;}
+.orb-1{width:600px;height:600px;background:linear-gradient(135deg,var(--cyan),var(--purple));top:-10%;left:-8%;animation:orbit1 22s ease-in-out infinite;}
+.orb-2{width:700px;height:700px;background:linear-gradient(135deg,var(--purple),var(--magenta));bottom:-20%;right:-10%;animation:orbit2 26s ease-in-out infinite;}
+.orb-3{width:450px;height:450px;background:linear-gradient(135deg,var(--magenta),var(--cyan));top:40%;right:5%;animation:orbit3 28s ease-in-out infinite;}
+@keyframes orbit1{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(50px,70px) scale(1.12);}}
+@keyframes orbit2{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-70px,-50px) scale(0.93);}}
+@keyframes orbit3{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-90px,60px) scale(1.07);}}
+
+/* ===== WATERMARK ===== */
+.watermark{position:fixed;top:1.8rem;left:2rem;font-family:'Space Grotesk',sans-serif;font-size:0.9rem;font-weight:700;color:var(--text-light);z-index:1000;letter-spacing:1px;transition:color 0.6s;}
+.watermark span{color:var(--cyan);text-shadow:var(--neon-shadow-cyan);}
+body.on-light .watermark{color:#0a0a14;}
+body.on-light .watermark span{color:var(--purple);}
+
+/* ===== NAV DOTS ===== */
+.nav-dots{position:fixed;right:2rem;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:1.4rem;z-index:1000;list-style:none;}
+.nav-dot{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,0.18);cursor:pointer;transition:all 0.3s ease;position:relative;}
+.nav-dot:hover,.nav-dot.active{background:var(--cyan);box-shadow:var(--neon-shadow-cyan);transform:scale(1.4);}
+.nav-dot-label{position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:0.7rem;color:var(--text-muted);opacity:0;transition:opacity 0.3s;white-space:nowrap;text-transform:uppercase;letter-spacing:1px;pointer-events:none;font-family:'JetBrains Mono',monospace;}
+.nav-dot:hover .nav-dot-label{opacity:1;}
+body.on-light .nav-dot{background:rgba(10,10,20,0.15);}
+body.on-light .nav-dot.active{background:var(--purple);box-shadow:var(--neon-shadow-purple);}
+
+/* ===== SLIDE CANVAS (per-slide live animation) ===== */
+.slide-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;}
+
+/* ===== SLIDES ===== */
+.slide-container{position:relative;width:100vw;height:100vh;overflow:hidden;perspective:1600px;transform-style:preserve-3d;}
+.slide{position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;pointer-events:none;transform:perspective(1600px) rotateX(14deg) translateY(90px) translateZ(-250px) scale(0.9);transition:transform 1.1s cubic-bezier(0.22,1,0.36,1),opacity 1s cubic-bezier(0.22,1,0.36,1);z-index:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:3rem 4rem;overflow:hidden;transform-style:preserve-3d;will-change:transform,opacity;}
+.slide.active{opacity:1;pointer-events:all;transform:perspective(1600px) rotateX(0deg) translateY(0) translateZ(0) scale(1);z-index:10;}
+.slide.exit-back{opacity:0;transform:perspective(1600px) rotateX(-14deg) translateY(-90px) translateZ(-250px) scale(0.9);z-index:5;}
+.slide.exit-fwd{opacity:0;transform:perspective(1600px) rotateX(22deg) translateY(140px) translateZ(-350px) scale(0.86);z-index:5;}
+
+/* ===== SLIDE CONTENT ===== */
+.slide-content{position:relative;z-index:2;width:100%;height:100%;max-width:1400px;margin:0 auto;display:flex;flex-direction:column;justify-content:center;}
+
+/* ===== TYPOGRAPHY ===== */
+.tag{font-family:'JetBrains Mono',monospace;font-size:0.7rem;font-weight:500;text-transform:uppercase;letter-spacing:2px;color:var(--cyan);margin-bottom:1rem;display:block;text-shadow:var(--neon-shadow-cyan);}
+.tag::before{content:'// ';opacity:0.5;}
+body.on-light .tag{color:var(--purple);text-shadow:none;}
+
+h1{font-family:'Space Grotesk',sans-serif;font-size:clamp(4rem,9vw,8.5rem);font-weight:700;line-height:1;letter-spacing:-2px;background:linear-gradient(135deg,var(--cyan),var(--purple),var(--magenta));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:1rem;animation:fadeInScale 1s ease-out;}
+@keyframes fadeInScale{from{opacity:0;transform:scale(0.88);}to{opacity:1;transform:scale(1);}}
+
+h2{font-family:'Space Grotesk',sans-serif;font-size:clamp(1.6rem,3vw,2.8rem);font-weight:700;line-height:1.1;letter-spacing:-1px;margin-bottom:0.8rem;color:var(--text-light);}
+h3{font-family:'Space Grotesk',sans-serif;font-size:1.05rem;font-weight:600;color:var(--text-light);}
+p{font-family:'Inter',sans-serif;font-size:0.98rem;color:var(--text-muted);line-height:1.65;}
+
+/* ===== GLITCH EFFECT ===== */
+.glitch{position:relative;}
+.glitch::before,.glitch::after{content:attr(data-text);position:absolute;inset:0;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;background:inherit;}
+.glitch::before{animation:glitch1 3s infinite;clip-path:inset(20% 0 60% 0);}
+.glitch::after{animation:glitch2 3s infinite;clip-path:inset(60% 0 10% 0);filter:hue-rotate(90deg);}
+@keyframes glitch1{0%,90%,100%{transform:translate(0);}91%{transform:translate(-3px,1px);}93%{transform:translate(2px,-1px);}95%{transform:translate(-1px,2px);}97%{transform:translate(3px,-2px);}}
+@keyframes glitch2{0%,88%,100%{transform:translate(0);}89%{transform:translate(3px,-1px);}91%{transform:translate(-2px,2px);}93%{transform:translate(1px,-3px);}95%{transform:translate(-3px,1px);}}
+
+/* ===== REVEAL ===== */
+.reveal-up{opacity:0;transform:translateY(40px);animation:revealUp 0.8s cubic-bezier(0.25,0.46,0.45,0.94) forwards;}
+@keyframes revealUp{to{opacity:1;transform:translateY(0);}}
+
+/* ===== HERO SLIDE ===== */
+#hero{display:flex;flex-direction:column;justify-content:center;padding:3rem 5rem;}
+.hero-video-wrap{position:relative;width:100%;aspect-ratio:16/7;border-radius:18px;overflow:hidden;background:#0a0a1a;flex-shrink:0;}
+.hero-video-glow{position:absolute;inset:-3px;border-radius:21px;background:linear-gradient(135deg,var(--cyan),var(--purple),var(--magenta),var(--cyan));z-index:0;animation:borderRotate 3s linear infinite;background-size:300% 300%;}
+@keyframes borderRotate{0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;}}
+.hero-video-inner{position:absolute;inset:2px;border-radius:17px;overflow:hidden;z-index:1;background:#080818;}
+.hero-video-inner video,.hero-video-inner .video-placeholder{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+.video-placeholder{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1rem;background:linear-gradient(135deg,#0d0525,#1a0a2e);}
+.video-placeholder svg{opacity:0.6;}
+.video-placeholder span{color:#7B2FBE;font-family:'JetBrains Mono',monospace;font-size:0.75rem;opacity:0.7;}
+.hero-scan-line{position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(180deg,transparent 0%,rgba(0,212,255,0.03) 50%,transparent 100%);animation:heroScan 4s ease-in-out infinite;}
+@keyframes heroScan{0%{transform:translateY(-100%);}100%{transform:translateY(100%);}}
+
+/* ===== SPLIT LAYOUT ===== */
+.split-layout{display:grid;grid-template-columns:0.4fr 0.6fr;gap:4rem;align-items:start;padding:0 2rem;width:100%;}
+.split-layout.reverse{grid-template-columns:0.55fr 0.45fr;}
+
+/* ===== DATA ROWS ===== */
+.data-row{display:flex;justify-content:space-between;align-items:baseline;padding:0.75rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.07);opacity:0;animation:slideInLeft 0.6s ease-out forwards;cursor:default;border-radius:4px;transition:background 0.3s,border-color 0.3s,padding-left 0.3s;}
+@keyframes slideInLeft{from{opacity:0;transform:translateX(-30px);}to{opacity:1;transform:translateX(0);}}
+.slide.active .data-row:nth-child(1){animation-delay:0.1s;}
+.slide.active .data-row:nth-child(2){animation-delay:0.2s;}
+.slide.active .data-row:nth-child(3){animation-delay:0.3s;}
+.slide.active .data-row:nth-child(4){animation-delay:0.4s;}
+.slide.active .data-row:nth-child(5){animation-delay:0.5s;}
+.slide.active .data-row:nth-child(6){animation-delay:0.6s;}
+.data-row:hover{background:rgba(0,212,255,0.04);border-color:rgba(0,212,255,0.3);padding-left:1rem;}
+.data-key{font-size:0.9rem;color:var(--text-muted);}
+.data-val{font-family:'Space Grotesk',sans-serif;font-size:1.05rem;font-weight:600;color:var(--text-light);}
+.data-val.hl{color:var(--cyan);text-shadow:0 0 10px rgba(0,212,255,0.3);}
+
+/* ===== TECH FLOW ===== */
+.tech-flow-container{display:flex;justify-content:center;align-items:center;gap:0.6rem;padding:0 1rem;width:100%;max-width:1100px;}
+.tech-flow-node{flex-shrink:0;width:190px;display:flex;flex-direction:column;align-items:center;gap:0.6rem;padding:1.2rem 1rem;border-radius:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);backdrop-filter:blur(20px);position:relative;animation:slideUp 0.7s ease-out backwards;transition:all 0.3s ease;cursor:default;}
+.tech-flow-node:nth-child(1){animation-delay:0.1s;}
+.tech-flow-node:nth-child(2){animation-delay:0.2s;}
+.tech-flow-node:nth-child(3){animation-delay:0.3s;}
+.tech-flow-node:nth-child(4){animation-delay:0.4s;}
+@keyframes slideUp{from{opacity:0;transform:translateY(40px);}to{opacity:1;transform:translateY(0);}}
+.tech-flow-node.accent{background:rgba(0,212,255,0.07);border-color:rgba(0,212,255,0.25);box-shadow:0 0 40px rgba(0,212,255,0.08),inset 0 0 20px rgba(0,212,255,0.03);}
+.tech-flow-node:hover{transform:translateY(-10px) scale(1.03);border-color:rgba(0,212,255,0.4);box-shadow:0 20px 50px rgba(0,0,0,0.4),0 0 30px rgba(0,212,255,0.15);}
+.tech-flow-arrow{color:rgba(0,212,255,0.4);font-size:1.5rem;flex-shrink:0;animation:arrowPulse 1.5s ease-in-out infinite;}
+@keyframes arrowPulse{0%,100%{opacity:0.3;transform:scaleX(1);}50%{opacity:0.8;transform:scaleX(1.2);}}
+.tech-icon{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;}
+.tech-label{font-family:'Space Grotesk',sans-serif;font-size:0.9rem;font-weight:600;color:var(--text-light);text-align:center;}
+.tech-flow-node.accent .tech-label{color:var(--cyan);}
+.tech-desc{font-size:0.78rem;color:var(--text-muted);text-align:center;line-height:1.4;}
+
+/* ===== GLASS CARDS ===== */
+.card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0.9rem;width:100%;}
+.card{background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:1.2rem 1.4rem;backdrop-filter:blur(20px);transition:all 0.4s cubic-bezier(0.22,1,0.36,1);opacity:0;transform:scale(0.82) translateY(40px);animation:cardAppear 0.7s ease-out forwards;cursor:default;position:relative;overflow:hidden;}
+.card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,212,255,0.04),transparent,rgba(123,47,190,0.04));opacity:0;transition:opacity 0.4s;}
+.card:hover::before{opacity:1;}
+@keyframes cardAppear{to{opacity:1;transform:scale(1) translateY(0);}}
+.slide.active .card:nth-child(1){animation-delay:0.08s;}
+.slide.active .card:nth-child(2){animation-delay:0.16s;}
+.slide.active .card:nth-child(3){animation-delay:0.24s;}
+.slide.active .card:nth-child(4){animation-delay:0.32s;}
+.slide.active .card:nth-child(5){animation-delay:0.40s;}
+.slide.active .card:nth-child(6){animation-delay:0.48s;}
+.card:hover{transform:translateY(-14px) scale(1.02);border-color:rgba(0,212,255,0.35);box-shadow:0 30px 70px rgba(0,0,0,0.5),0 0 30px rgba(0,212,255,0.08);}
+.card h3{margin-bottom:0.4rem;color:var(--text-light);font-size:0.92rem;}
+.card p{font-size:0.78rem;color:var(--text-muted);line-height:1.5;}
+.card-meta{margin-top:0.8rem;font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:var(--cyan);text-transform:uppercase;letter-spacing:1px;text-shadow:0 0 8px rgba(0,212,255,0.3);}
+
+/* ===== CHART ===== */
+.chart-container{display:flex;align-items:flex-end;gap:1rem;height:200px;padding:1rem 0;border-bottom:1px solid rgba(255,255,255,0.06);}
+.chart-bar-group{flex:1;display:flex;flex-direction:column;align-items:center;gap:0.6rem;height:100%;justify-content:flex-end;}
+.chart-bar{width:100%;max-width:70px;border-radius:5px 5px 0 0;background:linear-gradient(135deg,var(--cyan),var(--purple));box-shadow:0 0 20px rgba(0,212,255,0.25);opacity:0;transform:scaleY(0);transform-origin:bottom;animation:barGrow 1.2s cubic-bezier(0.22,1,0.36,1) backwards;cursor:pointer;}
+.chart-bar:hover{filter:brightness(1.4);box-shadow:0 0 30px rgba(0,212,255,0.4);}
+@keyframes barGrow{to{opacity:1;transform:scaleY(1);}}
+.chart-value{font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--text-muted);}
+.chart-label{font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;padding-top:0.6rem;border-top:1px solid rgba(255,255,255,0.06);width:100%;text-align:center;}
+
+/* ===== TIMELINE ===== */
+.timeline{display:flex;flex-direction:column;gap:0;}
+.timeline-item{display:grid;grid-template-columns:80px 1fr;gap:1.5rem;padding:0.75rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.06);opacity:0;animation:slideInLeft 0.7s ease-out forwards;transition:padding-left 0.3s,background 0.3s;border-radius:4px;}
+.slide.active .timeline-item:nth-child(1){animation-delay:0.1s;}
+.slide.active .timeline-item:nth-child(2){animation-delay:0.2s;}
+.slide.active .timeline-item:nth-child(3){animation-delay:0.3s;}
+.slide.active .timeline-item:nth-child(4){animation-delay:0.4s;}
+.slide.active .timeline-item:nth-child(5){animation-delay:0.5s;}
+.slide.active .timeline-item:nth-child(6){animation-delay:0.6s;}
+.timeline-item:hover{padding-left:0.8rem;background:rgba(0,212,255,0.03);}
+.timeline-year{font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:600;color:var(--text-muted);transition:color 0.3s;}
+.timeline-item:hover .timeline-year{color:var(--cyan);}
+.timeline-content h3{margin-bottom:0.3rem;}
+.timeline-content p{font-size:0.88rem;line-height:1.5;}
+
+/* ===== CLOSING ===== */
+.closing-container{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.4rem;padding:2rem 4rem;text-align:center;}
+.closing-logo{width:150px;height:150px;filter:drop-shadow(0 0 40px rgba(0,212,255,0.5));animation:logoGlow 3s ease-in-out infinite;}
+@keyframes logoGlow{0%,100%{filter:drop-shadow(0 0 25px rgba(0,212,255,0.3));transform:scale(1);}50%{filter:drop-shadow(0 0 60px rgba(0,212,255,0.7)) drop-shadow(0 0 100px rgba(123,47,190,0.4));transform:scale(1.06);}}
+.closing-email{font-family:'Space Grotesk',sans-serif;font-size:1.3rem;font-weight:700;color:var(--cyan);margin-top:1rem;letter-spacing:1px;text-shadow:var(--neon-shadow-cyan);animation:fadeInScale 1s ease-out 0.4s both;cursor:pointer;transition:all 0.3s;}
+.closing-email:hover{transform:scale(1.06);text-shadow:0 0 15px #00D4FF,0 0 40px rgba(0,212,255,0.5);}
+.closing-meta{display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;margin-top:1rem;font-family:'JetBrains Mono',monospace;font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);}
+.closing-meta span{padding:0.4rem 0.9rem;border:1px solid rgba(255,255,255,0.07);border-radius:4px;transition:border-color 0.3s,color 0.3s;}
+.closing-meta span:hover{border-color:rgba(0,212,255,0.3);color:var(--cyan);}
+
+/* ===== SLIDE THEMES ===== */
+.slide-white{background:#ffffff;color:#0a0a14;}
+.slide-white h2,.slide-white h3{color:#0a0a14;}
+.slide-white p{color:rgba(10,10,20,0.58);}
+.slide-white .tag{color:var(--purple);text-shadow:none;}
+.slide-white .data-key{color:rgba(10,10,20,0.45);}
+.slide-white .data-val{color:#0a0a14;}
+.slide-white .data-val.hl{color:var(--purple);text-shadow:none;}
+.slide-white .data-row{border-color:rgba(10,10,20,0.08);}
+.slide-white .data-row:hover{background:rgba(123,47,190,0.04);border-color:rgba(123,47,190,0.2);}
+.slide-white .timeline-year{color:rgba(10,10,20,0.3);}
+.slide-white .timeline-item{border-color:rgba(10,10,20,0.08);}
+.slide-white .timeline-item:hover{background:rgba(123,47,190,0.03);}
+.slide-white .timeline-item:hover .timeline-year{color:var(--purple);}
+.slide-white .timeline-content p{color:rgba(10,10,20,0.5);}
+.slide-white .card{background:rgba(10,10,20,0.028);border-color:rgba(10,10,20,0.07);}
+.slide-white .card:hover{border-color:rgba(123,47,190,0.3);box-shadow:0 25px 60px rgba(0,0,0,0.08),0 0 30px rgba(123,47,190,0.06);}
+.slide-white .card-meta{color:var(--purple);}
+.slide-white .tech-flow-node{background:rgba(255,255,255,0.82);border:1px solid rgba(123,47,190,0.18);box-shadow:0 4px 24px rgba(0,0,0,0.08);backdrop-filter:blur(12px);}
+.slide-white .tech-flow-node.accent{background:rgba(0,212,255,0.1);border-color:rgba(0,212,255,0.35);}
+.slide-white .tech-flow-node:hover{border-color:rgba(123,47,190,0.45);box-shadow:0 20px 50px rgba(0,0,0,0.12),0 0 30px rgba(123,47,190,0.12);}
+.slide-white .tech-label{color:#0a0a14;}
+.slide-white .tech-flow-node.accent .tech-label{color:var(--cyan);}
+.slide-white .tech-desc{color:rgba(10,10,20,0.55);}
+.slide-white .tech-flow-arrow{color:rgba(123,47,190,0.5);}
+.slide-tono{background:linear-gradient(135deg,#080518 0%,#160828 40%,#08182e 70%,#080518 100%);}
+
+/* ===== NEON BADGE ===== */
+.badge{display:inline-flex;align-items:center;gap:0.4rem;font-family:'JetBrains Mono',monospace;font-size:0.68rem;font-weight:500;text-transform:uppercase;letter-spacing:1.5px;padding:0.3rem 0.8rem;border-radius:20px;border:1px solid rgba(0,212,255,0.3);color:var(--cyan);background:rgba(0,212,255,0.06);box-shadow:0 0 12px rgba(0,212,255,0.15);animation:badgePulse 2.5s ease-in-out infinite;}
+@keyframes badgePulse{0%,100%{box-shadow:0 0 8px rgba(0,212,255,0.15);}50%{box-shadow:0 0 20px rgba(0,212,255,0.35);}}
+.badge-dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:dotBlink 1.5s ease-in-out infinite;}
+@keyframes dotBlink{0%,100%{opacity:1;}50%{opacity:0.3;}}
+
+/* ===== KPIS ===== */
+.kpi-value{font-family:'Space Grotesk',sans-serif;font-size:1.4rem;font-weight:700;line-height:1;}
+.kpi-label{font-family:'JetBrains Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-top:0.3rem;}
+</style>
+</head>
+<body>
+
+<!-- SCANLINES WOW -->
+<div class="scanlines"></div>
+
+<!-- AURORA BACKGROUND -->
+<div class="aurora-bg">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+
+<!-- WATERMARK -->
+<div class="watermark">Frid<span>AI</span></div>
+
+<!-- PROGRESS BAR -->
+<div class="progress-bar-wrap"><div class="progress-bar-fill" id="progressBar" style="width:12.5%"></div></div>
+
+<!-- NAV DOTS -->
+<ul class="nav-dots" id="navDots">
+  <li class="nav-dot active" data-slide="0"><div class="nav-dot-label">Hero</div></li>
+  <li class="nav-dot" data-slide="1"><div class="nav-dot-label">Architecture</div></li>
+  <li class="nav-dot" data-slide="2"><div class="nav-dot-label">Tech AI</div></li>
+  <li class="nav-dot" data-slide="3"><div class="nav-dot-label">KPI Pilot</div></li>
+  <li class="nav-dot" data-slide="4"><div class="nav-dot-label">AIDRA Finance</div></li>
+  <li class="nav-dot" data-slide="5"><div class="nav-dot-label">Business</div></li>
+  <li class="nav-dot" data-slide="6"><div class="nav-dot-label">Roadmap</div></li>
+  <li class="nav-dot" data-slide="7"><div class="nav-dot-label">Closing</div></li>
+</ul>
+
+<div class="slide-container">
+
+<!-- ====================================================================
+     SLIDE 01 — HERO
+     VIDEO BG: metti "slide1_hero.mp4" nella stessa cartella
+     ==================================================================== -->
+<section class="slide slide-white active" id="hero">
+  <!-- Live canvas fallback / overlay -->
+  <canvas class="slide-canvas" id="canvas-hero"></canvas>
+
+  <div class="slide-content" style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:2.5rem 5rem;position:relative;z-index:2;">
+    <!-- TOP -->
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:1.8rem;">
+      <div>
+        <div class="tag" style="margin-bottom:0.5rem;">Lemon Juice Solutions</div>
+        <h1 class="glitch" data-text="FridAI" style="font-size:clamp(2.8rem,5vw,4.5rem);line-height:1.05;color:#0a0a1a;margin:0;background:none;-webkit-text-fill-color:#0a0a1a;">
+          FridAI <em style="font-style:italic;background:linear-gradient(135deg,#00D4FF,#7B2FBE,#E040FB);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Agentic Data OS.</em>
+        </h1>
+      </div>
+      <div style="text-align:right;color:#555;font-size:0.83rem;line-height:1.65;max-width:260px;">
+        <div class="badge" style="margin-bottom:0.6rem;margin-left:auto;">
+          <span class="badge-dot"></span>Brevetto UIBM 2025
+        </div>
+        La piattaforma che connette, orchestra e automatizza i dati aziendali — senza migrazione, senza lock-in.
+      </div>
+    </div>
+
+    <!-- VIDEO -->
+    <div class="hero-video-wrap">
+      <div class="hero-video-glow"></div>
+      <div class="hero-video-inner">
+        <!-- Sostituisci src con il tuo file video (es: slide1_hero.mp4) -->
+        <video id="heroVideo" autoplay muted loop playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">
+          <source src="Video.mp4" type="video/mp4">
+        </video>
+        <!-- Canvas fallback animato se il video non c'è -->
+        <canvas id="heroVideoCv" style="position:absolute;inset:0;width:100%;height:100%;display:none;"></canvas>
+        <div class="hero-scan-line"></div>
+      </div>
+    </div>
+
+    <!-- BOTTOM KPIs -->
+    <div style="display:flex;gap:0;margin-top:1.6rem;border-top:1px solid rgba(123,47,190,0.1);padding-top:1.2rem;">
+      <div style="flex:1;text-align:center;border-right:1px solid rgba(123,47,190,0.08);">
+        <div class="kpi-value" style="color:#7B2FBE;">4 layer</div>
+        <div class="kpi-label">Architettura</div>
+      </div>
+      <div style="flex:1;text-align:center;border-right:1px solid rgba(123,47,190,0.08);">
+        <div class="kpi-value" style="color:#00D4FF;">Zero</div>
+        <div class="kpi-label">Migrazione dati</div>
+      </div>
+      <div style="flex:1;text-align:center;border-right:1px solid rgba(123,47,190,0.08);">
+        <div class="kpi-value" style="color:#E040FB;">6 mesi</div>
+        <div class="kpi-label">Time-to-value</div>
+      </div>
+      <div style="flex:1;text-align:center;">
+        <div class="kpi-value" style="color:#7B2FBE;">NL</div>
+        <div class="kpi-label">Natural Language</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     SLIDE 02 — ARCHITECTURE (connessione dati / data flow)
+     VIDEO BG: slide2_architecture.mp4
+     ==================================================================== -->
+<section class="slide slide-white" id="architecture">
+  <!-- LIVE: 4-layer animated data pipeline -->
+  <canvas class="slide-canvas" id="canvas-architecture"></canvas>
+
+  <div class="slide-content" style="position:relative;z-index:2;">
+    <div class="split-layout">
+      <div>
+        <div class="tag">Architettura</div>
+        <h2>Quattro layer,<br>un unico<br><span style="color:var(--cyan);font-style:italic;">sistema nervoso.</span></h2>
+        <p style="margin-top:1.2rem;font-size:0.9rem;line-height:1.7;color:rgba(10,10,20,0.55);max-width:280px;">FridAI si connette a qualsiasi fonte dati — ERP, CRM, DB, file — senza spostare un bit.</p>
+      </div>
+      <div>
+        <p style="margin-bottom:2rem;max-width:100%;font-size:0.97rem;color:rgba(10,10,20,0.58);line-height:1.75;">FridAI non è un tool di BI, non è un chatbot. È un OS per i dati aziendali: si connette a qualsiasi fonte, comprende lo schema semantico, genera automazioni e applicazioni — tutto senza spostare un dato.</p>
+        <div>
+          <div class="data-row"><span class="data-key">Layer 1</span><span class="data-val hl">AI &amp; Agentic Orchestration</span></div>
+          <div class="data-row"><span class="data-key">Layer 2</span><span class="data-val">Multi-Source Connector (federato)</span></div>
+          <div class="data-row"><span class="data-key">Layer 3</span><span class="data-val">Business Rules Engine (deterministico)</span></div>
+          <div class="data-row"><span class="data-key">Layer 4</span><span class="data-val">Application Generator</span></div>
+          <div class="data-row"><span class="data-key">Connettori</span><span class="data-val">ERP, CRM, DB, file, API</span></div>
+          <div class="data-row"><span class="data-key">IP</span><span class="data-val hl">Brevetto UIBM depositato</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     SLIDE 03 — TECH / LLM + NEURAL NETWORK
+     VIDEO BG: slide3_tech.mp4
+     ==================================================================== -->
+<section class="slide slide-white" id="tech" style="position:relative;overflow:hidden;">
+  <!-- VIDEO BACKGROUND -->
+  <video autoplay loop muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;">
+    <source src="Video.mp4" type="video/mp4">
+  </video>
+  <!-- Overlay for readability -->
+  <div style="position:absolute;inset:0;z-index:1;pointer-events:none;background:rgba(255,255,255,0.72);"></div>
+
+  <div class="slide-content" style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;z-index:2;">
+    <div style="text-align:center;max-width:900px;margin:0 auto 2.5rem;">
+      <div class="tag" style="text-align:center;">Come funziona — AI Agent</div>
+      <h2 style="text-align:center;">LLM in ingresso. Business rules al centro.<br><span style="color:var(--cyan);font-style:italic;">Output deterministici.</span></h2>
+      <p style="max-width:560px;margin:0.8rem auto 0;text-align:center;font-size:0.93rem;color:var(--text-muted);">Tra il linguaggio naturale e gli output finali c'è uno strato deterministico che garantisce accuratezza, ripetibilità e compliance.</p>
+    </div>
+    <div class="tech-flow-container">
+      <div class="tech-flow-node">
+        <div class="tech-icon"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="var(--cyan)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="tech-label">Natural Language</div>
+        <div class="tech-desc">L'utente chiede in linguaggio naturale</div>
+      </div>
+      <div class="tech-flow-arrow">→</div>
+      <div class="tech-flow-node">
+        <div class="tech-icon"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="var(--magenta)" stroke-width="1.5"><path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.7-3.2 6H8.2C6.3 13.7 5 11.5 5 9a7 7 0 0 1 7-7z"/><path d="M9 22h6M10 18h4"/></svg></div>
+        <div class="tech-label">LLM Interpretation</div>
+        <div class="tech-desc">L'AI comprende l'intento e lo schema dati</div>
+      </div>
+      <div class="tech-flow-arrow">→</div>
+      <div class="tech-flow-node accent">
+        <div class="tech-icon"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="var(--cyan)" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+        <div class="tech-label">Business Rules Engine</div>
+        <div class="tech-desc">Algoritmo deterministico: valida, filtra, struttura</div>
+      </div>
+      <div class="tech-flow-arrow">→</div>
+      <div class="tech-flow-node">
+        <div class="tech-icon"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="var(--purple)" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 10l3-3 3 3 6-6"/></svg></div>
+        <div class="tech-label">Output</div>
+        <div class="tech-desc">Tabelle, grafici, alert — deterministici</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     SLIDE 04 — CASE STUDY QUID / KPI LIVE
+     VIDEO BG: slide4_kpi.mp4
+     ==================================================================== -->
+<section class="slide slide-white" id="pilot">
+  <!-- LIVE: animated KPI dashboard -->
+  <canvas class="slide-canvas" id="canvas-kpi"></canvas>
+
+  <div class="slide-content" style="width:100%;padding:2rem 6rem;position:relative;z-index:2;">
+    <div style="margin-bottom:1.2rem;">
+      <div class="tag">Case study — Progetto pilota</div>
+      <h2 style="max-width:700px;">Quid: la prova che FridAI<br><span style="color:var(--purple);font-style:italic;">funziona.</span></h2>
+      <p style="margin:0.8rem 0 1.6rem;max-width:700px;font-size:0.97rem;color:rgba(10,10,20,0.55);line-height:1.75;">Cooperativa Sociale Quid (€7,6M ricavi, 147 persone, 22 nazionalità) — 6 mesi di co-creazione, risultati misurabili dal giorno uno.</p>
+    </div>
+    <div class="card-grid" style="padding:0;">
+      <div class="card" style="border-left:3px solid #00D4FF;"><h3>Markup → zero errori</h3><p>100% delle commesse sottocosto identificate e corrette automaticamente.</p><div class="card-meta counter-val" data-target="100">0%</div></div>
+      <div class="card" style="border-left:3px solid #7B2FBE;"><h3>Reporting –70%</h3><p>Riduzione del 70% del lavoro manuale su report operativi. Dati aggregati real-time.</p><div class="card-meta">–70% EFFORT</div></div>
+      <div class="card" style="border-left:3px solid #E040FB;"><h3>Pricing +5%</h3><p>Efficienza su pricing e capacità produttiva grazie ad alert predittivi di FridAI.</p><div class="card-meta">+5% EFFICIENZA</div></div>
+      <div class="card" style="border-left:3px solid #00D4FF;"><h3>6 mesi operativo</h3><p>Dal kickoff al pieno regime in soli 6 mesi. Time-to-value minimo.</p><div class="card-meta">6 MESI</div></div>
+      <div class="card" style="border-left:3px solid #7B2FBE;"><h3>Dashboard live</h3><p>KPI operativi sempre aggiornati: WIP, saturazione, margini per commessa.</p><div class="card-meta">LIVE 24/7</div></div>
+      <div class="card" style="border-left:3px solid #E040FB;"><h3>Zero migrazione</h3><p>FridAI si è connesso a ERP, CRM, HR e file Excel senza spostare un dato.</p><div class="card-meta">ZERO LOCK-IN</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     SLIDE 05 — AIDRA / FINANCE (fintech data stream)
+     VIDEO BG: slide5_aidra.mp4
+     ==================================================================== -->
+<section class="slide" id="aidra">
+  <!-- LIVE: financial data rain + candlestick chart -->
+  <canvas class="slide-canvas" id="canvas-aidra"></canvas>
+  <div style="position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(135deg,rgba(5,5,16,0.72),rgba(5,16,5,0.65),rgba(5,5,16,0.72));"></div>
+
+  <div class="slide-content" style="position:relative;z-index:2;">
+    <div class="split-layout">
+      <div>
+        <div class="tag">Verticalizzazione Finance</div>
+        <h2>AIDRA:<br>FridAI per il<br><span style="color:#00FF88;font-style:italic;">mondo finanziario.</span></h2>
+        <p style="margin-top:1.3rem;font-size:0.97rem;color:var(--text-muted);line-height:1.75;">AIDRA è la verticalizzazione di FridAI per il settore finance. Stessa architettura agentica — applicata a compliance, risk management, reporting regolamentare e analisi di portafoglio.</p>
+        <div class="badge" style="margin-top:1.5rem;border-color:rgba(0,255,136,0.3);color:#00FF88;background:rgba(0,255,136,0.06);box-shadow:0 0 12px rgba(0,255,136,0.15);">
+          <span class="badge-dot" style="background:#00FF88;"></span>Live Pipeline
+        </div>
+      </div>
+      <div>
+        <div class="data-row"><span class="data-key">Base</span><span class="data-val hl">Architettura FridAI</span></div>
+        <div class="data-row"><span class="data-key">Settore</span><span class="data-val">Financial Services</span></div>
+        <div class="data-row"><span class="data-key">Use case</span><span class="data-val">Compliance, Risk, Reporting</span></div>
+        <div class="data-row"><span class="data-key">Differenziatore</span><span class="data-val">Agentic + federato, no lock-in</span></div>
+        <div class="data-row"><span class="data-key">Validazione</span><span class="data-val hl">Cross-industry (Quid pilota)</span></div>
+        <div class="data-row"><span class="data-key">Status</span><span class="data-val">In sviluppo — pipeline attiva</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     SLIDE 06 — BUSINESS MODEL (growing network / SaaS)
+     VIDEO BG: slide6_business.mp4
+     ==================================================================== -->
+<section class="slide slide-tono" id="business">
+  <!-- LIVE: growing client network + growth chart -->
+  <canvas class="slide-canvas" id="canvas-business"></canvas>
+  <div style="position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(135deg,rgba(5,5,16,0.58),rgba(22,8,40,0.5),rgba(5,5,16,0.58));"></div>
+
+  <div class="slide-content" style="position:relative;z-index:2;">
+    <div class="split-layout reverse">
+      <div>
+        <div class="tag">Modello di business</div>
+        <h2 style="margin-bottom:2rem;">Tecnologia validata.<br><span style="color:var(--cyan);font-style:italic;">Scalabilità dimostrata.</span></h2>
+        <div class="chart-container" id="chart">
+          <div class="chart-bar-group"><div class="chart-value">1</div><div class="chart-bar" data-height="55" style="height:0;background:rgba(255,255,255,0.12);"></div><div class="chart-label">2025</div></div>
+          <div class="chart-bar-group"><div class="chart-value">5</div><div class="chart-bar" data-height="130" style="height:0;background:linear-gradient(135deg,var(--purple),var(--magenta));"></div><div class="chart-label">Pipeline</div></div>
+          <div class="chart-bar-group"><div class="chart-value">AIDRA</div><div class="chart-bar" data-height="185" style="height:0;background:linear-gradient(135deg,var(--purple),var(--cyan));"></div><div class="chart-label">Finance</div></div>
+          <div class="chart-bar-group"><div class="chart-value">∞</div><div class="chart-bar" data-height="240" style="height:0;background:linear-gradient(135deg,var(--cyan),var(--magenta));box-shadow:0 0 30px rgba(0,212,255,0.35);"></div><div class="chart-label">Scalabilità</div></div>
+        </div>
+      </div>
+      <div>
+        <div class="data-row"><span class="data-key">Modello</span><span class="data-val">SaaS + setup</span></div>
+        <div class="data-row"><span class="data-key">Pilota Quid</span><span class="data-val hl">Validato in 6 mesi</span></div>
+        <div class="data-row"><span class="data-key">Pipeline attiva</span><span class="data-val hl">5 aziende</span></div>
+        <div class="data-row"><span class="data-key">Verticalizzazione</span><span class="data-val">AIDRA (Finance)</span></div>
+        <div class="data-row"><span class="data-key">Brevetto / Copyright</span><span class="data-val">Depositato aprile 2025</span></div>
+        <div class="data-row"><span class="data-key">Risultato pilota</span><span class="data-val hl">Utile +€141K per Quid</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     SLIDE 07 — ROADMAP (timeline data particles)
+     VIDEO BG: slide7_roadmap.mp4
+     ==================================================================== -->
+<section class="slide slide-white" id="roadmap">
+  <!-- LIVE: particles flowing along timeline -->
+  <canvas class="slide-canvas" id="canvas-roadmap"></canvas>
+
+  <div class="slide-content" style="position:relative;z-index:2;">
+    <div class="split-layout">
+      <div>
+        <div class="tag">Roadmap</div>
+        <h2>Da pilota a<br>piattaforma di<br><span style="color:var(--purple);font-style:italic;">riferimento.</span></h2>
+        <p style="margin-top:1rem;font-size:0.88rem;color:rgba(10,10,20,0.5);line-height:1.7;max-width:240px;">Una traiettoria chiara, validata dal mercato, pronta per il scale-up.</p>
+      </div>
+      <div class="timeline">
+        <div class="timeline-item"><div class="timeline-year">2024</div><div class="timeline-content"><h3>Ideazione e design</h3><p>Architettura FridAI. Primi prototipi su dati reali.</p></div></div>
+        <div class="timeline-item"><div class="timeline-year">2025</div><div class="timeline-content"><h3>Pilota Quid</h3><p>Deploy operativo. €147K investiti (€27K CDP). Risultati in 6 mesi.</p></div></div>
+        <div class="timeline-item"><div class="timeline-year" style="color:var(--purple);">2025</div><div class="timeline-content"><h3>Brevetto UIBM</h3><p>Deposito brevetto aprile 2025. IP core protetta.</p></div></div>
+        <div class="timeline-item"><div class="timeline-year" style="color:var(--cyan);">2026 Q2</div><div class="timeline-content"><h3>AIDRA Finance</h3><p>Lancio verticalizzazione finance. Pipeline attiva.</p></div></div>
+        <div class="timeline-item"><div class="timeline-year" style="color:var(--cyan);">2026 H2</div><div class="timeline-content"><h3>Scale-up</h3><p>5 clienti in pipeline. Voice AI + WhatsApp. Distretto INNESTI.</p></div></div>
+        <div class="timeline-item"><div class="timeline-year" style="color:var(--cyan);">2027</div><div class="timeline-content"><h3>Espansione verticali</h3><p>Nuove verticalizzazioni industry. Marketplace distrettuale.</p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     SLIDE 08 — CLOSING (expanding AI constellation)
+     VIDEO BG: slide8_closing.mp4
+     ==================================================================== -->
+<section class="slide" id="closing">
+  <!-- LIVE: expanding cosmic AI network -->
+  <canvas class="slide-canvas" id="canvas-closing"></canvas>
+  <div style="position:absolute;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse at center,rgba(5,5,16,0.3) 0%,rgba(5,5,16,0.7) 70%);"></div>
+
+  <div class="slide-content" style="position:relative;z-index:2;">
+    <div class="closing-container">
+      <svg class="closing-logo" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="cOuter" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#7B2FBE"/><stop offset="60%" stop-color="#5B1F9E"/><stop offset="100%" stop-color="#E040FB"/></radialGradient>
+          <radialGradient id="cMid" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#1a0a2e"/><stop offset="100%" stop-color="#7B2FBE"/></radialGradient>
+          <filter id="cGlow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <circle cx="100" cy="100" r="90" fill="url(#cOuter)" opacity="0.8"/>
+        <circle cx="100" cy="100" r="82" fill="url(#cMid)"/>
+        <circle cx="100" cy="100" r="58" fill="none" stroke="#00D4FF" stroke-width="2" opacity="0.5"/>
+        <circle cx="100" cy="100" r="35" fill="none" stroke="#00D4FF" stroke-width="2.5" opacity="0.8" filter="url(#cGlow)"/>
+        <g stroke="rgba(0,212,255,0.35)" stroke-width="1">
+          <line x1="100" y1="10" x2="100" y2="62"/><line x1="100" y1="138" x2="100" y2="190"/>
+          <line x1="10" y1="100" x2="62" y2="100"/><line x1="138" y1="100" x2="190" y2="100"/>
+          <line x1="36" y1="36" x2="75" y2="75"/><line x1="164" y1="36" x2="125" y2="75"/>
+          <line x1="36" y1="164" x2="75" y2="125"/><line x1="164" y1="164" x2="125" y2="125"/>
+        </g>
+        <circle cx="100" cy="100" r="18" fill="#0a0a14"/>
+        <circle cx="96" cy="96" r="3" fill="rgba(255,255,255,0.7)"/>
+        <g filter="url(#cGlow)">
+          <circle cx="100" cy="10" r="6" fill="#E040FB"/><circle cx="100" cy="190" r="6" fill="#E040FB"/>
+          <circle cx="10" cy="100" r="6" fill="#E040FB"/><circle cx="190" cy="100" r="6" fill="#E040FB"/>
+          <circle cx="36" cy="36" r="5" fill="#E040FB"/><circle cx="164" cy="36" r="5" fill="#E040FB"/>
+          <circle cx="36" cy="164" r="5" fill="#E040FB"/><circle cx="164" cy="164" r="5" fill="#E040FB"/>
+        </g>
+      </svg>
+      <h2 style="max-width:700px;text-align:center;">I dati sono ovunque.<br>L'intelligenza per usarli,<br><span style="color:var(--cyan);font-style:italic;">finalmente c'è.</span></h2>
+      <p style="text-align:center;max-width:600px;font-size:0.97rem;color:var(--text-muted);line-height:1.75;">FridAI rende ogni azienda capace di decisioni data-driven — senza migrazione, senza lock-in, senza complessità. Dal manifatturiero al finance, con AIDRA.</p>
+      <div class="closing-meta"><span>Lemon Juice Solutions</span><span>FridAI — Agentic Data OS</span><span>AIDRA — Finance</span><span>Brevetto UIBM 2025</span></div>
+      <div class="closing-email">info@lemonjuicesolutions.it</div>
+    </div>
+  </div>
+</section>
+
+</div><!-- /slide-container -->
+
+<script>
+// ============================================================
+// CANVAS ACTIVATION SYSTEM (dichiarato prima di tutto)
+// ============================================================
+const canvasAnimators = {};
+
+function activateCanvas(slideId) {
+  if (canvasAnimators[slideId] && !canvasAnimators[slideId].running) {
+    canvasAnimators[slideId].start();
+  }
+}
+
+// ============================================================
+// SLIDE NAVIGATION
+// ============================================================
+(function(){
+  const slides = document.querySelectorAll('.slide');
+  const navDots = document.querySelectorAll('.nav-dot');
+  const progressBar = document.getElementById('progressBar');
+  let cur = 0, transitioning = false;
+  const total = slides.length;
+
+  function goSlide(n) {
+    if (n < 0 || n >= total || transitioning) return;
+    transitioning = true;
+    const dir = n > cur ? 1 : -1;
+    const exitClass = dir > 0 ? 'exit-fwd' : 'exit-back';
+
+    slides[cur].classList.remove('active');
+    slides[cur].classList.add(exitClass);
+    const prev = cur;
+    setTimeout(() => slides[prev].classList.remove(exitClass), 1200);
+
+    cur = n;
+    slides[cur].classList.add('active');
+    navDots.forEach((d,i) => d.classList.toggle('active', i === cur));
+    progressBar.style.width = ((cur + 1) / total * 100) + '%';
+
+    if (slides[cur].classList.contains('slide-white')) {
+      document.body.classList.add('on-light');
+    } else {
+      document.body.classList.remove('on-light');
+    }
+
+    // Chart bars for business slide
+    if (slides[cur].id === 'business') {
+      document.querySelectorAll('.chart-bar').forEach((b,i) => {
+        setTimeout(() => { b.style.height = b.dataset.height+'px'; b.style.opacity='1'; b.style.transform='scaleY(1)'; }, i*220+400);
+      });
+    } else {
+      document.querySelectorAll('.chart-bar').forEach(b => { b.style.height='0'; b.style.opacity='0'; b.style.transform='scaleY(0)'; });
+    }
+
+    // Activate per-slide canvas
+    activateCanvas(slides[cur].id);
+
+    setTimeout(() => transitioning = false, 1200);
+  }
+
+  window._goSlide = goSlide;
+
+  document.addEventListener('keydown', e => {
+    if (e.key==='Enter'||e.key==='ArrowRight'||e.key===' '||e.key==='ArrowDown') { e.preventDefault(); goSlide(cur+1); }
+    else if (e.key==='ArrowLeft'||e.key==='ArrowUp') { e.preventDefault(); goSlide(cur-1); }
+  });
+
+  let touchStartY = 0;
+  document.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, {passive:true});
+  document.addEventListener('touchend', e => {
+    const dy = touchStartY - e.changedTouches[0].clientY;
+    if (Math.abs(dy) > 50) goSlide(cur + (dy > 0 ? 1 : -1));
+  });
+
+  // Wheel
+  let wheelTimer = null;
+  document.addEventListener('wheel', e => {
+    if (wheelTimer) return;
+    goSlide(cur + (e.deltaY > 0 ? 1 : -1));
+    wheelTimer = setTimeout(() => wheelTimer = null, 1200);
+  }, {passive:true});
+
+  navDots.forEach((d,i) => d.addEventListener('click', () => goSlide(i)));
+
+  // Init
+  goSlide(0);
+})();
+
+// (canvas activation system già dichiarato sopra)
+
+// ============================================================
+// CANVAS 1: HERO VIDEO FALLBACK — Database Connection Web
+// Shows animated data nodes flowing into a central hub
+// ============================================================
+(function(){
+  const cv = document.getElementById('heroVideoCv');
+  const vid = document.getElementById('heroVideo');
+  if (!cv || !vid) return;
+
+  // Show canvas only if video fails to load
+  function initHeroCanvas() {
+    const ctx = cv.getContext('2d');
+    cv.width = cv.offsetWidth || 800;
+    cv.height = cv.offsetHeight || 350;
+
+    const W = cv.width, H = cv.height;
+    const cx = W/2, cy = H/2;
+    const nodes = [];
+    const labels = ['ERP','CRM','DB','API','FILES','SQL','CSV','REST'];
+    const colors = ['#00D4FF','#7B2FBE','#E040FB','#00D4FF','#7B2FBE','#E040FB','#00D4FF','#7B2FBE'];
+
+    for(let i=0;i<8;i++){
+      const angle = (i/8)*Math.PI*2;
+      const r = Math.min(W,H)*0.32;
+      nodes.push({
+        x: cx + Math.cos(angle)*r,
+        y: cy + Math.sin(angle)*r,
+        label: labels[i],
+        color: colors[i],
+        phase: Math.random()*Math.PI*2,
+        packets: []
+      });
+    }
+
+    let t = 0;
+    function tick() {
+      ctx.clearRect(0,0,W,H);
+      ctx.fillStyle = 'rgba(8,8,24,1)';
+      ctx.fillRect(0,0,W,H);
+
+      t += 0.016;
+      if(Math.random()<0.15){
+        const ni = Math.floor(Math.random()*nodes.length);
+        nodes[ni].packets.push({progress:0, speed:0.008+Math.random()*0.008});
+      }
+
+      // Draw connections + packets
+      nodes.forEach(node => {
+        const grd = ctx.createLinearGradient(node.x,node.y,cx,cy);
+        grd.addColorStop(0, node.color+'22');
+        grd.addColorStop(1, node.color+'55');
+        ctx.beginPath();
+        ctx.moveTo(node.x, node.y);
+        ctx.lineTo(cx, cy);
+        ctx.strokeStyle = grd;
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+
+        node.packets = node.packets.filter(p => {
+          p.progress += p.speed;
+          if(p.progress>=1) return false;
+          const px = node.x + (cx - node.x)*p.progress;
+          const py = node.y + (cy - node.y)*p.progress;
+          ctx.beginPath();
+          ctx.arc(px, py, 3.5, 0, Math.PI*2);
+          ctx.fillStyle = node.color;
+          ctx.shadowColor = node.color;
+          ctx.shadowBlur = 10;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          return true;
+        });
+
+        // Outer node
+        const pulse = Math.sin(t*2 + node.phase)*0.3 + 0.7;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, 7*pulse, 0, Math.PI*2);
+        ctx.fillStyle = node.color;
+        ctx.shadowColor = node.color;
+        ctx.shadowBlur = 15;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.font = 'bold 10px "JetBrains Mono",monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.textAlign = 'center';
+        ctx.fillText(node.label, node.x, node.y - 12);
+      });
+
+      // Central FridAI hub
+      const hubR = 28 + Math.sin(t*1.5)*4;
+      const grdHub = ctx.createRadialGradient(cx,cy,0,cx,cy,hubR);
+      grdHub.addColorStop(0,'rgba(0,212,255,0.8)');
+      grdHub.addColorStop(0.5,'rgba(123,47,190,0.6)');
+      grdHub.addColorStop(1,'rgba(224,64,251,0.2)');
+      ctx.beginPath();
+      ctx.arc(cx,cy,hubR,0,Math.PI*2);
+      ctx.fillStyle = grdHub;
+      ctx.shadowColor = '#00D4FF';
+      ctx.shadowBlur = 30;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.font = 'bold 12px "Space Grotesk",sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('FridAI', cx, cy);
+      ctx.textBaseline = 'alphabetic';
+
+      requestAnimationFrame(tick);
+    }
+
+    // Only show canvas fallback if video doesn't load
+    vid.addEventListener('loadeddata', () => { cv.style.display='none'; });
+    vid.addEventListener('error', () => { cv.style.display='block'; tick(); });
+    setTimeout(() => { if(vid.readyState===0){ cv.style.display='block'; tick(); } }, 1500);
+  }
+  initHeroCanvas();
+})();
+
+// ============================================================
+// CANVAS 2: ARCHITECTURE — 4-Layer Data Pipeline Animation
+// Animated data packets flowing through 4 colored layer tubes
+// ============================================================
+(function(){
+  const cv = document.getElementById('canvas-architecture');
+  if(!cv) return;
+  const ctx = cv.getContext('2d');
+  let running = false, raf;
+
+  function resize(){ cv.width = cv.offsetWidth||window.innerWidth; cv.height = cv.offsetHeight||window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const layers = [
+    {name:'AI & Agentic Orchestration', color:'#00D4FF', y:0.28},
+    {name:'Multi-Source Connector', color:'#7B2FBE', y:0.44},
+    {name:'Business Rules Engine', color:'#E040FB', y:0.60},
+    {name:'Application Generator', color:'#00D4FF', y:0.76},
+  ];
+  const packets = [];
+  let t = 0;
+
+  function tick(){
+    if(!running) return;
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0,0,W,H);
+
+    t += 0.012;
+
+    // Random packet spawn
+    if(Math.random()<0.06){
+      const li = Math.floor(Math.random()*layers.length);
+      packets.push({li, x:0.05, speed:0.002+Math.random()*0.003, size:4+Math.random()*4});
+    }
+
+    layers.forEach((layer,i) => {
+      const y = layer.y * H;
+      // Tube background
+      const tubeGrd = ctx.createLinearGradient(0,0,W,0);
+      tubeGrd.addColorStop(0, layer.color+'08');
+      tubeGrd.addColorStop(0.5, layer.color+'18');
+      tubeGrd.addColorStop(1, layer.color+'08');
+      ctx.fillStyle = tubeGrd;
+      ctx.fillRect(W*0.04, y-2, W*0.92, 4);
+
+      // Endpoint nodes
+      [0.04, 0.96].forEach(xn => {
+        ctx.beginPath();
+        ctx.arc(W*xn, y, 8, 0, Math.PI*2);
+        ctx.fillStyle = layer.color;
+        ctx.shadowColor = layer.color;
+        ctx.shadowBlur = 15;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      });
+
+      // Layer label (only for light slides, subtle)
+      ctx.font = '11px "JetBrains Mono",monospace';
+      ctx.fillStyle = layer.color+'44';
+      ctx.textAlign = 'left';
+      ctx.fillText(layer.name, W*0.06, y - 10);
+    });
+
+    // Draw packets
+    packets.forEach((p,pi) => {
+      const layer = layers[p.li];
+      const y = layer.y * cv.height;
+      p.x += p.speed;
+      if(p.x > 0.96){ packets.splice(pi,1); return; }
+      const px = p.x * cv.width;
+
+      // Trail
+      const trailGrd = ctx.createLinearGradient(px-30,0,px,0);
+      trailGrd.addColorStop(0,'transparent');
+      trailGrd.addColorStop(1,layer.color+'88');
+      ctx.beginPath();
+      ctx.moveTo(px-30, y);
+      ctx.lineTo(px, y);
+      ctx.strokeStyle = trailGrd;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(px, y, p.size, 0, Math.PI*2);
+      ctx.fillStyle = layer.color;
+      ctx.shadowColor = layer.color;
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+
+    raf = requestAnimationFrame(tick);
+  }
+
+  canvasAnimators['architecture'] = {
+    running: false,
+    start(){ this.running=running=true; tick(); },
+    stop(){ this.running=running=false; cancelAnimationFrame(raf); }
+  };
+})();
+
+// ============================================================
+// CANVAS 3: TECH — Neural Network AI Visualization
+// Nodes in layers, animated activation pulses
+// ============================================================
+(function(){
+  const cv = document.getElementById('canvas-tech');
+  if(!cv) return;
+  const ctx = cv.getContext('2d');
+  let running = false, raf;
+
+  function resize(){ cv.width = cv.offsetWidth||window.innerWidth; cv.height = cv.offsetHeight||window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Build neural net layers
+  const layerSizes = [3, 6, 6, 5, 3];
+  const layerColors = ['#00D4FF','#7B2FBE','#E040FB','#7B2FBE','#00D4FF'];
+  let nodes = [];
+  const signals = [];
+  let t = 0;
+
+  function buildNet(){
+    nodes = [];
+    const W = cv.width, H = cv.height;
+    layerSizes.forEach((count, li) => {
+      const xBase = W * (0.12 + li * 0.185);
+      for(let ni=0; ni<count; ni++){
+        const yBase = H * (0.5 - (count-1)*0.08 + ni*0.16);
+        nodes.push({ li, ni, x:xBase, y:yBase, color:layerColors[li], pulse:Math.random()*Math.PI*2 });
+      }
+    });
+  }
+
+  function tick(){
+    if(!running) return;
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0,0,W,H);
+    t += 0.015;
+
+    if(t-Math.floor(t) < 0.02 || signals.length < 5){
+      if(Math.random()<0.04){
+        const inputNodes = nodes.filter(n=>n.li===0);
+        const src = inputNodes[Math.floor(Math.random()*inputNodes.length)];
+        if(src) signals.push({li:0, srcIdx:nodes.indexOf(src), progress:0, speed:0.012+Math.random()*0.008});
+      }
+    }
+
+    // Draw connections
+    for(let li=0; li<layerSizes.length-1; li++){
+      const from = nodes.filter(n=>n.li===li);
+      const to = nodes.filter(n=>n.li===li+1);
+      from.forEach(fn => {
+        to.forEach(tn => {
+          ctx.beginPath();
+          ctx.moveTo(fn.x, fn.y);
+          ctx.lineTo(tn.x, tn.y);
+          ctx.strokeStyle = `rgba(123,47,190,0.12)`;
+          ctx.lineWidth = 0.7;
+          ctx.stroke();
+        });
+      });
+    }
+
+    // Draw signals
+    signals.forEach((sig, si) => {
+      sig.progress += sig.speed;
+      const from = nodes[sig.srcIdx];
+      if(!from){ signals.splice(si,1); return; }
+      const toLi = sig.li+1;
+      if(toLi >= layerSizes.length){ signals.splice(si,1); return; }
+      const toNodes = nodes.filter(n=>n.li===toLi);
+      const to = toNodes[Math.floor(Math.random()*toNodes.length)];
+      if(!to){ signals.splice(si,1); return; }
+
+      if(sig.progress >= 1){
+        // Activate destination, spawn next
+        to.pulse = 0;
+        signals.splice(si,1);
+        if(toLi < layerSizes.length-1){
+          signals.push({li:toLi, srcIdx:nodes.indexOf(to), progress:0, speed:0.012+Math.random()*0.008});
+        }
+        return;
+      }
+
+      const px = from.x + (to.x-from.x)*sig.progress;
+      const py = from.y + (to.y-from.y)*sig.progress;
+      const color = layerColors[sig.li];
+
+      // Signal glow trail
+      const grd = ctx.createRadialGradient(px,py,0,px,py,12);
+      grd.addColorStop(0,color+'cc');
+      grd.addColorStop(1,'transparent');
+      ctx.beginPath();
+      ctx.arc(px,py,12,0,Math.PI*2);
+      ctx.fillStyle = grd;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(px,py,4,0,Math.PI*2);
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 15;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+
+    // Draw nodes
+    nodes.forEach(node => {
+      node.pulse = Math.min(node.pulse + 0.08, Math.PI);
+      const glow = Math.sin(node.pulse) * 0.7 + 0.3;
+      const r = 7 + glow*4;
+
+      const grd = ctx.createRadialGradient(node.x,node.y,0,node.x,node.y,r*2);
+      grd.addColorStop(0,node.color+'cc');
+      grd.addColorStop(1,'transparent');
+      ctx.beginPath();
+      ctx.arc(node.x,node.y,r*2,0,Math.PI*2);
+      ctx.fillStyle = grd;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(node.x,node.y,r,0,Math.PI*2);
+      ctx.fillStyle = node.color;
+      ctx.shadowColor = node.color;
+      ctx.shadowBlur = 12+glow*10;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+
+    raf = requestAnimationFrame(tick);
+  }
+
+  canvasAnimators['tech'] = {
+    running:false,
+    start(){ this.running=running=true; buildNet(); tick(); },
+    stop(){ this.running=running=false; cancelAnimationFrame(raf); }
+  };
+})();
+
+// ============================================================
+// CANVAS 4: KPI PILOT — Live Dashboard Animation
+// Animated real-time line chart + pulsing KPI metrics
+// ============================================================
+(function(){
+  const cv = document.getElementById('canvas-kpi');
+  if(!cv) return;
+  const ctx = cv.getContext('2d');
+  let running = false, raf;
+
+  function resize(){ cv.width = cv.offsetWidth||window.innerWidth; cv.height = cv.offsetHeight||window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const chartData = [];
+  const maxPoints = 60;
+  let t = 0;
+
+  function tick(){
+    if(!running) return;
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0,0,W,H);
+    t += 0.02;
+
+    // Generate live-ish data
+    if(chartData.length < maxPoints){
+      chartData.push(0.3 + Math.random()*0.5);
+    } else {
+      chartData.shift();
+      const last = chartData[chartData.length-1];
+      chartData.push(Math.max(0.1, Math.min(0.95, last + (Math.random()-0.48)*0.08)));
+    }
+
+    // Draw chart in bottom-right quadrant
+    const cX = W*0.55, cY = H*0.18, cW = W*0.4, cH = H*0.5;
+
+    // Chart area subtle bg
+    ctx.fillStyle = 'rgba(0,212,255,0.02)';
+    ctx.fillRect(cX, cY, cW, cH);
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(0,212,255,0.08)';
+    ctx.lineWidth = 0.5;
+    for(let i=0;i<4;i++){
+      const y = cY + cH * (i/3);
+      ctx.beginPath();
+      ctx.moveTo(cX, y);
+      ctx.lineTo(cX+cW, y);
+      ctx.stroke();
+    }
+
+    // Draw line chart
+    if(chartData.length>1){
+      const grd = ctx.createLinearGradient(cX,0,cX+cW,0);
+      grd.addColorStop(0,'rgba(123,47,190,0.8)');
+      grd.addColorStop(1,'rgba(0,212,255,0.9)');
+
+      ctx.beginPath();
+      chartData.forEach((val,i) => {
+        const x = cX + (i/(maxPoints-1))*cW;
+        const y = cY + cH - val*cH;
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.strokeStyle = grd;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Area fill
+      ctx.lineTo(cX+cW, cY+cH);
+      ctx.lineTo(cX, cY+cH);
+      ctx.closePath();
+      const fillGrd = ctx.createLinearGradient(0,cY,0,cY+cH);
+      fillGrd.addColorStop(0,'rgba(0,212,255,0.12)');
+      fillGrd.addColorStop(1,'transparent');
+      ctx.fillStyle = fillGrd;
+      ctx.fill();
+
+      // Live dot
+      const last = chartData[chartData.length-1];
+      const lx = cX+cW, ly = cY+cH-last*cH;
+      const pulse = (Math.sin(t*6)+1)/2;
+      ctx.beginPath();
+      ctx.arc(lx,ly,5+pulse*4,0,Math.PI*2);
+      ctx.fillStyle = `rgba(0,212,255,${0.2+pulse*0.3})`;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(lx,ly,5,0,Math.PI*2);
+      ctx.fillStyle = '#00D4FF';
+      ctx.shadowColor = '#00D4FF';
+      ctx.shadowBlur = 15;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // KPI floating labels
+    const kpis = [
+      {label:'REPORTING', val:'–70%', x:0.05, y:0.15, color:'#7B2FBE'},
+      {label:'MARKUP ERRORS', val:'0%', x:0.05, y:0.85, color:'#00D4FF'},
+      {label:'EFFICIENCY', val:'+5%', x:0.95, y:0.85, color:'#E040FB'},
+    ];
+    kpis.forEach(kpi => {
+      const px = kpi.x*W, py = kpi.y*H;
+      const pulse = (Math.sin(t*2 + kpi.x*10)+1)/2;
+      ctx.fillStyle = kpi.color+(Math.round(40+pulse*30)).toString(16).padStart(2,'0');
+      ctx.beginPath();
+      ctx.arc(px, py-30, 6+pulse*3, 0, Math.PI*2);
+      ctx.fill();
+      ctx.font = 'bold 16px "Space Grotesk",sans-serif';
+      ctx.fillStyle = kpi.color;
+      ctx.textAlign = 'center';
+      ctx.shadowColor = kpi.color;
+      ctx.shadowBlur = 10;
+      ctx.fillText(kpi.val, px, py);
+      ctx.shadowBlur = 0;
+      ctx.font = '10px "JetBrains Mono",monospace';
+      ctx.fillStyle = 'rgba(10,10,20,0.4)';
+      ctx.fillText(kpi.label, px, py+16);
+    });
+
+    raf = requestAnimationFrame(tick);
+  }
+
+  canvasAnimators['pilot'] = {
+    running:false,
+    start(){ this.running=running=true; tick(); },
+    stop(){ this.running=running=false; cancelAnimationFrame(raf); }
+  };
+})();
+
+// ============================================================
+// CANVAS 5: AIDRA — Fintech Data Rain + Candlestick Chart
+// Matrix-style falling financial numbers + chart visualization
+// ============================================================
+(function(){
+  const cv = document.getElementById('canvas-aidra');
+  if(!cv) return;
+  const ctx = cv.getContext('2d');
+  let running = false, raf;
+
+  function resize(){ cv.width = cv.offsetWidth||window.innerWidth; cv.height = cv.offsetHeight||window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const COLS = 40;
+  const drops = [];
+  const finChars = '0123456789.€%+-';
+  let candlesticks = [];
+  let t = 0;
+
+  function initDrops(W,H){
+    drops.length = 0;
+    for(let i=0;i<COLS;i++){
+      drops.push({ x: (i/COLS)*W + (Math.random()*W/COLS), y: Math.random()*H, speed: 1+Math.random()*2, chars:[], maxLen:8+Math.floor(Math.random()*12) });
+    }
+  }
+
+  function buildCandles(W,H){
+    candlesticks = [];
+    const n = 20;
+    let price = 100;
+    for(let i=0;i<n;i++){
+      const open = price;
+      const change = (Math.random()-0.48)*8;
+      const close = Math.max(60, Math.min(160, open + change));
+      const high = Math.max(open,close) + Math.random()*5;
+      const low = Math.min(open,close) - Math.random()*5;
+      price = close;
+      candlesticks.push({open,close,high,low});
+    }
+    return candlesticks;
+  }
+
+  function tick(){
+    if(!running) return;
+    const W = cv.width, H = cv.height;
+    if(drops.length===0) initDrops(W,H);
+    if(candlesticks.length===0) buildCandles(W,H);
+    t += 0.016;
+
+    ctx.fillStyle = 'rgba(5,5,16,0.15)';
+    ctx.fillRect(0,0,W,H);
+
+    ctx.font = '14px "JetBrains Mono",monospace';
+    drops.forEach(drop => {
+      drop.y += drop.speed;
+      if(drop.y > H) drop.y = -20;
+      drop.chars.unshift(finChars[Math.floor(Math.random()*finChars.length)]);
+      if(drop.chars.length > drop.maxLen) drop.chars.pop();
+
+      drop.chars.forEach((ch,ci) => {
+        const alpha = 1 - ci/drop.maxLen;
+        if(ci===0){
+          ctx.fillStyle = `rgba(0,255,136,${alpha})`;
+          ctx.shadowColor = '#00FF88';
+          ctx.shadowBlur = 8;
+        } else {
+          ctx.fillStyle = `rgba(0,180,80,${alpha*0.6})`;
+          ctx.shadowBlur = 0;
+        }
+        ctx.fillText(ch, drop.x, drop.y - ci*18);
+        ctx.shadowBlur = 0;
+      });
+    });
+
+    // Candlestick chart in center-right
+    const cX = W*0.3, cY = H*0.2, cW = W*0.65, cH = H*0.55;
+    const allPrices = candlesticks.flatMap(c=>[c.high,c.low]);
+    const priceMin = Math.min(...allPrices);
+    const priceMax = Math.max(...allPrices);
+    const priceRange = priceMax - priceMin;
+
+    const cw = cW/candlesticks.length*0.6;
+
+    // Chart background
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(cX,cY,cW,cH);
+    ctx.strokeStyle = 'rgba(0,255,136,0.1)';
+    ctx.lineWidth = 0.5;
+    for(let i=0;i<5;i++){
+      const y = cY + cH*i/4;
+      ctx.beginPath();
+      ctx.moveTo(cX,y);
+      ctx.lineTo(cX+cW,y);
+      ctx.stroke();
+    }
+
+    candlesticks.forEach((c,i) => {
+      const xPos = cX + (i/(candlesticks.length))*cW + cW/(candlesticks.length*2);
+      const yOpen = cY + cH - (c.open-priceMin)/priceRange*cH;
+      const yClose = cY + cH - (c.close-priceMin)/priceRange*cH;
+      const yHigh = cY + cH - (c.high-priceMin)/priceRange*cH;
+      const yLow = cY + cH - (c.low-priceMin)/priceRange*cH;
+      const bullish = c.close >= c.open;
+      const col = bullish ? '#00FF88' : '#FF4466';
+
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(xPos, yHigh);
+      ctx.lineTo(xPos, yLow);
+      ctx.stroke();
+
+      const bodyH = Math.abs(yClose-yOpen);
+      ctx.fillStyle = col + (bullish ? 'cc':'aa');
+      ctx.fillRect(xPos-cw/2, Math.min(yOpen,yClose), cw, Math.max(1,bodyH));
+    });
+
+    // Trend line
+    ctx.beginPath();
+    candlesticks.forEach((c,i) => {
+      const xPos = cX + (i/(candlesticks.length))*cW + cW/(candlesticks.length*2);
+      const yClose = cY + cH - (c.close-priceMin)/priceRange*cH;
+      if(i===0) ctx.moveTo(xPos,yClose); else ctx.lineTo(xPos,yClose);
+    });
+    ctx.strokeStyle = 'rgba(0,212,255,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    raf = requestAnimationFrame(tick);
+  }
+
+  canvasAnimators['aidra'] = {
+    running:false,
+    start(){ this.running=running=true; tick(); },
+    stop(){ this.running=running=false; cancelAnimationFrame(raf); ctx.clearRect(0,0,cv.width,cv.height); }
+  };
+})();
+
+// ============================================================
+// CANVAS 6: BUSINESS — Growing Network / SaaS Scale
+// Nodes appear one by one, connecting to center hub
+// ============================================================
+(function(){
+  const cv = document.getElementById('canvas-business');
+  if(!cv) return;
+  const ctx = cv.getContext('2d');
+  let running = false, raf;
+
+  function resize(){ cv.width = cv.offsetWidth||window.innerWidth; cv.height = cv.offsetHeight||window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const networkNodes = [];
+  const maxNodes = 30;
+  let t = 0;
+
+  function tick(){
+    if(!running) return;
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0,0,W,H);
+    t += 0.015;
+
+    const cx = W*0.5, cy = H*0.5;
+
+    // Spawn new client node occasionally
+    if(networkNodes.length < maxNodes && Math.random()<0.015){
+      const angle = Math.random()*Math.PI*2;
+      const r = 80 + Math.random()*(Math.min(W,H)*0.3);
+      const colors = ['#00D4FF','#7B2FBE','#E040FB'];
+      networkNodes.push({
+        x: cx + Math.cos(angle)*r,
+        y: cy + Math.sin(angle)*r,
+        color: colors[Math.floor(Math.random()*colors.length)],
+        age: 0,
+        maxAge: 0,
+        label: ['ERP','CRM','Finance','Retail','HR','API','DB','Report'][Math.floor(Math.random()*8)],
+        packets: []
+      });
+    }
+
+    networkNodes.forEach(node => {
+      node.age = Math.min(1, node.age + 0.02);
+      const alpha = node.age;
+
+      // Connection line to center
+      const grd = ctx.createLinearGradient(node.x,node.y,cx,cy);
+      grd.addColorStop(0,node.color+Math.round(alpha*40).toString(16).padStart(2,'0'));
+      grd.addColorStop(1,node.color+Math.round(alpha*80).toString(16).padStart(2,'0'));
+      ctx.beginPath();
+      ctx.moveTo(node.x, node.y);
+      ctx.lineTo(cx, cy);
+      ctx.strokeStyle = grd;
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+
+      // Packets to center
+      if(Math.random()<0.04) node.packets.push({progress:0, speed:0.01+Math.random()*0.012});
+      node.packets = node.packets.filter(p => {
+        p.progress += p.speed;
+        if(p.progress >= 1) return false;
+        const px = node.x + (cx-node.x)*p.progress;
+        const py = node.y + (cy-node.y)*p.progress;
+        ctx.beginPath();
+        ctx.arc(px,py,3,0,Math.PI*2);
+        ctx.fillStyle = node.color+'cc';
+        ctx.shadowColor = node.color;
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        return true;
+      });
+
+      // Node
+      const r = 8*alpha;
+      const pulseR = r + Math.sin(t*2+node.x)*2;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, pulseR*1.8, 0, Math.PI*2);
+      ctx.fillStyle = node.color+'18';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, pulseR, 0, Math.PI*2);
+      ctx.fillStyle = node.color;
+      ctx.shadowColor = node.color;
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      if(node.age > 0.5){
+        ctx.font = '9px "JetBrains Mono",monospace';
+        ctx.fillStyle = `rgba(255,255,255,${(node.age-0.5)*2*0.5})`;
+        ctx.textAlign = 'center';
+        ctx.fillText(node.label, node.x, node.y-14);
+      }
+    });
+
+    // Central FridAI hub
+    const pulse = Math.sin(t*1.8)*0.15 + 1;
+    const hubR = 26*pulse;
+    const grdHub = ctx.createRadialGradient(cx,cy,0,cx,cy,hubR*2);
+    grdHub.addColorStop(0,'rgba(0,212,255,0.9)');
+    grdHub.addColorStop(0.4,'rgba(123,47,190,0.7)');
+    grdHub.addColorStop(1,'transparent');
+    ctx.beginPath();
+    ctx.arc(cx,cy,hubR*2,0,Math.PI*2);
+    ctx.fillStyle = grdHub;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx,cy,hubR,0,Math.PI*2);
+    ctx.fillStyle = '#00D4FF';
+    ctx.shadowColor = '#00D4FF';
+    ctx.shadowBlur = 30;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 11px "Space Grotesk",sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('FridAI', cx, cy);
+    ctx.textBaseline = 'alphabetic';
+
+    raf = requestAnimationFrame(tick);
+  }
+
+  canvasAnimators['business'] = {
+    running:false,
+    start(){ this.running=running=true; networkNodes.length=0; t=0; tick(); },
+    stop(){ this.running=running=false; cancelAnimationFrame(raf); }
+  };
+})();
+
+// ============================================================
+// CANVAS 7: ROADMAP — Timeline Particle Flow
+// Particles travel along a glowing timeline path
+// ============================================================
+(function(){
+  const cv = document.getElementById('canvas-roadmap');
+  if(!cv) return;
+  const ctx = cv.getContext('2d');
+  let running = false, raf;
+
+  function resize(){ cv.width = cv.offsetWidth||window.innerWidth; cv.height = cv.offsetHeight||window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const milestones = [
+    {t:0.05, label:'2024', color:'#999'},
+    {t:0.28, label:'2025\nQuid', color:'#7B2FBE'},
+    {t:0.50, label:'Brevetto\nUIBM', color:'#7B2FBE'},
+    {t:0.70, label:'2026\nAIDRA', color:'#00D4FF'},
+    {t:0.88, label:'Scale\nUp', color:'#E040FB'},
+    {t:0.97, label:'2027', color:'#00D4FF'},
+  ];
+  const particles = [];
+  let t = 0;
+
+  function getPathPoint(pt, W, H){
+    const margin = W*0.08;
+    const x = margin + pt*(W-2*margin);
+    const y = H*0.5 + Math.sin(pt*Math.PI*2)*H*0.1;
+    return {x, y};
+  }
+
+  function tick(){
+    if(!running) return;
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0,0,W,H);
+    t += 0.012;
+
+    if(Math.random()<0.1) particles.push({progress:0, speed:0.003+Math.random()*0.004, size:2+Math.random()*3, color:['#00D4FF','#7B2FBE','#E040FB'][Math.floor(Math.random()*3)]});
+    particles.forEach(p => { p.progress = Math.min(1, p.progress+p.speed); });
+    particles.filter(p => p.progress>=1).forEach(() => particles.shift());
+
+    // Draw timeline path
+    ctx.beginPath();
+    for(let i=0;i<=100;i++){
+      const pt = getPathPoint(i/100, W, H);
+      if(i===0) ctx.moveTo(pt.x,pt.y); else ctx.lineTo(pt.x,pt.y);
+    }
+    ctx.strokeStyle = 'rgba(123,47,190,0.15)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Particles on path
+    particles.forEach(p => {
+      const pt = getPathPoint(p.progress, W, H);
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, p.size, 0, Math.PI*2);
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 10;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+
+    // Milestones
+    milestones.forEach((ms,i) => {
+      const pt = getPathPoint(ms.t, W, H);
+      const pulse = (Math.sin(t*2 + i*1.2)+1)/2;
+      const reached = t > ms.t * 20;
+
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 9+pulse*4, 0, Math.PI*2);
+      ctx.fillStyle = ms.color+(reached ? '40':'20');
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 8, 0, Math.PI*2);
+      ctx.fillStyle = ms.color+(reached ? 'cc':'44');
+      ctx.shadowColor = ms.color;
+      ctx.shadowBlur = reached ? 15 : 5;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      const lines = ms.label.split('\n');
+      ctx.font = '10px "JetBrains Mono",monospace';
+      ctx.textAlign = 'center';
+      lines.forEach((line,li) => {
+        ctx.fillStyle = ms.color+(reached ? 'aa':'44');
+        ctx.fillText(line, pt.x, pt.y - 18 - li*13);
+      });
+    });
+
+    raf = requestAnimationFrame(tick);
+  }
+
+  canvasAnimators['roadmap'] = {
+    running:false,
+    start(){ this.running=running=true; particles.length=0; t=0; tick(); },
+    stop(){ this.running=running=false; cancelAnimationFrame(raf); }
+  };
+})();
+
+// ============================================================
+// CANVAS 8: CLOSING — Expanding AI Constellation
+// Nodes appear from center and form a cosmic network
+// ============================================================
+(function(){
+  const cv = document.getElementById('canvas-closing');
+  if(!cv) return;
+  const ctx = cv.getContext('2d');
+  let running = false, raf;
+
+  function resize(){ cv.width = cv.offsetWidth||window.innerWidth; cv.height = cv.offsetHeight||window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const stars = [];
+  const maxStars = 80;
+  let t = 0;
+
+  function tick(){
+    if(!running) return;
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0,0,W,H);
+    t += 0.012;
+    const cx = W/2, cy = H/2;
+
+    if(stars.length < maxStars && Math.random()<0.06){
+      const angle = Math.random()*Math.PI*2;
+      const targetR = 60 + Math.random()*(Math.min(W,H)*0.42);
+      const colors = ['#00D4FF','#7B2FBE','#E040FB'];
+      stars.push({ angle, targetR, currentR:0, color:colors[Math.floor(Math.random()*3)], pulse:Math.random()*Math.PI*2, orbitSpeed:(Math.random()-0.5)*0.003 });
+    }
+
+    // Connections between nearby stars
+    stars.forEach((s,i) => {
+      s.currentR = Math.min(s.targetR, s.currentR + 0.8);
+      s.angle += s.orbitSpeed;
+      const sx = cx + Math.cos(s.angle)*s.currentR;
+      const sy = cy + Math.sin(s.angle)*s.currentR;
+      s._x = sx; s._y = sy;
+
+      stars.slice(i+1).forEach(s2 => {
+        if(!s2._x) return;
+        const dx = sx-s2._x, dy = sy-s2._y;
+        const dist = Math.sqrt(dx*dx+dy*dy);
+        if(dist < 120){
+          ctx.beginPath();
+          ctx.moveTo(sx,sy);
+          ctx.lineTo(s2._x,s2._y);
+          ctx.strokeStyle = `rgba(0,212,255,${0.08*(1-dist/120)})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      });
+    });
+
+    // Draw stars
+    stars.forEach(s => {
+      if(!s._x) return;
+      const alpha = s.currentR/s.targetR;
+      const pulseR = 4 + Math.sin(t*2+s.pulse)*2;
+      const grd = ctx.createRadialGradient(s._x,s._y,0,s._x,s._y,pulseR*2.5);
+      grd.addColorStop(0,s.color+'cc');
+      grd.addColorStop(1,'transparent');
+      ctx.beginPath();
+      ctx.arc(s._x,s._y,pulseR*2.5,0,Math.PI*2);
+      ctx.fillStyle = grd;
+      ctx.globalAlpha = alpha;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(s._x,s._y,pulseR,0,Math.PI*2);
+      ctx.fillStyle = s.color;
+      ctx.shadowColor = s.color;
+      ctx.shadowBlur = 8;
+      ctx.globalAlpha = alpha;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+    });
+
+    // Central glow
+    const cPulse = (Math.sin(t*1.5)+1)/2;
+    const grdC = ctx.createRadialGradient(cx,cy,0,cx,cy,40+cPulse*15);
+    grdC.addColorStop(0,'rgba(0,212,255,0.3)');
+    grdC.addColorStop(0.5,'rgba(123,47,190,0.1)');
+    grdC.addColorStop(1,'transparent');
+    ctx.beginPath();
+    ctx.arc(cx,cy,60+cPulse*15,0,Math.PI*2);
+    ctx.fillStyle = grdC;
+    ctx.fill();
+
+    raf = requestAnimationFrame(tick);
+  }
+
+  canvasAnimators['closing'] = {
+    running:false,
+    start(){ this.running=running=true; stars.length=0; t=0; tick(); },
+    stop(){ this.running=running=false; cancelAnimationFrame(raf); }
+  };
+})();
+
+// ============================================================
+// GLOBAL PARTICLES (enhanced — background floating dots)
+// ============================================================
+(function(){
+  const cv = document.createElement('canvas');
+  cv.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;';
+  document.body.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  cv.width = window.innerWidth;
+  cv.height = window.innerHeight;
+  window.addEventListener('resize', () => { cv.width=window.innerWidth; cv.height=window.innerHeight; });
+
+  const pts = Array.from({length:80}, () => ({
+    x: Math.random()*cv.width,
+    y: Math.random()*cv.height,
+    r: Math.random()*1.4+0.2,
+    vx: (Math.random()-0.5)*0.25,
+    vy: (Math.random()-0.5)*0.25,
+    alpha: Math.random()*0.35+0.05,
+    color: Math.random()>0.5?'0,212,255':'123,47,190'
+  }));
+
+  (function loop(){
+    ctx.clearRect(0,0,cv.width,cv.height);
+    pts.forEach(p => {
+      p.x=(p.x+p.vx+cv.width)%cv.width;
+      p.y=(p.y+p.vy+cv.height)%cv.height;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(${p.color},${p.alpha})`;
+      ctx.fill();
+    });
+    for(let i=0;i<pts.length;i++) for(let j=i+1;j<pts.length;j++){
+      const dx=pts[i].x-pts[j].x, dy=pts[i].y-pts[j].y, d=Math.sqrt(dx*dx+dy*dy);
+      if(d<110){ ctx.beginPath(); ctx.moveTo(pts[i].x,pts[i].y); ctx.lineTo(pts[j].x,pts[j].y); ctx.strokeStyle=`rgba(0,212,255,${0.04*(1-d/110)})`; ctx.lineWidth=0.4; ctx.stroke(); }
+    }
+    requestAnimationFrame(loop);
+  })();
+})();
+
+// ============================================================
+// THREE.JS — Wireframe Geometric Background
+// ============================================================
+(function(){
+  const cv = document.createElement('canvas');
+  cv.id='three-bg';
+  cv.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:0;pointer-events:none;';
+  document.body.insertBefore(cv, document.body.firstChild);
+  const renderer = new THREE.WebGLRenderer({canvas:cv,alpha:true,antialias:true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera.position.z = 38;
+  const matC=new THREE.MeshBasicMaterial({color:0x00D4FF,wireframe:true,transparent:true,opacity:0.055});
+  const matP=new THREE.MeshBasicMaterial({color:0x7B2FBE,wireframe:true,transparent:true,opacity:0.04});
+  const matM=new THREE.MeshBasicMaterial({color:0xE040FB,wireframe:true,transparent:true,opacity:0.035});
+  const geos=[new THREE.IcosahedronGeometry(4,1),new THREE.OctahedronGeometry(3,0),new THREE.TorusGeometry(3,0.8,12,40),new THREE.IcosahedronGeometry(2.5,0),new THREE.TorusGeometry(2,0.5,8,32),new THREE.OctahedronGeometry(2,1)];
+  const mats=[matC,matP,matM,matC,matP,matM];
+  const meshes=geos.map((g,i)=>{
+    const m=new THREE.Mesh(g,mats[i]);
+    const s=36;
+    m.position.set((Math.random()-0.5)*s,(Math.random()-0.5)*s*0.7,(Math.random()-0.5)*18);
+    m.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,0);
+    m.userData={rx:(Math.random()-0.5)*0.003,ry:(Math.random()-0.5)*0.003,baseY:m.position.y,floatSpeed:Math.random()*0.3+0.2,floatAmp:Math.random()*0.8+0.3};
+    scene.add(m);
+    return m;
+  });
+  const starGeo=new THREE.BufferGeometry();
+  const sp=new Float32Array(200*3);
+  for(let i=0;i<600;i++) sp[i]=(Math.random()-0.5)*120;
+  starGeo.setAttribute('position',new THREE.BufferAttribute(sp,3));
+  scene.add(new THREE.Points(starGeo,new THREE.PointsMaterial({color:0xffffff,size:0.05,transparent:true,opacity:0.12})));
+  let tt=0,cx2=0,cy2=0,ctX=0,ctY=0;
+  document.addEventListener('mousemove',e=>{ctX=(e.clientX/window.innerWidth-0.5)*4;ctY=-(e.clientY/window.innerHeight-0.5)*2.5;});
+  (function loop(){
+    tt+=0.005; requestAnimationFrame(loop);
+    cx2+=(ctX-cx2)*0.02; cy2+=(ctY-cy2)*0.02;
+    camera.position.x=cx2; camera.position.y=cy2;
+    camera.lookAt(0,0,0);
+    meshes.forEach((m,i)=>{m.rotation.x+=m.userData.rx;m.rotation.y+=m.userData.ry;m.position.y=m.userData.baseY+Math.sin(tt*m.userData.floatSpeed+i)*m.userData.floatAmp;});
+    renderer.render(scene,camera);
+  })();
+  window.addEventListener('resize',()=>{renderer.setSize(window.innerWidth,window.innerHeight);camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();});
+})();
+
+// ============================================================
+// MOUSE PARALLAX — orbs
+// ============================================================
+let mouseX=0,mouseY=0,tgtX=0,tgtY=0;
+const orb1=document.querySelector('.orb-1'),orb2=document.querySelector('.orb-2'),orb3=document.querySelector('.orb-3');
+document.addEventListener('mousemove',e=>{mouseX=(e.clientX/window.innerWidth-0.5);mouseY=(e.clientY/window.innerHeight-0.5);});
+(function pl(){
+  tgtX+=(mouseX-tgtX)*0.055; tgtY+=(mouseY-tgtY)*0.055;
+  if(orb1) orb1.style.transform=`translate(${tgtX*55}px,${tgtY*35}px)`;
+  if(orb2) orb2.style.transform=`translate(${-tgtX*75}px,${-tgtY*45}px)`;
+  if(orb3) orb3.style.transform=`translate(${tgtX*35}px,${-tgtY*55}px)`;
+  const as=document.querySelector('.slide.active .slide-content');
+  if(as) as.style.transform=`perspective(1200px) rotateY(${tgtX*1.8}deg) rotateX(${-tgtY*1.3}deg)`;
+  requestAnimationFrame(pl);
+})();
+
+// ============================================================
+// 3D CARD TILT
+// ============================================================
+function initTilt(sel){
+  document.querySelectorAll(sel).forEach(el=>{
+    el.style.transition='transform 0.12s ease-out,border-color 0.3s,box-shadow 0.3s';
+    el.addEventListener('mousemove',e=>{
+      const r=el.getBoundingClientRect();
+      const x=(e.clientX-r.left)/r.width-0.5;
+      const y=(e.clientY-r.top)/r.height-0.5;
+      el.style.transform=`perspective(600px) rotateY(${x*16}deg) rotateX(${-y*12}deg) translateZ(18px) scale(1.02)`;
+    });
+    el.addEventListener('mouseleave',()=>{ el.style.transform=''; });
+  });
+}
+initTilt('.card');
+initTilt('.tech-flow-node');
+
+// ============================================================
+// MAGNETIC EMAIL in CLOSING
+// ============================================================
+const emailEl=document.querySelector('.closing-email');
+if(emailEl){
+  emailEl.addEventListener('mousemove',e=>{
+    const r=emailEl.getBoundingClientRect();
+    const x=(e.clientX-r.left-r.width/2)*0.2;
+    const y=(e.clientY-r.top-r.height/2)*0.2;
+    emailEl.style.transform=`translate(${x}px,${y}px) scale(1.06)`;
+  });
+  emailEl.addEventListener('mouseleave',()=>{ emailEl.style.transform=''; });
+}
+</script>
+</body>
+</html>
