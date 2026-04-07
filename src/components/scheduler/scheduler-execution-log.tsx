@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle, XCircle, Clock, RefreshCw, AlertCircle, ExternalLink, ChevronRight } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, RefreshCw, AlertCircle, ExternalLink, ChevronRight, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -85,6 +85,7 @@ export function SchedulerExecutionLog() {
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [retryingTaskIds, setRetryingTaskIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setPage(1);
@@ -178,6 +179,23 @@ export function SchedulerExecutionLog() {
     return `${(ms / 60000).toFixed(1)}min`;
   };
 
+  const retryTask = async (taskId: string) => {
+    setRetryingTaskIds(prev => new Set(prev).add(taskId));
+    try {
+      await fetch(`/api/scheduler/tasks/${taskId}/trigger`, { method: 'POST' });
+      // Refresh after a short delay to let the task start
+      setTimeout(() => fetchExecutions(), 1500);
+    } catch (error) {
+      console.error('Error retrying task:', error);
+    } finally {
+      setRetryingTaskIds(prev => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+    }
+  };
+
 
   return (
     <div className="space-y-4">
@@ -232,6 +250,7 @@ export function SchedulerExecutionLog() {
                     <TableHead className="text-xs">Avviato</TableHead>
                     <TableHead className="text-xs">Completato</TableHead>
                     <TableHead className="text-xs">Durata</TableHead>
+                    <TableHead className="text-xs w-[80px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -283,6 +302,21 @@ export function SchedulerExecutionLog() {
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-xs">
                         {formatDuration(execution.durationMs)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {execution.status === 'failure' && execution.task && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950"
+                            disabled={retryingTaskIds.has(execution.task.id)}
+                            onClick={() => retryTask(execution.task.id)}
+                            title="Rilancia task"
+                          >
+                            <RotateCcw className={`w-3.5 h-3.5 mr-1 ${retryingTaskIds.has(execution.task.id) ? 'animate-spin' : ''}`} />
+                            Rilancia
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
