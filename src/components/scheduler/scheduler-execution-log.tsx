@@ -293,7 +293,19 @@ export function SchedulerExecutionLog() {
                       <TableCell className="whitespace-nowrap">
                         {execution.task ? getTypeBadge(execution.task.type) : '-'}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">{getStatusBadge(execution.status)}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          {getStatusBadge(execution.status)}
+                          {execution.status === 'failure' && execution.error && (
+                            <span
+                              className="text-[10px] text-red-500 dark:text-red-400 max-w-[260px] truncate block cursor-help"
+                              title={execution.error}
+                            >
+                              {execution.error}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="whitespace-nowrap text-xs">
                         {formatDate(execution.startedAt)}
                       </TableCell>
