@@ -1603,7 +1603,8 @@ export class SchedulerService {
     const dependencies: any[] = (selectedPipelines as string[])?.map(name => {
       const def = allContext.find(c => c.name === name);
       if (!def) return null;
-      return def;
+      // executeSqlPreviewAction expects `tableName`, but contextTables entries use `name`
+      return { ...def, tableName: def.tableName || def.name };
     }).filter(Boolean) as any[] || [];
 
     // 0. EXECUTE ANCESTORS (Full Pipeline Refresh)
