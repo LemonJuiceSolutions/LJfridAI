@@ -863,6 +863,8 @@ export default function LeadGeneratorPage() {
     const [deleteSearchTarget, setDeleteSearchTarget] = useState<any>(null);
     const [leadsTab, setLeadsTab] = useState('leads');
     const [activeKpiFilter, setActiveKpiFilter] = useState<string | null>(null);
+    // Baseline KPI snapshot taken before each search — used to show red "new" dots
+    const [kpiBaseline, setKpiBaseline] = useState<Record<string, number> | null>(null);
     const [sortConfig, setSortConfig] = useState<{ col: string; dir: 'asc' | 'desc' } | null>(null);
     const [colFilters, setColFilters] = useState<Record<string, string>>({});
     const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
@@ -1305,6 +1307,23 @@ export default function LeadGeneratorPage() {
         setBrowserLogs([]);
         setBrowserUrl('');
         setBrowserScreenshot('');
+
+        // Snapshot current KPI values as baseline so we can show deltas
+        if (kpiData) {
+            setKpiBaseline({
+                totalLeads: kpiData.totalLeads,
+                uniqueCompanies: kpiData.uniqueCompanies,
+                withContact: kpiData.withContact,
+                withPersonalEmail: kpiData.withPersonalEmail,
+                withGenericEmail: kpiData.withGenericEmail,
+                withPhone: kpiData.withPhone,
+                withLinkedin: kpiData.withLinkedin,
+                avgConfidence: kpiData.avgConfidence,
+                emailRate: kpiData.emailRate,
+            });
+        } else {
+            setKpiBaseline({ totalLeads: 0, uniqueCompanies: 0, withContact: 0, withPersonalEmail: 0, withGenericEmail: 0, withPhone: 0, withLinkedin: 0, avgConfidence: 0, emailRate: 0 });
+        }
 
         // Auto-refresh leads every 15s while agent is running
         const leadPollingInterval = setInterval(() => {
@@ -2278,22 +2297,28 @@ export default function LeadGeneratorPage() {
                         </div>
                     </div>
                 )}
-                {!isLoading && kpiData && (
+                {kpiData && (
                     <div className="px-4 pb-3">
                         <div className="flex gap-2 overflow-x-auto">
                             {[
-                                { icon: Users, label: 'Lead', value: kpiData.totalLeads, color: 'text-violet-600 dark:text-violet-400', iconBg: 'bg-violet-500/10', filterId: null },
-                                { icon: Building2, label: 'Aziende', value: kpiData.uniqueCompanies, color: 'text-blue-600 dark:text-blue-400', iconBg: 'bg-blue-500/10', filterId: null },
-                                { icon: Target, label: 'Con nome', value: kpiData.withContact, color: 'text-emerald-600 dark:text-emerald-400', iconBg: 'bg-emerald-500/10', filterId: 'with-contact' },
-                                { icon: Mail, label: 'Email pers.', value: kpiData.withPersonalEmail, color: 'text-green-600 dark:text-green-400', iconBg: 'bg-green-500/10', filterId: 'email-personal' },
-                                { icon: AtSign, label: 'Email gen.', value: kpiData.withGenericEmail, color: 'text-amber-600 dark:text-amber-400', iconBg: 'bg-amber-500/10', filterId: 'email-generic' },
-                                { icon: Phone, label: 'Telefono', value: kpiData.withPhone, color: 'text-sky-600 dark:text-sky-400', iconBg: 'bg-sky-500/10', filterId: 'phone' },
-                                { icon: Linkedin, label: 'LinkedIn', value: kpiData.withLinkedin, color: 'text-[#0A66C2]', iconBg: 'bg-[#0A66C2]/10', filterId: 'linkedin' },
-                                { icon: TrendingUp, label: 'Qualita', value: `${kpiData.avgConfidence}%`, color: kpiData.avgConfidence >= 60 ? 'text-green-600 dark:text-green-400' : kpiData.avgConfidence >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400', iconBg: kpiData.avgConfidence >= 60 ? 'bg-green-500/10' : kpiData.avgConfidence >= 30 ? 'bg-amber-500/10' : 'bg-red-500/10', filterId: null },
-                                { icon: BarChart3, label: 'Email rate', value: `${kpiData.emailRate}%`, color: kpiData.emailRate >= 60 ? 'text-green-600 dark:text-green-400' : kpiData.emailRate >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400', iconBg: kpiData.emailRate >= 60 ? 'bg-green-500/10' : kpiData.emailRate >= 30 ? 'bg-amber-500/10' : 'bg-red-500/10', filterId: null },
+                                { icon: Users, label: 'Lead', value: kpiData.totalLeads, color: 'text-violet-600 dark:text-violet-400', iconBg: 'bg-violet-500/10', filterId: null, baselineKey: 'totalLeads' },
+                                { icon: Building2, label: 'Aziende', value: kpiData.uniqueCompanies, color: 'text-blue-600 dark:text-blue-400', iconBg: 'bg-blue-500/10', filterId: null, baselineKey: 'uniqueCompanies' },
+                                { icon: Target, label: 'Con nome', value: kpiData.withContact, color: 'text-emerald-600 dark:text-emerald-400', iconBg: 'bg-emerald-500/10', filterId: 'with-contact', baselineKey: 'withContact' },
+                                { icon: Mail, label: 'Email pers.', value: kpiData.withPersonalEmail, color: 'text-green-600 dark:text-green-400', iconBg: 'bg-green-500/10', filterId: 'email-personal', baselineKey: 'withPersonalEmail' },
+                                { icon: AtSign, label: 'Email gen.', value: kpiData.withGenericEmail, color: 'text-amber-600 dark:text-amber-400', iconBg: 'bg-amber-500/10', filterId: 'email-generic', baselineKey: 'withGenericEmail' },
+                                { icon: Phone, label: 'Telefono', value: kpiData.withPhone, color: 'text-sky-600 dark:text-sky-400', iconBg: 'bg-sky-500/10', filterId: 'phone', baselineKey: 'withPhone' },
+                                { icon: Linkedin, label: 'LinkedIn', value: kpiData.withLinkedin, color: 'text-[#0A66C2]', iconBg: 'bg-[#0A66C2]/10', filterId: 'linkedin', baselineKey: 'withLinkedin' },
+                                { icon: TrendingUp, label: 'Qualita', value: `${kpiData.avgConfidence}%`, color: kpiData.avgConfidence >= 60 ? 'text-green-600 dark:text-green-400' : kpiData.avgConfidence >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400', iconBg: kpiData.avgConfidence >= 60 ? 'bg-green-500/10' : kpiData.avgConfidence >= 30 ? 'bg-amber-500/10' : 'bg-red-500/10', filterId: null, baselineKey: null },
+                                { icon: BarChart3, label: 'Email rate', value: `${kpiData.emailRate}%`, color: kpiData.emailRate >= 60 ? 'text-green-600 dark:text-green-400' : kpiData.emailRate >= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400', iconBg: kpiData.emailRate >= 60 ? 'bg-green-500/10' : kpiData.emailRate >= 30 ? 'bg-amber-500/10' : 'bg-red-500/10', filterId: null, baselineKey: null },
                             ].filter(k => k.value !== 0 && k.value !== '0%').map(kpi => {
                                 const isActive = activeKpiFilter === kpi.filterId && kpi.filterId !== null;
                                 const isClickable = kpi.filterId !== null;
+                                // Compute delta from baseline for this KPI (red dot with new count)
+                                const baselineKey = kpi.baselineKey as string | undefined;
+                                const currentNum = typeof kpi.value === 'number' ? kpi.value : null;
+                                const delta = (kpiBaseline && baselineKey && currentNum !== null)
+                                    ? currentNum - (kpiBaseline[baselineKey] || 0)
+                                    : 0;
                                 return (
                                     <button
                                         key={kpi.label}
@@ -2303,7 +2328,7 @@ export default function LeadGeneratorPage() {
                                             setActiveTab('leads');
                                         }}
                                         className={cn(
-                                            'flex-1 min-w-[90px] flex items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5 transition-all',
+                                            'flex-1 min-w-[90px] flex items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5 transition-all relative',
                                             isClickable ? 'cursor-pointer hover:shadow-sm hover:border-foreground/30' : 'cursor-default',
                                             isActive && 'ring-2 ring-offset-1 ring-current border-transparent shadow-sm'
                                         )}
@@ -2313,7 +2338,15 @@ export default function LeadGeneratorPage() {
                                         </div>
                                         <div className="min-w-0 text-left">
                                             <span className={cn('text-lg font-bold tabular-nums leading-none block', kpi.color)}>{kpi.value}</span>
-                                            <span className="text-[10px] text-muted-foreground leading-tight">{kpi.label}{isActive ? ' ✓' : ''}</span>
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-[10px] text-muted-foreground leading-tight">{kpi.label}{isActive ? ' ✓' : ''}</span>
+                                                {delta > 0 && (
+                                                    <span className="inline-flex items-center gap-0.5">
+                                                        <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                                                        <span className="text-[9px] font-semibold text-red-500">+{delta}</span>
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </button>
                                 );

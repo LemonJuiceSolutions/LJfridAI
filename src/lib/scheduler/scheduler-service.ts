@@ -1125,14 +1125,19 @@ export class SchedulerService {
           // which has proper hybrid handling (runs SQL first, then Python chart code)
           isPython: current.sqlQuery ? false : !!current.pythonCode,
           isAi: !!(current.aiConfig?.enabled && current.aiConfig?.outputName && !current.sqlQuery && !current.pythonCode),
-          connectorId: current.pythonConnectorId || current.sqlConnectorId || current.connectorId,
+          connectorId: current.sqlQuery
+            ? (current.sqlConnectorId || current.connectorId || current.pythonConnectorId)
+            : (current.pythonConnectorId || current.sqlConnectorId || current.connectorId),
           sqlQuery: current.sqlQuery,
           pythonCode: current.pythonCode,
           pythonOutputType: current.pythonOutputType,
           pythonResultName: current.pythonResultName,
           sqlResultName: current.sqlResultName,
           aiConfig: current.aiConfig,
-          pipelineDependencies: current.pipelineDependencies || [],
+          pipelineDependencies: current.pipelineDependencies ||
+            ((current.pythonSelectedPipelines || current.selectedPipelines || []).length
+              ? (current.pythonSelectedPipelines || current.selectedPipelines).map((name: string) => ({ tableName: name }))
+              : []),
           writesToDatabase: current.sqlExportTargetTableName ? true : false,
           sqlExportTargetTableName: current.sqlExportTargetTableName,
           sqlExportTargetConnectorId: current.sqlExportTargetConnectorId,
@@ -1173,14 +1178,19 @@ export class SchedulerService {
         // IMPORTANT: Final robust classification
         isPython: node.sqlQuery ? false : !!(node.pythonCode || node.pythonOutputType),
         isAi: !!(node.aiConfig?.enabled && node.aiConfig?.outputName && !node.sqlQuery && !node.pythonCode),
-        connectorId: node.pythonConnectorId || node.sqlConnectorId || node.connectorId,
+        connectorId: node.sqlQuery
+          ? (node.sqlConnectorId || node.connectorId || node.pythonConnectorId)
+          : (node.pythonConnectorId || node.sqlConnectorId || node.connectorId),
         sqlQuery: node.sqlQuery,
         pythonCode: node.pythonCode,
         pythonOutputType: node.pythonOutputType,
         pythonResultName: node.pythonResultName,
         sqlResultName: node.sqlResultName,
         aiConfig: node.aiConfig,
-        pipelineDependencies: node.pipelineDependencies || [],
+        pipelineDependencies: node.pipelineDependencies ||
+          ((node.pythonSelectedPipelines || node.selectedPipelines || []).length
+            ? (node.pythonSelectedPipelines || node.selectedPipelines).map((name: string) => ({ tableName: name }))
+            : []),
         writesToDatabase: node.sqlExportTargetTableName ? true : false,
         sqlExportTargetTableName: node.sqlExportTargetTableName,
         sqlExportTargetConnectorId: node.sqlExportTargetConnectorId,
@@ -1234,6 +1244,15 @@ export class SchedulerService {
         const exportTargetConnectorId = node.sqlExportTargetConnectorId || node.sqlExportAction?.targetConnectorId;
         const hasExportConfig = !!(exportTargetTableName && exportTargetConnectorId);
 
+        // Convert pythonSelectedPipelines/selectedPipelines to pipelineDependencies if the latter is missing
+        // pythonSelectedPipelines is ["WIPSQL"], selectedPipelines is ["CommesseMago", ...]
+        // pipelineDependencies is [{tableName: "WIPSQL"}, ...]
+        const selectedPipes = node.pythonSelectedPipelines || node.selectedPipelines || [];
+        const effectivePipelineDeps = node.pipelineDependencies ||
+          (selectedPipes.length
+            ? selectedPipes.map((name: string) => ({ tableName: name }))
+            : []);
+
         nodes.push({
           ...node,
           name: allNames[0],
@@ -1242,11 +1261,15 @@ export class SchedulerService {
           isPython: node.sqlQuery ? false : !!(node.pythonCode || node.pythonResultName || node.pythonOutputType),
           isAi: !!(node.aiConfig?.enabled && node.aiConfig?.outputName && !node.sqlQuery && !node.pythonCode),
           aiConfig: node.aiConfig,
-          connectorId: node.pythonConnectorId || node.sqlConnectorId || node.connectorId,
+          // For SQL nodes (isPython=false), prefer sqlConnectorId to avoid using a non-SQL connector (e.g. HubSpot)
+          connectorId: node.sqlQuery
+            ? (node.sqlConnectorId || node.connectorId || node.pythonConnectorId)
+            : (node.pythonConnectorId || node.sqlConnectorId || node.connectorId),
           // Ensure export fields are always present and correct
           writesToDatabase: hasExportConfig,
           sqlExportTargetTableName: exportTargetTableName,
           sqlExportTargetConnectorId: exportTargetConnectorId,
+          pipelineDependencies: effectivePipelineDeps,
         });
 
         if (allNames[0] === 'HR2') {
