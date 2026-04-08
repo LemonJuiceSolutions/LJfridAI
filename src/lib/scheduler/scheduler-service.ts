@@ -1134,8 +1134,9 @@ export class SchedulerService {
           pythonResultName: current.pythonResultName,
           sqlResultName: current.sqlResultName,
           aiConfig: current.aiConfig,
-          pipelineDependencies: current.pipelineDependencies ||
-            ((current.pythonSelectedPipelines || current.selectedPipelines || []).length
+          pipelineDependencies: (current.pipelineDependencies && current.pipelineDependencies.length > 0)
+            ? current.pipelineDependencies
+            : ((current.pythonSelectedPipelines || current.selectedPipelines || []).length
               ? (current.pythonSelectedPipelines || current.selectedPipelines).map((name: string) => ({ tableName: name }))
               : []),
           writesToDatabase: current.sqlExportTargetTableName ? true : false,
@@ -1248,8 +1249,9 @@ export class SchedulerService {
         // pythonSelectedPipelines is ["WIPSQL"], selectedPipelines is ["CommesseMago", ...]
         // pipelineDependencies is [{tableName: "WIPSQL"}, ...]
         const selectedPipes = node.pythonSelectedPipelines || node.selectedPipelines || [];
-        const effectivePipelineDeps = node.pipelineDependencies ||
-          (selectedPipes.length
+        const effectivePipelineDeps = (node.pipelineDependencies && node.pipelineDependencies.length > 0)
+          ? node.pipelineDependencies
+          : (selectedPipes.length
             ? selectedPipes.map((name: string) => ({ tableName: name }))
             : []);
 
