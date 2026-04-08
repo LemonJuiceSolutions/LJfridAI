@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import {
   Dialog,
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, AlertTriangle, Play, SkipForward } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 type MissedTask = {
   id: string;
@@ -70,6 +71,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 export function MissedTasksDialog() {
   const { data: session, status } = useSession();
+  const { toast } = useToast();
   const [tasks, setTasks] = useState<MissedTask[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
@@ -79,32 +81,45 @@ export function MissedTasksDialog() {
 
   const totalMissedSlots = tasks.reduce((sum, t) => sum + t.totalMissed, 0);
 
-  const fetchMissedTasks = useCallback(async () => {
-    if (checked || loading) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/scheduler/missed-tasks');
-      if (!res.ok) return;
-      const data: MissedTask[] = await res.json();
-      if (data.length > 0) {
-        setTasks(data);
-        setOpen(true);
-      }
-    } catch {
-      // silently ignore
-    } finally {
-      setLoading(false);
-      setChecked(true);
-    }
-  }, [checked, loading]);
-
   useEffect(() => {
-    if (status === 'authenticated' && !checked) {
-      // Small delay to let the app settle after login
-      const timer = setTimeout(fetchMissedTasks, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [status, checked, fetchMissedTasks]);
+    if (status !== 'authenticated' || checked) return;
+
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      setLoading(true);
+      try {
+        const res = await fetch('/api/scheduler/missed-tasks');
+        if (!res.ok || cancelled) { setLoading(false); setChecked(true); return; }
+        const data = await res.json();
+
+        // Server is still auto-recovering — poll again in 10s
+        if (data.recovering) {
+          setLoading(false);
+          if (!cancelled) setTimeout(poll, 10_000);
+          return;
+        }
+
+        // Recovery done — show dialog if there are still missed tasks
+        const missedTasks: MissedTask[] = Array.isArray(data) ? data : [];
+        if (missedTasks.length > 0 && !cancelled) {
+          setTasks(missedTasks);
+          setOpen(true);
+        }
+      } catch {
+        // silently ignore
+      }
+      if (!cancelled) {
+        setLoading(false);
+        setChecked(true);
+      }
+    };
+
+    // Initial delay to let the app settle
+    const timer = setTimeout(poll, 3000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [status, checked]);
 
   const toggleTask = (id: string) => {
     setSelected(prev => {
@@ -119,20 +134,48 @@ export function MissedTasksDialog() {
   const deselectAll = () => setSelected(new Set());
 
   const handleProcess = async () => {
-    setProcessing(true);
+    const executeIds = [...selected];
+    const skipIds = tasks.filter(t => !selected.has(t.id)).map(t => t.id);
+    const executeCount = executeIds.length;
+    const skipCount = skipIds.length;
+
+    // Close dialog immediately — task runs in background
+    setOpen(false);
+
+    if (executeCount > 0) {
+      toast({
+        title: `${executeCount} task in esecuzione...`,
+        description: skipCount > 0
+          ? `${skipCount} task riprogrammati.`
+          : 'Verranno eseguiti in background.',
+      });
+    } else {
+      toast({
+        title: 'Task riprogrammati',
+        description: `${skipCount} task spostati alla prossima esecuzione.`,
+      });
+    }
+
     try {
-      const executeIds = [...selected];
-      const skipIds = tasks.filter(t => !selected.has(t.id)).map(t => t.id);
-      await fetch('/api/scheduler/missed-tasks', {
+      const res = await fetch('/api/scheduler/missed-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ executeIds, skipIds }),
       });
-      setOpen(false);
+
+      if (!res.ok) {
+        toast({
+          title: 'Errore',
+          description: 'Impossibile avviare i task. Riprova.',
+          variant: 'destructive',
+        });
+      }
     } catch {
-      // silently ignore
-    } finally {
-      setProcessing(false);
+      toast({
+        title: 'Errore di connessione',
+        description: 'Impossibile contattare il server.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -213,17 +256,13 @@ export function MissedTasksDialog() {
           <Button
             variant="ghost"
             onClick={handleSkipAll}
-            disabled={processing}
             className="text-muted-foreground"
           >
             <SkipForward className="mr-2 h-4 w-4" />
             Dopo
           </Button>
-          <Button
-            onClick={handleProcess}
-            disabled={processing}
-          >
-            {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+          <Button onClick={handleProcess}>
+            <Play className="mr-2 h-4 w-4" />
             {selected.size > 0 ? `Esegui ${selected.size} selezionati` : 'Salta tutti e riprogramma'}
           </Button>
         </DialogFooter>

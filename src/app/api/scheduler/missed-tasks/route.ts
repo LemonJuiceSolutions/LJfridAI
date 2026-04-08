@@ -22,6 +22,12 @@ export async function GET() {
     return NextResponse.json({ error: 'No company' }, { status: 400 });
   }
 
+  // If startup auto-recovery is still running, tell the client to wait.
+  // Don't block the API for minutes — return a status so the client can poll.
+  if (!schedulerService.autoRecoveryDone) {
+    return NextResponse.json({ recovering: true, tasks: [] });
+  }
+
   const missedTasks = await schedulerService.getMissedTasks(user.companyId);
 
   // Enrich with tree names for human-readable display
@@ -81,6 +87,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const results = await schedulerService.processMissedTasks(executeIds, skipIds, executeAll);
-  return NextResponse.json({ results });
+  // Fire-and-forget: execute in background, respond immediately
+  // The processMissedTasks promise runs detached — errors are logged but don't block the response.
+  schedulerService.processMissedTasks(executeIds, skipIds, executeAll).catch((err) => {
+    console.error('[Scheduler] Background processMissedTasks error:', err);
+  });
+
+  return NextResponse.json(
+    { accepted: true, executeCount: executeIds.length, skipCount: skipIds.length },
+    { status: 202 },
+  );
 }

@@ -124,6 +124,37 @@ export class SchedulerService {
   private tasks: Map<string, any> = new Map();
   private runningTasks: Set<string> = new Set(); // Concurrency guard
   private isInitialized = false;
+  private _autoRecoveryDone = false;
+  private _autoRecoveryPromise: Promise<void> | null = null;
+
+  /** True once the startup auto-recovery of missed tasks has finished. */
+  public get autoRecoveryDone(): boolean {
+    return this._autoRecoveryDone;
+  }
+
+  /** Returns a promise that resolves when auto-recovery is complete.
+   *  Callers can `await` this to avoid surfacing missed-task dialogs prematurely.
+   *  If init() hasn't been called yet (e.g. dev mode, late instrumentation),
+   *  waits up to 15s for it to start, then proceeds anyway. */
+  public async waitForAutoRecovery(): Promise<void> {
+    if (this._autoRecoveryDone) return;
+    if (this._autoRecoveryPromise) {
+      await this._autoRecoveryPromise;
+      return;
+    }
+    // init() hasn't been called yet — wait up to 15s for it to start
+    const maxWaitMs = 15_000;
+    const pollMs = 500;
+    let waited = 0;
+    while (!this._autoRecoveryDone && !this._autoRecoveryPromise && waited < maxWaitMs) {
+      await new Promise(r => setTimeout(r, pollMs));
+      waited += pollMs;
+    }
+    // If the promise appeared while waiting, await it
+    if (this._autoRecoveryPromise) {
+      await this._autoRecoveryPromise;
+    }
+  }
 
   public static getInstance(): SchedulerService {
     if (!SchedulerService.instance) {
@@ -138,6 +169,65 @@ export class SchedulerService {
     await this.loadTasks();
     this.isInitialized = true;
     logger.log('Scheduler Service Initialized.');
+
+    // Auto-recover missed tasks in background (fire-and-forget).
+    // Runs silently — if a task succeeds, the user never sees a popup.
+    // If all retries fail, executeTask() sets status → 'needs_attention'
+    // and the FailedTasksDialog will surface it to the user.
+    this._autoRecoveryPromise = this.autoRecoverMissedTasks()
+      .catch((err) => {
+        logger.error('Auto-recovery of missed tasks failed:', err);
+      })
+      .finally(() => {
+        this._autoRecoveryDone = true;
+        this._autoRecoveryPromise = null;
+        logger.log('🏁 Auto-recovery phase complete.');
+      });
+  }
+
+  /**
+   * Automatically executes all missed tasks on startup.
+   * Each task runs once (not N times per missed slot) to avoid flooding.
+   * Runs with full retry logic (exponential backoff).
+   */
+  private async autoRecoverMissedTasks() {
+    try {
+      const allMissed = await this.getMissedTasks();
+      if (allMissed.length === 0) {
+        logger.log('🟢 No missed tasks to recover.');
+        return;
+      }
+
+      logger.log(`🔄 Auto-recovering ${allMissed.length} missed tasks...`);
+
+      // Execute all missed tasks concurrently (with the per-task concurrency guard)
+      const results = await Promise.allSettled(
+        allMissed.map(async (missed) => {
+          logger.log(`🔄 Auto-recovering: ${missed.name} (${missed.id}) — ${missed.totalMissed} missed slots`);
+          const result = await this.executeTask(missed.id);
+          // Realign nextRunAt regardless of success/failure
+          await this.realignTaskNextRun(missed.id);
+          return { id: missed.id, name: missed.name, result };
+        })
+      );
+
+      let recovered = 0;
+      let failed = 0;
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.result.success) {
+          recovered++;
+          logger.log(`✅ Auto-recovered: ${r.value.name}`);
+        } else {
+          failed++;
+          const reason = r.status === 'rejected' ? r.reason?.message : r.value.result.error;
+          logger.error(`❌ Auto-recovery failed: ${r.status === 'fulfilled' ? r.value.name : 'unknown'} — ${reason}`);
+        }
+      }
+
+      logger.log(`🏁 Auto-recovery complete: ${recovered} recovered, ${failed} failed (will surface in FailedTasksDialog)`);
+    } catch (err) {
+      logger.error('autoRecoverMissedTasks error:', err);
+    }
   }
 
   public async reload() {
@@ -500,6 +590,9 @@ export class SchedulerService {
       const task = await db.scheduledTask.findUnique({ where: { id: taskId } });
       if (!task) return { success: false, error: 'Task not found' };
 
+      const maxRetries = task.maxRetries ?? 3;
+      const retryDelayMin = task.retryDelayMinutes ?? 5;
+
       // 2. Create Execution Log (Pending)
       const execution = await db.scheduledTaskExecution.create({
         data: {
@@ -510,22 +603,61 @@ export class SchedulerService {
       });
       executionId = execution.id;
 
-      // 3. Execute Logic based on Type
-      const result = await this.executeTaskByType(task, executionId);
+      // 3. Execute with automatic retries + exponential backoff
+      let result: TaskExecutionResult = { success: false, error: 'No execution attempted' };
+      let attempt = 0;
 
-      // 4. Update Execution Log (Success/Failure)
+      while (attempt <= maxRetries) {
+        if (attempt > 0) {
+          // Exponential backoff: retryDelay * 2^(attempt-1), capped at 30 min
+          const delayMs = Math.min(retryDelayMin * 60_000 * Math.pow(2, attempt - 1), 30 * 60_000);
+          logger.log(`🔄 Retry ${attempt}/${maxRetries} for task ${task.name} (${taskId}) in ${Math.round(delayMs / 1000)}s`);
+
+          // Update execution log to reflect retry state
+          await db.scheduledTaskExecution.update({
+            where: { id: executionId },
+            data: { status: 'retrying', retryCount: attempt, error: result.error },
+          }).catch(() => { });
+
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+
+        try {
+          result = await this.executeTaskByType(task, executionId);
+          if (result.success) {
+            logger.log(`✅ Task ${task.name} succeeded${attempt > 0 ? ` on retry ${attempt}` : ''}`);
+            break;
+          }
+        } catch (e: any) {
+          result = { success: false, error: e.message };
+        }
+
+        logger.log(`❌ Task ${task.name} attempt ${attempt + 1} failed: ${result.error}`);
+        attempt++;
+      }
+
+      // 4. Determine final status
+      const finalStatus = result.success
+        ? 'success'
+        : attempt > maxRetries
+          ? 'failed_permanent' // All retries exhausted — needs user attention
+          : 'failure';
+
+      // 5. Update Execution Log
       await db.scheduledTaskExecution.update({
         where: { id: executionId },
         data: {
-          status: result.success ? 'success' : 'failure',
+          status: finalStatus,
           completedAt: new Date(),
           durationMs: Math.round(Date.now() - execution.startedAt.getTime()),
           result: (result.data || result.message) as Prisma.InputJsonValue,
-          error: result.error
+          error: result.error,
+          retryCount: Math.min(attempt, maxRetries),
         }
       });
 
-      // 5. Update Task Stats
+      // 6. Update Task Stats
+      const isPermFailure = finalStatus === 'failed_permanent';
       await db.scheduledTask.update({
         where: { id: taskId },
         data: {
@@ -534,7 +666,9 @@ export class SchedulerService {
           runCount: { increment: 1 },
           successCount: result.success ? { increment: 1 } : undefined,
           failureCount: result.success ? undefined : { increment: 1 },
-          lastError: result.success ? null : (result.error || 'Unknown error')
+          lastError: result.success ? null : (result.error || 'Unknown error'),
+          // Mark task as needs_attention if all retries failed — user must intervene
+          status: isPermFailure ? 'needs_attention' : task.status,
         }
       });
 

@@ -12,6 +12,7 @@ import type { DecisionNode, StoredTree, Variable, ConsolidationProposal, Variabl
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import sql from 'mssql';
+import { getPythonBackendUrl } from '@/lib/python-backend';
 
 import cloneDeep from 'lodash/cloneDeep';
 import isEqual from 'lodash/isEqual';
@@ -2804,7 +2805,7 @@ export async function executePythonPreviewAction(
                 if (dfTarget) {
                     console.log(`[executePythonPreviewAction] dfTarget explicitly set to '${dfTarget}'`);
                 }
-                const response = await fetch('http://localhost:5005/execute', {
+                const response = await fetch(`${getPythonBackendUrl()}/execute`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

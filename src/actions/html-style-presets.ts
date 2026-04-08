@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { HtmlStyleOverrides, SavedHtmlStylePreset } from "@/lib/html-style-utils";
 import { getHtmlStyleFieldsDescription } from "@/lib/html-style-utils";
+import { getPythonBackendUrl } from "@/lib/python-backend";
 
 // ── Auth helper (same pattern as chart-theme.ts) ──
 
@@ -218,7 +219,7 @@ export async function scrapeWebsiteStyleAction(
 ): Promise<{ overrides?: Partial<HtmlStyleOverrides>; error?: string }> {
     try {
         // 1. Call Python backend to extract CSS
-        const cssResponse = await fetch('http://localhost:5005/scrape-css', {
+        const cssResponse = await fetch(`${getPythonBackendUrl()}/scrape-css`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url }),

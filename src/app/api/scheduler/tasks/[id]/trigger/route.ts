@@ -48,13 +48,15 @@ export async function POST(
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
 
-    // Trigger task execution
-    const result = await schedulerService.triggerTask(task.id);
-
-    return NextResponse.json({
-      message: 'Task triggered successfully',
-      result
+    // Fire-and-forget: trigger in background, respond immediately
+    schedulerService.triggerTask(task.id).catch((err) => {
+      console.error(`[Scheduler] Background triggerTask error for ${task.id}:`, err);
     });
+
+    return NextResponse.json(
+      { accepted: true, taskId: task.id, taskName: task.name },
+      { status: 202 },
+    );
   } catch (error: any) {
     console.error('[API] Error triggering scheduled task:', error);
     return NextResponse.json(

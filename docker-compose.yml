@@ -67,6 +67,12 @@ services:
       - FLASK_DEBUG=1
       - PYTHONUNBUFFERED=1
       - DATA_LAKE_PATH=/data_lake
+      # Gunicorn settings (override Dockerfile defaults via env)
+      - GUNICORN_WORKERS=4
+      - GUNICORN_TIMEOUT=600
+    # In dev: use Flask dev server with hot reload instead of Gunicorn
+    # Uncomment the next line for development:
+    # command: ["python", "app.py"]
     volumes:
       # Mount entire python-backend directory for hot reloading
       - ./python-backend:/app:delegated
@@ -74,12 +80,12 @@ services:
       - ./data_lake:/data_lake:delegated
     networks:
       - app-network
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   start_period: 10s
-    #   retries: 3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
 
   # ============================================================================
   # PostgreSQL Database

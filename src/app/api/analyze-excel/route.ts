@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { join } from 'path';
 import { access } from 'fs/promises';
 import { getDataLakePath } from '@/lib/data-lake';
+import { getPythonBackendUrl } from '@/lib/python-backend';
 // join is kept for the EEXXCC path below
 
 export async function POST(request: NextRequest) {
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Call Python backend to analyze the Excel file
-        const response = await fetch('http://localhost:5005/analyze-excel', {
+        const response = await fetch(`${getPythonBackendUrl()}/analyze-excel`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filepath }),

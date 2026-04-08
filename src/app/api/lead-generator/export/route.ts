@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { getPythonBackendUrl } from '@/lib/python-backend';
 
 export async function GET(request: NextRequest) {
     try {
@@ -52,7 +53,7 @@ export async function GET(request: NextRequest) {
                     'Fonte': l.source || '',
                 }));
 
-                const pyResponse = await fetch('http://localhost:5005/download-excel', {
+                const pyResponse = await fetch(`${getPythonBackendUrl()}/download-excel`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ data: excelData }),

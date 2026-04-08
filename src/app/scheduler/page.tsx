@@ -220,30 +220,33 @@ export default function SchedulerPage() {
   };
 
   const handleTriggerTask = async (taskId: string) => {
+    // Show immediate feedback — the API responds with 202 and runs in background
+    toast({
+      title: 'Task avviato',
+      description: 'In esecuzione in background...',
+    });
+
     try {
       const response = await fetch(`/api/scheduler/tasks/${taskId}/trigger`, {
         method: 'POST'
       });
 
-      if (response.ok) {
-        toast({
-          title: 'Success',
-          description: 'Task triggered successfully'
-        });
-        setTimeout(fetchTasks, 1000);
-      } else {
+      if (!response.ok) {
         const data = await response.json();
         toast({
           variant: 'destructive',
-          title: 'Error',
-          description: data.error || 'Failed to trigger task'
+          title: 'Errore',
+          description: data.error || 'Impossibile avviare il task'
         });
+      } else {
+        // Refresh task list after a short delay to reflect running status
+        setTimeout(fetchTasks, 2000);
       }
     } catch (error) {
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to trigger task'
+        title: 'Errore',
+        description: 'Impossibile contattare il server'
       });
     }
   };

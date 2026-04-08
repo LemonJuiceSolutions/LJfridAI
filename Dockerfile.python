@@ -32,6 +32,15 @@ ENV FLASK_RUN_RELOAD=true
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5005/health || exit 1
 
-# Start Flask in development mode with auto-reload
-# Using python directly as it handles debug mode better
-CMD ["python", "app.py"]
+# Default: Gunicorn with 4 workers, 10-min timeout, preload for shared memory
+# Override with docker-compose command for dev (python app.py with hot reload)
+CMD ["gunicorn", \
+     "--bind", "0.0.0.0:5005", \
+     "--workers", "4", \
+     "--timeout", "600", \
+     "--graceful-timeout", "30", \
+     "--keep-alive", "5", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "--log-level", "info", \
+     "app:app"]

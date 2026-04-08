@@ -91,13 +91,23 @@ export function MissedTasksPanel() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
 
+  const [recovering, setRecovering] = useState(false);
+
   const fetchMissedTasks = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/scheduler/missed-tasks');
       if (res.ok) {
-        const data: MissedTask[] = await res.json();
-        setTasks(data);
+        const data = await res.json();
+        // API returns { recovering: true } while auto-recovery is in progress
+        if (data && data.recovering) {
+          setRecovering(true);
+          setTasks([]);
+        } else {
+          setRecovering(false);
+          const tasks: MissedTask[] = Array.isArray(data) ? data : [];
+          setTasks(tasks);
+        }
         setSelected(new Set());
       }
     } catch {
@@ -221,6 +231,15 @@ export function MissedTasksPanel() {
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto" />
             <p className="mt-4 text-muted-foreground">Analisi coda invii previsti...</p>
+          </div>
+        ) : recovering ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 mx-auto" />
+            <p className="mt-4 text-muted-foreground">Recovery automatico in corso... I task persi vengono rieseguiti.</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={fetchMissedTasks}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Ricontrolla
+            </Button>
           </div>
         ) : tasks.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
