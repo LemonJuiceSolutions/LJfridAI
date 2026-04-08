@@ -12,6 +12,121 @@ import { resolveTheme } from '@/lib/chart-theme';
 import { testSharePointConnectionAction } from './sharepoint';
 import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
 import { generateHtmlStyleCss, applyHtmlStyleOverrides } from '@/lib/html-style-utils';
+import { getPythonBackendUrl } from '@/lib/python-backend';
+
+/**
+ * Convert JavaScript-dependent HTML to static HTML for email embedding.
+ * Email clients strip all <script> tags, so JS-rendered tables appear empty.
+ * This function extracts data from scripts and generates static <tr> rows.
+ */
+function staticifyHtmlForEmail(html: string): string {
+    // 1. Extract JSON data array from <script> blocks
+    let jsonData: Record<string, any>[] | null = null;
+
+    const scriptBlocks: string[] = [];
+    html.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, (_m, content) => {
+        scriptBlocks.push(content);
+        return '';
+    });
+
+    for (const script of scriptBlocks) {
+        // Look for: const/let/var IDENT = [{...}, ...];
+        const assignMatch = script.match(/(?:const|let|var)\s+\w+\s*=\s*\[/);
+        if (!assignMatch || assignMatch.index === undefined) continue;
+
+        const startIdx = assignMatch.index + assignMatch[0].length - 1; // position of [
+        let depth = 1;
+        let i = startIdx + 1;
+        while (i < script.length && depth > 0) {
+            const ch = script[i];
+            if (ch === '[') depth++;
+            else if (ch === ']') depth--;
+            else if (ch === '"' || ch === "'") {
+                const quote = ch;
+                i++;
+                while (i < script.length && script[i] !== quote) {
+                    if (script[i] === '\\') i++;
+                    i++;
+                }
+            }
+            i++;
+        }
+
+        if (depth === 0) {
+            const jsonStr = script.substring(startIdx, i);
+            try {
+                const parsed = JSON.parse(jsonStr);
+                if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object') {
+                    jsonData = parsed;
+                    break;
+                }
+            } catch { /* not valid JSON, try next */ }
+        }
+    }
+
+    // 2. Extract column order from <thead>
+    let columnKeys: string[] = [];
+    const theadMatch = html.match(/<thead[^>]*>([\s\S]*?)<\/thead>/i);
+    if (theadMatch) {
+        const thMatches = theadMatch[1].match(/<th[^>]*>([\s\S]*?)<\/th>/gi);
+        if (thMatches) {
+            columnKeys = thMatches.map(th => {
+                // Strip HTML tags to get header text
+                return th.replace(/<[^>]*>/g, '').trim();
+            });
+        }
+    }
+
+    // 3. If we have data, build static rows and inject into <tbody>
+    if (jsonData && jsonData.length > 0) {
+        // Map header text to data keys (case-insensitive, normalize spaces)
+        const dataKeys = Object.keys(jsonData[0]);
+        const keyMap: string[] = columnKeys.map(header => {
+            const headerNorm = header.toLowerCase().replace(/\s+/g, ' ');
+            // Exact match first
+            const exact = dataKeys.find(k => k.toLowerCase().replace(/\s+/g, ' ') === headerNorm);
+            if (exact) return exact;
+            // Partial match
+            const partial = dataKeys.find(k => k.toLowerCase().includes(headerNorm) || headerNorm.includes(k.toLowerCase()));
+            return partial || header;
+        });
+
+        // If no thead or mapping failed, use data keys directly
+        const effectiveKeys = keyMap.length > 0 ? keyMap : dataKeys;
+
+        const escapeHtml = (val: any): string => {
+            if (val === null || val === undefined) return '';
+            return String(val).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        };
+
+        const staticRows = jsonData.map(row => {
+            const cells = effectiveKeys.map(key => `<td>${escapeHtml(row[key])}</td>`).join('');
+            return `<tr>${cells}</tr>`;
+        }).join('\n');
+
+        // Replace <tbody> with static content
+        html = html.replace(/<tbody[^>]*>[\s\S]*?<\/tbody>/gi, `<tbody>${staticRows}</tbody>`);
+
+        // Update row count displays (e.g. "Totale: <span id="totalCount">0</span> righe")
+        html = html.replace(
+            /(<span[^>]*id\s*=\s*["'](?:totalCount|rowCount|total)[^"']*["'][^>]*>)\s*\d*\s*(<\/span>)/gi,
+            `$1${jsonData.length}$2`
+        );
+        // Also handle plain text pattern "Totale: 0 righe"
+        html = html.replace(/Totale:\s*(?:<[^>]+>)?\s*0\s*(?:<[^>]+>)?\s*righe/gi,
+            `Totale: ${jsonData.length} righe`
+        );
+    }
+
+    // 4. Strip all <script> tags (email clients do this anyway)
+    html = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+
+    // 5. Remove interactive elements that won't work in email
+    html = html.replace(/<input[^>]*>/gi, '');
+    html = html.replace(/<select[^>]*>[\s\S]*?<\/select>/gi, '');
+
+    return html;
+}
 
 // ... (existing functions)
 
@@ -1141,7 +1256,15 @@ export async function sendTestEmailWithDataAction(params: {
 
             if (htmlResult && htmlResult.type === 'html' && htmlResult.html) {
                 console.log(`[EMAIL DEBUG] Replacing placeholder {{HTML:${htmlName}}} with HTML content`);
-                return `<div class="html-section">${htmlResult.html}</div>`;
+                // Convert JS-dependent HTML to static HTML for email
+                // (email clients strip <script> tags, leaving tables empty)
+                const staticHtml = staticifyHtmlForEmail(htmlResult.html);
+                return `<div class="html-section">${staticHtml}</div>`;
+            }
+            // Show a more helpful error: if the Python node ran but failed, show the error
+            const errorDetail = htmlResult?.data?.[0]?.error;
+            if (errorDetail) {
+                return `<p style="color: #ef4444;"><em>⚠️ Errore nel nodo "${htmlName}": ${errorDetail}</em></p>`;
             }
             return `<p style="color: #ef4444;"><em>⚠️ HTML ${htmlName} non trovato o vuoto</em></p>`;
         });
@@ -1200,7 +1323,7 @@ result = base64.b64encode(img_bytes).decode("utf-8")
 print(f"PNG generated: {len(result)} chars base64")
 `.trim();
 
-                    const renderRes = await fetch('http://localhost:5005/execute', {
+                    const renderRes = await fetch(`${getPythonBackendUrl()}/execute`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
