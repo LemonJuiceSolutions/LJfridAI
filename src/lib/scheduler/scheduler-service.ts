@@ -1356,9 +1356,11 @@ export class SchedulerService {
     const placeholderTableNames = (bodyContent.match(/\{\{TABELLA:([^}]+)\}\}/g) || []).map((m: string) => m.replace(/\{\{TABELLA:|\}\}/g, ''));
     const placeholderChartNames = (bodyContent.match(/\{\{GRAFICO:([^}]+)\}\}/g) || []).map((m: string) => m.replace(/\{\{GRAFICO:|\}\}/g, ''));
     const placeholderVarNames = (bodyContent.match(/\{\{VARIABILE:([^}]+)\}\}/g) || []).map((m: string) => m.replace(/\{\{VARIABILE:|\}\}/g, ''));
+    // Also handle {{HTML:name}} placeholders (used for Python HTML outputs embedded in body)
+    const placeholderHtmlNames = (bodyContent.match(/\{\{HTML:([^}]+)\}\}/g) || []).map((m: string) => m.replace(/\{\{HTML:|\}\}/g, ''));
 
     // 3. IDENTIFY ALL REQUIRED NODES (Global Discovery)
-    const allReferencedPythonNames = [...placeholderChartNames, ...placeholderVarNames, ...pythonOutputsInBody, ...pythonOutputsAsAttachment];
+    const allReferencedPythonNames = [...placeholderChartNames, ...placeholderVarNames, ...placeholderHtmlNames, ...pythonOutputsInBody, ...pythonOutputsAsAttachment];
     const allReferencedSqlNames = [...placeholderTableNames, ...tablesInBody, ...tablesAsExcel];
     const allRequiredNames = Array.from(new Set([...allReferencedPythonNames, ...allReferencedSqlNames]));
 
