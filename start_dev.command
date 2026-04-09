@@ -14,15 +14,16 @@ NC='\033[0m' # No Color
 cleanup() {
     echo -e "\n${RED}🛑 Terminazione processi in corso...${NC}"
     [ ! -z "$PYTHON_PID" ] && kill $PYTHON_PID 2>/dev/null
-    lsof -ti:9002,5005,5001 | xargs kill -9 2>/dev/null
+    [ ! -z "$SCHEDULER_PID" ] && kill $SCHEDULER_PID 2>/dev/null
+    lsof -ti:9002,5005,5001,3001 | xargs kill -9 2>/dev/null
     exit
 }
 
 # Imposta il trap
 trap cleanup SIGINT SIGTERM EXIT
 
-echo -e "${BLUE}🧹 Pulizia processi esistenti (Porte 5001, 5005, 9002)...${NC}"
-lsof -ti:9002,5005,5001 | xargs kill -9 2>/dev/null
+echo -e "${BLUE}🧹 Pulizia processi esistenti (Porte 5001, 5005, 9002, 3001)...${NC}"
+lsof -ti:9002,5005,5001,3001 | xargs kill -9 2>/dev/null
 
 echo -e "${GREEN}🚀 Avvio FridAI...${NC}"
 
@@ -38,7 +39,7 @@ if ! docker info >/dev/null 2>&1; then
         echo -ne "${YELLOW}.${NC}"
     done
     echo ""
-    
+
     if ! docker info >/dev/null 2>&1; then
         echo -e "${RED}❌ Docker non si è avviato in tempo. Riprova.${NC}"
         exit 1
@@ -111,12 +112,12 @@ echo -e "${GREEN}✅ Schema database sincronizzato${NC}"
 # 4. Python Backend
 if [ -d "python-backend" ]; then
     echo -e "${BLUE}🐍 Avvio Python Backend su porta 5005...${NC}"
-    
+
     if [ ! -d "python-backend/venv" ]; then
         echo -e "${YELLOW}⏳ Creazione virtual environment Python...${NC}"
         python3 -m venv python-backend/venv
     fi
-    
+
     (
         cd python-backend
         source venv/bin/activate
@@ -142,11 +143,53 @@ if [ -d "python-backend" ]; then
     fi
 fi
 
-# 5. Apri browser dopo un delay
+# 5. Scheduler Service (opzionale)
+# Viene avviato solo se SCHEDULER_SERVICE_URL è impostato in .env
+SCHEDULER_SERVICE_URL_VALUE=""
+if [ -f ".env" ]; then
+    SCHEDULER_SERVICE_URL_VALUE=$(grep -E '^SCHEDULER_SERVICE_URL=' .env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+fi
+
+if [ ! -z "$SCHEDULER_SERVICE_URL_VALUE" ]; then
+    echo -e "${BLUE}⚙️  Avvio Scheduler Service su porta 3001...${NC}"
+    echo -e "${YELLOW}   (SCHEDULER_SERVICE_URL=${SCHEDULER_SERVICE_URL_VALUE})${NC}"
+
+    # Installa deps scheduler se mancanti
+    if [ ! -d "scheduler-service/node_modules" ]; then
+        echo -e "${YELLOW}⏳ Installazione dipendenze scheduler...${NC}"
+        (cd scheduler-service && npm install --silent 2>/dev/null)
+    fi
+
+    (
+        cd scheduler-service
+        npx tsx index.ts 2>&1 | sed 's/^/[Scheduler] /'
+    ) &
+    SCHEDULER_PID=$!
+
+    # Attendi che lo scheduler sia pronto
+    echo -e "${BLUE}⏳ Attesa che Scheduler Service sia pronto...${NC}"
+    COUNTER=0
+    while ! curl -s http://localhost:3001/health >/dev/null 2>&1 && [ $COUNTER -lt 30 ]; do
+        sleep 1
+        COUNTER=$((COUNTER + 1))
+        echo -ne "${YELLOW}.${NC}"
+    done
+    echo ""
+
+    if curl -s http://localhost:3001/health >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ Scheduler Service pronto su porta 3001${NC}"
+    else
+        echo -e "${YELLOW}⚠️ Scheduler Service non ancora pronto, Next.js partira' comunque${NC}"
+    fi
+else
+    echo -e "${BLUE}ℹ️  Scheduler in-process (SCHEDULER_SERVICE_URL non impostato in .env)${NC}"
+fi
+
+# 6. Apri browser dopo un delay
 echo -e "${BLUE}🌐 Apertura http://localhost:9002 tra 5 secondi...${NC}"
 (sleep 5 && open http://localhost:9002) &
 
-# 6. Avvia Next.js
+# 7. Avvia Next.js
 echo -e "${GREEN}🔥 Avvio Next.js su porta 9002...${NC}"
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 npm run dev

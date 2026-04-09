@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { schedulerService } from '@/lib/scheduler/scheduler-service';
+import { getSchedulerClient } from '@/lib/scheduler/scheduler-client';
 
 // ============================================
 // POST: Trigger task execution
@@ -49,7 +49,7 @@ export async function POST(
     }
 
     // Fire-and-forget: trigger in background, respond immediately
-    schedulerService.triggerTask(task.id).catch((err) => {
+    getSchedulerClient().triggerTask(task.id).catch((err) => {
       console.error(`[Scheduler] Background triggerTask error for ${task.id}:`, err);
     });
 

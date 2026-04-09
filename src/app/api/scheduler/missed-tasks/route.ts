@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { schedulerService } from '@/lib/scheduler/scheduler-service';
+import { getSchedulerClient } from '@/lib/scheduler/scheduler-client';
 
 /**
  * GET: Returns missed tasks (active tasks with nextRunAt in the past)
@@ -24,11 +24,11 @@ export async function GET() {
 
   // If startup auto-recovery is still running, tell the client to wait.
   // Don't block the API for minutes — return a status so the client can poll.
-  if (!schedulerService.autoRecoveryDone) {
+  if (!getSchedulerClient().autoRecoveryDone) {
     return NextResponse.json({ recovering: true, tasks: [] });
   }
 
-  const missedTasks = await schedulerService.getMissedTasks(user.companyId);
+  const { missedTasks } = await getSchedulerClient().getMissedTasks(user.companyId);
 
   // Enrich with tree names for human-readable display
   const treeIds = [...new Set(
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
 
   // Fire-and-forget: execute in background, respond immediately
   // The processMissedTasks promise runs detached — errors are logged but don't block the response.
-  schedulerService.processMissedTasks(executeIds, skipIds, executeAll).catch((err) => {
+  getSchedulerClient().processMissedTasks(executeIds, skipIds, executeAll).catch((err) => {
     console.error('[Scheduler] Background processMissedTasks error:', err);
   });
 

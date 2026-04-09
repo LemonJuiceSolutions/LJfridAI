@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 // import { getAuthenticatedUser } from '@/app/actions';
 import { getAuthenticatedUser } from "@/lib/session";
 import { invalidateServerTreeCache } from '@/lib/server-cache';
-// import { schedulerService } from '@/lib/scheduler/scheduler-service';
+import { getSchedulerClient } from '@/lib/scheduler/scheduler-client';
 import { revalidatePath } from 'next/cache';
 import { Prisma } from '@prisma/client';
 
@@ -73,9 +73,6 @@ export async function saveNodeScheduleAction(
             return { success: false, message: 'Società non trovata' };
         }
 
-        // Dynamically import scheduler service to avoid bundling node-cron on client
-        const { schedulerService } = await import('@/lib/scheduler/scheduler-service');
-
         const name = `Node-${treeId}-${nodeId} (${taskConfig.type})`;
 
         // Check if task exists (exact match on full name including type)
@@ -94,7 +91,7 @@ export async function saveNodeScheduleAction(
                 });
 
                 // Also stop it in the scheduler service
-                await schedulerService.rescheduleTask(existingTask.id).catch(() => { });
+                await getSchedulerClient().rescheduleTask(existingTask.id).catch(() => { });
             }
             return { success: true, message: 'Schedulazione rimossa' };
         }
@@ -126,7 +123,7 @@ export async function saveNodeScheduleAction(
             });
             // Trigger reschedule in service
             try {
-                await schedulerService.rescheduleTask(existingTask.id);
+                await getSchedulerClient().rescheduleTask(existingTask.id);
             } catch (e) {
                 console.warn('Could not reschedule task immediately:', e);
             }
@@ -136,7 +133,7 @@ export async function saveNodeScheduleAction(
             });
             // Trigger schedule
             try {
-                await schedulerService.rescheduleTask(newTask.id);
+                await getSchedulerClient().rescheduleTask(newTask.id);
             } catch (e) {
                 console.warn('Could not schedule new task immediately:', e);
             }
@@ -175,8 +172,7 @@ export async function deleteNodeScheduleAction(treeId: string, nodeId: string) {
             });
             // Attempt to remove from runtime scheduler
             try {
-                const { schedulerService } = await import('@/lib/scheduler/scheduler-service');
-                await schedulerService.deleteTask(task.id);
+                await getSchedulerClient().deleteTask(task.id);
             } catch (e) {
                 console.warn('Could not stop task in memory immediately:', e);
             }
@@ -304,6 +300,23 @@ export async function saveNodeExecutionResultAction(
             });
         }
 
+        // Store only compact metadata — full data lives in NodePreviewCache.
+        // Storing full result JSONs (up to 152 MB each) here caused 4.5 GB table bloat.
+        const resultSummary = result == null ? null : {
+            rowCount: Array.isArray(result)
+                ? result.length
+                : Array.isArray(result?.data)
+                    ? result.data.length
+                    : Array.isArray(result?.rechartsData)
+                        ? result.rechartsData.length
+                        : null,
+            hasChart: !!(result?.chartBase64 || result?.chartHtml || result?.rechartsConfig || result?.plotlyJson),
+            hasHtml: !!(result?.html),
+            hasVariables: !!(result?.variables),
+            outputType: result?.type || (Array.isArray(result) ? 'table' : null),
+            savedAt: Date.now(),
+        };
+
         // Create execution record
         const execution = await db.scheduledTaskExecution.create({
             data: {
@@ -312,7 +325,7 @@ export async function saveNodeExecutionResultAction(
                 startedAt: new Date(Date.now() - (executionTime || 0)), // Approximate start
                 completedAt: new Date(),
                 durationMs: executionTime || 0,
-                result: result,
+                result: resultSummary,
                 error: error
             }
         });
@@ -328,6 +341,20 @@ export async function saveNodeExecutionResultAction(
                 lastError: error || null
             }
         });
+
+        // Retention: keep only the last 20 executions per task (fire-and-forget)
+        db.scheduledTaskExecution.findMany({
+            where: { taskId: task.id },
+            orderBy: { startedAt: 'desc' },
+            skip: 20,
+            select: { id: true },
+        }).then(old => {
+            if (old.length > 0) {
+                return db.scheduledTaskExecution.deleteMany({
+                    where: { id: { in: old.map(r => r.id) } },
+                });
+            }
+        }).catch(() => { /* non-critical */ });
 
         try { revalidatePath(`/connections`); } catch { /* scheduler context has no request */ }
         return { success: true, executionId: execution.id };
@@ -607,8 +634,7 @@ export async function deleteNodeScheduleByTypeAction(treeId: string, nodeId: str
             });
             // Try to stop in runtime scheduler
             try {
-                const { schedulerService } = await import('@/lib/scheduler/scheduler-service');
-                await schedulerService.rescheduleTask(task.id).catch(() => { });
+                await getSchedulerClient().rescheduleTask(task.id).catch(() => { });
             } catch (e) { }
         }
 

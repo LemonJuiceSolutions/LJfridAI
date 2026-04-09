@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { schedulerService } from '@/lib/scheduler/scheduler-service';
+import { getSchedulerClient } from '@/lib/scheduler/scheduler-client';
 
 /**
  * GET: Returns tasks in "needs_attention" status — all retries exhausted.
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
       data: { status: 'active', lastError: null },
     });
     // Fire-and-forget execution
-    schedulerService.triggerTask(id).catch((err) => {
+    getSchedulerClient().triggerTask(id).catch((err) => {
       console.error(`[Scheduler] Background retry for ${id} error:`, err);
     });
   }

@@ -111,6 +111,43 @@ services:
       start_period: 10s
       retries: 5
 
+  # ============================================================================
+  # Scheduler Service (optional — activate with: docker-compose --profile scheduler up)
+  # When active, Next.js skips in-process scheduler init and proxies commands here.
+  # Set SCHEDULER_SERVICE_URL=http://scheduler:3001 and SCHEDULER_SERVICE_SECRET in .env
+  # ============================================================================
+  scheduler:
+    container_name: rulesage-scheduler
+    profiles: ["scheduler"]
+    build:
+      context: .
+      dockerfile: scheduler-service/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/rulesagedb
+      - PYTHON_BACKEND_URL=http://python-backend:5005
+      - SCHEDULER_PORT=3001
+      - DATA_LAKE_PATH=/data_lake
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      python-backend:
+        condition: service_healthy
+    volumes:
+      - ./data_lake:/data_lake:delegated
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
 # ============================================================================
 # Named Volumes
 # ============================================================================

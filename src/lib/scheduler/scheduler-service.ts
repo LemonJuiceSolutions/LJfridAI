@@ -5,8 +5,8 @@ import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { DateTime } from 'luxon';
 import { CronExpressionParser } from 'cron-parser';
-import { executePythonPreviewAction, exportTableToSqlAction, executeSqlPreviewAction } from '@/app/actions';
-import { sendTestEmailWithDataAction, executeSqlAction } from '@/app/actions/connectors';
+import { executeSqlPreview, executePythonPreview, exportTableToSql, saveAncestorPreviews } from './scheduler-actions';
+import { sendTestEmailWithDataAction } from '@/app/actions/connectors';
 import escapeRegExp from 'lodash/escapeRegExp';
 import get from 'lodash/get';
 import set from 'lodash/set';
@@ -25,6 +25,13 @@ const logger = {
   error: (msg: string, ...args: any[]) => {
     const message = `[Scheduler] ERROR: ${msg} ${args.map(a => JSON.stringify(a)).join(' ')}`;
     console.error(message);
+    try {
+      fs.appendFileSync('./scheduler_debug.log', `${new Date().toISOString()} ${message}\n`);
+    } catch (e) { }
+  },
+  warn: (msg: string, ...args: any[]) => {
+    const message = `[Scheduler] WARN: ${msg} ${args.map(a => JSON.stringify(a)).join(' ')}`;
+    console.warn(message);
     try {
       fs.appendFileSync('./scheduler_debug.log', `${new Date().toISOString()} ${message}\n`);
     } catch (e) { }
@@ -927,13 +934,12 @@ export class SchedulerService {
             };
           });
 
-          const res = await executePythonPreviewAction(
+          const res = await executePythonPreview(
             tableDef.pythonCode,
             tableDef.pythonOutputType || 'table',
             inputData, // PASS DATA HERE
             deps,
             tableDef.connectorId,
-            _bypassAuth,
             tableDef.selectedDocuments?.length > 0 ? tableDef.selectedDocuments : undefined
           );
 
@@ -1012,11 +1018,10 @@ export class SchedulerService {
           }
           logger.log(`[AncestorChain] SQL node ${originalName}: injected ${deps.length} deps (${deps.map((d: any) => d.tableName).join(', ')})`);
 
-          const res = await executeSqlPreviewAction(
+          const res = await executeSqlPreview(
             effectiveQuery,
             tableDef.connectorId,
             deps,
-            _bypassAuth
           );
           if (res.error) {
             logger.error(`[AncestorChain] Error executing SQL node ${originalName}: ${res.error}`);
@@ -1050,13 +1055,12 @@ export class SchedulerService {
               // NOT the SQL connectorId. getAllNodesFromTree sets connectorId = sqlConnectorId for SQL-having
               // nodes, but Python code may need a different connector (e.g. HubSpot API).
               const hybridPyConnectorId = tableDef.pythonConnectorId || tableDef.connectorId;
-              const pyRes = await executePythonPreviewAction(
+              const pyRes = await executePythonPreview(
                 tableDef.pythonCode,
                 tableDef.pythonOutputType,
                 pythonInputData,
                 [], // No deps needed - data already provided
                 hybridPyConnectorId,
-                _bypassAuth,
                 tableDef.selectedDocuments?.length > 0 ? tableDef.selectedDocuments : undefined
               );
 
@@ -1145,8 +1149,7 @@ export class SchedulerService {
             if (nodeId) {
               logger.log(`[AncestorChain] [DEBUG] Starting incremental preview for ${originalName} (${nodeId})`);
               try {
-                const { saveAncestorPreviewsBatchAction } = await import('@/app/actions/scheduler');
-                await saveAncestorPreviewsBatchAction(treeId, [{
+                await saveAncestorPreviews(treeId, [{
                   nodeId: nodeId,
                   isPython: !!tableDef.isPython,
                   pythonOutputType: tableDef.pythonOutputType,
@@ -1180,13 +1183,12 @@ export class SchedulerService {
           const dataArr = Array.isArray(rawData) ? rawData : [rawData];
           if (dataArr.length > 0) {
             try {
-              await exportTableToSqlAction(
+              await exportTableToSql(
                 targetConnectorId,
                 targetTableName,
                 dataArr,
                 true, // createTable
                 true, // truncate
-                true // isSystem (bypass auth)
               );
               // Store permanent table info for reuse in downstream nodes
               const nodeAllNames = tableDef.allNames || [originalName];
@@ -1784,7 +1786,7 @@ export class SchedulerService {
     logger.log(`[SqlNode] Built ${dependencies.length} data-only deps from ancestor results: ${dependencies.map(d => `${d.tableName}(${d.data.length} rows)`).join(', ')}`);
 
     // 3. Execute Query with pre-calculated data deps
-    const result = await executeSqlPreviewAction(query, connectorIdSql, dependencies, true);
+    const result = await executeSqlPreview(query, connectorIdSql, dependencies);
     if (result.error) throw new Error(result.error);
 
     const data = result.data; // Array of rows
@@ -1812,13 +1814,14 @@ export class SchedulerService {
 
     // 5. Export if configured
     if (sqlExportConfig && sqlExportConfig.targetConnectorId && sqlExportConfig.targetTableName) {
-      // Perform Export
-      // The source is the `data` we just got.
-      const exportRes = await exportTableToSqlAction(
+      // Perform Export — must pass isSystem=true so it skips getServerSession/headers()
+      // which would fail outside a Next.js request context (scheduler background)
+      const exportRes = await exportTableToSql(
         sqlExportConfig.targetConnectorId,
         sqlExportConfig.targetTableName,
-        data as any[], // Cast data to any[] (it is IRecordSet which is object-like rows)
-        true // mode: overwrite (boolean true per action signature)
+        data as any[],
+        true,  // createTableIfNotExists
+        true,  // truncate
       );
       if (!exportRes.success) throw new Error(`Export failed: ${exportRes.error}`);
       return { success: true, message: `Executed & Exported to ${sqlExportConfig.targetTableName}` };
@@ -1866,13 +1869,12 @@ export class SchedulerService {
     // 2. Execute Python with pre-calculated data (no recursive deps)
     const runType = pythonOutputType || 'table';
 
-    const result = await executePythonPreviewAction(
+    const result = await executePythonPreview(
       pythonCode,
       runType,
       inputData, // Pre-calculated data from ancestor chain
       [], // No recursive deps needed — data already in inputData
       pythonConnectorId,
-      true, // _bypassAuth (scheduler runs without session)
       selectedDocuments?.length > 0 ? selectedDocuments : undefined
     );
 
@@ -1941,11 +1943,12 @@ export class SchedulerService {
         return { success: true, message: "Executed, but no data to export." };
       }
 
-      const exportRes = await exportTableToSqlAction(
+      const exportRes = await exportTableToSql(
         sqlExportConfig.targetConnectorId,
         sqlExportConfig.targetTableName,
         dataToExport,
-        true // mode: overwrite
+        true,  // createTableIfNotExists
+        true,  // truncate
       );
       if (!exportRes.success) throw new Error(`Export failed: ${exportRes.error}`);
       return { success: true, message: `Executed & Exported to ${sqlExportConfig.targetTableName}` };

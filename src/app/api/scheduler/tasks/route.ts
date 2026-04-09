@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { schedulerService } from '@/lib/scheduler/scheduler-service';
+import { getSchedulerClient } from '@/lib/scheduler/scheduler-client';
 import { z } from 'zod';
 
 // ============================================
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Schedule the task
-    await schedulerService.rescheduleTask(task.id);
+    await getSchedulerClient().rescheduleTask(task.id);
 
     return NextResponse.json({ task }, { status: 201 });
   } catch (error: any) {

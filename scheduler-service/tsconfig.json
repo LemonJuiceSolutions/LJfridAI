@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../src/*"],
+      "@/lib/session": ["./shims/session.ts"]
+    },
+    "resolveJsonModule": true
+  },
+  "include": ["./**/*.ts", "../src/lib/scheduler/**/*.ts", "../src/lib/preview-cache.ts", "../src/lib/db.ts", "../src/lib/python-backend.ts", "../src/lib/chart-theme.ts", "../src/lib/plotly-utils.ts", "../src/lib/html-style-utils.ts", "../src/lib/data-lake.ts", "../src/lib/server-cache.ts", "../src/lib/types.ts", "../src/app/actions/connectors.ts", "../src/app/actions/sharepoint.ts"],
+  "exclude": ["node_modules", "dist"]
+}
