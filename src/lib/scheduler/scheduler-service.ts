@@ -173,6 +173,23 @@ export class SchedulerService {
   public async init() {
     if (this.isInitialized) return;
     logger.log('Initializing Scheduler Service...');
+
+    // Chiudi eventuali esecuzioni zombie rimaste in stato "running"
+    // da un precedente crash del processo (record senza completedAt).
+    try {
+      const { count } = await db.scheduledTaskExecution.updateMany({
+        where: { completedAt: null, status: 'running' },
+        data: {
+          status: 'failed',
+          completedAt: new Date(),
+          error: 'Processo terminato inaspettatamente (zombie record chiuso al riavvio)',
+        },
+      });
+      if (count > 0) logger.warn(`Chiuse ${count} esecuzioni zombie rimaste da sessione precedente.`);
+    } catch (e: any) {
+      logger.error('Errore nella pulizia zombie:', e.message);
+    }
+
     await this.loadTasks();
     this.isInitialized = true;
     logger.log('Scheduler Service Initialized.');
