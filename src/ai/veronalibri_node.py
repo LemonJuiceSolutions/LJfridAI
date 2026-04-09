@@ -50,8 +50,8 @@ result = r"""
 body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
 /* Header */
-.app-header { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; box-shadow: var(--shadow-md); }
-.app-header h1 { font-size: 20px; font-weight: 600; }
+.app-header { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); color: white; padding: 20px 24px; display: flex; align-items: center; gap: 16px; box-shadow: var(--shadow-md); }
+.app-header h1 { font-size: 32px; font-weight: 800; letter-spacing: 0.5px; text-shadow: 0 2px 4px rgba(0,0,0,0.3); margin: 0; line-height: 1.2; }
 .app-header .subtitle { font-size: 13px; opacity: 0.8; }
 .title-display { margin-left: auto; font-size: 16px; font-weight: 600; background: rgba(255,255,255,0.15); padding: 6px 16px; border-radius: var(--radius); min-width: 200px; text-align: center; }
 
@@ -2647,6 +2647,38 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 // Initial calculation
 recalcAll();
+
+// ==========================================
+// PRE-FILL WITH DEMO DATA (Sistema compilato)
+// ==========================================
+setTimeout(function() {
+  // Libro
+  sv('C3', 'La Divina Commedia');
+  sv('C4', '978-8804703502');
+
+  // Copie per scatola
+  sv('D51', 25);
+  sv('M51', 1000);  // Total copies
+
+  // Carta
+  sv('D45', 80);  // g/m2
+  sv('F50', 'offset');
+
+  // Dimensioni scatola (cm)
+  sv('D59', 20);  // Larghezza
+  sv('F59', 15);  // Profondità
+  sv('H59', 25);  // Altezza
+
+  // Dimensioni bancale e limiti
+  sv('C130', 100);  // Larghezza cm
+  sv('D130', 120);  // Profondità cm
+  sv('D55', 800);   // Peso max bancale kg
+  sv('D60', 40);    // Max altezza scatola cm
+  sv('D61', 25);    // Max peso scatola kg
+
+  // Trigger automatic calculation
+  recalcAll();
+}, 100);
 
 // Load saved items
 loadItemsFromStorage();
