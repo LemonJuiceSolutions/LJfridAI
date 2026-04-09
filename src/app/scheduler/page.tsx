@@ -6,8 +6,8 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Plus, Play, Pause, Trash2, Clock, CheckCircle, XCircle, AlertCircle, List, FileText, CalendarClock, ExternalLink, ChevronRight } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Plus, Play, Pause, Trash2, Clock, CheckCircle, XCircle, AlertCircle, List, FileText, CalendarClock, ExternalLink, ChevronRight, Search, Loader2, Timer } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -105,14 +105,69 @@ export default function SchedulerPage() {
   const [selectedTask, setSelectedTask] = useState<ScheduledTask | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showExecutionsDialog, setShowExecutionsDialog] = useState(false);
+  const [search, setSearch] = useState('');
 
+  // Live progress dialog (manual trigger)
+  const [runningTask, setRunningTask] = useState<ScheduledTask | null>(null);
+  const [runStatus, setRunStatus] = useState<'triggering' | 'running' | 'retrying' | 'success' | 'failure' | 'failed_permanent'>('triggering');
+  const [runResult, setRunResult] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [runElapsed, setRunElapsed] = useState(0);
+  const [runPipelineReport, setRunPipelineReport] = useState<any[]>([]);
+  const runStartRef = useRef<number>(0);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Global background-task tracking
+  // taskId -> { startedAt (ms), elapsedSec }
+  const [bgRunning, setBgRunning] = useState<Record<string, { startedAt: number; elapsed: number }>>({});
+  const bgPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bgElapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [bgTick, setBgTick] = useState(0); // forces re-render for elapsed
+
+  // Start global polling on mount
   useEffect(() => {
     fetchTasks();
+    startBgPolling();
+    return () => {
+      if (bgPollRef.current) clearInterval(bgPollRef.current);
+      if (bgElapsedRef.current) clearInterval(bgElapsedRef.current);
+    };
   }, []);
 
-  const fetchTasks = async () => {
+  const startBgPolling = () => {
+    // Elapsed ticker: every second
+    bgElapsedRef.current = setInterval(() => setBgTick(t => t + 1), 1000);
+    // Running-task poll: every 2.5s
+    bgPollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch('/api/scheduler/executions?status=running&limit=20');
+        if (!res.ok) return;
+        const data = await res.json();
+        const runningExecs: any[] = data.executions || [];
+        setBgRunning(prev => {
+          const next: Record<string, { startedAt: number; elapsed: number }> = {};
+          for (const exec of runningExecs) {
+            const taskId = exec.task?.id || exec.taskId;
+            if (!taskId) continue;
+            const startedAt = prev[taskId]?.startedAt ?? new Date(exec.startedAt).getTime();
+            next[taskId] = { startedAt, elapsed: Math.floor((Date.now() - startedAt) / 1000) };
+          }
+          // If something finished (was in prev but not in next), refresh tasks
+          const prevIds = Object.keys(prev);
+          const nextIds = Object.keys(next);
+          if (prevIds.some(id => !nextIds.includes(id))) {
+            fetchTasks(true); // silent refresh when a task finishes
+          }
+          return next;
+        });
+      } catch { /* ignore */ }
+    }, 2500);
+  };
+
+  const fetchTasks = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await fetch('/api/scheduler/tasks?includeExecutions=false');
       const data = await response.json();
 
@@ -132,7 +187,7 @@ export default function SchedulerPage() {
         description: 'Failed to fetch tasks'
       });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -219,36 +274,82 @@ export default function SchedulerPage() {
     }
   };
 
-  const handleTriggerTask = async (taskId: string) => {
-    // Show immediate feedback — the API responds with 202 and runs in background
-    toast({
-      title: 'Task avviato',
-      description: 'In esecuzione in background...',
-    });
+  const stopPolling = () => {
+    if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+    if (elapsedIntervalRef.current) { clearInterval(elapsedIntervalRef.current); elapsedIntervalRef.current = null; }
+  };
+
+  const closeRunDialog = () => {
+    stopPolling();
+    setRunningTask(null);
+  };
+
+  const handleTriggerTask = async (task: ScheduledTask) => {
+    stopPolling();
+    setRunningTask(task);
+    setRunStatus('triggering');
+    setRunResult(null);
+    setRunError(null);
+    setRunElapsed(0);
+    setRunPipelineReport([]);
+    runStartRef.current = Date.now();
+
+    // Elapsed ticker
+    elapsedIntervalRef.current = setInterval(() => {
+      setRunElapsed(Math.floor((Date.now() - runStartRef.current) / 1000));
+    }, 1000);
 
     try {
-      const response = await fetch(`/api/scheduler/tasks/${taskId}/trigger`, {
-        method: 'POST'
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        toast({
-          variant: 'destructive',
-          title: 'Errore',
-          description: data.error || 'Impossibile avviare il task'
-        });
-      } else {
-        // Refresh task list after a short delay to reflect running status
-        setTimeout(fetchTasks, 2000);
+      const triggerRes = await fetch(`/api/scheduler/tasks/${task.id}/trigger`, { method: 'POST' });
+      if (!triggerRes.ok) {
+        const d = await triggerRes.json();
+        setRunStatus('failure');
+        setRunError(d.error || 'Impossibile avviare il task');
+        stopPolling();
+        return;
       }
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Errore',
-        description: 'Impossibile contattare il server'
-      });
+    } catch {
+      setRunStatus('failure');
+      setRunError('Impossibile contattare il server');
+      stopPolling();
+      return;
     }
+
+    setRunStatus('running');
+    const triggerTime = new Date();
+
+    // Poll executions every 1.5s to detect the new execution
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/scheduler/tasks/${task.id}/executions?limit=5`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const execs: any[] = data.executions || [];
+        // Find the execution started at or after trigger
+        const exec = execs.find(e => new Date(e.startedAt) >= triggerTime);
+        if (!exec) return;
+
+        const st = exec.status as string;
+        if (st === 'running' || st === 'retrying') {
+          setRunStatus(st as any);
+        } else {
+          // Terminal state
+          setRunStatus(st as any);
+          setRunError(exec.error || null);
+          // Extract message from result
+          const r = exec.result;
+          if (r) {
+            if (typeof r === 'string') setRunResult(r);
+            else if (r.message) setRunResult(r.message);
+            else if (r.error) setRunError(r.error);
+          }
+          // Pipeline report
+          if (r?.pipelineReport) setRunPipelineReport(r.pipelineReport);
+          stopPolling();
+          fetchTasks();
+        }
+      } catch { /* ignore */ }
+    }, 1500);
   };
 
   const getStatusBadge = (status: string) => {
@@ -292,8 +393,45 @@ export default function SchedulerPage() {
     });
   };
 
+  const bgRunningCount = Object.keys(bgRunning).length;
+
   return (
     <div className="container mx-auto p-6">
+
+      {/* ── Global "tasks running" banner ── */}
+      {bgRunningCount > 0 && (
+        <div className="mb-4 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/20 px-4 py-3 flex items-center gap-3">
+          <Loader2 className="w-4 h-4 animate-spin text-violet-600 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-sm font-medium text-violet-800 dark:text-violet-300">
+                {bgRunningCount === 1 ? '1 task in esecuzione' : `${bgRunningCount} task in esecuzione`}
+              </span>
+              <span className="text-xs text-violet-600 dark:text-violet-400 flex items-center gap-1">
+                <Timer className="w-3 h-3" />
+                {Object.values(bgRunning).map(r => {
+                  const s = Math.floor((Date.now() - r.startedAt) / 1000);
+                  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+                }).join(' · ')}
+              </span>
+            </div>
+            {/* Indeterminate progress bar */}
+            <div className="h-1.5 w-full bg-violet-200 dark:bg-violet-800 rounded-full overflow-hidden">
+              <div className="h-full bg-violet-500 rounded-full animate-[progress_2s_ease-in-out_infinite]"
+                style={{ width: '40%', animation: 'bgSlide 1.8s ease-in-out infinite' }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes bgSlide {
+          0%   { transform: translateX(-100%); width: 40%; }
+          50%  { width: 60%; }
+          100% { transform: translateX(350%); width: 40%; }
+        }
+      `}</style>
+
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold">Scheduler</h1>
@@ -341,10 +479,24 @@ export default function SchedulerPage() {
         <TabsContent value="tasks">
           <Card>
             <CardHeader>
-              <CardTitle>Task Pianificati</CardTitle>
-              <CardDescription>
-                Gestisci e monitora tutti i task pianificati
-              </CardDescription>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Task Pianificati</CardTitle>
+                  <CardDescription>
+                    Gestisci e monitora tutti i task pianificati
+                  </CardDescription>
+                </div>
+                <div className="relative w-64">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Cerca task..."
+                    className="w-full pl-8 pr-3 py-1.5 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {loading ? (
@@ -378,8 +530,22 @@ export default function SchedulerPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {tasks.map((task) => (
-                      <TableRow key={task.id}>
+                    {tasks.filter(task => {
+                      if (!search.trim()) return true;
+                      const q = search.toLowerCase();
+                      return (
+                        getTaskNodeName(task).toLowerCase().includes(q) ||
+                        (task.treeName || '').toLowerCase().includes(q) ||
+                        task.type.toLowerCase().includes(q) ||
+                        (task.config as any)?.subject?.toLowerCase().includes(q) ||
+                        (task.description || '').toLowerCase().includes(q)
+                      );
+                    }).map((task) => {
+                      const isRunning = !!bgRunning[task.id];
+                      const runInfo = bgRunning[task.id];
+                      const elapsedSec = runInfo ? Math.floor((Date.now() - runInfo.startedAt) / 1000) : 0;
+                      return (
+                      <TableRow key={task.id} className={isRunning ? 'bg-violet-50/60 dark:bg-violet-900/10' : ''}>
                         <TableCell className="whitespace-nowrap">
                           <div>
                             {task.treeName && (
@@ -417,7 +583,23 @@ export default function SchedulerPage() {
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{getTypeBadge(task.type)}</TableCell>
                         <TableCell className="whitespace-nowrap">{getStatusBadge(task.status)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-xs">{formatDate(task.lastRunAt)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">
+                          {isRunning ? (
+                            <div className="flex flex-col gap-1 min-w-[110px]">
+                              <div className="flex items-center gap-1.5 text-violet-600 dark:text-violet-400 font-medium">
+                                <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                                <span>In corso…</span>
+                                <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
+                                  {elapsedSec < 60 ? `${elapsedSec}s` : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`}
+                                </span>
+                              </div>
+                              <div className="h-1 w-full bg-violet-100 dark:bg-violet-900 rounded-full overflow-hidden">
+                                <div className="h-full bg-violet-500 rounded-full"
+                                  style={{ width: `${Math.min(95, 5 + (elapsedSec / 120) * 90)}%`, transition: 'width 1s linear' }} />
+                              </div>
+                            </div>
+                          ) : formatDate(task.lastRunAt)}
+                        </TableCell>
                         <TableCell className="whitespace-nowrap text-xs">{formatDate(task.nextRunAt)}</TableCell>
                         <TableCell className="whitespace-nowrap">
                           <div className="flex items-center gap-1.5 text-xs">
@@ -432,7 +614,7 @@ export default function SchedulerPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleTriggerTask(task.id)}
+                              onClick={() => handleTriggerTask(task)}
                               title="Esegui ora"
                               className="h-7 w-7 p-0"
                             >
@@ -475,7 +657,7 @@ export default function SchedulerPage() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    );})}
                   </TableBody>
                 </Table>
               )}
@@ -495,6 +677,101 @@ export default function SchedulerPage() {
           <SchedulerUpcoming />
         </TabsContent>
       </Tabs>
+
+      {/* Live execution progress dialog */}
+      <Dialog open={!!runningTask} onOpenChange={open => { if (!open) closeRunDialog(); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {runStatus === 'triggering' || runStatus === 'running' || runStatus === 'retrying' ? (
+                <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
+              ) : runStatus === 'success' ? (
+                <CheckCircle className="w-4 h-4 text-green-500" />
+              ) : (
+                <XCircle className="w-4 h-4 text-red-500" />
+              )}
+              {runningTask ? getTaskNodeName(runningTask) : 'Esecuzione Task'}
+            </DialogTitle>
+            {runningTask?.treeName && (
+              <DialogDescription>{runningTask.treeName}</DialogDescription>
+            )}
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Status row */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm">
+                {runStatus === 'triggering' && <span className="text-muted-foreground">Avvio in corso...</span>}
+                {runStatus === 'running' && <span className="text-violet-600 font-medium">In esecuzione</span>}
+                {runStatus === 'retrying' && <span className="text-yellow-600 font-medium">Nuovo tentativo...</span>}
+                {runStatus === 'success' && <span className="text-green-600 font-medium">Completato con successo</span>}
+                {(runStatus === 'failure' || runStatus === 'failed_permanent') && <span className="text-red-600 font-medium">Errore</span>}
+              </div>
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Timer className="w-3 h-3" />
+                <span>{runElapsed}s</span>
+              </div>
+            </div>
+
+            {/* Progress bar while running */}
+            {(runStatus === 'triggering' || runStatus === 'running' || runStatus === 'retrying') && (
+              <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-violet-500 rounded-full animate-pulse" style={{ width: '100%' }} />
+              </div>
+            )}
+
+            {/* Result message */}
+            {runResult && (
+              <div className="rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 px-3 py-2 text-xs text-green-800 dark:text-green-300">
+                {runResult}
+              </div>
+            )}
+
+            {/* Error */}
+            {runError && (
+              <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-800 dark:text-red-300 break-words">
+                {runError}
+              </div>
+            )}
+
+            {/* Pipeline report */}
+            {runPipelineReport.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-muted-foreground mb-1">Pipeline Report</div>
+                <div className="max-h-48 overflow-y-auto space-y-0.5">
+                  {runPipelineReport.map((entry: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-xs py-0.5 border-b border-border/40 last:border-0">
+                      {entry.status === 'success' ? (
+                        <CheckCircle className="w-3 h-3 text-green-500 shrink-0" />
+                      ) : entry.status === 'error' ? (
+                        <XCircle className="w-3 h-3 text-red-500 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-3 h-3 text-yellow-500 shrink-0" />
+                      )}
+                      <span className="truncate flex-1">{entry.name}</span>
+                      {entry.type && <span className="text-muted-foreground shrink-0">{entry.type}</span>}
+                      {entry.error && <span className="text-red-500 truncate max-w-[140px]" title={entry.error}>{entry.error}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Waiting message */}
+            {(runStatus === 'running' || runStatus === 'retrying') && !runPipelineReport.length && (
+              <p className="text-xs text-muted-foreground text-center">
+                Attendere il completamento dell'esecuzione...
+              </p>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-1">
+            <Button variant="outline" size="sm" onClick={closeRunDialog}>
+              {runStatus === 'running' || runStatus === 'retrying' || runStatus === 'triggering' ? 'Chiudi (continua in background)' : 'Chiudi'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showExecutionsDialog} onOpenChange={setShowExecutionsDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">

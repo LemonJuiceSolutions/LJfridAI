@@ -2,7 +2,7 @@
 import type { DecisionNode, StoredTree, DecisionLeaf, Variable, VariableOption, LinkItem, TriggerItem } from '@/lib/types';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Mail, AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code, FileCode, Upload, Clock, Sparkles, Loader2 } from 'lucide-react';
+import { Mail, AlertCircle, Plus, Pencil, Trash2, Expand, Download, Link as LinkIcon, Link2, Zap, Image as ImageIcon, Video, GitBranch, Database, Play, Check, FileText, Cpu, Bot, Flag, Terminal, Code, FileCode, Upload, Clock, Sparkles, Loader2, Search, X } from 'lucide-react';
 import cloneDeep from 'lodash/cloneDeep';
 import get from 'lodash/get';
 import EditNodeDialog from './edit-node-dialog';
@@ -297,6 +297,7 @@ function getNodeFromPath(obj: any, path: string): any {
 export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIsSaving, initialNodePath }: VisualTreeProps) {
     const { toast } = useToast();
     const [scheduledNodeIds, setScheduledNodeIds] = useState<Set<string>>(new Set());
+    const [nodeSearch, setNodeSearch] = useState('');
 
     // Load tree schedules
     useEffect(() => {
@@ -1829,6 +1830,21 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
         <Card className="h-[700px] flex flex-col">
             <CardContent className="flex-grow p-0 relative overflow-hidden bg-slate-200 dark:bg-zinc-950">
                 <TooltipProvider>
+                    <div className='absolute top-4 left-4 z-10 flex items-center gap-1.5 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm px-2 py-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700'>
+                        <Search className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                        <input
+                            type="text"
+                            value={nodeSearch}
+                            onChange={e => setNodeSearch(e.target.value)}
+                            placeholder="Cerca nodo..."
+                            className="text-xs bg-transparent outline-none w-36 placeholder:text-muted-foreground text-foreground"
+                        />
+                        {nodeSearch && (
+                            <button onClick={() => setNodeSearch('')} className="text-muted-foreground hover:text-foreground">
+                                <X className="h-3 w-3" />
+                            </button>
+                        )}
+                    </div>
                     <div className='absolute top-4 right-4 z-10 flex items-center gap-2 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm p-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700'>
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -1926,13 +1942,32 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
                                 const isInternalLink = type === 'decision' && typeof actualNode === 'object' && actualNode !== null && 'ref' in actualNode;
                                 const isSubTree = type === 'sub-tree-link';
 
+                                const isSearchMatch = !!nodeSearch.trim() && (() => {
+                                    const q = nodeSearch.toLowerCase();
+                                    if (text.toLowerCase().includes(q)) return true;
+                                    if (typeof actualNode === 'object' && actualNode !== null) {
+                                        const n = actualNode as any;
+                                        if (n.sqlResultName?.toLowerCase().includes(q)) return true;
+                                        if (n.pythonResultName?.toLowerCase().includes(q)) return true;
+                                        if (n.sqlQuery?.toLowerCase().includes(q)) return true;
+                                        if (n.pythonCode?.toLowerCase().includes(q)) return true;
+                                        if (n.decision?.toLowerCase().includes(q)) return true;
+                                    }
+                                    return false;
+                                })();
+
                                 return (
                                     <div
                                         key={itemKey}
                                         className={cn(`tree-node-wrapper group is-${type} flex flex-col`, { 'is-undefined-path': isUndefinedPath, 'is-link': isInternalLink || isSubTree })}
                                         style={{ left: x, top: y, width: width, height: height }}
                                     >
-                                        <div className="relative w-full h-full bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center p-3 gap-3 overflow-hidden transition-all hover:shadow-md hover:border-violet-300 dark:hover:border-violet-700">
+                                        <div className={cn(
+                                            "relative w-full h-full rounded-xl shadow-sm border flex items-center p-3 gap-3 overflow-hidden transition-all hover:shadow-md",
+                                            isSearchMatch
+                                                ? "bg-green-50 border-green-400 dark:bg-green-900/20 dark:border-green-500 hover:border-green-500"
+                                                : "bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-800 hover:border-violet-300 dark:hover:border-violet-700"
+                                        )}>
 
                                             <div className={cn("flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center",
                                                 type === 'question' ? (path === 'root' ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400") :

@@ -998,7 +998,10 @@ export class SchedulerService {
 
               const dataToInject = Array.isArray(val) ? val :
                 (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) ? val.data : null;
-              if (dataToInject && dataToInject.length > 0) {
+              if (dataToInject) {
+                if (dataToInject.length === 0) {
+                  logger.log(`[AncestorChain] WARNING: Dependency "${key}" for node "${originalName}" has 0 rows — injecting empty table to prevent JOIN failure`);
+                }
                 deps.push({
                   tableName: key,
                   data: dataToInject
@@ -1043,12 +1046,16 @@ export class SchedulerService {
                 }
               }
 
+              // FIX: For hybrid nodes, use pythonConnectorId for the Python phase (e.g. HubSpot token),
+              // NOT the SQL connectorId. getAllNodesFromTree sets connectorId = sqlConnectorId for SQL-having
+              // nodes, but Python code may need a different connector (e.g. HubSpot API).
+              const hybridPyConnectorId = tableDef.pythonConnectorId || tableDef.connectorId;
               const pyRes = await executePythonPreviewAction(
                 tableDef.pythonCode,
                 tableDef.pythonOutputType,
                 pythonInputData,
                 [], // No deps needed - data already provided
-                tableDef.connectorId,
+                hybridPyConnectorId,
                 _bypassAuth,
                 tableDef.selectedDocuments?.length > 0 ? tableDef.selectedDocuments : undefined
               );
@@ -1067,6 +1074,18 @@ export class SchedulerService {
                   stdout: pyRes.stdout
                 };
                 logger.log(`[AncestorChain] Hybrid node ${originalName}: Python chart generated successfully`);
+
+                // FIX: For hybrid nodes where sqlResultName != pythonResultName, the Python code
+                // may produce DIFFERENT data than the SQL (e.g. SQL=CommesseMago, Python=CommesseHubSpot).
+                // Store the Python result data separately under pythonResultName so downstream UNION ALL
+                // queries get the correct distinct data for each source instead of SQL data for both.
+                const hybridPythonName = tableDef.pythonResultName;
+                const hybridSqlName = tableDef.sqlResultName;
+                if (hybridPythonName && hybridSqlName && hybridPythonName !== hybridSqlName && Array.isArray(pyRes.data) && pyRes.data.length > 0) {
+                  logger.log(`[AncestorChain] Hybrid ${originalName}: storing Python result (${pyRes.data.length} rows) separately under '${hybridPythonName}'`);
+                  results[hybridPythonName] = pyRes.data;
+                  resultsNormalized[hybridPythonName.toLowerCase().trim()] = pyRes.data;
+                }
               } else {
                 logger.error(`[AncestorChain] Hybrid node ${originalName}: Python chart failed: ${pyRes.error}`);
                 // Keep SQL-only result (resultData unchanged)
@@ -1102,9 +1121,17 @@ export class SchedulerService {
             resultsNormalized[normalizedName] = resultData;
 
             // Also store under all alternative names
+            // EXCEPTION: skip aliases that were already stored separately with Python-specific data
+            // (e.g. pythonResultName for hybrid nodes where SQL and Python produce different datasets)
             const allNames = tableDef.allNames || [originalName];
+            const hybridPythonName = tableDef.pythonResultName;
             for (const altName of allNames) {
               if (altName !== originalName) {
+                // Skip if this alias already has separately stored Python data (don't overwrite it)
+                if (hybridPythonName && altName === hybridPythonName && results[altName] !== undefined) {
+                  logger.log(`[AncestorChain] Skipping alias '${altName}' — already stored with separate Python data`);
+                  continue;
+                }
                 results[altName] = resultData;
                 resultsNormalized[altName.toLowerCase().trim()] = resultData;
               }
@@ -1735,24 +1762,28 @@ export class SchedulerService {
 
     if (!query || !connectorIdSql) return { success: false, error: "Missing Query or Connector" };
 
-    // 2. Build Dependencies
-    // Logic: map selectedPipelines to their inputs.
+    // 2. Build Dependencies & Execute Ancestors
     const allContext = (contextTables as any[]) || [];
-    const dependencies: any[] = (selectedPipelines as string[])?.map(name => {
-      const def = allContext.find(c => c.name === name);
-      if (!def) return null;
-      // executeSqlPreviewAction expects `tableName`, but contextTables entries use `name`
-      return { ...def, tableName: def.tableName || def.name };
-    }).filter(Boolean) as any[] || [];
 
-    // 0. EXECUTE ANCESTORS (Full Pipeline Refresh)
+    // EXECUTE ANCESTORS (Full Pipeline Refresh)
     // Execute all context tables to ensure they are up to date and exported if needed
     logger.log(`[SqlNode] Starting ancestor chain execution.`);
-    await this.executeAncestorChain(allContext, undefined, true, treeId);
+    const { results: ancestorResults } = await this.executeAncestorChain(allContext, undefined, true, treeId);
 
+    // Build data-only dependencies from ancestor results (NOT original query definitions).
+    // Passing original deps with query/pipelineDependencies would cause executeSqlPreviewAction
+    // to re-execute them recursively, which fails because temp tables from the ancestor chain
+    // connection no longer exist. Instead, pass pre-calculated data so it just creates temp tables.
+    const dependencies: any[] = ((selectedPipelines as string[]) || []).map(name => {
+      const val = ancestorResults[name];
+      const dataArr = Array.isArray(val) ? val :
+        (val && typeof val === 'object' && 'data' in val && Array.isArray(val.data)) ? val.data : [];
+      return { tableName: name, data: dataArr };
+    }).filter(d => d.data);
 
-    // 3. Execute Query
-    // Explicitly cast dependencies to any[] to satisfy TS
+    logger.log(`[SqlNode] Built ${dependencies.length} data-only deps from ancestor results: ${dependencies.map(d => `${d.tableName}(${d.data.length} rows)`).join(', ')}`);
+
+    // 3. Execute Query with pre-calculated data deps
     const result = await executeSqlPreviewAction(query, connectorIdSql, dependencies, true);
     if (result.error) throw new Error(result.error);
 
@@ -1811,36 +1842,35 @@ export class SchedulerService {
 
     if (!pythonCode) return { success: false, error: "Missing Python Code" };
 
-    // 1. Build Dependencies
+    // 1. Execute Ancestors & Build Dependencies from results
     const allContext = (contextTables as any[]) || [];
-    const dependencies = (pythonSelectedPipelines as string[])?.map(name => {
-      const def = allContext.find(c => c.name === name);
-      if (!def) return null;
-      return {
-        tableName: def.name,
-        connectorId: def.connectorId,
-        query: def.sqlQuery,
-        isPython: def.isPython,
-        pythonCode: def.pythonCode,
-        pipelineDependencies: def.pipelineDependencies,
-        selectedDocuments: def.selectedDocuments
-      };
-    }).filter(Boolean) as any[] || []; // Cast to any[]
 
-    // 0. EXECUTE ANCESTORS (Full Pipeline Refresh)
+    // EXECUTE ANCESTORS (Full Pipeline Refresh)
     logger.log(`[PythonNode] Starting ancestor chain execution.`);
-    await this.executeAncestorChain(allContext, undefined, true, treeId);
+    const { results: ancestorResults } = await this.executeAncestorChain(allContext, undefined, true, treeId);
 
+    // Build inputData from ancestor results (NOT re-executing queries).
+    // Passing original deps with query/pythonCode would cause executePythonPreviewAction
+    // to re-execute them recursively, which fails for the same reason as SQL nodes.
+    const inputData: Record<string, any[]> = {};
+    for (const [key, val] of Object.entries(ancestorResults)) {
+      const dataArr = Array.isArray(val) ? val :
+        (val && typeof val === 'object' && 'data' in val && Array.isArray((val as any).data)) ? (val as any).data : null;
+      if (dataArr) {
+        inputData[key] = dataArr;
+      }
+    }
 
-    // 2. Execute Python
-    // outputType default 'table' if we want data
+    logger.log(`[PythonNode] Built inputData from ancestor results: ${Object.entries(inputData).map(([k, v]) => `${k}(${v.length} rows)`).join(', ')}`);
+
+    // 2. Execute Python with pre-calculated data (no recursive deps)
     const runType = pythonOutputType || 'table';
 
     const result = await executePythonPreviewAction(
       pythonCode,
       runType,
-      {}, // variables
-      dependencies,
+      inputData, // Pre-calculated data from ancestor chain
+      [], // No recursive deps needed — data already in inputData
       pythonConnectorId,
       true, // _bypassAuth (scheduler runs without session)
       selectedDocuments?.length > 0 ? selectedDocuments : undefined

@@ -10,7 +10,7 @@ import { PlusCircle, Loader2, ListTree, Download, Bot, Database, Trash2, Search,
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getTreesAction, importTreeFromJsonAction } from './actions';
-import { deleteAllTreesAction, deleteTreeAction } from './actions/tree';
+import { deleteAllTreesAction, deleteTreeAction, searchTreesByNodeContentAction, type TreeNodeSearchResult, type NodeSearchMatch } from './actions/tree';
 import type { StoredTree } from '@/lib/types';
 import { BrainCircuit, MessageSquareText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -38,6 +38,8 @@ export default function Home() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [nodeSearchResults, setNodeSearchResults] = useState<TreeNodeSearchResult[] | null>(null);
+  const [isNodeSearching, setIsNodeSearching] = useState(false);
 
   const fetchTrees = async () => {
     setIsLoading(true);
@@ -58,6 +60,26 @@ export default function Home() {
     fetchTrees();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Debounced node-content search: searches inside jsonDecisionTree on the server
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setNodeSearchResults(null);
+      setIsNodeSearching(false);
+      return;
+    }
+    setIsNodeSearching(true);
+    const timer = setTimeout(async () => {
+      const result = await searchTreesByNodeContentAction(searchQuery);
+      if (result.data) {
+        setNodeSearchResults(result.data);
+      } else {
+        setNodeSearchResults(null);
+      }
+      setIsNodeSearching(false);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const handleDownloadAll = async () => {
     if (trees.length === 0) {
@@ -250,12 +272,15 @@ export default function Home() {
     reader.readAsText(file);
   };
 
+  const nodeSearchMap = new Map(nodeSearchResults?.map(r => [r.id, r.matchingNodes]) ?? []);
+
   const filteredTrees = trees.filter(tree => {
     const query = searchQuery.toLowerCase();
     if (!query) return true;
-    const nameMatch = tree.name.toLowerCase().includes(query);
-    const descriptionMatch = tree.description.toLowerCase().includes(query);
-    return nameMatch || descriptionMatch;
+    if (tree.name.toLowerCase().includes(query)) return true;
+    if (tree.description.toLowerCase().includes(query)) return true;
+    if (nodeSearchMap.has(tree.id)) return true;
+    return false;
   });
 
   return (
@@ -300,12 +325,15 @@ export default function Home() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Cerca per nome o descrizione..."
-                  className="pl-9"
+                  placeholder="Cerca per nome, descrizione o nodi..."
+                  className="pl-9 pr-9"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   disabled={isLoading}
                 />
+                {isNodeSearching && (
+                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -315,11 +343,31 @@ export default function Home() {
                 </div>
               ) : trees.length > 0 ? (
                 <div className="grid gap-4">
-                  {filteredTrees.map((tree) => (
+                  {filteredTrees.map((tree) => {
+                    const matchNodes = nodeSearchMap.get(tree.id);
+                    return (
                     <div key={tree.id} className="group flex items-center justify-between rounded-lg border p-4 hover:bg-muted/50 transition-colors">
-                      <Link href={`/view/${tree.id}`} className="flex-grow">
+                      <Link href={`/view/${tree.id}`} className="flex-grow min-w-0">
                         <h3 className="font-semibold text-lg">{tree.name}</h3>
                         <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{tree.description}</p>
+                        {matchNodes && matchNodes.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {matchNodes.map((n, i) => (
+                              <span
+                                key={i}
+                                className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${
+                                  n.type === 'sql' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                  : n.type === 'python' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                                  : n.type === 'mixed' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                                  : 'bg-muted text-muted-foreground'
+                                }`}
+                              >
+                                {n.type === 'sql' ? <Database className="h-3 w-3" /> : n.type === 'python' || n.type === 'mixed' ? <Bot className="h-3 w-3" /> : null}
+                                {n.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </Link>
                       <Button
                         variant="ghost"
@@ -333,7 +381,8 @@ export default function Home() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                  ))}
+                    );
+                  })}
                   {filteredTrees.length === 0 && (
                     <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed bg-card p-8 text-center min-h-[200px]">
                       <Search className="h-12 w-12 text-muted-foreground" />

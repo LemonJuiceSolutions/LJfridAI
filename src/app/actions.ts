@@ -1606,6 +1606,10 @@ export async function executeSqlPreviewAction(
             return newText;
         };
 
+        // Track a materialized temp table name that has actual columns,
+        // so empty placeholder tables can clone its schema for UNION ALL compatibility.
+        let schemaSourceTable: string | null = null;
+
         if (allDeps.length > 0) {
             console.log(`[PIPELINE SERVER] Executing ${allDeps.length} flattened dependencies:`, allDeps.map(d => ({
                 name: d.tableName,
@@ -1616,7 +1620,6 @@ export async function executeSqlPreviewAction(
                 isPython: !!d.isPython,
                 hasPythonCode: !!d.pythonCode
             })));
-
 
             for (const dep of allDeps) {
                 // Use unique naming to prevent collisions
@@ -1754,6 +1757,7 @@ export async function executeSqlPreviewAction(
                         await request.query(`CREATE TABLE ${tempTableName} (${colDefs});`);
                         console.log(`[PIPELINE] Created ${tempTableName} (${columns.length} cols)`);
                         createdTempTables.push(tempTableName);
+                        if (!schemaSourceTable) schemaSourceTable = tempTableName;
 
                         // Insert data in batches to avoid query size limits
                         const batchSize = 100;
@@ -1787,10 +1791,16 @@ export async function executeSqlPreviewAction(
 
                         console.log(`[PIPELINE] Created ${tempTableName} with ${rowsToInsert.length} rows`);
                     } else {
-                        // Create an EMPTY temp table so queries referencing it don't fail
-                        // We use a generic schema since we don't have data to infer from
-                        console.log(`[PIPELINE] Creating EMPTY temp table ${tempTableName} (no data from source)`);
-                        await request.query(`CREATE TABLE ${tempTableName} ([_empty_placeholder] NVARCHAR(1));`);
+                        // Create an EMPTY temp table so queries referencing it don't fail.
+                        // If another dep was already materialized with real columns, clone its schema
+                        // so UNION ALL queries don't fail with column count mismatches.
+                        if (schemaSourceTable) {
+                            console.log(`[PIPELINE] Creating EMPTY temp table ${tempTableName} (schema cloned from ${schemaSourceTable})`);
+                            await request.query(`SELECT TOP 0 * INTO ${tempTableName} FROM ${schemaSourceTable};`);
+                        } else {
+                            console.log(`[PIPELINE] Creating EMPTY temp table ${tempTableName} (no data, no schema source — using placeholder)`);
+                            await request.query(`CREATE TABLE ${tempTableName} ([_empty_placeholder] NVARCHAR(1));`);
+                        }
                         createdTempTables.push(tempTableName);
                     }
 
@@ -1911,7 +1921,8 @@ export async function executeSqlPreviewAction(
                                 const pyRes = await executePythonPreviewAction(
                                     matchingNode.pythonCode, 'table', {},
                                     matchingNode.pipelineDependencies || [],
-                                    matchingNode.connectorId || matchingNode.pythonConnectorId
+                                    matchingNode.connectorId || matchingNode.pythonConnectorId,
+                                    _bypassAuth
                                 );
                                 if (pyRes.success && pyRes.data && Array.isArray(pyRes.data) && pyRes.data.length > 0) {
                                     rowsToInsert = pyRes.data;
@@ -1934,6 +1945,7 @@ export async function executeSqlPreviewAction(
                                 const colDefs = columns.map(col => `[${col}] NVARCHAR(MAX)`).join(', ');
                                 await request.query(`CREATE TABLE ${tempTableName} (${colDefs});`);
                                 createdTempTables.push(tempTableName);
+                                if (!schemaSourceTable) schemaSourceTable = tempTableName;
 
                                 const batchSize = 100;
                                 for (let i = 0; i < rowsToInsert.length; i += batchSize) {
@@ -1958,7 +1970,11 @@ export async function executeSqlPreviewAction(
                                 finalQuery = replaceTableRef(finalQuery, unresolvedName, tempTableName);
                             } else {
                                 console.log(`[PIPELINE] Cross-tree node "${unresolvedName}" found but returned no data, creating empty table`);
-                                await request.query(`CREATE TABLE ${tempTableName} ([_empty] NVARCHAR(1));`);
+                                if (schemaSourceTable) {
+                                    await request.query(`SELECT TOP 0 * INTO ${tempTableName} FROM ${schemaSourceTable};`);
+                                } else {
+                                    await request.query(`CREATE TABLE ${tempTableName} ([_empty] NVARCHAR(1));`);
+                                }
                                 createdTempTables.push(tempTableName);
                                 nameMap.set(unresolvedName, tempTableName);
                                 finalQuery = replaceTableRef(finalQuery, unresolvedName, tempTableName);
