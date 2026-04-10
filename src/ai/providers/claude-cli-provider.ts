@@ -16,6 +16,8 @@ export interface ClaudeCliOptions {
     sessionId?: string;
     /** Working directory for the CLI (default: process.cwd()) */
     cwd?: string;
+    /** Restrict CLI to only these tools (MCP tool names). Blocks Write/Edit/Bash if set. */
+    allowedTools?: string[];
 }
 
 export interface ClaudeCliResult {
@@ -43,6 +45,13 @@ export function streamFromClaudeCli(opts: ClaudeCliOptions): ClaudeCliResult {
     args.push('-p', '--output-format', 'stream-json', '--verbose');
     // Bypass permission checks so tools (MCP, etc.) run autonomously
     args.push('--permission-mode', 'bypassPermissions');
+
+    // Restrict to MCP tools only — block built-in Write/Edit/Bash to prevent disk writes
+    if (opts.allowedTools && opts.allowedTools.length > 0) {
+        for (const tool of opts.allowedTools) {
+            args.push('--allowedTools', tool);
+        }
+    }
 
     // Combine system prompt + user prompt
     // Claude CLI doesn't have a separate --system-prompt flag in print mode,
@@ -153,6 +162,13 @@ export async function runClaudeCliSync(opts: ClaudeCliOptions): Promise<{
     if (opts.mcpConfigPath) { args.push('--mcp-config', opts.mcpConfigPath); }
     args.push('-p', '--output-format', 'stream-json', '--verbose');
     args.push('--permission-mode', 'bypassPermissions');
+
+    // Restrict to MCP tools only — block built-in Write/Edit/Bash to prevent disk writes
+    if (opts.allowedTools && opts.allowedTools.length > 0) {
+        for (const tool of opts.allowedTools) {
+            args.push('--allowedTools', tool);
+        }
+    }
 
     const fullPrompt = opts.systemPrompt
         ? `<system>\n${opts.systemPrompt}\n</system>\n\n${opts.userPrompt}`

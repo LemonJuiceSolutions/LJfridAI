@@ -454,6 +454,65 @@ function parseAgentJsonFromStream(text: string): { message: string; updatedScrip
   return null;
 }
 
+// --- Isolated input bar to avoid re-rendering the entire chat on every keystroke ---
+interface ChatInputBarProps {
+  agentName: string;
+  isLoading: boolean;
+  isStreamLoading: boolean;
+  onSend: (text: string) => void;
+  onStop: () => void;
+}
+
+const ChatInputBar = React.memo(React.forwardRef<{ setInput: (v: string) => void }, ChatInputBarProps>(
+  function ChatInputBar({ agentName, isLoading, isStreamLoading, onSend, onStop }, ref) {
+    const [input, setInput] = useState('');
+
+    React.useImperativeHandle(ref, () => ({ setInput }), []);
+
+    const handleSend = () => {
+      const trimmed = input.trim();
+      if (!trimmed || isLoading || isStreamLoading) return;
+      onSend(trimmed);
+      setInput('');
+    };
+
+    return (
+      <div className="p-3 border-t bg-background">
+        <div className="relative group">
+          <Input
+            placeholder={`Chiedi all'agente ${agentName}...`}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+            disabled={isLoading || isStreamLoading}
+            className="pr-12 h-10 rounded-xl border-muted-foreground/20 focus-visible:ring-primary shadow-inner bg-muted/5 group-focus-within:bg-background transition-all text-sm"
+          />
+          {isStreamLoading ? (
+            <Button
+              onClick={onStop}
+              size="icon"
+              variant="destructive"
+              className="absolute right-1.5 top-1 h-8 w-8 rounded-lg"
+              title="Interrompi streaming"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button
+              onClick={handleSend}
+              disabled={!input.trim() || isLoading}
+              size="icon"
+              className="absolute right-1.5 top-1 h-8 w-8 rounded-lg"
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+));
+
 interface AgentChatProps {
   nodeId: string;
   agentType: 'sql' | 'python';
@@ -492,7 +551,7 @@ export function AgentChat({
 }: AgentChatProps) {
   const { toast } = useToast();
   const [messages, setMessages] = useState<AgentChatMessage[]>([]);
-  const [input, setInput] = useState('');
+  const chatInputRef = useRef<{ setInput: (v: string) => void }>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
   const [needsClarification, setNeedsClarification] = useState(false);
@@ -1171,11 +1230,9 @@ export function AgentChat({
     }
   }, [onAutoExecutePreview, nodeId, agentType, tableSchema, inputTables, connectorId, onScriptUpdate]);
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading || isStreamLoading) return;
+  const sendMessage = useCallback(async (userMessage: string) => {
+    if (!userMessage || isLoading || isStreamLoading) return;
 
-    const userMessage = input.trim();
-    setInput('');
     setActiveVersionIndex(-1); // Re-enter auto-follow on new message
 
     // --- Streaming Mode ---
@@ -1320,7 +1377,7 @@ export function AgentChat({
       setIsLoading(false);
       setLoadingStatus('');
     }
-  };
+  }, [isLoading, isStreamLoading, streamingEnabled, agentType, connectorId, tableSchema, inputTables, script, nodeId, nodeQueries, selectedDocuments, streamSendMessage, onScriptUpdate, onAutoExecutePreview, onOutputTypeChange]);
 
   const handleGoBack = (messageIndex: number) => {
     const targetMessage = messages[messageIndex];
@@ -1487,7 +1544,7 @@ export function AgentChat({
       });
 
       // Also send the correction as a new message to the agent
-      setInput(`CORREZIONE: ${correctionText}`);
+      chatInputRef.current?.setInput(`CORREZIONE: ${correctionText}`);
       setCorrectionDialogOpen(false);
     } catch (error: any) {
       toast({
@@ -1981,6 +2038,56 @@ export function AgentChat({
                           Correggi
                         </Button>
                       )}
+                      {/* Riversa nel box: applies scriptSnapshot to the node box + auto-execute */}
+                      {m.scriptSnapshot && onScriptUpdate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-50 gap-1 font-medium"
+                          onClick={() => {
+                            onScriptUpdate(m.scriptSnapshot!);
+                            if (onAutoExecutePreview) {
+                              setTimeout(() => {
+                                triggerAutoExecute(m.scriptSnapshot!, 0);
+                              }, 300);
+                            }
+                          }}
+                        >
+                          <CornerDownLeft className="h-3 w-3" />
+                          Riversa nel box
+                        </Button>
+                      )}
+                      {/* Ricarica da DB: fetches the latest script directly from DB (works even if scriptSnapshot is stale) */}
+                      {nodeId && onScriptUpdate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[10px] text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 gap-1 font-medium"
+                          onClick={async () => {
+                            try {
+                              const url = `/api/internal/node-script?nodeId=${encodeURIComponent(nodeId)}${treeId ? `&treeId=${encodeURIComponent(treeId)}` : ''}`;
+                              const res = await fetch(url);
+                              if (!res.ok) throw new Error('Errore fetch');
+                              const data = await res.json();
+                              if (data?.script) {
+                                onScriptUpdate(data.script);
+                                if (onAutoExecutePreview) {
+                                  setTimeout(() => {
+                                    triggerAutoExecute(data.script, 0);
+                                  }, 300);
+                                }
+                              } else {
+                                console.warn('[Ricarica da DB] Nessuno script trovato nel DB');
+                              }
+                            } catch (err) {
+                              console.error('[Ricarica da DB] Errore:', err);
+                            }
+                          }}
+                        >
+                          <Database className="h-3 w-3" />
+                          Ricarica da DB
+                        </Button>
+                      )}
                       {(() => {
                         const codeBlockRegex = /```(\w*)\s*([\s\S]*?)```/g;
                         let match;
@@ -2006,9 +2113,16 @@ export function AgentChat({
                               variant="ghost"
                               size="sm"
                               className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
-                              onClick={() => onScriptUpdate(codeToUse!)}
+                              onClick={() => {
+                                onScriptUpdate(codeToUse!);
+                                if (onAutoExecutePreview) {
+                                  setTimeout(() => {
+                                    triggerAutoExecute(codeToUse!, 0);
+                                  }, 300);
+                                }
+                              }}
                             >
-                              <CornerDownLeft className="h-3 w-3" />
+                              <Code2 className="h-3 w-3" />
                               Usa codice
                             </Button>
                           );
@@ -2115,39 +2229,15 @@ export function AgentChat({
           </div>
         </div>
 
-        {/* Input */}
-        <div className="p-3 border-t bg-background">
-          <div className="relative group">
-            <Input
-              placeholder={`Chiedi all'agente ${agentName}...`}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-              disabled={isLoading || isStreamLoading}
-              className="pr-12 h-10 rounded-xl border-muted-foreground/20 focus-visible:ring-primary shadow-inner bg-muted/5 group-focus-within:bg-background transition-all text-sm"
-            />
-            {isStreamLoading ? (
-              <Button
-                onClick={streamStop}
-                size="icon"
-                variant="destructive"
-                className="absolute right-1.5 top-1 h-8 w-8 rounded-lg"
-                title="Interrompi streaming"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                onClick={sendMessage}
-                disabled={!input.trim() || isLoading}
-                size="icon"
-                className="absolute right-1.5 top-1 h-8 w-8 rounded-lg"
-              >
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              </Button>
-            )}
-          </div>
-        </div>
+        {/* Input — isolated component to avoid full chat re-render on every keystroke */}
+        <ChatInputBar
+          ref={chatInputRef}
+          agentName={agentName}
+          isLoading={isLoading}
+          isStreamLoading={isStreamLoading}
+          onSend={sendMessage}
+          onStop={streamStop}
+        />
       </div>
 
       {/* Correction Dialog */}

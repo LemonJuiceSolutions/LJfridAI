@@ -31,6 +31,11 @@ function buildSystemPrompt(opts: {
     return `Sei un agente AI esperto in SQL, tenace e autonomo. Modello: ${opts.modelName}.
 DATA DI OGGI: ${today}${connectorInfo}${companyInfo}
 
+## ⛔ DIVIETO ASSOLUTO — FILE SU DISCO:
+NON devi MAI scrivere, creare, salvare o aggiornare file sul filesystem.
+NON usare MAI i tool Write, Edit, Bash, o qualsiasi altro tool che scriva su disco.
+Il codice vive SOLO nel nodo della piattaforma. Usa ESCLUSIVAMENTE i tool MCP forniti.
+
 ## PRINCIPI FONDAMENTALI:
 1. **FAI, NON SPIEGARE** — Ogni risposta DEVE contenere tool call finché non hai la query finale. MAI testo senza azione.
 2. **AUTONOMIA TOTALE** — Arrangiati: esplora DB, schema, dati prima di chiedere. Chiedi SOLO per decisioni di business.
@@ -173,6 +178,12 @@ function buildPythonSystemPrompt(opts: {
     return `Sei un agente AI esperto in Python per analisi dati, tenace e autonomo. Modello: ${opts.modelName}.
 
 DATA DI OGGI: ${today}${connectorInfo}${companyInfo}${documentsContext}
+
+## ⛔ DIVIETO ASSOLUTO — FILE SU DISCO:
+NON devi MAI scrivere, creare, salvare o aggiornare file sul filesystem.
+NON usare MAI i tool Write, Edit, Bash, o qualsiasi altro tool che scriva su disco.
+Il codice vive SOLO nel nodo della piattaforma. Usa ESCLUSIVAMENTE i tool MCP (editScript, pyTestCode, ecc.).
+Se pensi di dover "salvare per coerenza" o "aggiornare il file su disco": NON FARLO. E' VIETATO.
 
 ## PRINCIPI FONDAMENTALI:
 1. **FAI, NON SPIEGARE** — Ogni risposta DEVE contenere tool call finché non hai il codice finale. MAI testo senza azione.
@@ -1000,6 +1011,22 @@ export async function POST(request: NextRequest) {
                 treeId,
             });
 
+            // Whitelist only MCP tools — blocks built-in Write/Edit/Bash to prevent disk writes
+            const mcpServerName = `fridai-${mcpAgentType}`;
+            const pythonMcpTools = [
+                'pyTestCode', 'pyExploreDbSchema', 'pyExploreTableColumns',
+                'pyTestSqlQuery', 'pySearchKnowledgeBase', 'pyListSqlConnectors',
+                'pySaveToKnowledgeBase', 'pyBrowseOtherScripts',
+                'updateNodeScript', 'loadScriptFromFile', 'editScript', 'readScriptLines',
+            ];
+            const sqlMcpTools = [
+                'exploreDbSchema', 'exploreTableColumns', 'testSqlQuery',
+                'searchKnowledgeBase', 'listSqlConnectors', 'sqlSaveToKnowledgeBase',
+                'browseOtherQueries',
+            ];
+            const toolNames = mcpAgentType === 'python' ? pythonMcpTools : sqlMcpTools;
+            const allowedTools = toolNames.map(t => `mcp__${mcpServerName}__${t}`);
+
             try {
                 const { response, sessionPromise } = streamFromClaudeCli({
                     model: model!,
@@ -1007,6 +1034,7 @@ export async function POST(request: NextRequest) {
                     userPrompt,
                     mcpConfigPath: configPath,
                     sessionId: conversation?.claudeCliSessionId || undefined,
+                    allowedTools,
                 });
 
                 // Save conversation in background after CLI finishes
