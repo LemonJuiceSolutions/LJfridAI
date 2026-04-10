@@ -76,6 +76,8 @@ model User {
   openRouterModel      String?         @default("google/gemini-2.0-flash-001")
   aiProvider           String?         @default("openrouter")
   claudeCliModel       String?         @default("claude-sonnet-4-6")
+  sqlAgentModel        String?
+  pythonAgentModel     String?
   roleId               String?
   accounts             Account[]
   pageLayouts          PageLayout[]

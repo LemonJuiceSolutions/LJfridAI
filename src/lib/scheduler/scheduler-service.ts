@@ -1564,17 +1564,11 @@ export class SchedulerService {
     const { results: ancestorResults, pipelineReport } = await this.executeAncestorChain(availableInputTables, undefined, true, treeId);
     logger.log(`[EmailSend] Ancestor chain completed with ${Object.keys(ancestorResults).length} results and ${pipelineReport.length} report entries`);
 
-    // 6b. CHECK: se il backend Python non era raggiungibile, NON inviare l'email
-    const backendErrors = pipelineReport.filter((r: any) =>
-      r.status === 'error' && r.error && (
-        r.error.includes('ECONNREFUSED') ||
-        r.error.includes('non raggiungibile') ||
-        r.error.includes('Python backend')
-      )
-    );
-    if (backendErrors.length > 0) {
-      const failedNodes = backendErrors.map((r: any) => r.name).join(', ');
-      const errorMsg = `Backend Python non avviato. Nodi falliti: ${failedNodes}. Email non inviata.`;
+    // 6b. CHECK: se ci sono QUALSIASI fallimento nella pipeline, NON inviare l'email
+    const allErrors = pipelineReport.filter((r: any) => r.status === 'error');
+    if (allErrors.length > 0) {
+      const failedNodes = allErrors.map((r: any) => `${r.name} (${r.type}): ${r.error || 'unknown'}`).join('; ');
+      const errorMsg = `Pipeline con ${allErrors.length} fallimento/i. Nodi falliti: ${failedNodes}. Email non inviata.`;
       logger.error(`[EmailSend] ${errorMsg}`);
       return { success: false, error: errorMsg };
     }

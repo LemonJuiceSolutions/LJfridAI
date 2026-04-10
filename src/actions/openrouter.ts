@@ -172,6 +172,59 @@ export async function saveOpenRouterAgentModelAction(
 }
 
 /**
+ * Get the saved model for a specific agent type (sql / python)
+ */
+export async function getAgentTypeModelAction(
+    agentType: 'sql' | 'python'
+): Promise<{ model?: string; error?: string }> {
+    try {
+        const sessionUser = await getAuthenticatedUser();
+        if (!sessionUser) return { error: 'Non autorizzato' };
+
+        const user = await db.user.findUnique({
+            where: { id: sessionUser.id },
+            select: { sqlAgentModel: true, pythonAgentModel: true, claudeCliModel: true, aiProvider: true },
+        });
+        if (!user) return { error: 'Utente non trovato' };
+
+        const field = agentType === 'sql' ? user.sqlAgentModel : user.pythonAgentModel;
+        // fallback: per-type saved model → claudeCliModel (if CLI) → generic default
+        const fallback = user.aiProvider === 'claude-cli'
+            ? (user.claudeCliModel || 'claude-sonnet-4-6')
+            : 'google/gemini-2.0-flash-001';
+        return { model: field || fallback };
+    } catch (e) {
+        console.error('getAgentTypeModelAction error:', e);
+        return { error: 'Errore nel recupero del modello' };
+    }
+}
+
+/**
+ * Save the model for a specific agent type (sql / python)
+ */
+export async function saveAgentTypeModelAction(
+    agentType: 'sql' | 'python',
+    model: string
+): Promise<{ success: boolean; error?: string }> {
+    const session = await getSession();
+    if (!session?.user) return { success: false, error: 'Non autorizzato' };
+
+    const userId = (session.user as any).id;
+    if (!userId) return { success: false, error: 'Utente non trovato' };
+
+    try {
+        await db.user.update({
+            where: { id: userId },
+            data: agentType === 'sql' ? { sqlAgentModel: model } : { pythonAgentModel: model },
+        });
+        return { success: true };
+    } catch (e) {
+        console.error('saveAgentTypeModelAction error:', e);
+        return { success: false, error: 'Impossibile salvare il modello' };
+    }
+}
+
+/**
  * Get and consume the last usage data for an agent (from in-memory cache).
  * Called by clients after a streaming response completes.
  */

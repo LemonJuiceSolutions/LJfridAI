@@ -55,7 +55,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
 } from 'recharts';
-import { getOpenRouterSettingsAction, getAgentLastUsageAction, getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction } from '@/actions/openrouter';
+import { getOpenRouterSettingsAction, getAgentLastUsageAction, getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction, getAgentTypeModelAction, saveAgentTypeModelAction } from '@/actions/openrouter';
 import { fetchOpenRouterModelsAction } from '@/app/actions';
 import { getAiProviderAction, saveAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -502,6 +502,7 @@ export function AgentChat({
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string; pricing?: { prompt: string; completion: string } }[]>([]);
   const [aiProvider, setAiProvider] = useState<AiProvider>('openrouter');
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [isSavingModel, setIsSavingModel] = useState(false);
   const [activeVersionIndex, setActiveVersionIndex] = useState<number>(-1); // -1 = auto-follow latest
   const [totalUsage, setTotalUsage] = useState<{ tokens: number; cost: number }>({ tokens: 0, cost: 0 });
@@ -566,31 +567,68 @@ export function AgentChat({
         .map(p => p.text)
         .join('');
 
-      console.log('[stream] onFinish - textContent length:', textContent.length, 'parts:', message.parts.length);
+      console.log('[stream] onFinish - textContent length:', textContent.length, 'parts:', message.parts.length, 'partTypes:', message.parts.map((p: any) => p.type));
 
       // Check for loadScriptFromFile / editScript / pyTestCode tool results in message parts
+      // AI SDK v6: tool parts have type 'tool-<toolName>' or 'dynamic-tool', NOT 'tool-invocation'
       let loadedFileScript: string | undefined;
       let editedScript: string | undefined;
+      let testedScript: string | undefined;
       let detectedOutputType: 'table' | 'variable' | 'chart' | 'html' | undefined;
+      // Track if any script-modifying tool was called (even without result — CLI path)
+      let scriptToolCalled = false;
       for (const part of message.parts) {
-        if (part.type !== 'tool-invocation') continue;
-        const toolName = (part as any).toolName;
-        const toolArgs = (part as any).args || (part as any).input;
-        const resultStr = (part as any).result;
+        // v6 API: tool parts have type like 'tool-editScript', 'tool-pyTestCode', etc.
+        const isToolPart = (part as any).type === 'dynamic-tool' || (typeof (part as any).type === 'string' && (part as any).type.startsWith('tool-'));
+        if (!isToolPart) continue;
+        const toolName = (part as any).toolName || ((part as any).type as string).replace('tool-', '');
+        const toolArgs = (part as any).input || (part as any).args;
+        const state = (part as any).state;
+        const rawOutput = (part as any).output;
+        const hasResult = state === 'output-available';
+        console.log('[stream] Tool part:', toolName, 'state:', state, 'hasOutput:', !!rawOutput);
+        // Flag script-modifying tools
+        if (['editScript', 'updateNodeScript', 'loadScriptFromFile'].includes(toolName)) {
+          scriptToolCalled = true;
+          console.log('[stream] Script-modifying tool detected:', toolName, 'hasResult:', hasResult);
+        }
         try {
-          const result = typeof resultStr === 'string' ? JSON.parse(resultStr) : resultStr;
+          const resultStr = typeof rawOutput === 'string' ? rawOutput : (rawOutput != null ? JSON.stringify(rawOutput) : undefined);
+          const result = resultStr ? (typeof resultStr === 'string' ? JSON.parse(resultStr) : resultStr) : undefined;
           if (toolName === 'loadScriptFromFile' && result?.success && result?.content) {
             loadedFileScript = result.content;
             console.log('[stream] loadScriptFromFile: loaded', result.fileName, result.lineCount, 'lines,', result.sizeKB, 'KB');
           } else if (toolName === 'editScript' && result?.success && result?.updatedScript) {
             editedScript = result.updatedScript;
             console.log('[stream] editScript: updated,', result.lineCount, 'lines,', result.sizeKB, 'KB,', result.replacements, 'replacements');
-          } else if (toolName === 'pyTestCode' && result?.success && toolArgs?.outputType) {
-            // Track the outputType the agent used for the last successful test
-            detectedOutputType = toolArgs.outputType;
-            console.log('[stream] pyTestCode: successful test with outputType=', detectedOutputType);
+          } else if (toolName === 'updateNodeScript' && hasResult && toolArgs?.script) {
+            editedScript = toolArgs.script;
+            console.log('[stream] updateNodeScript: script from args, length:', editedScript!.length);
+          } else if (toolName === 'pyTestCode' && result?.success && toolArgs?.code) {
+            testedScript = toolArgs.code;
+            if (toolArgs.outputType) {
+              detectedOutputType = toolArgs.outputType;
+            }
+            console.log('[stream] pyTestCode: successful test, code length:', testedScript!.length, 'outputType:', detectedOutputType);
           }
         } catch { /* ignore parse errors */ }
+      }
+
+      // CLI path fallback: tool names may also appear in textContent when the CLI
+      // embeds tool calls as text. Detect editScript/updateNodeScript mentions.
+      if (!scriptToolCalled && !editedScript) {
+        if (textContent.includes('"editScript"') || textContent.includes('"updateNodeScript"') || textContent.includes('tool_use')) {
+          // Check if tool result JSON is embedded in text
+          const editResultMatch = textContent.match(/"updatedScript"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+          if (editResultMatch) {
+            try {
+              editedScript = JSON.parse('"' + editResultMatch[1] + '"');
+              console.log('[stream] Extracted updatedScript from textContent, length:', editedScript!.length);
+            } catch { /* ignore */ }
+          }
+          scriptToolCalled = true;
+          console.log('[stream] Script tool detected in textContent');
+        }
       }
 
       // Auto-switch outputType if agent tested with a different type than the node's current type
@@ -613,8 +651,8 @@ export function AgentChat({
       const parsed = parseAgentJsonFromStream(textContent);
 
       const finalMessage = parsed?.message || textContent;
-      // Priority: loadedFileScript (full import) > editedScript (partial edit) > parsed > extracted from code block
-      const finalScript = loadedFileScript || editedScript || parsed?.updatedScript || extractedScript;
+      // Priority: loadedFileScript (full import) > editedScript (partial edit) > parsed > extracted from code block > tested code from pyTestCode
+      const finalScript = loadedFileScript || editedScript || parsed?.updatedScript || extractedScript || testedScript;
 
       // Add to our local messages state
       setMessages(prev => [...prev, {
@@ -626,12 +664,35 @@ export function AgentChat({
 
       // Trigger script update + auto-execute
       if (finalScript && onScriptUpdate) {
+        console.log('[stream] Applying finalScript to node, length:', finalScript.length);
         onScriptUpdate(finalScript);
         if (onAutoExecutePreview) {
           setTimeout(() => {
             triggerAutoExecute(finalScript, 0);
           }, 300);
         }
+      } else if ((!finalScript && (scriptToolCalled || !finalScript)) && nodeId && onScriptUpdate) {
+        // Fallback: if no script was captured from tool results/code blocks,
+        // OR a script-modifying tool was called but we couldn't extract the result,
+        // reload the script from the DB (editScript saves directly to DB via MCP).
+        const fallbackUrl = `/api/internal/node-script?nodeId=${encodeURIComponent(nodeId)}${treeId ? `&treeId=${encodeURIComponent(treeId)}` : ''}`;
+        console.log('[stream] No finalScript captured (scriptToolCalled:', scriptToolCalled, '), fetching from DB...');
+        fetch(fallbackUrl)
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data?.script) {
+              console.log('[stream] Script fetched from DB, length:', data.script.length);
+              onScriptUpdate(data.script);
+              if (onAutoExecutePreview) {
+                setTimeout(() => {
+                  triggerAutoExecute(data.script, 0);
+                }, 300);
+              }
+            } else {
+              console.log('[stream] No script found in DB for nodeId:', nodeId);
+            }
+          })
+          .catch(err => console.warn('[stream] Failed to reload script:', err));
       }
 
       // Track usage if available
@@ -749,53 +810,63 @@ export function AgentChat({
 
   // Load AI provider and available models
   useEffect(() => {
+    const CLAUDE_MODELS = [
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+      { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+      { id: 'sonnet', name: 'sonnet (latest)' },
+      { id: 'opus', name: 'opus (latest)' },
+      { id: 'haiku', name: 'haiku (latest)' },
+    ];
+
+    const applyModel = (m: string) => {
+      setModel(m);
+      const cleanName = m.split('/').pop() || m;
+      setModelName(cleanName.split(/[-_]/).map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '));
+    };
+
     getAiProviderAction().then(res => {
       if (res.error) return;
       setAiProvider(res.provider);
 
       if (res.provider === 'claude-cli') {
-        const m = res.claudeCliModel || 'claude-sonnet-4-6';
-        setModel(m);
-        setModelName(m.split('/').pop()?.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || m);
-        setAvailableModels([
-          { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
-          { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
-          { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
-          { id: 'sonnet', name: 'sonnet (latest)' },
-          { id: 'opus', name: 'opus (latest)' },
-          { id: 'haiku', name: 'haiku (latest)' },
-        ]);
+        setAvailableModels(CLAUDE_MODELS);
+        // For sql/python agents: load per-agent saved model first
+        if (agentType === 'sql' || agentType === 'python') {
+          getAgentTypeModelAction(agentType).then(result => {
+            applyModel(result.model || res.claudeCliModel || 'claude-sonnet-4-6');
+          });
+        } else {
+          applyModel(res.claudeCliModel || 'claude-sonnet-4-6');
+        }
       } else {
-        // OpenRouter: load models list + saved agent model
+        // OpenRouter: load models list
         fetchOpenRouterModelsAction().then(result => {
           if (result.data) setAvailableModels(result.data);
         });
-        getOpenRouterAgentModelAction().then(result => {
-          if (result.model) {
-            setModel(result.model);
-            const cleanName = result.model.split('/').pop() || result.model;
-            const formatted = cleanName
-              .split(/[-_]/)
-              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
-              .join(' ');
-            setModelName(formatted);
-          }
-        });
-        // Fallback: load from settings if agent model not set
-        getOpenRouterSettingsAction().then((settings) => {
-          if (settings?.model && !model) {
-            setModel(settings.model);
-            const cleanName = settings.model.split('/').pop() || settings.model;
-            const formatted = cleanName
-              .split(/[-_]/)
-              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
-              .join(' ');
-            setModelName(formatted);
-          }
-        });
+        // For sql/python agents: load per-agent saved model
+        if (agentType === 'sql' || agentType === 'python') {
+          getAgentTypeModelAction(agentType).then(result => {
+            if (result.model) {
+              applyModel(result.model);
+              return;
+            }
+            // Fallback to generic agent model
+            getOpenRouterAgentModelAction().then(r => {
+              if (r.model) applyModel(r.model);
+            });
+          });
+        } else {
+          getOpenRouterAgentModelAction().then(result => {
+            if (result.model) applyModel(result.model);
+          });
+          getOpenRouterSettingsAction().then((settings) => {
+            if (settings?.model && !model) applyModel(settings.model);
+          });
+        }
       }
     });
-  }, []);
+  }, [agentType]);
 
   // Handle provider toggle
   const handleProviderToggle = async () => {
@@ -836,11 +907,16 @@ export function AgentChat({
   const handleModelChange = async (newModel: string) => {
     setModel(newModel);
     setModelSelectorOpen(false);
-    const displayName = availableModels.find(m => m.id === newModel)?.name || newModel.split('/').pop() || newModel;
+    const displayName = availableModels.find(m => m.id === newModel)?.name
+      || newModel.split('/').pop()?.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+      || newModel;
     setModelName(displayName);
     setIsSavingModel(true);
     try {
-      if (aiProvider === 'claude-cli') {
+      if (agentType === 'sql' || agentType === 'python') {
+        // Per-agent model: save to dedicated DB field
+        await saveAgentTypeModelAction(agentType, newModel);
+      } else if (aiProvider === 'claude-cli') {
         await saveAiProviderAction('claude-cli', newModel);
       } else {
         await saveOpenRouterAgentModelAction(newModel);
@@ -1451,7 +1527,7 @@ export function AgentChat({
                 >
                   {aiProvider === 'claude-cli' ? '🤖 CLI' : '🌐 OR'}
                 </button>
-                <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen} modal={false}>
+                <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen} modal={true}>
                   <PopoverTrigger asChild>
                     <button type="button" className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
                       <span className="truncate max-w-[160px]">
@@ -1463,7 +1539,7 @@ export function AgentChat({
                   <PopoverContent className="w-[400px] p-0 z-[100]" align="start" sideOffset={8} onOpenAutoFocus={(e) => e.preventDefault()}>
                     <Command>
                       <CommandInput placeholder="Cerca modello..." />
-                      <CommandList className="max-h-[300px]">
+                      <CommandList className="max-h-[260px]">
                         <CommandEmpty>Nessun modello trovato.</CommandEmpty>
                         <CommandGroup heading={aiProvider === 'claude-cli' ? 'Modelli Claude' : 'Modelli OpenRouter'}>
                           {availableModels.map(m => (
@@ -1471,7 +1547,8 @@ export function AgentChat({
                               key={m.id}
                               value={`${m.id} ${m.name}`}
                               onSelect={() => handleModelChange(m.id)}
-                              className="flex items-center justify-between text-xs"
+                              onClick={() => handleModelChange(m.id)}
+                              className="flex items-center justify-between text-xs cursor-pointer"
                             >
                               <div className="flex items-center gap-2 min-w-0">
                                 <Check className={cn("h-3 w-3 shrink-0", model === m.id ? "opacity-100" : "opacity-0")} />
@@ -1487,6 +1564,30 @@ export function AgentChat({
                         </CommandGroup>
                       </CommandList>
                     </Command>
+                    {/* Custom model input — always visible, outside cmdk filtering */}
+                    <div className="border-t p-2 flex gap-1.5 items-center">
+                      <input
+                        type="text"
+                        placeholder="ID modello custom (es. claude-opus-4-5)..."
+                        value={modelSearchQuery}
+                        onChange={e => setModelSearchQuery(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && modelSearchQuery.trim()) {
+                            handleModelChange(modelSearchQuery.trim());
+                            setModelSearchQuery('');
+                          }
+                        }}
+                        className="flex-1 text-xs bg-transparent border border-input rounded px-2 py-1 outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+                      />
+                      <button
+                        type="button"
+                        disabled={!modelSearchQuery.trim()}
+                        onClick={() => { if (modelSearchQuery.trim()) { handleModelChange(modelSearchQuery.trim()); setModelSearchQuery(''); } }}
+                        className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground disabled:opacity-40 hover:bg-primary/90 transition-colors shrink-0"
+                      >
+                        Usa
+                      </button>
+                    </div>
                   </PopoverContent>
                 </Popover>
                 {totalUsage.tokens > 0 && (

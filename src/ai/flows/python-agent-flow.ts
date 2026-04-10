@@ -807,9 +807,8 @@ La variabile DEVE essere del tipo giusto per l'outputType del nodo:
 
 ### outputType='html' (HTML LIBERO — INTERFACCE REACT-LIKE):
 - Assegna una stringa HTML a \`result\`: result = "<h1>Titolo</h1><p>Contenuto</p>"
-- REGOLA ZERO (CRITICA): NIENTE tag <style>, NIENTE @keyframes custom, NIENTE classi CSS inventate. La piattaforma STRAPPA le regole CSS con colori hardcoded (#hex, rgb, hsl). Se scrivi <style>.mia-classe { background: #1a1a2e; }</style> viene CANCELLATO e la pagina esce BIANCA.
-- Usa SOLO classi della piattaforma: .card, .btn, .kpi-grid, .stat-card, .table-section, .modal-overlay, .modal-dialog, .toast-container, .toast, .tabs, .tab, .tab-panel, .toggle, .dropdown, .accordion, .kanban-board, .kanban-column, .kanban-card, .stepper, .chip, .fab, .avatar, .tag, .empty-state, etc.
-- Se serve colore inline (SVG, chart): usa var(--primary), var(--success), var(--danger), etc.
+- DUE MODALITA' CSS: (1) Per output semplici (dashboard, KPI, tabelle): usa classi piattaforma (.card, .btn, .kpi-grid, .stat-card, .table-section, .modal-overlay, .toast, .tabs, .kanban-board, etc.) e var(--primary/--success/--danger). (2) Per app complesse autonome (calcolatori, configuratori): PUOI usare <style> con CSS custom — la piattaforma li PRESERVA (li estrae e li re-inietta nel <head> dell'iframe).
+- Quando MODIFICHI codice HTML esistente: usa la STESSA modalita' CSS del codice originale. NON convertire CSS custom in classi piattaforma. RIGENERA SEMPRE lo script Python COMPLETO (import + logica + HTML/CSS/JS tutto incluso). NON creare MAI file esterni (.py, .html, .css). NON produrre MAI solo un frammento/snippet. Il codice vive SOLO nel box dell'agente.
 - Filosofia React-like: stato in oggetto JS + render(), modal con backdrop blur, toast per feedback, transizioni fluide, empty states, keyboard support (ESC chiude modal)
 
 #### REGOLE GENERAZIONE HTML (CRITICO):
@@ -914,6 +913,13 @@ Quando generi codice Python che produce HTML:
 5. TESTA SEMPRE con pyTestCode prima di rispondere - MAI saltare questo passaggio.
 6. Se fallisce per Token, ignora e restituisci il codice comunque.
 7. Se fallisce per logica, correggi e riprova (fino a 3 tentativi).
+8. DOPO che il test passa, DEVI SEMPRE includere il codice COMPLETO in un blocco \`\`\`python nel messaggio finale.
+
+!! REGOLA SALVATAGGIO (CRITICA) !!
+Il blocco \`\`\`python nel messaggio e' l'UNICO modo per salvare il codice nel nodo e far partire l'anteprima.
+Se non lo includi, il codice NON viene salvato e l'utente NON vede nulla.
+NON dire MAI "il codice e' gia' nel nodo" o "ricarica la pagina" — DEVI SEMPRE includere il blocco \`\`\`python.
+Per HTML/interfacce: rigenera SEMPRE lo script Python COMPLETO. MAI creare file esterni. MAI produrre solo un frammento.
 
 ## !!!! CARICAMENTO DATI DINAMICO - sqlQuery in pyTestCode (CRITICO) !!!!
 Il codice Python DEVE usare \`query_db()\` per caricare dati dal DB quando df e' vuoto.

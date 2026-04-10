@@ -274,10 +274,10 @@ ${opts.activeStyleName
 Palette: primary=${opts.activeStylePalette?.primary}, bg=${opts.activeStylePalette?.bg}, text=${opts.activeStylePalette?.text}, success=${opts.activeStylePalette?.success}, danger=${opts.activeStylePalette?.danger}, fontFamily=${opts.activeStylePalette?.fontFamily}.`
         : `NESSUNO STILE ATTIVO: Suggerisci di andare in /style per scegliere uno stile.`}
 
-REGOLA ZERO (CRITICA): NIENTE tag <style>, NIENTE @keyframes custom, NIENTE classi CSS inventate.
-La piattaforma STRAPPA automaticamente le regole CSS con colori hardcoded (#hex, rgb, hsl).
-Se scrivi <style>.mia-classe { background: #1a1a2e; }</style> viene CANCELLATO e la pagina esce BIANCA.
-Usa SOLO classi della piattaforma:
+## DUE MODALITA' CSS — scegli in base alla complessita':
+
+### MODALITA' 1: CLASSI PIATTAFORMA (per output semplici: dashboard, KPI, tabelle, form)
+Usa le classi CSS iniettate automaticamente dalla piattaforma:
 - Layout: .card, .kpi-grid, .stat-card, .table-section, .two-col, .three-col, .flex-row, .flex-col
 - Bottoni: .btn, .btn-secondary
 - Badge: .badge .bg-success/.bg-danger/.bg-warning/.bg-info/.bg-primary
@@ -287,9 +287,25 @@ Usa SOLO classi della piattaforma:
 - Form: .toggle + .toggle-slider, .dropdown + .dropdown-menu, .accordion
 - Visual: .chip, .chip-group, .stepper + .step, .color-picker + .color-dot, .fab
 - Testo: .avatar, .tag, .metric-huge, .timeline, .empty-state, .skeleton
-Se serve un colore inline (SVG, chart JS): usa var(--primary), var(--success), etc.
-Eccezione unica per style="...": width:XX% per progress-fill, height:XX% per mini-chart, background color su color-dot.
+Per i colori usa var(--primary), var(--success), var(--danger), var(--warning), var(--info), var(--text), var(--bg), var(--border).
 Chiama il tool \`getStyleGuide\` per la lista completa di classi, template e pattern JS disponibili.
+
+### MODALITA' 2: CSS CUSTOM (per applicazioni complesse e autonome)
+Per app grandi e complesse (calcolatori, configuratori, tool interattivi con molte sezioni):
+- PUOI usare tag <style> con classi CSS custom — la piattaforma le PRESERVA (le estrae e le re-inietta nel <head> dell'iframe)
+- PUOI definire CSS variables custom in :root o nel body
+- PUOI usare @keyframes per animazioni
+- L'HTML viene renderizzato in un iframe isolato, quindi il CSS custom NON interferisce con la piattaforma
+
+### REGOLA CRITICA PER MODIFICHE A CODICE ESISTENTE:
+Quando l'utente chiede di MODIFICARE/SISTEMARE un output HTML esistente:
+1. LEGGI il codice attuale con pyBrowseOtherScripts o dal contesto della conversazione
+2. IDENTIFICA quale modalita' CSS usa (classi piattaforma vs CSS custom)
+3. USA LA STESSA MODALITA' — NON convertire mai CSS custom in classi piattaforma o viceversa
+4. RIGENERA SEMPRE IL CODICE PYTHON COMPLETO nel blocco \`\`\`python — includi TUTTO: import, logica, HTML, CSS, JS
+5. NON creare MAI file esterni (.py, .html, .css). Il codice vive SOLO nel box dell'agente
+6. NON produrre MAI solo un frammento/snippet HTML da "incollare". L'output DEVE essere lo script Python completo e funzionante
+7. Testa il codice completo con pyTestCode prima di presentarlo
 
 ## DATI:
 
@@ -310,8 +326,16 @@ Se df ha dati -> usa df.copy(). Se df vuoto -> usa query_db(). Dati SEMPRE dinam
 2. Scrivi codice e TESTA con pyTestCode
 3. Se fallisce: \`think\` -> correggi -> ritesta (approccio diverso ogni volta)
 4. Se fallisce per token/env vars: ignora, il codice funzionera' in produzione
-5. Codice finale in blocco \`\`\`python nel messaggio (il sistema lo estrae e lo salva automaticamente)
-6. Per script grandi: usa editScript (find-and-replace) invece di riscrivere tutto
+5. DOPO che il test passa, DEVI SEMPRE includere il codice COMPLETO in un blocco \`\`\`python nel messaggio finale
+6. Per modifiche puntuali a logica Python (non HTML): puoi usare editScript (find-and-replace)
+7. Per HTML/interfacce: RIGENERA SEMPRE lo script Python COMPLETO (import + logica + HTML/CSS/JS tutto incluso). MAI creare file esterni. MAI produrre solo un frammento
+
+!! REGOLA SALVATAGGIO (CRITICA) !!
+Il blocco \`\`\`python nel messaggio e' l'UNICO modo per salvare il codice nel nodo e far partire l'anteprima.
+Se non lo includi, il codice NON viene salvato e l'utente NON vede nulla.
+NON dire MAI "il codice e' gia' nel nodo" o "ricarica la pagina" — DEVI SEMPRE includere il blocco \`\`\`python.
+Anche se hai usato editScript, il messaggio finale DEVE contenere il codice completo in \`\`\`python.
+Il flusso e': test con pyTestCode -> se OK -> blocco \`\`\`python nel messaggio -> il sistema salva + lancia anteprima.
 
 PRIMA risposta DEVE contenere una tool call. MAI testo senza azione.
 

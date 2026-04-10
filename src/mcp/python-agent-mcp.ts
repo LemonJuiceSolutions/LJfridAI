@@ -116,6 +116,43 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                 required: ['script'],
             },
         },
+        {
+            name: 'loadScriptFromFile',
+            description: 'Carica un file Python (.py) dal disco nel nodo corrente. Il contenuto viene automaticamente impostato come codice del nodo. NON ripetere il contenuto nel messaggio. Dì solo "Script caricato da [nome] (X righe, YKB)".',
+            inputSchema: {
+                type: 'object' as const,
+                properties: {
+                    filePath: { type: 'string', description: 'Il percorso assoluto del file da caricare.' },
+                },
+                required: ['filePath'],
+            },
+        },
+        {
+            name: 'editScript',
+            description: 'Modifica lo script corrente nel nodo con find-and-replace. Fornisci la stringa esatta da trovare (oldString) e la sostituzione (newString). Lo script viene aggiornato automaticamente nel nodo.',
+            inputSchema: {
+                type: 'object' as const,
+                properties: {
+                    oldString: { type: 'string', description: 'La stringa ESATTA da trovare nello script corrente.' },
+                    newString: { type: 'string', description: 'La stringa sostitutiva.' },
+                    replaceAll: { type: 'boolean', description: 'Se true, sostituisce TUTTE le occorrenze. Default: false.' },
+                },
+                required: ['oldString', 'newString'],
+            },
+        },
+        {
+            name: 'readScriptLines',
+            description: 'Leggi righe specifiche o cerca pattern nello script corrente del nodo. Utile per script grandi.',
+            inputSchema: {
+                type: 'object' as const,
+                properties: {
+                    startLine: { type: 'number', description: 'Riga iniziale (1-based). Default: 1.' },
+                    endLine: { type: 'number', description: 'Riga finale. Default: startLine + 99.' },
+                    searchPattern: { type: 'string', description: 'Pattern regex da cercare.' },
+                },
+                required: [],
+            },
+        },
     ],
 }));
 
@@ -125,8 +162,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const params: Record<string, unknown> = { ...args };
         if (connectorId && !params.connectorId) params.connectorId = connectorId;
         if (companyId && !params.companyId) params.companyId = companyId;
-        // Inject nodeId and treeId for updateNodeScript
-        if (name === 'updateNodeScript') {
+        // Inject nodeId and treeId for node-related tools
+        if (['updateNodeScript', 'loadScriptFromFile', 'editScript', 'readScriptLines'].includes(name)) {
             if (nodeId && !params.nodeId) params.nodeId = nodeId;
             if (treeId && !params.treeId) params.treeId = treeId;
         }

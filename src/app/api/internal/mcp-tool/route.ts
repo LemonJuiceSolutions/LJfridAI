@@ -12,6 +12,7 @@ import { getCachedParsedMap } from '@/lib/database-map-cache';
 import {
     doPyExploreDbSchema, doPyExploreTableColumns, doPyTestSqlQuery,
     doPyTestCode, doPySearchKB, doPyListConnectors, doPySaveToKB, doPyBrowseOtherScripts,
+    doLoadScriptFromFile, doEditScript, doReadScriptLines,
 } from '@/ai/tools/python-agent-tools';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction, executePythonPreviewAction, processDescriptionAction } from '@/app/actions';
@@ -310,6 +311,77 @@ const TOOL_MAP: Record<string, (params: any) => Promise<string>> = {
         } catch (e: any) {
             return JSON.stringify({ error: e.message });
         }
+    },
+    loadScriptFromFile: async (params: { filePath: string; nodeId?: string; treeId?: string }) => {
+        const { filePath, nodeId, treeId } = params;
+        const result = await doLoadScriptFromFile({ filePath });
+        // If successful, also update the node's pythonCode
+        try {
+            const parsed = JSON.parse(result);
+            if (parsed.success && parsed.content && nodeId && treeId) {
+                const tree = await db.tree.findUnique({ where: { id: treeId }, select: { jsonDecisionTree: true } });
+                if (tree) {
+                    const json = JSON.parse(tree.jsonDecisionTree);
+                    const _ = await import('lodash');
+                    const node = _.default.get(json, nodeId.replace('root.', ''));
+                    if (node && typeof node === 'object') {
+                        node.pythonCode = parsed.content;
+                        await db.tree.update({ where: { id: treeId }, data: { jsonDecisionTree: JSON.stringify(json) } });
+                        const conv = await db.agentConversation.findFirst({ where: { nodeId, agentType: 'python' } });
+                        if (conv) await db.agentConversation.update({ where: { id: conv.id }, data: { script: parsed.content } });
+                    }
+                }
+            }
+        } catch { /* ignore DB errors — the file content is still returned */ }
+        return result;
+    },
+    editScript: async (params: { oldString: string; newString: string; replaceAll?: boolean; nodeId?: string; treeId?: string }) => {
+        const { oldString, newString, replaceAll, nodeId, treeId } = params;
+        // Get current script from the node
+        let currentScript = '';
+        if (nodeId && treeId) {
+            const tree = await db.tree.findUnique({ where: { id: treeId }, select: { jsonDecisionTree: true } });
+            if (tree) {
+                const json = JSON.parse(tree.jsonDecisionTree);
+                const _ = await import('lodash');
+                const node = _.default.get(json, nodeId.replace('root.', ''));
+                if (node) currentScript = node.pythonCode || '';
+            }
+        }
+        const result = await doEditScript({ oldString, newString, currentScript, replaceAll });
+        // If successful, update the node
+        try {
+            const parsed = JSON.parse(result);
+            if (parsed.success && parsed.updatedScript && nodeId && treeId) {
+                const tree = await db.tree.findUnique({ where: { id: treeId }, select: { jsonDecisionTree: true } });
+                if (tree) {
+                    const json = JSON.parse(tree.jsonDecisionTree);
+                    const _ = await import('lodash');
+                    const node = _.default.get(json, nodeId.replace('root.', ''));
+                    if (node && typeof node === 'object') {
+                        node.pythonCode = parsed.updatedScript;
+                        await db.tree.update({ where: { id: treeId }, data: { jsonDecisionTree: JSON.stringify(json) } });
+                        const conv = await db.agentConversation.findFirst({ where: { nodeId, agentType: 'python' } });
+                        if (conv) await db.agentConversation.update({ where: { id: conv.id }, data: { script: parsed.updatedScript } });
+                    }
+                }
+            }
+        } catch { /* ignore */ }
+        return result;
+    },
+    readScriptLines: async (params: { startLine?: number; endLine?: number; searchPattern?: string; nodeId?: string; treeId?: string }) => {
+        const { startLine, endLine, searchPattern, nodeId, treeId } = params;
+        let currentScript = '';
+        if (nodeId && treeId) {
+            const tree = await db.tree.findUnique({ where: { id: treeId }, select: { jsonDecisionTree: true } });
+            if (tree) {
+                const json = JSON.parse(tree.jsonDecisionTree);
+                const _ = await import('lodash');
+                const node = _.default.get(json, nodeId.replace('root.', ''));
+                if (node) currentScript = node.pythonCode || '';
+            }
+        }
+        return doReadScriptLines({ currentScript, startLine, endLine, searchPattern });
     },
     // Super-agent tools
     superListConnectors: doSuperListConnectors,
