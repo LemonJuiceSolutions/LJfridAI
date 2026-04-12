@@ -57,8 +57,8 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Build Genkit message format
-        const genkitMessages = [
+        // Build messages array
+        const chatMessages = [
             ...conversationHistory,
             {
                 role: 'user',
@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
                         console.log(`[LeadGen-Route] ▶ Calling leadGeneratorFlow — aiProvider=${aiProvider}, model=${model}, userMsg="${userMessage.substring(0, 60)}", apiKeys=${Object.keys(leadGenApiKeys).filter(k => leadGenApiKeys[k]).join(',')}`);
 
                         const result = await leadGeneratorFlow({
-                            messages: genkitMessages,
+                            messages: chatMessages,
                             companyId: user.company!.id,
                             model: model || undefined,
                             apiKey: (user as any).openRouterApiKey || undefined,
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
 
         // ===== CLASSIC (NON-STREAMING) MODE =====
         const result = await leadGeneratorFlow({
-            messages: genkitMessages,
+            messages: chatMessages,
             companyId: user.company!.id,
             model: model || undefined,
             apiKey: (user as any).openRouterApiKey || undefined,

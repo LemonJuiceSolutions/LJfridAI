@@ -48,8 +48,8 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Build Genkit message format
-        const genkitMessages = [
+        // Build messages array
+        const chatMessages = [
             ...conversationHistory,
             {
                 role: 'user',
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
         // Call the super agent flow
         const response = await superAgentFlow({
-            messages: genkitMessages,
+            messages: chatMessages,
             companyId: user.company.id,
             model: model || undefined,
             apiKey: (user as any).openRouterApiKey || undefined,
