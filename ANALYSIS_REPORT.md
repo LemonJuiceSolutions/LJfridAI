@@ -61,9 +61,9 @@ Stripe, VPN WireGuard e GDPR compliance sono completamente assenti. L'hardening 
 **File:** `.env` (righe 5, 37, 40, 42, 49)
 
 Il file `.env` contiene credenziali operative reali:
-- `GEMINI_API_KEY=AIzaSyD4YyTuiZr1gK2Fr50dEQ-Iafk48gbmJ8s` ← API key Google AI reale
-- `RESEND_API_KEY=re_VzfQdEER_...` ← API key email reale
-- `NEXTAUTH_SECRET=q40r6buwvK...` ← secret JWT reale
+- `GEMINI_API_KEY=AIzaSy***REDACTED***` ← API key Google AI reale (ruotare su aistudio.google.com)
+- `RESEND_API_KEY=re_***REDACTED***` ← API key email reale (ruotare su resend.com)
+- `NEXTAUTH_SECRET=***REDACTED***` ← secret JWT reale (rigenerare con `openssl rand -base64 32`)
 - `DATABASE_URL=postgresql://postgres:postgres@...` ← credenziali DB deboli
 
 Il `.gitignore` ha `.env*`, quindi non dovrebbe essere tracciato. Ma la presenza di queste chiavi nel repository locale con password banale (`postgres:postgres`) è un rischio. **Ruotare immediatamente tutte le chiavi.**
