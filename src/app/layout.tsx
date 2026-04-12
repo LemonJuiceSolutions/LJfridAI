@@ -9,6 +9,7 @@ import { MainContentTransition } from '@/components/layout/main-content-transiti
 import { ChartThemeProvider } from '@/hooks/use-chart-theme';
 import { MissedTasksDialog } from '@/components/layout/missed-tasks-dialog';
 import { FailedTasksDialog } from '@/components/layout/failed-tasks-dialog';
+import { ConnectorAlertBanner } from '@/components/layout/connector-alert-banner';
 import { Inter } from 'next/font/google';
 
 const inter = Inter({
@@ -41,6 +42,7 @@ export default function RootLayout({
                 <ChatBotAgent />
               </div>
             </ChartThemeProvider>
+            <ConnectorAlertBanner />
             <MissedTasksDialog />
             <FailedTasksDialog />
             <Toaster />

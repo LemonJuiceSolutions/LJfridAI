@@ -213,15 +213,18 @@ async function executePythonNode(node: Node, context: ExecutionContext): Promise
     throw new Error(result.error || 'Python execution failed');
   }
 
+  // Handle auto-switched output type (e.g. script configured as 'table' but produced HTML)
+  const effectiveOutputType = (result as any)._autoSwitchedOutputType || outputType;
+
   // For html/chart output types, return the full result so downstream nodes can access html/chart fields
-  if (outputType === 'html' || outputType === 'chart') {
+  if (effectiveOutputType === 'html' || effectiveOutputType === 'chart') {
     return {
       data: result.data,
       html: result.html,
       chartBase64: result.chartBase64,
       chartHtml: result.chartHtml,
       plotlyJson: result.plotlyJson,
-      type: outputType
+      type: effectiveOutputType
     };
   }
 

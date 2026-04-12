@@ -169,6 +169,7 @@ export async function executeSqlPreviewAction(
         };
 
         let schemaSourceTable: string | null = null;
+        const depWarnings: string[] = [];
 
         if (allDeps.length > 0) {
             console.log(`[PIPELINE SERVER] Executing ${allDeps.length} flattened dependencies:`, allDeps.map(d => ({
@@ -220,8 +221,12 @@ export async function executeSqlPreviewAction(
                         rowsToInsert = dep.data;
                         if (rowsToInsert.length > 0) {
                             columns = Object.keys(rowsToInsert[0]);
+                        } else if (dep.columns && Array.isArray(dep.columns) && dep.columns.length > 0) {
+                            // Empty data but we know the column schema — use it for temp table creation
+                            columns = dep.columns;
+                            console.warn(`[PIPELINE] Pre-calculated data for ${dep.tableName} is empty but has column schema: [${columns.join(', ')}]`);
                         } else {
-                            console.warn(`[PIPELINE] Pre-calculated data for ${dep.tableName} is empty.`);
+                            console.warn(`[PIPELINE] Pre-calculated data for ${dep.tableName} is empty (no column schema).`);
                         }
 
                     } else if (dep.isPython && dep.pythonCode) {
@@ -244,6 +249,10 @@ export async function executeSqlPreviewAction(
                         if (pythonResult.data && Array.isArray(pythonResult.data) && pythonResult.data.length > 0) {
                             rowsToInsert = pythonResult.data;
                             columns = Object.keys(rowsToInsert[0]);
+                        } else if (pythonResult.columns && Array.isArray(pythonResult.columns) && pythonResult.columns.length > 0) {
+                            // Python returned 0 rows but has column schema
+                            columns = pythonResult.columns;
+                            console.warn(`[PIPELINE] Python dependency ${dep.tableName} returned 0 rows but has columns: [${columns.join(', ')}]`);
                         } else {
                             console.warn(`[PIPELINE] Python dependency ${dep.tableName} returned no data.`);
                         }
@@ -264,7 +273,13 @@ export async function executeSqlPreviewAction(
                             rowsToInsert = result.recordset;
                             columns = Object.keys(rowsToInsert[0]);
                         } else {
-                            console.warn(`[PIPELINE] SQL Source query for ${dep.tableName} returned no data.`);
+                            // Try to extract column schema from result metadata even with 0 rows
+                            if (result.recordset && result.recordset.columns) {
+                                columns = Object.keys(result.recordset.columns);
+                                console.warn(`[PIPELINE] SQL Source query for ${dep.tableName} returned 0 rows but has columns: [${columns.join(', ')}]`);
+                            } else {
+                                console.warn(`[PIPELINE] SQL Source query for ${dep.tableName} returned no data.`);
+                            }
                         }
                     } else {
                         console.error(`[PIPELINE] WARNING: ${dep.tableName} has isPython=${dep.isPython} but NO pythonCode and NO query!`);
@@ -306,7 +321,13 @@ export async function executeSqlPreviewAction(
 
                         console.log(`[PIPELINE] Created ${tempTableName} with ${rowsToInsert.length} rows`);
                     } else {
-                        if (schemaSourceTable) {
+                        if (columns.length > 0) {
+                            // We have column schema from upstream (e.g. Python returned columns but 0 rows)
+                            const colDefs = columns.map(col => `[${col}] NVARCHAR(MAX)`).join(', ');
+                            console.log(`[PIPELINE] Creating EMPTY temp table ${tempTableName} with known schema (${columns.length} cols: ${columns.slice(0, 5).join(', ')}${columns.length > 5 ? '...' : ''})`);
+                            await request.query(`CREATE TABLE ${tempTableName} (${colDefs});`);
+                            if (!schemaSourceTable) schemaSourceTable = tempTableName;
+                        } else if (schemaSourceTable) {
                             console.log(`[PIPELINE] Creating EMPTY temp table ${tempTableName} (schema cloned from ${schemaSourceTable})`);
                             await request.query(`SELECT TOP 0 * INTO ${tempTableName} FROM ${schemaSourceTable};`);
                         } else {
@@ -317,8 +338,18 @@ export async function executeSqlPreviewAction(
                     }
 
                 } catch (depError) {
-                    console.error(`[PIPELINE] Error materializing ${dep.tableName}:`, depError);
-                    throw new Error(`Errore nell'esecuzione della dipendenza "${dep.tableName}": ${depError instanceof Error ? depError.message : 'Errore sconosciuto'}`);
+                    const depErrMsg = depError instanceof Error ? depError.message : 'Errore sconosciuto';
+                    console.error(`[PIPELINE] Error materializing ${dep.tableName}: ${depErrMsg}`);
+                    // Non-blocking: create an empty placeholder table so downstream SQL doesn't crash on missing table
+                    try {
+                        await request.query(`IF OBJECT_ID('tempdb..${tempTableName}') IS NULL CREATE TABLE ${tempTableName} ([_empty_placeholder] NVARCHAR(1));`);
+                        createdTempTables.push(tempTableName);
+                        console.warn(`[PIPELINE] Created empty placeholder for failed dep ${dep.tableName} — pipeline will continue with 0 rows.`);
+                        depWarnings.push(`Dipendenza "${dep.tableName}": ${depErrMsg}`);
+                    } catch (placeholderErr) {
+                        console.error(`[PIPELINE] Could not create placeholder for ${dep.tableName}:`, placeholderErr);
+                        throw new Error(`Errore nell'esecuzione della dipendenza "${dep.tableName}": ${depErrMsg}`);
+                    }
                 }
             }
         }
@@ -495,7 +526,12 @@ export async function executeSqlPreviewAction(
 
         const data: any[] = result.recordset;
         console.log(`[PIPELINE] Query returned ${data?.length || 0} rows`);
-        return { data, error: null };
+        const returnObj: any = { data, error: null };
+        if (depWarnings.length > 0) {
+            returnObj._depWarnings = depWarnings;
+            console.warn(`[PIPELINE] Completed with ${depWarnings.length} dependency warnings:`, depWarnings);
+        }
+        return returnObj;
 
     } catch (e) {
         const error = e instanceof Error ? e.message : "Errore durante l'esecuzione della query.";
@@ -1140,11 +1176,48 @@ export async function executePythonPreviewAction(
             debugLogs.push(`[${new Date().toLocaleTimeString()}] Documenti selezionati: ${selectedDocuments.join(', ')}`);
         }
 
-        if (connectorId && connectorId !== 'none') {
+        // Inject query_db() support: connector ID from this node or inherited from dependencies
+        let effectiveConnectorId = connectorId;
+        if ((!effectiveConnectorId || effectiveConnectorId === 'none') && dependencies && dependencies.length > 0) {
+            // Inherit connector from dependencies (recursive search)
+            const findInheritedConnectorId = (deps: any[]): string | undefined => {
+                for (const dep of deps) {
+                    if (dep.connectorId && dep.connectorId !== 'none') return dep.connectorId;
+                    if (dep.pipelineDependencies?.length > 0) {
+                        const nested = findInheritedConnectorId(dep.pipelineDependencies);
+                        if (nested) return nested;
+                    }
+                }
+                return undefined;
+            };
+            effectiveConnectorId = findInheritedConnectorId(dependencies);
+            if (effectiveConnectorId) {
+                console.log(`[Python] Inherited connectorId ${effectiveConnectorId} from dependencies (node had no connector)`);
+            }
+        }
+        // If still no connector, try to find ANY SQL connector for this company as fallback
+        if ((!effectiveConnectorId || effectiveConnectorId === 'none') && user?.companyId && user.companyId !== 'system-override') {
+            try {
+                const fallbackConnector = await db.connector.findFirst({
+                    where: { companyId: user.companyId, type: 'SQL' },
+                    select: { id: true, name: true }
+                });
+                if (fallbackConnector) {
+                    effectiveConnectorId = fallbackConnector.id;
+                    console.log(`[Python] Fallback: using company SQL connector "${fallbackConnector.name}" (${fallbackConnector.id}) for query_db()`);
+                }
+            } catch (e) {
+                console.warn(`[Python] Fallback connector lookup failed:`, e);
+            }
+        }
+        if (effectiveConnectorId && effectiveConnectorId !== 'none') {
             const port = process.env.PORT || '9002';
             envVars['QUERY_DB_ENDPOINT'] = `http://localhost:${port}/api/internal/query-db`;
-            envVars['QUERY_DB_CONNECTOR_ID'] = connectorId;
+            envVars['QUERY_DB_CONNECTOR_ID'] = effectiveConnectorId;
             envVars['QUERY_DB_TOKEN'] = process.env.INTERNAL_QUERY_TOKEN || 'fridai-internal-query-2024';
+            console.log(`[Python] query_db() enabled with connector ${effectiveConnectorId}`);
+        } else {
+            console.warn(`[Python] WARNING: No SQL connector available — query_db() will NOT work in this script`);
         }
 
         if (dependencies && dependencies.length > 0) {
@@ -1272,8 +1345,10 @@ export async function executePythonPreviewAction(
             const timeoutId = setTimeout(() => controller.abort(), 300000);
 
             try {
-                console.log(`[executePythonPreviewAction] Calling Python backend at 5005... (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
-                debugLogs.push(`[${new Date().toLocaleTimeString()}] Sending data to Python backend${attempt > 0 ? ` (retry ${attempt})` : ''}...`);
+                const inputDataKeys = Object.keys(inputData);
+                const inputDataSizes = inputDataKeys.map(k => `${k}:${inputData[k]?.length ?? 0}`).join(', ');
+                console.log(`[executePythonPreviewAction] Calling Python backend (attempt ${attempt + 1}/${MAX_RETRIES + 1}), outputType=${outputType}, connectorId=${connectorId || 'NONE'}, inputData=[${inputDataSizes}], envKeys=[${Object.keys(envVars).join(',')}]`);
+                debugLogs.push(`[${new Date().toLocaleTimeString()}] Sending data to Python backend${attempt > 0 ? ` (retry ${attempt})` : ''} — outputType=${outputType}, inputs=[${inputDataSizes}]`);
 
                 if (dfTarget) {
                     console.log(`[executePythonPreviewAction] dfTarget explicitly set to '${dfTarget}'`);
@@ -1303,6 +1378,9 @@ export async function executePythonPreviewAction(
                 const result = await response.json();
                 const elapsed = ((performance.now() - tStart) / 1000).toFixed(1);
 
+                // Log key result fields for pipeline debugging
+                console.log(`[executePythonPreviewAction] Result: success=${result.success}, dataLen=${result.data?.length ?? 'N/A'}, htmlLen=${result.html?.length ?? 0}, autoSwitch=${result._autoSwitchedOutputType || 'none'}, warning=${result._warning || 'none'}, cols=${result.columns?.slice(0, 5)?.join(',') || 'N/A'}`);
+
                 if (!result.success) {
                     if (result.stdout) {
                         debugLogs.push(`[Python stdout]\n${result.stdout}`);
@@ -1330,7 +1408,7 @@ export async function executePythonPreviewAction(
 
                 if (outputType === 'table') {
                     if (result._autoSwitchedOutputType === 'html' && result.html) {
-                        return { success: true, html: result.html, stdout: result.stdout, debugLogs };
+                        return { success: true, html: result.html, stdout: result.stdout, debugLogs, _autoSwitchedOutputType: 'html' } as any;
                     }
                     return { success: true, data: result.data, columns: result.columns, rowCount: result.rowCount, stdout: result.stdout, debugLogs };
                 } else if (outputType === 'variable') {

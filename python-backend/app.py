@@ -877,7 +877,7 @@ def execute_python():
                  res_val = stdout_val
                  print(f"✅ [EXECUTE] Using stdout as HTML result (fallback)")
         else:
-            search_order = ['result', 'output', 'df', 'data']
+            search_order = ['result', 'output', 'df', 'data', 'df_result', 'final_df', 'merged', 'table']
             for key in search_order:
                 if key in ns and ns[key] is not None:
                     # If we injected an empty 'df' and it's still empty, skip it unless no inputs were provided
@@ -886,6 +886,38 @@ def execute_python():
                     res_val = ns[key]
                     print(f"✅ [EXECUTE] Found result in variable: '{key}'")
                     break
+
+            # Extended discovery for 'table' output: scan ALL namespace variables for DataFrames
+            # This catches scripts that use non-standard variable names (e.g. deals_df, names_list)
+            if res_val is None and output_type == 'table':
+                _skip_vars = {'plt', 'px', 'go', 'pd', 'np', 'os', 'sys', 'json', 'requests', 're', 'math',
+                              'datetime', 'time', 'io', 'base64', 'csv', 'xml', '__builtins__',
+                              'query_db', 'execute_db', '_orig_stdout', '_captured', 'input_data',
+                              'CHART_THEME', 'THEME_COLORS', 'exit', 'quit', 'open',
+                              'SysWrapper', 'PltWrapper', 'no_op_exit'}
+                best_df = None
+                best_key = None
+                for key, val in ns.items():
+                    if key.startswith('_') or key in _skip_vars:
+                        continue
+                    # Skip variables that were injected as input (they're parent data, not this script's output)
+                    if key in input_data:
+                        continue
+                    if isinstance(val, pd.DataFrame) and not val.empty:
+                        if best_df is None or len(val) > len(best_df):
+                            best_df = val
+                            best_key = key
+                    elif isinstance(val, list) and len(val) > 0 and isinstance(val[0], dict):
+                        try:
+                            candidate = pd.DataFrame(val)
+                            if best_df is None or len(candidate) > len(best_df):
+                                best_df = candidate
+                                best_key = key
+                        except Exception:
+                            pass
+                if best_df is not None:
+                    res_val = best_df
+                    print(f"✅ [EXECUTE] Found DataFrame in extended scan: '{best_key}' ({len(best_df)} rows, cols: {list(best_df.columns)[:8]})")
         
         
         # Priority 2: JSON in stdout (heuristic fallback)
@@ -1049,8 +1081,80 @@ def execute_python():
                     'stdout': stdout_val,
                     '_autoSwitchedOutputType': 'html'
                 })
+            elif res_val is None:
+                # result is None — extended discovery already ran, no usable DataFrame found.
+                _safe_log(f"⚠️ [EXECUTE] result is None after all discovery phases. Namespace keys: {[k for k in ns.keys() if not k.startswith('_') and k not in ('plt','px','go','pd','np','os','sys','json')][:20]}")
+
+                # Check if stdout looks like HTML → auto-switch
+                if stdout_val.strip() and stdout_val.strip()[:1] == '<':
+                    _safe_log(f"⚠️ [EXECUTE] result is None but stdout looks like HTML — auto-switching to html")
+                    return jsonify({
+                        'success': True,
+                        'html': stdout_val,
+                        'stdout': stdout_val,
+                        '_autoSwitchedOutputType': 'html'
+                    })
+
+                # Check for empty DataFrames in namespace — these indicate the script ran
+                # but query_db() or the data source returned 0 rows (connector issue or empty table).
+                # Return SUCCESS with empty data + warning so the pipeline can CONTINUE.
+                all_dfs = [(k, len(v)) for k, v in ns.items() if isinstance(v, pd.DataFrame)]
+                empty_dfs = [(k, cols) for k, v in ns.items()
+                             if isinstance(v, pd.DataFrame) and v.empty
+                             and k not in ('__builtins__',)
+                             for cols in [list(v.columns)[:8]]]
+
+                if empty_dfs or all_dfs:
+                    # Script created DataFrames but they're all empty → connector/query issue, NOT a script bug
+                    warning_msg = (
+                        f"⚠️ Lo script ha prodotto DataFrame vuoti (0 righe). "
+                        f"Possibile problema di connettore SQL o query che non restituisce dati. "
+                        f"DataFrame trovati: {[(k, sz) for k, sz in all_dfs[:5]]}."
+                    )
+                    _safe_log(warning_msg)
+
+                    # Try to find the best empty DataFrame to return (preserves column schema)
+                    best_empty = None
+                    for k, v in ns.items():
+                        if isinstance(v, pd.DataFrame) and k not in ('__builtins__',) and not k.startswith('_'):
+                            if k in input_data:
+                                continue  # Skip injected input data
+                            if best_empty is None or len(v.columns) > len(best_empty.columns):
+                                best_empty = v
+
+                    if best_empty is not None:
+                        return jsonify({
+                            'success': True,
+                            'data': [],
+                            'columns': list(best_empty.columns.astype(str)),
+                            'rowCount': 0,
+                            'stdout': stdout_val,
+                            '_warning': warning_msg
+                        })
+                    else:
+                        return jsonify({
+                            'success': True,
+                            'data': [],
+                            'columns': [],
+                            'rowCount': 0,
+                            'stdout': stdout_val,
+                            '_warning': warning_msg
+                        })
+
+                # No DataFrames at all — script likely forgot to assign result
+                debug_hint = f" [Stdout len: {len(stdout_val)}]"
+                if len(stdout_val) > 100:
+                    debug_hint += f" Last 100: {stdout_val[-100:]}"
+                else:
+                    debug_hint += f" Content: {stdout_val}"
+
+                return jsonify({
+                    'success': False,
+                    'error': f'Lo script non ha assegnato un DataFrame a "result". Output type è "table" ma result è None.{debug_hint} Aggiungi "result = df" alla fine dello script.',
+                    'stdout': stdout_val
+                })
             else:
-                # DEBUG: Show what we captured
+                # result exists but is not a DataFrame
                 debug_hint = f" [Stdout len: {len(stdout_val)}]"
                 if len(stdout_val) > 100:
                     debug_hint += f" Last 100: {stdout_val[-100:]}"

@@ -14,6 +14,7 @@ import { Loader2, Check, X, GitBranch, Database, Upload, AlertCircle } from 'luc
 import { executeSqlPreviewAction, executePythonPreviewAction, exportTableToSqlAction, getTreeAction, getTreesAction } from '@/app/actions';
 import { saveAncestorPreviewsBatchAction } from '@/app/actions/scheduler';
 import { useToast } from '@/hooks/use-toast';
+import { pushConnectorAlert } from '@/hooks/use-connector-alerts';
 
 type PipelineStatus = {
     name: string;
@@ -539,9 +540,37 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                             // For ancestors, they are already resolved and stored in pipelineDependencies during collection
                             const executionDeps = step.type === 'final' ? resolveDependencies(node) : (node.pipelineDependencies || []);
 
+                            const pyOutputType = node.pythonOutputType || 'table';
+                            // Connector resolution: node's own > inherited from deps > inherited from any executed ancestor
+                            let pyConnectorId = node.connectorId || node.pythonConnectorId;
+                            if (!pyConnectorId) {
+                                // Try to inherit from dependencies
+                                for (const d of executionDeps) {
+                                    if (d.connectorId) { pyConnectorId = d.connectorId; break; }
+                                }
+                            }
+                            if (!pyConnectorId) {
+                                // Try to inherit from any previously executed ancestor that had a connector
+                                for (const [, val] of Object.entries(ancestorResults)) {
+                                    const ar = val as any;
+                                    if (ar?._connectorId) { pyConnectorId = ar._connectorId; break; }
+                                }
+                            }
+                            if (!pyConnectorId) {
+                                // Try from ANY ancestor step node that has a SQL connector configured
+                                for (const s of steps) {
+                                    const an = s.ancestor;
+                                    if (an?.connectorId || an?.sqlConnectorId) {
+                                        pyConnectorId = an.connectorId || an.sqlConnectorId;
+                                        break;
+                                    }
+                                }
+                            }
+                            console.log(`[PIPELINE] Python exec: name=${node.sqlResultName || node.pythonResultName || node.name}, outputType=${pyOutputType}, connectorId=${pyConnectorId || 'NONE'}, inputDataKeys=${Object.keys(inputData).join(',') || 'EMPTY'}, depsCount=${executionDeps.length}`);
+
                             const res = await executePythonPreviewAction(
                                 node.pythonCode,
-                                node.pythonOutputType || 'table',
+                                pyOutputType,
                                 inputData,
                                 executionDeps.map((d: any) => ({
                                     tableName: d.tableName,
@@ -552,14 +581,25 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                                     pipelineDependencies: d.pipelineDependencies,
                                     selectedDocuments: d.selectedDocuments
                                 })),
-                                node.connectorId || node.pythonConnectorId,
+                                pyConnectorId,
                                 undefined,
                                 node.selectedDocuments?.length > 0 ? node.selectedDocuments : undefined
                             );
+                            console.log(`[PIPELINE] Python result: success=${res.success}, hasData=${!!res.data}, dataLen=${res.data?.length ?? 'N/A'}, hasHtml=${!!(res as any).html}, autoSwitch=${(res as any)._autoSwitchedOutputType || 'none'}, warning=${(res as any)._warning || 'none'}`);
                             if (res.success) {
                                 success = true;
                                 ancestorResults[node.sqlResultName || node.pythonResultName || node.name] = res;
                                 if (node.id) nodeIdResults[`${node.id}_py`] = res;
+                                // Show warning in UI if result has 0 rows or backend sent a warning
+                                const pyWarning = (res as any)._warning;
+                                const stepLabel = node.sqlResultName || node.pythonResultName || node.name || step.label;
+                                if (pyWarning) {
+                                    stepMessage = pyWarning;
+                                    pushConnectorAlert(stepLabel, "0 righe restituite — possibile problema connettore SQL o query vuota.");
+                                } else if (res.data && Array.isArray(res.data) && res.data.length === 0) {
+                                    stepMessage = "Script completato ma 0 righe restituite. Verificare connettore SQL o query.";
+                                    pushConnectorAlert(stepLabel, "0 righe restituite — verificare il connettore SQL nelle impostazioni.");
+                                }
                             } else {
                                 stepError = res.error || "Execution failed";
                             }
@@ -685,22 +725,45 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                         // Priority 3: Default SQL execution
                         else {
                             const deps = step.type === 'final' ? resolveDependencies(node) : node.pipelineDependencies || [];
-                            const inputTables = deps.map((t: any) => ({
-                                tableName: t.tableName,
-                                query: t.query,
-                                isPython: t.isPython,
-                                pythonCode: t.pythonCode,
-                                connectorId: t.connectorId,
-                                pipelineDependencies: t.pipelineDependencies,
-                                data: ancestorResults[t.tableName]?.data || ancestorResults[t.tableName]?.rechartsData
-                            }));
+                            const inputTables = deps.map((t: any) => {
+                                const ancestorRes = ancestorResults[t.tableName];
+                                const data = ancestorRes?.data || ancestorRes?.rechartsData;
+                                const columns = ancestorRes?.columns; // Pass column schema for empty results
+                                if (!data && ancestorRes) {
+                                    console.warn(`[PIPELINE] SQL dep '${t.tableName}': ancestor result exists but has no .data (autoSwitch=${ancestorRes._autoSwitchedOutputType || 'none'}, hasHtml=${!!ancestorRes.html}). Will re-fetch.`);
+                                }
+                                return {
+                                    tableName: t.tableName,
+                                    query: t.query,
+                                    isPython: t.isPython,
+                                    pythonCode: t.pythonCode,
+                                    connectorId: t.connectorId,
+                                    pipelineDependencies: t.pipelineDependencies,
+                                    data,
+                                    columns // schema hint for empty temp tables
+                                };
+                            });
                             const res = await executeSqlPreviewAction(node.sqlQuery || node.query, node.connectorId || node.sqlConnectorId, inputTables);
                             if (res.data) {
                                 success = true;
                                 ancestorResults[node.sqlResultName || node.name] = { data: res.data };
                                 if (node.id) nodeIdResults[`${node.id}_sql`] = { data: res.data };
+                                // Show dependency warnings (non-blocking dep failures upstream)
+                                const sqlDepWarnings = (res as any)?._depWarnings;
+                                if (sqlDepWarnings && Array.isArray(sqlDepWarnings) && sqlDepWarnings.length > 0) {
+                                    const sqlLabel = node.sqlResultName || node.name || step.label;
+                                    stepMessage = `⚠️ ${sqlDepWarnings.length} dipendenza/e con problemi — risultato parziale`;
+                                    for (const w of sqlDepWarnings) {
+                                        pushConnectorAlert(sqlLabel, w);
+                                    }
+                                }
                             } else {
                                 stepError = res.error || "Query failed";
+                                // Push connector alert for SQL failures that look like connection issues
+                                const sqlLabel = node.sqlResultName || node.name || step.label;
+                                if (res.error && (res.error.includes('Connettore') || res.error.includes('ECONNREFUSED') || res.error.includes('login failed') || res.error.includes('timeout'))) {
+                                    pushConnectorAlert(sqlLabel, res.error);
+                                }
                             }
                         }
                     } else if (step.type === 'write') {
@@ -725,18 +788,19 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                         setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'success', executionTime: Date.now() - startTime, message: stepMessage || undefined } : p));
                     } else {
                         setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'error', message: stepError || 'Errore' } : p));
-                        // WRITE/EXPORT errors are non-blocking — continue pipeline so previews still generate
-                        if (step.type !== 'write') {
+                        // Non-blocking: log error but continue pipeline.
+                        // Only the FINAL step failure is fatal (throws to stop).
+                        if (step.type === 'final') {
                             throw new Error(stepError || "Pipeline failed");
                         } else {
-                            console.warn(`[PIPELINE] Write step "${step.label}" failed (non-blocking): ${stepError}`);
+                            console.warn(`[PIPELINE] Step "${step.label}" failed (non-blocking): ${stepError}`);
                         }
                     }
                 } catch (e: any) {
                     setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'error', message: e.message } : p));
-                    // Write steps: continue. Data steps: abort.
-                    if (step.type !== 'write') throw e;
-                    else console.warn(`[PIPELINE] Write step "${step.label}" exception (non-blocking):`, e.message);
+                    // Only final step failures abort the entire pipeline
+                    if (step.type === 'final') throw e;
+                    else console.warn(`[PIPELINE] Step "${step.label}" exception (non-blocking):`, e.message);
                 }
             }
 
@@ -828,7 +892,7 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                                                 {step.name}
                                                 {step.type === 'export' && <Upload className="inline h-3 w-3 ml-1 text-muted-foreground" />}
                                             </span>
-                                            {step.message && <span className="text-[10px] text-red-500 mt-1">{step.message}</span>}
+                                            {step.message && <span className={`text-[10px] mt-1 ${step.status === 'error' ? 'text-red-500' : 'text-amber-600'}`}>{step.message}</span>}
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
