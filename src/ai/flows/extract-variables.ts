@@ -7,9 +7,10 @@
  * - ExtractVariablesOutput - The return type for the extractVariables function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { z } from 'zod';
 import { nanoid } from 'nanoid';
+import { generateObject } from 'ai';
+import { getOpenRouterProvider, DEFAULT_MODEL } from '@/ai/ai-client';
 
 const ExtractVariablesInputSchema = z.string().describe('A descriptive text about a process.');
 export type ExtractVariablesInput = z.infer<typeof ExtractVariablesInputSchema>;
@@ -62,13 +63,7 @@ export async function extractVariables(input: ExtractVariablesInput): Promise<Ex
   return { variables: variablesWithIds };
 }
 
-const extractVariablesFlow = ai.defineFlow(
-  {
-    name: 'extractVariablesFlow',
-    inputSchema: ExtractVariablesInputSchema,
-    outputSchema: RawOutputSchema, // We use the raw schema here
-  },
-  async input => {
+async function extractVariablesFlow(input: ExtractVariablesInput): Promise<z.infer<typeof RawOutputSchema>> {
     const prompt = `You are a highly intelligent entity tasked with parsing natural language descriptions of processes and extracting key variables. Your output MUST be in Italian.
 
 ## STRUCTURED REASONING (MANDATORY):
@@ -104,17 +99,17 @@ Example:
 -   **Input Text**: "Se una macchina segnala un codice di errore, controlla se è in garanzia. Se è in garanzia, la riparazione è gratuita, altrimenti emetti un preventivo."
 -   **Expected 'variables' array**:
     [
-      { 
-        "name": "Codice di Errore Presente", 
-        "type": "boolean", 
+      {
+        "name": "Codice di Errore Presente",
+        "type": "boolean",
         "possibleValues": [
           {"name": "Sì", "value": 0, "abbreviation": "SÌ"},
           {"name": "No", "value": 1, "abbreviation": "NO"}
-        ] 
+        ]
       },
-      { 
-        "name": "Stato Garanzia", 
-        "type": "boolean", 
+      {
+        "name": "Stato Garanzia",
+        "type": "boolean",
         "possibleValues": [
           {"name": "Sì", "value": 0, "abbreviation": "SÌ"},
           {"name": "No", "value": 1, "abbreviation": "NO"}
@@ -127,12 +122,12 @@ User's descriptive text:
 ${input}
 \`\`\`
 `;
-    
-    const {output} = await ai.generate({
-      model: 'googleai/gemini-2.0-flash',
-      prompt,
-      output: { schema: RawOutputSchema },
+
+    const provider = getOpenRouterProvider();
+    const { object } = await generateObject({
+        model: provider(DEFAULT_MODEL),
+        prompt,
+        schema: RawOutputSchema,
     });
-    return output!;
-  }
-);
+    return object;
+}

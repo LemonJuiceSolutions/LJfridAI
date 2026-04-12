@@ -100,3 +100,5 @@ Defined in `src/lib/types.ts`. Nodes can be:
 | API routes | `src/app/api/` |
 | shadcn components | `src/components/ui/` |
 | Python backend | `python-backend/app.py` |
+
+---

@@ -325,7 +325,7 @@ export async function saveNodeExecutionResultAction(
                 startedAt: new Date(Date.now() - (executionTime || 0)), // Approximate start
                 completedAt: new Date(),
                 durationMs: executionTime || 0,
-                result: resultSummary,
+                result: resultSummary ?? undefined,
                 error: error
             }
         });

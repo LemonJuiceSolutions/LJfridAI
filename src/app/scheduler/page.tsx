@@ -7,7 +7,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Play, Pause, Trash2, Clock, CheckCircle, XCircle, AlertCircle, List, FileText, CalendarClock, ExternalLink, ChevronRight, Search, Loader2, Timer } from 'lucide-react';
+import { Plus, Play, Pause, Trash2, Clock, CheckCircle, XCircle, AlertCircle, List, FileText, CalendarClock, ExternalLink, ChevronRight, Search, Loader2, Timer, PlayCircle, StopCircle } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -125,13 +125,43 @@ export default function SchedulerPage() {
   const bgElapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [bgTick, setBgTick] = useState(0); // forces re-render for elapsed
 
-  // Start global polling on mount
+  // Run-all state
+  const [runAllOpen, setRunAllOpen] = useState(false);
+  const [runAllData, setRunAllData] = useState<{
+    active: boolean;
+    run?: {
+      id: string;
+      startedAt: string;
+      completedAt?: string;
+      status: 'running' | 'completed' | 'aborted';
+      currentIndex: number;
+      tasks: Array<{
+        taskId: string;
+        taskName: string;
+        taskType: string;
+        treeName: string | null;
+        treeId: string | null;
+        nodeName: string | null;
+        detail: string | null;
+        status: 'pending' | 'running' | 'success' | 'failure' | 'skipped';
+        error?: string;
+        message?: string;
+        durationMs?: number;
+      }>;
+    };
+  } | null>(null);
+  const runAllPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Start global polling on mount (+ check for existing run-all)
   useEffect(() => {
     fetchTasks();
     startBgPolling();
+    // Check if there's an active run-all from before navigation
+    pollRunAll();
     return () => {
       if (bgPollRef.current) clearInterval(bgPollRef.current);
       if (bgElapsedRef.current) clearInterval(bgElapsedRef.current);
+      if (runAllPollRef.current) clearInterval(runAllPollRef.current);
     };
   }, []);
 
@@ -282,6 +312,83 @@ export default function SchedulerPage() {
   const closeRunDialog = () => {
     stopPolling();
     setRunningTask(null);
+  };
+
+  // ── Run-All logic ──
+
+  const pollRunAll = async () => {
+    try {
+      const res = await fetch('/api/scheduler/run-all');
+      if (!res.ok) return;
+      const data = await res.json();
+      setRunAllData(data);
+      if (data.active && !runAllOpen) {
+        setRunAllOpen(true);
+      }
+      // Start polling if active
+      if (data.active && !runAllPollRef.current) {
+        startRunAllPolling();
+      }
+    } catch { /* ignore */ }
+  };
+
+  const startRunAllPolling = () => {
+    if (runAllPollRef.current) return;
+    runAllPollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch('/api/scheduler/run-all');
+        if (!res.ok) return;
+        const data = await res.json();
+        setRunAllData(data);
+        if (!data.active) {
+          // Completed — stop polling, refresh tasks
+          if (runAllPollRef.current) { clearInterval(runAllPollRef.current); runAllPollRef.current = null; }
+          fetchTasks(true);
+        }
+      } catch { /* ignore */ }
+    }, 1500);
+  };
+
+  const handleRunAll = async () => {
+    setRunAllOpen(true);
+    setRunAllData({ active: true, run: undefined }); // Show loading
+
+    try {
+      const res = await fetch('/api/scheduler/run-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        toast({ variant: 'destructive', title: 'Errore', description: d.error || 'Impossibile avviare' });
+        setRunAllOpen(false);
+        return;
+      }
+      // Start polling
+      startRunAllPolling();
+      // Immediate poll
+      setTimeout(pollRunAll, 500);
+    } catch {
+      toast({ variant: 'destructive', title: 'Errore', description: 'Impossibile contattare il server' });
+      setRunAllOpen(false);
+    }
+  };
+
+  const handleAbortRunAll = async () => {
+    try {
+      await fetch('/api/scheduler/run-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'abort' }),
+      });
+      pollRunAll();
+    } catch { /* ignore */ }
+  };
+
+  const closeRunAllDialog = () => {
+    setRunAllOpen(false);
+    if (runAllPollRef.current) { clearInterval(runAllPollRef.current); runAllPollRef.current = null; }
   };
 
   const handleTriggerTask = async (task: ScheduledTask) => {
@@ -437,7 +544,28 @@ export default function SchedulerPage() {
           <h1 className="text-3xl font-bold">Scheduler</h1>
           <p className="text-muted-foreground mt-1">Gestisci le operazioni pianificate</p>
         </div>
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleRunAll}
+            disabled={runAllData?.active === true}
+          >
+            {runAllData?.active ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <PlayCircle className="w-4 h-4 mr-2" />
+            )}
+            {runAllData?.active
+              ? (() => {
+                  const r = runAllData.run;
+                  if (!r) return 'In corso...';
+                  const current = r.tasks[r.currentIndex];
+                  const currentName = current?.nodeName || current?.treeName || current?.taskName || '';
+                  return `${r.currentIndex + 1}/${r.tasks.length} — ${currentName}`;
+                })()
+              : 'Lancia Tutto'}
+          </Button>
+          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="w-4 h-4 mr-2" />
@@ -454,6 +582,7 @@ export default function SchedulerPage() {
             <TaskForm onSuccess={handleTaskCreated} onCancel={() => setShowCreateDialog(false)} />
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Tabs defaultValue="tasks" className="space-y-4">
@@ -784,6 +913,157 @@ export default function SchedulerPage() {
           {selectedTask && (
             <TaskExecutions taskId={selectedTask.id} />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Run-All progress dialog */}
+      <Dialog open={runAllOpen} onOpenChange={open => { if (!open) closeRunAllDialog(); }}>
+        <DialogContent className="max-w-xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {runAllData?.active ? (
+                <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
+              ) : runAllData?.run?.status === 'completed' ? (
+                <CheckCircle className="w-4 h-4 text-green-500" />
+              ) : runAllData?.run?.status === 'aborted' ? (
+                <StopCircle className="w-4 h-4 text-yellow-500" />
+              ) : (
+                <PlayCircle className="w-4 h-4 text-violet-500" />
+              )}
+              Esecuzione Completa
+            </DialogTitle>
+            <DialogDescription>
+              {runAllData?.active
+                ? `Task ${(runAllData.run?.currentIndex ?? 0) + 1} di ${runAllData.run?.tasks.length ?? '...'} in esecuzione`
+                : runAllData?.run
+                  ? `${runAllData.run.tasks.filter(t => t.status === 'success').length} successi, ${runAllData.run.tasks.filter(t => t.status === 'failure').length} errori`
+                  : 'Avvio in corso...'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {runAllData?.run ? (
+            <div className="flex-1 overflow-hidden flex flex-col gap-3 py-2">
+              {/* Summary bar */}
+              <div className="flex items-center gap-2 text-xs">
+                {(() => {
+                  const r = runAllData.run!;
+                  const done = r.tasks.filter(t => t.status !== 'pending' && t.status !== 'running').length;
+                  const pct = r.tasks.length > 0 ? Math.round((done / r.tasks.length) * 100) : 0;
+                  return (
+                    <>
+                      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${pct}%`,
+                            background: r.status === 'aborted'
+                              ? 'rgb(234 179 8)'
+                              : r.tasks.some(t => t.status === 'failure')
+                                ? 'linear-gradient(90deg, rgb(34 197 94) 0%, rgb(239 68 68) 100%)'
+                                : 'rgb(34 197 94)',
+                          }}
+                        />
+                      </div>
+                      <span className="text-muted-foreground tabular-nums shrink-0">{pct}%</span>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Task list */}
+              <div className="flex-1 overflow-y-auto space-y-0.5 min-h-0">
+                {runAllData.run.tasks.map((t, i) => (
+                  <div
+                    key={t.taskId}
+                    className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md transition-colors ${
+                      t.status === 'running'
+                        ? 'bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800'
+                        : t.status === 'success'
+                          ? 'bg-green-50/50 dark:bg-green-900/10'
+                          : t.status === 'failure'
+                            ? 'bg-red-50/50 dark:bg-red-900/10'
+                            : ''
+                    }`}
+                  >
+                    {/* Status icon */}
+                    <div className="shrink-0 w-4">
+                      {t.status === 'pending' && <span className="block w-2 h-2 rounded-full bg-muted-foreground/30 mx-auto" />}
+                      {t.status === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500" />}
+                      {t.status === 'success' && <CheckCircle className="w-3.5 h-3.5 text-green-500" />}
+                      {t.status === 'failure' && <XCircle className="w-3.5 h-3.5 text-red-500" />}
+                      {t.status === 'skipped' && <AlertCircle className="w-3.5 h-3.5 text-yellow-500" />}
+                    </div>
+
+                    {/* Index */}
+                    <span className="text-muted-foreground tabular-nums w-5 text-right shrink-0">{i + 1}.</span>
+
+                    {/* Name + detail */}
+                    <div className="flex-1 min-w-0">
+                      <div className={`truncate ${t.status === 'running' ? 'font-medium text-violet-700 dark:text-violet-300' : ''}`}>
+                        {t.nodeName || t.treeName || t.taskName}
+                      </div>
+                      {t.detail && (
+                        <div className="truncate text-[10px] text-muted-foreground">
+                          {t.detail}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Type badge */}
+                    <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
+                      {t.taskType.replace(/_/g, ' ')}
+                    </Badge>
+
+                    {/* Open button */}
+                    {t.treeId && (
+                      <Link href={`/trees/${t.treeId}`} target="_blank" onClick={e => e.stopPropagation()}>
+                        <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" title="Apri albero">
+                          <ExternalLink className="w-3 h-3" />
+                        </Button>
+                      </Link>
+                    )}
+
+                    {/* Duration or status */}
+                    <div className="shrink-0 w-16 text-right text-muted-foreground tabular-nums">
+                      {t.status === 'running' && <span className="text-violet-600">...</span>}
+                      {t.durationMs != null && (
+                        <span>{t.durationMs < 1000 ? `${t.durationMs}ms` : `${(t.durationMs / 1000).toFixed(1)}s`}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Error details (show last failure) */}
+              {(() => {
+                const lastFail = [...(runAllData.run?.tasks || [])].reverse().find(t => t.status === 'failure');
+                if (!lastFail?.error) return null;
+                return (
+                  <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-800 dark:text-red-300 break-words max-h-20 overflow-y-auto">
+                    <span className="font-medium">{lastFail.treeName || lastFail.taskName}:</span> {lastFail.error}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
+            </div>
+          )}
+
+          <div className="flex justify-between pt-1">
+            {runAllData?.active ? (
+              <Button variant="destructive" size="sm" onClick={handleAbortRunAll}>
+                <StopCircle className="w-3.5 h-3.5 mr-1.5" />
+                Interrompi
+              </Button>
+            ) : (
+              <div />
+            )}
+            <Button variant="outline" size="sm" onClick={closeRunAllDialog}>
+              {runAllData?.active ? 'Chiudi (continua in background)' : 'Chiudi'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

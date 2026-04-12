@@ -50,17 +50,19 @@ result = r"""
 body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
 /* Header */
-.app-header { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); color: white; padding: 16px 24px; display: flex; align-items: center; gap: 0; box-shadow: var(--shadow-md); border-bottom: 4px solid #fbbf24; position: relative; }
-.header-items { display: flex; align-items: center; gap: 0; flex: 1; }
+.app-header { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); color: white; padding: 16px 24px; display: flex; flex-direction: column; align-items: center; gap: 10px; box-shadow: var(--shadow-md); border-bottom: 4px solid #fbbf24; position: relative; }
+.header-items { display: flex; align-items: center; justify-content: center; gap: 0; }
+.header-secondary { display: flex; align-items: center; gap: 12px; }
 .header-item { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 24px; position: relative; cursor: default; }
 .header-item:not(:last-child)::after { content: ''; position: absolute; right: 0; top: 20%; height: 60%; width: 1px; background: rgba(255,255,255,0.25); }
-.header-item .hi-icon { font-size: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+.header-item .hi-icon { width: 38px; height: 38px; background: rgba(255,255,255,0.15); border-radius: 10px; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.2); }
+.header-item .hi-icon svg { width: 22px; height: 22px; fill: none; stroke: white; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.3)); }
 .header-item .hi-label { font-size: 18px; font-weight: 800; letter-spacing: 0.5px; text-shadow: 0 2px 8px rgba(0,0,0,0.3); text-transform: uppercase; }
 .header-item .hi-sublabel { font-size: 11px; opacity: 0.75; font-weight: 500; }
 .header-item.clickable { cursor: pointer; border-radius: var(--radius); transition: background 0.2s; }
 .header-item.clickable:hover { background: rgba(255,255,255,0.12); }
 .app-header .subtitle { font-size: 13px; opacity: 0.8; }
-.title-display { margin-left: auto; font-size: 14px; font-weight: 600; background: rgba(255,255,255,0.15); padding: 6px 16px; border-radius: var(--radius); min-width: 180px; text-align: center; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title-display { font-size: 14px; font-weight: 600; background: rgba(255,255,255,0.15); padding: 6px 16px; border-radius: var(--radius); min-width: 180px; text-align: center; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Tabs */
 .tabs-container { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 16px; display: flex; overflow-x: auto; box-shadow: var(--shadow); position: sticky; top: 0; z-index: 100; }
@@ -486,22 +488,22 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 <header class="app-header">
   <div class="header-items">
     <div class="header-item">
-      <span class="hi-icon">&#128218;</span>
+      <span class="hi-icon"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8M8 11h6"/></svg></span>
       <div><div class="hi-label">VeronaLibri</div></div>
     </div>
     <div class="header-item">
-      <span class="hi-icon">&#128230;</span>
+      <span class="hi-icon"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>
       <div><div class="hi-label">Calcolo Spedizioni</div></div>
     </div>
     <div class="header-item clickable" onclick="fillRandomData()" title="Genera dati casuali">
-      <span class="hi-icon">&#127922;</span>
+      <span class="hi-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2" fill="white" stroke="none"/><circle cx="16" cy="8" r="1.2" fill="white" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="white" stroke="none"/><circle cx="8" cy="16" r="1.2" fill="white" stroke="none"/><circle cx="16" cy="16" r="1.2" fill="white" stroke="none"/></svg></span>
       <div><div class="hi-label">Random</div><div class="hi-sublabel">Dati casuali</div></div>
     </div>
   </div>
-  <div class="header-actions">
+  <div class="header-secondary">
     <button class="btn-header" onclick="toggleSidebar()" title="Configurazioni salvate">&#9776; Lista</button>
+    <div class="title-display" id="titleDisplay">Inserisci titolo...</div>
   </div>
-  <div class="title-display" id="titleDisplay">Inserisci titolo...</div>
 </header>
 
 <!-- SIDEBAR -->

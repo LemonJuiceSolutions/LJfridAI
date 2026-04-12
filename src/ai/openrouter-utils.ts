@@ -17,31 +17,12 @@ export interface OpenRouterTool {
 }
 
 /**
- * Maps a user selected model string to either a Genkit Google model ID or returns it as an OpenRouter model ID.
- * Returns the provider ('google' or 'openrouter') and the model name to use.
+ * Maps a user selected model string to an OpenRouter model ID.
+ * All models go through OpenRouter — no more Genkit/Google AI routing.
  */
-export function resolveModel(userModel?: string): { provider: 'google' | 'openrouter', modelName: string } {
-    // Default to Gemini if no model specified
-    if (!userModel) {
-        return { provider: 'google', modelName: 'googleai/gemini-2.5-flash' };
-    }
-
-    // Explicit overrides for known Google models to use Genkit native plugin
-    // ONLY if the user model string matches standard OpenRouter google identifiers
-    // AND we want to route them through Vertex/Genkit locally.
-    // However, if the user explicitly provided an API Key for OpenRouter, they might EXPECT it to go through OpenRouter.
-    // But defaults usually don't have API keys for Vertex built-in unless we are in the cloud.
-    // Let's stick to the simple mapping:
-
-    // REMOVED: Force Google models to use Genkit native plugin
-    // if (userModel.startsWith('google/') && (userModel.includes('gemini') || userModel.includes('flash') || userModel.includes('pro'))) {
-    //     const modelName = userModel.replace('google/', '');
-    //     const cleanName = modelName.replace(/-\d{3}$/, ''); // simple strip version
-    //     return { provider: 'google', modelName: `googleai/${cleanName}` };
-    // }
-
-    // Default: OpenRouter
-    return { provider: 'openrouter', modelName: userModel };
+export function resolveModel(userModel?: string): { provider: 'openrouter', modelName: string } {
+    const modelName = userModel || 'google/gemini-2.0-flash-001';
+    return { provider: 'openrouter', modelName };
 }
 
 /**

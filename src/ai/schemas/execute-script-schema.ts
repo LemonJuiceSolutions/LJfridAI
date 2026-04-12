@@ -7,7 +7,7 @@
  * - ExecuteScriptOutput - The TypeScript type for the executeScript function output.
  */
 
-import { z } from 'genkit';
+import { z } from 'zod';
 
 export const ExecuteScriptInputSchema = z.object({
   script: z.string().describe('The SQL script to be executed.').optional(),

@@ -8,8 +8,9 @@
  * - DiagnoseProblemOutput - The return type for the diagnoseProblem function.
  */
 
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
+import { generateObject } from 'ai';
+import { getOpenRouterProvider, DEFAULT_MODEL } from '@/ai/ai-client';
 
 const DiagnoseProblemInputSchema = z.object({
   userProblem: z.string().describe("The user's initial description of the problem."),
@@ -49,17 +50,6 @@ const DiagnoseProblemOutputSchema = z.object({
 export type DiagnoseProblemOutput = z.infer<typeof DiagnoseProblemOutputSchema>;
 
 export async function diagnoseProblem(input: DiagnoseProblemInput): Promise<DiagnoseProblemOutput> {
-  return diagnoseProblemFlow(input);
-}
-
-const diagnoseProblemFlow = ai.defineFlow(
-  {
-    name: 'diagnoseProblemFlow',
-    inputSchema: DiagnoseProblemInputSchema,
-    outputSchema: DiagnoseProblemOutputSchema,
-  },
-  async (input) => {
-    
     const prompt = `You are an expert diagnostic AI chatbot. Your primary goal is to help a user identify the correct troubleshooting guide (a specific decision tree from a provided library) and then walk them through it, question by question.
 You MUST respond in Italian.
 
@@ -115,13 +105,13 @@ Follow these steps with absolute rigor:
     *   If you reach a leaf node (a final 'decision'), set 'isFinalDecision' to 'true', set the 'question' field to the final decision text, and leave the 'options' array empty. Set 'treeName' to the name of the tree you just navigated.
     *   **ALWAYS include 'nodeIds'**: The 'nodeIds' array MUST contain the 'id' of the current node(s) as found in the JSON.
     *   **CRITICAL: Include Attachments**: If the current node (question or decision) in the JSON tree contains 'media', 'links', or 'triggers', you MUST include them in your output exactly as they appear in the JSON.`;
-    
-    const { output } = await ai.generate({
-      model: 'googleai/gemini-2.0-flash',
-      prompt: prompt,
-      output: { schema: DiagnoseProblemOutputSchema },
+
+    const provider = getOpenRouterProvider();
+    const { object } = await generateObject({
+        model: provider(DEFAULT_MODEL),
+        prompt,
+        schema: DiagnoseProblemOutputSchema,
     });
 
-    return output!;
-  }
-);
+    return object;
+}

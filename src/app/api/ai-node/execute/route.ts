@@ -118,7 +118,7 @@ function detectFabricatedSequences(result: any[]): { isFabricated: boolean; issu
         }
 
         // Check: perfectly linear non-zero increments (e.g. 4.25, 4.30, 4.35...)
-        const diffs = [];
+        const diffs: number[] = [];
         for (let i = 1; i < vals.length; i++) diffs.push(Math.round((vals[i] - vals[i - 1]) * 10000) / 10000);
         const allSameDiff = diffs.every(d => d === diffs[0]);
         if (allSameDiff && diffs[0] !== 0) {

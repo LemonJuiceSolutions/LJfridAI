@@ -1,15 +1,16 @@
 'use server';
 
 /**
- * @fileOverview This file defines a Genkit flow for generating a decision tree from extracted variables.
+ * @fileOverview This file defines a flow for generating a decision tree from extracted variables.
  *
  * - generateDecisionTree - A function that generates a decision tree from a text description of a process.
  * - GenerateDecisionTreeInput - The input type for the generateDecisionTree function.
  * - GenerateDecisionTreeOutput - The return type for the generateDecisionTreeOutput function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { z } from 'zod';
+import { generateObject } from 'ai';
+import { getOpenRouterProvider, DEFAULT_MODEL } from '@/ai/ai-client';
 
 const GenerateDecisionTreeInputSchema = z.object({
   textDescription: z
@@ -40,11 +41,8 @@ export async function generateDecisionTree(
   return generateDecisionTreeFlow(input);
 }
 
-const prompt = ai.definePrompt({
-  name: 'generateDecisionTreePrompt',
-  input: {schema: GenerateDecisionTreeInputSchema},
-  output: {schema: GenerateDecisionTreeOutputSchema},
-  prompt: `You are a Business Rules Engine with natural language interpretation capabilities.
+async function generateDecisionTreeFlow(input: GenerateDecisionTreeInput): Promise<GenerateDecisionTreeOutput> {
+    const promptText = `You are a Business Rules Engine with natural language interpretation capabilities.
 Your output, including all text in the natural language description, the JSON content (questions and decisions), and the question script, MUST be in Italian.
 
 ## STRUCTURED REASONING (MANDATORY):
@@ -89,37 +87,30 @@ Example of a valid JSON structure for 'jsonDecisionTree':
 
 
 Here is the input text:
-{{{textDescription}}}
+${input.textDescription}
 
 Here is the variables table:
-{{{variablesTable}}}
-`,
-});
+${input.variablesTable}
+`;
 
-const generateDecisionTreeFlow = ai.defineFlow(
-  {
-    name: 'generateDecisionTreeFlow',
-    inputSchema: GenerateDecisionTreeInputSchema,
-    outputSchema: GenerateDecisionTreeOutputSchema,
-  },
-  async input => {
     let attempts = 0;
     const maxAttempts = 3;
 
     while (attempts < maxAttempts) {
         try {
-            const { output } = await ai.generate({
-                model: 'googleai/gemini-2.0-flash',
-                ...prompt(input),
+            const provider = getOpenRouterProvider();
+            const { object } = await generateObject({
+                model: provider(DEFAULT_MODEL),
+                prompt: promptText,
+                schema: GenerateDecisionTreeOutputSchema,
             });
 
             // Validate JSON before returning
-            JSON.parse(output.jsonDecisionTree);
-            return output;
+            JSON.parse(object.jsonDecisionTree);
+            return object;
         } catch (e) {
             attempts++;
             if (attempts >= maxAttempts) {
-                // Re-throw the last error if all attempts fail
                 throw new Error("L'IA non è riuscita a generare un JSON valido dopo diversi tentativi. Si prega di riprovare.");
             }
             console.warn(`Tentativo ${attempts} fallito, l'IA ha generato un JSON non valido. Riprovo...`);
@@ -127,5 +118,4 @@ const generateDecisionTreeFlow = ai.defineFlow(
     }
     // This line should not be reachable, but it satisfies TypeScript's need for a return path.
     throw new Error("Si è verificato un errore imprevisto nella generazione dell'albero.");
-  }
-);
+}

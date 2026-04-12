@@ -7,7 +7,7 @@
  * - AgentOutput - The TypeScript type for agent output
  */
 
-import { z } from 'genkit';
+import { z } from 'zod';
 
 export const AgentInputSchema = z.object({
   nodeId: z.string().describe('The ID of the tree node'),

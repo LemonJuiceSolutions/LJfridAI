@@ -3,8 +3,7 @@
  * @fileOverview Python agent with tool-based exploration - never gives up.
  */
 
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
 import { type AgentInput, type AgentOutput, type ConsultedNodeType } from '@/ai/schemas/agent-schema';
@@ -226,97 +225,6 @@ async function doPyBrowseOtherScripts(input: { companyId: string; connectorId?: 
         return JSON.stringify({ error: e.message });
     }
 }
-
-// --- Genkit Tools Definitions (Legacy / Google) ---
-
-const exploreDbSchema = ai.defineTool(
-    {
-        name: 'pyExploreDbSchema',
-        description: 'Esplora lo schema del database: elenca tutte le tabelle disponibili.',
-        inputSchema: z.object({ connectorId: z.string().describe("L'ID del connettore database.") }),
-        outputSchema: z.string(),
-    },
-    doPyExploreDbSchema
-);
-
-const exploreTableColumns = ai.defineTool(
-    {
-        name: 'pyExploreTableColumns',
-        description: 'Esplora le colonne di una tabella specifica con tipo di dato.',
-        inputSchema: z.object({ connectorId: z.string().describe("L'ID del connettore database."), tableName: z.string().describe("Il nome della tabella.") }),
-        outputSchema: z.string(),
-    },
-    doPyExploreTableColumns
-);
-
-const testSqlQuery = ai.defineTool(
-    {
-        name: 'pyTestSqlQuery',
-        description: 'Esegue una query SQL di test per capire la struttura dei dati che il codice Python ricevera\' in input.',
-        inputSchema: z.object({ query: z.string().describe("La query SQL da testare."), connectorId: z.string().describe("L'ID del connettore database.") }),
-        outputSchema: z.string(),
-    },
-    doPyTestSqlQuery
-);
-
-const testPythonCode = ai.defineTool(
-    {
-        name: 'pyTestCode',
-        description: 'Esegue codice Python di test per verificare che funzioni correttamente.',
-        inputSchema: z.object({ code: z.string().describe("Il codice Python da testare."), outputType: z.enum(['table', 'variable', 'chart']).describe("Tipo output."), connectorId: z.string().optional().describe("Connettore opzionale.") }),
-        outputSchema: z.string(),
-    },
-    doPyTestCode
-);
-
-const searchKB = ai.defineTool(
-    {
-        name: 'pySearchKnowledgeBase',
-        description: 'Cerca nella Knowledge Base aziendale script Python simili e correzioni precedenti.',
-        inputSchema: z.object({ query: z.string().describe('Termine di ricerca.'), companyId: z.string().describe("L'ID della company.") }),
-        outputSchema: z.string(),
-    },
-    doPySearchKB
-);
-
-const listConnectors = ai.defineTool(
-    {
-        name: 'pyListSqlConnectors',
-        description: 'Elenca tutti i connettori SQL (database) disponibili.',
-        inputSchema: z.object({ companyId: z.string().describe("L'ID della company.") }),
-        outputSchema: z.string(),
-    },
-    doPyListConnectors
-);
-
-const saveToKB = ai.defineTool(
-    {
-        name: 'pySaveToKnowledgeBase',
-        description: 'Salva una informazione nella Knowledge Base aziendale. Usa dopo aver trovato uno script corretto o quando l\'utente conferma un risultato.',
-        inputSchema: z.object({
-            question: z.string().describe('La domanda o descrizione (es. "Script per analisi vendite").'),
-            answer: z.string().describe('La risposta: il codice Python, l\'output trovato, o la correzione.'),
-            tags: z.array(z.string()).describe('Tag per la ricerca futura (es. ["python", "analisi", "vendite"]).'),
-            category: z.string().describe('Categoria: "Python", "Analisi", "Correzione", "Best Practice".'),
-            companyId: z.string().describe("L'ID della company."),
-        }),
-        outputSchema: z.string(),
-    },
-    doPySaveToKB
-);
-
-const browseOtherScripts = ai.defineTool(
-    {
-        name: 'pyBrowseOtherScripts',
-        description: 'Sfoglia le query SQL e gli script Python scritti in ALTRI alberi e pipeline della company. Passa il connectorId per vedere prima gli script dello STESSO database.',
-        inputSchema: z.object({
-            companyId: z.string().describe("L'ID della company."),
-            connectorId: z.string().optional().describe("L'ID del connettore attuale per prioritizzare script dello stesso DB."),
-        }),
-        outputSchema: z.string(),
-    },
-    doPyBrowseOtherScripts
-);
 
 // --- OpenRouter Tools Definitions ---
 
@@ -1045,7 +953,7 @@ Quando il codice fallisce, segui questa scala:
 
         // Detect if user wants DB write/save from HTML — broad detection
         const userMsgLower = input.userMessage.toLowerCase();
-        const isHtmlOutput = input.outputType === 'html';
+        const isHtmlOutput = (input as any).outputType === 'html';
         const mentionsSave = /salva|update|aggiorn|modific|edit|scriv|database|db|save|pulsant|button|bottone/i.test(userMsgLower);
         const mentionsHtml = /html|tabella|widget|interattiv|griglia|grid/i.test(userMsgLower);
         const wantsDbWrite = (mentionsSave && mentionsHtml) || (isHtmlOutput && mentionsSave);
@@ -1068,19 +976,7 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
         let resultText = '';
         let usage: OpenRouterUsage | undefined;
 
-        if (provider === 'google') {
-            // --- Legacy Genkit ---
-            const result = await ai.generate({
-                model: modelName,
-                prompt: `${systemPrompt} \n\n${userPrompt} `,
-                tools: [
-                    ...(input.connectorId ? [exploreDbSchema, exploreTableColumns, testSqlQuery, testPythonCode] : [testPythonCode]),
-                    ...(input.companyId ? [searchKB, listConnectors, saveToKB, browseOtherScripts] : []),
-                ],
-                config: { temperature: 0.7 },
-            });
-            resultText = result.text;
-        } else {
+        {
             // --- OpenRouter ---
             if (!apiKey) {
                 return { message: "Errore: Chiave API OpenRouter mancante.", needsClarification: false };

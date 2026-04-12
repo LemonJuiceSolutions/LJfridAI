@@ -2,7 +2,7 @@
 
 import { db } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/session';
-import { executeSqlPreviewAction } from '@/app/actions';
+import { executeSqlPreviewAction } from '@/app/actions/sql';
 
 export async function getKnowledgeBaseEntriesAction(
     search?: string,

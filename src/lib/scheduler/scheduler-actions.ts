@@ -266,9 +266,10 @@ export async function executePythonPreview(
   connectorId?: string,
   selectedDocuments?: string[],
   dfTarget?: string,
+  overrideCompanyId?: string,
 ): Promise<PythonPreviewResult> {
   try {
-    let companyId = 'system-override';
+    let companyId = overrideCompanyId || 'system-override';
     const envVars: Record<string, string> = {};
 
     // Resolve company and env vars from connector

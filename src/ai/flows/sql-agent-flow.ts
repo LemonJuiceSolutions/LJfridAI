@@ -3,8 +3,7 @@
  * @fileOverview SQL agent with tool-based exploration - never gives up.
  */
 
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction } from '@/app/actions';
 import { type AgentInput, type AgentOutput, type ConsultedNodeType } from '@/ai/schemas/agent-schema';
@@ -248,87 +247,6 @@ async function doBrowseOtherQueries(input: { companyId: string; connectorId?: st
         return JSON.stringify({ error: e.message });
     }
 }
-
-// --- Genkit Tools Definitions (Legacy / Google) ---
-
-const exploreDbSchema = ai.defineTool(
-    {
-        name: 'exploreDbSchema',
-        description: 'Esplora lo schema del database: elenca tutte le tabelle disponibili. Usa questo per scoprire quali tabelle esistono.',
-        inputSchema: z.object({ connectorId: z.string().describe("L'ID del connettore database.") }),
-        outputSchema: z.string(),
-    },
-    doExploreDbSchema
-);
-
-const exploreTableColumns = ai.defineTool(
-    {
-        name: 'exploreTableColumns',
-        description: 'Esplora le colonne di una tabella specifica con tipo di dato. Usa per capire la struttura prima di scrivere query.',
-        inputSchema: z.object({ connectorId: z.string().describe("L'ID del connettore database."), tableName: z.string().describe("Il nome della tabella da esplorare.") }),
-        outputSchema: z.string(),
-    },
-    doExploreTableColumns
-);
-
-const testSqlQuery = ai.defineTool(
-    {
-        name: 'testSqlQuery',
-        description: 'Esegue QUALSIASI query SQL sul database e restituisce i risultati. Puoi usarlo per: (1) testare query prima di proporle, (2) CERCARE TABELLE con SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE \'%parola%\', (3) esplorare dati con SELECT TOP 5 * FROM tabella. Questo tool e\' il tuo strumento principale di esplorazione!',
-        inputSchema: z.object({ query: z.string().describe("La query SQL da eseguire (qualsiasi query valida, incluse INFORMATION_SCHEMA)."), connectorId: z.string().describe("L'ID del connettore database.") }),
-        outputSchema: z.string(),
-    },
-    doTestSqlQuery
-);
-
-const searchKB = ai.defineTool(
-    {
-        name: 'searchKnowledgeBase',
-        description: 'Cerca nella Knowledge Base aziendale query SQL simili, strutture di tabelle e correzioni precedenti.',
-        inputSchema: z.object({ query: z.string().describe('Termine di ricerca.'), companyId: z.string().describe("L'ID della company.") }),
-        outputSchema: z.string(),
-    },
-    doSearchKB
-);
-
-const listConnectors = ai.defineTool(
-    {
-        name: 'listSqlConnectors',
-        description: 'Elenca tutti i connettori SQL (database) disponibili.',
-        inputSchema: z.object({ companyId: z.string().describe("L'ID della company.") }),
-        outputSchema: z.string(),
-    },
-    doListConnectors
-);
-
-const saveToKB = ai.defineTool(
-    {
-        name: 'sqlSaveToKnowledgeBase',
-        description: 'Salva una informazione nella Knowledge Base aziendale. Usa dopo aver trovato una query corretta o quando l\'utente conferma un risultato.',
-        inputSchema: z.object({
-            question: z.string().describe('La domanda o descrizione (es. "Query per fatturato mensile").'),
-            answer: z.string().describe('La risposta: la query SQL, lo schema trovato, o la correzione.'),
-            tags: z.array(z.string()).describe('Tag per la ricerca futura (es. ["fatturato", "vendite", "sql"]).'),
-            category: z.string().describe('Categoria: "SQL", "Schema", "Correzione", "Best Practice".'),
-            companyId: z.string().describe("L'ID della company."),
-        }),
-        outputSchema: z.string(),
-    },
-    doSaveToKB
-);
-
-const browseOtherQueries = ai.defineTool(
-    {
-        name: 'browseOtherQueries',
-        description: 'Sfoglia le query SQL scritte in ALTRI alberi e pipeline della company. Utile per scoprire nomi di tabelle, colonne e pattern SQL gia\' usati con successo. Passa il connectorId per vedere prima le query dello STESSO database.',
-        inputSchema: z.object({
-            companyId: z.string().describe("L'ID della company."),
-            connectorId: z.string().optional().describe("L'ID del connettore attuale. Se fornito, le query dello stesso connettore vengono mostrate per prime."),
-        }),
-        outputSchema: z.string(),
-    },
-    doBrowseOtherQueries
-);
 
 // --- OpenRouter Tools Definitions ---
 
@@ -857,20 +775,7 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
             return result;
         };
 
-        if (provider === 'google') {
-            // --- Legacy Generation (Genkit) ---
-            const result = await ai.generate({
-                model: modelName,
-                prompt: `${systemPrompt}\n\n${userPrompt}`,
-                tools: [
-                    ...(input.connectorId ? [exploreDbSchema, exploreTableColumns, testSqlQuery] : []),
-                    ...(input.companyId ? [searchKB, listConnectors, saveToKB, browseOtherQueries] : []),
-                ],
-                config: { temperature: 0.7 },
-            });
-            resultText = result.text;
-            // Genkit doesn't provide cost info
-        } else {
+        {
             // --- OpenRouter Generation ---
             if (!apiKey) {
                 return { message: "Errore: Chiave API OpenRouter mancante. Configura la chiave nelle impostazioni.", needsClarification: false };
@@ -919,7 +824,7 @@ Analizza, usa i tool per esplorare il DB se necessario, poi rispondi in JSON.`;
                         } catch { /* ignore */ }
                     }
 
-                    if (retryDiscoveryContext && provider === 'openrouter' && apiKey) {
+                    if (retryDiscoveryContext && apiKey) {
                         // Re-prompt with discovery results
                         const retryMessages = [
                             { role: 'system', content: systemPrompt },

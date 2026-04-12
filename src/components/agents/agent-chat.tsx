@@ -525,7 +525,7 @@ interface AgentChatProps {
   /** Tree ID in the database — needed for Claude CLI to update the node directly */
   treeId?: string;
   onScriptUpdate?: (newScript: string) => void;
-  onAutoExecutePreview?: (script: string) => Promise<{ success: boolean; error?: string }>;
+  onAutoExecutePreview?: (script: string) => Promise<{ success: boolean; error?: string; stdout?: string; debugLogs?: string[]; isEmpty?: boolean }>;
   onOutputTypeChange?: (newType: 'table' | 'variable' | 'chart' | 'html') => void;
   onPreviewReady?: () => void;
   onClose?: () => void;
@@ -1052,11 +1052,15 @@ export function AgentChat({
       const result = await onAutoExecutePreview(scriptToExecute);
 
       if (result.success) {
+        const emptyWarning = result.isEmpty
+          ? '\n\n⚠️ **Attenzione**: il risultato sembra vuoto. Controlla la tab **Debug** nel box codice per i dettagli (es. token API scaduto, nessun dato trovato).'
+          : '';
+
         setMessages(prev => [...prev, {
           role: 'assistant' as const,
-          content: retryAttempt > 0
+          content: (retryAttempt > 0
             ? `✅ **Anteprima eseguita con successo** (dopo ${retryAttempt} correzione/i)`
-            : '✅ **Anteprima eseguita con successo!**',
+            : '✅ **Anteprima eseguita con successo!**') + emptyWarning,
           timestamp: Date.now(),
         }]);
         setIsAutoExecuting(false);

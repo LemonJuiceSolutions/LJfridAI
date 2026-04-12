@@ -45,7 +45,8 @@ export type TaskType =
   | 'SQL_EXECUTE'
   | 'PYTHON_EXECUTE'
   | 'DATA_SYNC'
-  | 'CUSTOM';
+  | 'CUSTOM'
+  | 'NODE_EXECUTION';
 
 export type ScheduleType = 'cron' | 'interval' | 'specific';
 
@@ -725,7 +726,7 @@ export class SchedulerService {
 
 
   private async executeTaskByType(task: any, executionId: string): Promise<TaskExecutionResult> {
-    const config = task.config as ScheduledTaskConfig;
+    const config = { ...(task.config as ScheduledTaskConfig), companyId: task.companyId } as ScheduledTaskConfig;
     const type = task.type as TaskType;
 
     logger.log(`Executing logic for type: ${type}`);
@@ -744,6 +745,9 @@ export class SchedulerService {
           }
           return { success: false, error: "Custom task missing handler" };
 
+        case 'NODE_EXECUTION':
+          return await this.executeGenericNode(config);
+
         default:
           return {
             success: false,
@@ -761,7 +765,8 @@ export class SchedulerService {
     contextTables: any[],
     targetNodeNames?: string[], // Optional: filter
     _bypassAuth: boolean = true,
-    treeId?: string // Save ancestor previews to tree JSON + ScheduledTaskExecution
+    treeId?: string, // Save ancestor previews to tree JSON + ScheduledTaskExecution
+    companyId?: string, // Pass company for SharePoint token resolution
   ): Promise<Record<string, any>> {
     const results: Record<string, any> = {};
     // Store results with normalized keys for lookup, but allow original keys too
@@ -931,9 +936,17 @@ export class SchedulerService {
             }
           }
 
-          // DEBUG: Log final inputData keys (first key = 'df' in Python)
+          // Determine the dfTarget: the first explicit dependency name.
+          // The Python backend maps dfTable → 'df'. Without this, it falls back to
+          // the LAST table in inputData, which may be a failed/empty result.
+          const firstExplicitDep = (tableDef.pipelineDependencies || [])[0]?.tableName;
+          const dfTarget = firstExplicitDep && inputData[firstExplicitDep] !== undefined
+            ? firstExplicitDep
+            : undefined;
+
+          // DEBUG: Log final inputData keys
           const inputKeys = Object.keys(inputData);
-          logger.log(`[AncestorChain] Final inputData for ${originalName}: [${inputKeys.join(', ')}] (df → ${inputKeys[0] || 'none'})`);
+          logger.log(`[AncestorChain] Final inputData for ${originalName}: [${inputKeys.join(', ')}] (df → ${dfTarget || inputKeys[0] || 'none'})`);
 
           // Prepare dependencies definitions
           // FIX: Strip nested pipelineDependencies to prevent recursive re-fetching.
@@ -957,7 +970,9 @@ export class SchedulerService {
             inputData, // PASS DATA HERE
             deps,
             tableDef.connectorId,
-            tableDef.selectedDocuments?.length > 0 ? tableDef.selectedDocuments : undefined
+            tableDef.selectedDocuments?.length > 0 ? tableDef.selectedDocuments : undefined,
+            dfTarget, // FIX: Explicitly tell Python backend which table to map to 'df'
+            companyId, // Pass company for SharePoint token resolution
           );
 
           if (res.success) {
@@ -1479,7 +1494,7 @@ export class SchedulerService {
     // SIMPLIFIED: Load LIVE data from tree instead of using snapshots
     logger.log(`[EmailSend] Loading LIVE tree data for task execution`);
 
-    const { treeId, nodeId, nodePath, to, cc, bcc, subject, body, connectorId } = config;
+    const { treeId, nodeId, nodePath, to, cc, bcc, subject, body, connectorId, companyId: emailCompanyId } = config;
 
     if (!connectorId) return { success: false, error: "Missing SMTP Connector ID" };
     if (!treeId) return { success: false, error: "Missing treeId" };
@@ -1552,25 +1567,94 @@ export class SchedulerService {
     const globalNodes = this.getAllNodesFromTree(treeJson);
     logger.log(`[EmailSend] Flattened tree into ${globalNodes.length} named nodes. Available names: ${globalNodes.map(n => n.allNames.join('|')).join(', ')}`);
 
-    // 4. FOR EMAIL TASKS: EXECUTE ALL TREE NODES (like the UI button does)
-    // This ensures all data is fresh, including nodes that might not be in explicit pipelineDependencies
-    // This mirrors exactly what happens when you press the "Send Email" button in the UI
-    logger.log(`[EmailSend] Email task will execute ALL ${globalNodes.length} tree nodes to ensure fresh data`);
+    // 4. FOR EMAIL TASKS: Execute ONLY the ancestor pipeline of the email node
+    // This matches how the UI works: when you press "Send Email" on a node, it executes
+    // only the ancestors (parent nodes + their pipeline dependencies), NOT the entire tree.
+    // Previously this executed ALL tree nodes, which was 3-10x slower than necessary.
+    const ancestorNodes = this.getAncestorsForNode(treeJson, nodeId || '');
 
-    const availableInputTables = globalNodes;
-    logger.log(`[EmailSend] Total nodes to execute: ${availableInputTables.length} (${availableInputTables.map(n => n.name).join(', ')})`);
+    // Resolve transitive pipeline dependencies: ancestors + their deps + deps of deps.
+    // This ensures we execute exactly the nodes needed, like the UI does.
+    const requiredNames = new Set<string>();
 
-    // 6. Execute ALL ancestors to refresh data (like UI's executeFullPipeline)
-    const { results: ancestorResults, pipelineReport } = await this.executeAncestorChain(availableInputTables, undefined, true, treeId);
+    // Seed with ancestor names and email-required names
+    for (const node of ancestorNodes) {
+      for (const name of (node.allNames || [node.name])) {
+        if (name) requiredNames.add(name.toLowerCase().trim());
+      }
+    }
+    for (const name of allRequiredNames) {
+      requiredNames.add(name.toLowerCase().trim());
+    }
+
+    // Build a name→node lookup from globalNodes for transitive resolution
+    const nodeByName = new Map<string, any>();
+    for (const n of globalNodes) {
+      for (const nm of (n.allNames || [n.name])) {
+        if (nm) nodeByName.set(nm.toLowerCase().trim(), n);
+      }
+    }
+
+    // Transitively resolve pipeline dependencies (BFS)
+    let frontier = [...requiredNames];
+    while (frontier.length > 0) {
+      const nextFrontier: string[] = [];
+      for (const name of frontier) {
+        const node = nodeByName.get(name);
+        if (!node) continue;
+        const deps = node.pipelineDependencies || [];
+        for (const dep of deps) {
+          const depName = (dep.tableName || dep.name || '').toLowerCase().trim();
+          if (depName && !requiredNames.has(depName)) {
+            requiredNames.add(depName);
+            nextFrontier.push(depName);
+          }
+        }
+      }
+      frontier = nextFrontier;
+    }
+
+    // Filter globalNodes to only include required ones
+    const availableInputTables = globalNodes.filter(n => {
+      const nodeNames = (n.allNames || [n.name]).map((nm: string) => nm?.toLowerCase().trim());
+      return nodeNames.some((nm: string) => requiredNames.has(nm));
+    });
+
+    // If ancestor-based filtering resulted in fewer nodes than required, fall back to all
+    if (availableInputTables.length === 0) {
+      logger.log(`[EmailSend] WARNING: No ancestor nodes found, falling back to ALL ${globalNodes.length} nodes`);
+      availableInputTables.push(...globalNodes);
+    }
+
+    logger.log(`[EmailSend] Executing ${availableInputTables.length}/${globalNodes.length} nodes (ancestor pipeline only): ${availableInputTables.map(n => n.name).join(', ')}`);
+
+    // 6. Execute ancestor pipeline to refresh data (like UI's executeFullPipeline)
+    const { results: ancestorResults, pipelineReport } = await this.executeAncestorChain(availableInputTables, undefined, true, treeId, emailCompanyId);
     logger.log(`[EmailSend] Ancestor chain completed with ${Object.keys(ancestorResults).length} results and ${pipelineReport.length} report entries`);
 
-    // 6b. CHECK: se ci sono QUALSIASI fallimento nella pipeline, NON inviare l'email
+    // 6b. CHECK: block email ONLY if a node REQUIRED by the email failed.
+    // Non-required nodes (not referenced in body/attachments/placeholders) can fail without blocking.
     const allErrors = pipelineReport.filter((r: any) => r.status === 'error');
     if (allErrors.length > 0) {
-      const failedNodes = allErrors.map((r: any) => `${r.name} (${r.type}): ${r.error || 'unknown'}`).join('; ');
-      const errorMsg = `Pipeline con ${allErrors.length} fallimento/i. Nodi falliti: ${failedNodes}. Email non inviata.`;
-      logger.error(`[EmailSend] ${errorMsg}`);
-      return { success: false, error: errorMsg };
+      // Build a set of required names (case-insensitive) for matching
+      const requiredNamesLower = new Set(allRequiredNames.map(n => n.toLowerCase().trim()));
+      const criticalErrors = allErrors.filter((r: any) => {
+        const rName = (r.name || '').toLowerCase().trim();
+        return requiredNamesLower.has(rName);
+      });
+
+      if (criticalErrors.length > 0) {
+        const failedNodes = criticalErrors.map((r: any) => `${r.name} (${r.type}): ${r.error || 'unknown'}`).join('; ');
+        const errorMsg = `Pipeline con ${criticalErrors.length} fallimento/i critico/i. Nodi falliti: ${failedNodes}. Email non inviata.`;
+        logger.error(`[EmailSend] ${errorMsg}`);
+        return { success: false, error: errorMsg };
+      }
+
+      // Log non-critical failures as warnings
+      const nonCritical = allErrors.filter((r: any) => !requiredNamesLower.has((r.name || '').toLowerCase().trim()));
+      if (nonCritical.length > 0) {
+        logger.warn(`[EmailSend] ${nonCritical.length} nodo/i non-critico/i fallito/i (non bloccano l'email): ${nonCritical.map((r: any) => r.name).join(', ')}`);
+      }
     }
 
     // 5. PREFER saved config if available (from taskConfigProvider snapshot)
@@ -1733,7 +1817,12 @@ export class SchedulerService {
       availableTriggers: emailNode.triggers || [],
       mediaAttachments: emailAttachments.mediaAsAttachment || [],
       preCalculatedResults: ancestorResults,
-      pipelineReport,
+      // Only pass critical errors (nodes required by the email) — non-critical failures should not block sending
+      pipelineReport: pipelineReport.filter((r: any) => {
+        if (r.status !== 'error') return true; // keep success/skipped entries
+        const rName = (r.name || '').toLowerCase().trim();
+        return allRequiredNames.some(n => n.toLowerCase().trim() === rName);
+      }),
       htmlStyleOverrides,
       _bypassAuth: true
     });
@@ -1748,6 +1837,149 @@ export class SchedulerService {
     };
   }
 
+  /**
+   * NODE_EXECUTION: Generic node executor.
+   * Loads the tree, finds the node by ID, detects its type, builds a config, and dispatches.
+   */
+  private async executeGenericNode(config: ScheduledTaskConfig): Promise<TaskExecutionResult> {
+    const { treeId, nodeId } = config;
+    if (!treeId || !nodeId) return { success: false, error: 'NODE_EXECUTION requires treeId and nodeId' };
+
+    // 1. Load tree
+    const tree = await db.tree.findUnique({ where: { id: treeId } });
+    if (!tree) return { success: false, error: `Tree ${treeId} not found` };
+    const treeJson = JSON.parse(tree.jsonDecisionTree);
+
+    // 2. Find the target node
+    const targetNode = this.findNodeById(treeJson, nodeId);
+    if (!targetNode) return { success: false, error: `Node ${nodeId} not found in tree ${treeId}` };
+
+    logger.log(`[NodeExecution] Found node "${targetNode.question || targetNode.name || nodeId}" — detecting type`);
+
+    // 3. Detect node type and dispatch
+    if (targetNode.emailAction || targetNode.to) {
+      // It's an email node — build EMAIL_SEND config
+      const emailAction = targetNode.emailAction || {};
+      const enrichedConfig: ScheduledTaskConfig = {
+        ...config,
+        to: emailAction.to || targetNode.to || '',
+        cc: emailAction.cc || targetNode.cc || '',
+        bcc: emailAction.bcc || targetNode.bcc || '',
+        subject: emailAction.subject || targetNode.subject || '',
+        body: emailAction.body || targetNode.body || targetNode.emailBody || '',
+        connectorId: emailAction.connectorId || targetNode.connectorId || '',
+      };
+      logger.log(`[NodeExecution] Dispatching as EMAIL_SEND`);
+      return await this.executeEmailSend(enrichedConfig);
+    }
+
+    if (targetNode.pythonCode) {
+      // It's a Python node — build PYTHON_EXECUTE config
+      logger.log(`[NodeExecution] Dispatching as PYTHON_EXECUTE`);
+
+      // Collect context tables from tree for ancestor chain
+      const globalNodes = this.getAllNodesFromTree(treeJson);
+      const ancestorNodes = this.getAncestorsForNode(treeJson, nodeId);
+      const requiredNames = new Set<string>();
+      for (const node of ancestorNodes) {
+        for (const name of (node.allNames || [node.name])) {
+          if (name) requiredNames.add(name.toLowerCase().trim());
+        }
+      }
+      // BFS transitive pipeline deps
+      const nodeByName = new Map<string, any>();
+      for (const n of globalNodes) {
+        for (const nm of (n.allNames || [n.name])) {
+          if (nm) nodeByName.set(nm.toLowerCase().trim(), n);
+        }
+      }
+      let frontier = [...requiredNames];
+      while (frontier.length > 0) {
+        const nextFrontier: string[] = [];
+        for (const name of frontier) {
+          const node = nodeByName.get(name);
+          if (!node) continue;
+          for (const dep of (node.pipelineDependencies || [])) {
+            const depName = (dep.tableName || dep.name || '').toLowerCase().trim();
+            if (depName && !requiredNames.has(depName)) {
+              requiredNames.add(depName);
+              nextFrontier.push(depName);
+            }
+          }
+        }
+        frontier = nextFrontier;
+      }
+      const contextTables = globalNodes.filter(n => {
+        const names = (n.allNames || [n.name]).map((nm: string) => nm?.toLowerCase().trim());
+        return names.some((nm: string) => requiredNames.has(nm));
+      });
+
+      const enrichedConfig: ScheduledTaskConfig = {
+        ...config,
+        pythonCode: targetNode.pythonCode,
+        pythonOutputType: targetNode.pythonOutputType || 'table',
+        pythonResultName: targetNode.pythonResultName || targetNode.sqlResultName,
+        connectorId: targetNode.pythonConnectorId || targetNode.connectorId,
+        contextTables,
+        selectedPipelines: targetNode.pythonSelectedPipelines || targetNode.selectedPipelines || [],
+      };
+      return await this.executePythonNode(enrichedConfig);
+    }
+
+    if (targetNode.sqlQuery) {
+      // It's a SQL node — build SQL_EXECUTE config
+      logger.log(`[NodeExecution] Dispatching as SQL_EXECUTE`);
+
+      const globalNodes = this.getAllNodesFromTree(treeJson);
+      const ancestorNodes = this.getAncestorsForNode(treeJson, nodeId);
+      const requiredNames = new Set<string>();
+      for (const node of ancestorNodes) {
+        for (const name of (node.allNames || [node.name])) {
+          if (name) requiredNames.add(name.toLowerCase().trim());
+        }
+      }
+      const nodeByName = new Map<string, any>();
+      for (const n of globalNodes) {
+        for (const nm of (n.allNames || [n.name])) {
+          if (nm) nodeByName.set(nm.toLowerCase().trim(), n);
+        }
+      }
+      let sqlFrontier = [...requiredNames];
+      while (sqlFrontier.length > 0) {
+        const nextFrontier: string[] = [];
+        for (const name of sqlFrontier) {
+          const node = nodeByName.get(name);
+          if (!node) continue;
+          for (const dep of (node.pipelineDependencies || [])) {
+            const depName = (dep.tableName || dep.name || '').toLowerCase().trim();
+            if (depName && !requiredNames.has(depName)) {
+              requiredNames.add(depName);
+              nextFrontier.push(depName);
+            }
+          }
+        }
+        sqlFrontier = nextFrontier;
+      }
+      const contextTables = globalNodes.filter(n => {
+        const names = (n.allNames || [n.name]).map((nm: string) => nm?.toLowerCase().trim());
+        return names.some((nm: string) => requiredNames.has(nm));
+      });
+
+      const enrichedConfig: ScheduledTaskConfig = {
+        ...config,
+        query: targetNode.sqlQuery,
+        sqlResultName: targetNode.sqlResultName,
+        connectorIdSql: targetNode.sqlConnectorId || targetNode.connectorId,
+        contextTables,
+        selectedPipelines: targetNode.selectedPipelines || [],
+        sqlExportConfig: targetNode.sqlExportConfig,
+      };
+      return await this.executeSqlNode(enrichedConfig);
+    }
+
+    return { success: false, error: `Node ${nodeId} has no recognizable type (no emailAction, pythonCode, or sqlQuery)` };
+  }
+
   private async executeSqlNode(config: ScheduledTaskConfig): Promise<TaskExecutionResult> {
     // 1. Prepare Inputs
     const {
@@ -1756,7 +1988,8 @@ export class SchedulerService {
       contextTables,
       selectedPipelines, // Names of dependencies
       treeId, nodeId, nodePath,
-      sqlExportConfig
+      sqlExportConfig,
+      companyId: sqlCompanyId,
     } = config;
 
     // Resolve connectorIdSql: use explicit value, or infer from first SQL dependency, or from export config
@@ -1781,7 +2014,7 @@ export class SchedulerService {
     // EXECUTE ANCESTORS (Full Pipeline Refresh)
     // Execute all context tables to ensure they are up to date and exported if needed
     logger.log(`[SqlNode] Starting ancestor chain execution.`);
-    const { results: ancestorResults } = await this.executeAncestorChain(allContext, undefined, true, treeId);
+    const { results: ancestorResults } = await this.executeAncestorChain(allContext, undefined, true, treeId, sqlCompanyId);
 
     // Build data-only dependencies from ancestor results (NOT original query definitions).
     // Passing original deps with query/pipelineDependencies would cause executeSqlPreviewAction
@@ -1851,7 +2084,8 @@ export class SchedulerService {
       pythonSelectedPipelines,
       selectedDocuments,
       treeId, nodeId, nodePath,
-      sqlExportConfig
+      sqlExportConfig,
+      companyId,
     } = config;
 
     if (!pythonCode) return { success: false, error: "Missing Python Code" };
@@ -1861,7 +2095,7 @@ export class SchedulerService {
 
     // EXECUTE ANCESTORS (Full Pipeline Refresh)
     logger.log(`[PythonNode] Starting ancestor chain execution.`);
-    const { results: ancestorResults } = await this.executeAncestorChain(allContext, undefined, true, treeId);
+    const { results: ancestorResults } = await this.executeAncestorChain(allContext, undefined, true, treeId, companyId);
 
     // Build inputData from ancestor results (NOT re-executing queries).
     // Passing original deps with query/pythonCode would cause executePythonPreviewAction
@@ -1886,7 +2120,9 @@ export class SchedulerService {
       inputData, // Pre-calculated data from ancestor chain
       [], // No recursive deps needed — data already in inputData
       pythonConnectorId,
-      selectedDocuments?.length > 0 ? selectedDocuments : undefined
+      selectedDocuments?.length > 0 ? selectedDocuments : undefined,
+      undefined, // dfTarget
+      companyId, // pass companyId for SharePoint token resolution
     );
 
     if (!result.success) throw new Error(result.error);

@@ -5,9 +5,8 @@
  * - executeScript - A function that handles the script execution.
  */
 
-import { ai } from '@/ai/genkit';
 import { customerOrdersData, materialsData, mockSalesData } from '@/lib/data';
-import { ExecuteScriptInputSchema, ExecuteScriptOutputSchema, type ExecuteScriptInput, type ExecuteScriptOutput } from '@/ai/schemas/execute-script-schema';
+import { type ExecuteScriptInput, type ExecuteScriptOutput } from '@/ai/schemas/execute-script-schema';
 
 
 export async function executeScript(input: ExecuteScriptInput): Promise<ExecuteScriptOutput> {
@@ -18,13 +17,7 @@ export async function executeScript(input: ExecuteScriptInput): Promise<ExecuteS
 // A simple regex to find the table name after FROM
 const fromRegex = /from\s+([a-zA-Z0-9_]+)/i;
 
-const executeScriptFlow = ai.defineFlow(
-  {
-    name: 'executeScriptFlow',
-    inputSchema: ExecuteScriptInputSchema,
-    outputSchema: ExecuteScriptOutputSchema,
-  },
-  async ({ script, data, node }) => {
+const executeScriptFlow = async ({ script, data, node }: ExecuteScriptInput): Promise<ExecuteScriptOutput> => {
     try {
       let sourceData: any[] = [];
       const fromMatch = script ? script.match(fromRegex) : null;
@@ -113,5 +106,4 @@ const executeScriptFlow = ai.defineFlow(
       console.error('Error executing script:', e);
       throw new Error(`Failed to execute script: ${e.message}`);
     }
-  }
-);
+};

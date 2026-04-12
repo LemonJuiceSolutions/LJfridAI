@@ -1,7 +1,6 @@
 'use server';
 
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
 import type { WidgetConfig, WidgetType } from '@/lib/types';
@@ -246,257 +245,180 @@ async function fetchTreeById(treeId: string) {
     });
 }
 
-// Tool 0: List all SQL connectors for the company
-const listSqlConnectors = ai.defineTool(
-    {
-        name: 'listSqlConnectors',
-        description: 'Elenca tutti i connettori SQL (database) disponibili nella company. Usa questo tool per scoprire quali database sono disponibili e i loro ID, prima di eseguire query SQL.',
-        inputSchema: z.object({
-            companyId: z.string().describe("L'ID della company. Lo trovi nel system prompt."),
-        }),
-        outputSchema: z.string().describe('Lista JSON dei connettori SQL con id e nome.'),
-    },
-    async (input) => {
-        try {
-            const connectors = await db.connector.findMany({
-                where: { companyId: input.companyId, type: 'SQL' },
-                select: { id: true, name: true },
-            });
-            if (connectors.length === 0) return JSON.stringify({ connectors: [], message: 'Nessun connettore SQL trovato.' });
-            return JSON.stringify({ connectors }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: `Errore: ${e.message}` });
-        }
+// Tool 0: List all SQL connectors for the company (plain async function)
+async function listSqlConnectors(input: { companyId: string }): Promise<string> {
+    try {
+        const connectors = await db.connector.findMany({
+            where: { companyId: input.companyId, type: 'SQL' },
+            select: { id: true, name: true },
+        });
+        if (connectors.length === 0) return JSON.stringify({ connectors: [], message: 'Nessun connettore SQL trovato.' });
+        return JSON.stringify({ connectors }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: `Errore: ${e.message}` });
     }
-);
+}
 
-// Tool 1: List all trees and pipelines
-const listTreesAndPipelines = ai.defineTool(
-    {
-        name: 'listTreesAndPipelines',
-        description: 'Elenca tutti gli alberi decisionali e le pipeline disponibili nella company. Usa questo tool per scoprire quali dati e query sono disponibili.',
-        inputSchema: z.object({
-            companyId: z.string().describe("L'ID della company. Lo trovi nel system prompt."),
-            type: z.string().optional().describe('Filtra per tipo: "RULE" o "PIPELINE". Ometti per vedere tutti.'),
-        }),
-        outputSchema: z.string().describe('Lista JSON degli alberi/pipeline disponibili con id, nome, descrizione e tipo.'),
-    },
-    async (input) => {
-        try {
-            const trees = await fetchTreesForCompany(input.companyId, input.type);
-            if (trees.length === 0) return JSON.stringify({ error: 'Nessun albero trovato' });
+// Tool 1: List all trees and pipelines (plain async function)
+async function listTreesAndPipelines(input: { companyId: string; type?: string }): Promise<string> {
+    try {
+        const trees = await fetchTreesForCompany(input.companyId, input.type);
+        if (trees.length === 0) return JSON.stringify({ error: 'Nessun albero trovato' });
 
-            const summary = trees.map(t => {
-                let nodeCount = 0;
-                let nodesWithSQL = 0;
-                let nodesWithPython = 0;
-                try {
-                    const tree = JSON.parse(t.jsonDecisionTree);
-                    const nodes = collectNodes(tree, t.name, t.id);
-                    nodeCount = nodes.length;
-                    nodesWithSQL = nodes.filter(n => n.sqlQuery).length;
-                    nodesWithPython = nodes.filter(n => n.pythonCode).length;
-                } catch { /* ignore */ }
+        const summary = trees.map(t => {
+            let nodeCount = 0;
+            let nodesWithSQL = 0;
+            let nodesWithPython = 0;
+            try {
+                const tree = JSON.parse(t.jsonDecisionTree);
+                const nodes = collectNodes(tree, t.name, t.id);
+                nodeCount = nodes.length;
+                nodesWithSQL = nodes.filter(n => n.sqlQuery).length;
+                nodesWithPython = nodes.filter(n => n.pythonCode).length;
+            } catch { /* ignore */ }
 
-                return {
-                    id: t.id,
-                    name: t.name,
-                    description: t.description,
-                    type: t.type || 'RULE',
-                    nodeCount,
-                    nodesWithSQL,
-                    nodesWithPython,
-                };
-            });
+            return {
+                id: t.id,
+                name: t.name,
+                description: t.description,
+                type: t.type || 'RULE',
+                nodeCount,
+                nodesWithSQL,
+                nodesWithPython,
+            };
+        });
 
-            return JSON.stringify(summary, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: `Errore: ${e.message}` });
-        }
+        return JSON.stringify(summary, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: `Errore: ${e.message}` });
     }
-);
+}
 
-// Tool 2: Get all nodes with their content from a tree
-const getTreeContent = ai.defineTool(
-    {
-        name: 'getTreeContent',
-        description: "Legge TUTTI i nodi di un albero con le loro query SQL, codice Python, widget e dipendenze. Usa questo per esplorare il contenuto completo di un albero.",
-        inputSchema: z.object({
-            treeId: z.string().describe("L'ID dell'albero da esplorare."),
-        }),
-        outputSchema: z.string().describe('Tutti i nodi con i dettagli in formato JSON.'),
-    },
-    async (input) => {
-        try {
-            const tree = await fetchTreeById(input.treeId);
-            if (!tree) return JSON.stringify({ error: 'Albero non trovato' });
+// Tool 2: Get all nodes with their content from a tree (plain async function)
+async function getTreeContent(input: { treeId: string }): Promise<string> {
+    try {
+        const tree = await fetchTreeById(input.treeId);
+        if (!tree) return JSON.stringify({ error: 'Albero non trovato' });
 
-            const treeData = JSON.parse(tree.jsonDecisionTree);
-            const nodes = collectNodes(treeData, tree.name, tree.id);
+        const treeData = JSON.parse(tree.jsonDecisionTree);
+        const nodes = collectNodes(treeData, tree.name, tree.id);
 
-            return JSON.stringify({
-                treeName: tree.name,
-                treeDescription: tree.description,
-                treeType: tree.type,
-                totalNodes: nodes.length,
-                nodes: nodes.slice(0, 50), // Limita per token
-            }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: `Errore: ${e.message}` });
-        }
+        return JSON.stringify({
+            treeName: tree.name,
+            treeDescription: tree.description,
+            treeType: tree.type,
+            totalNodes: nodes.length,
+            nodes: nodes.slice(0, 50), // Limita per token
+        }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: `Errore: ${e.message}` });
     }
-);
+}
 
-// Tool 3: Search nodes across all trees
-const searchNodesForQuery = ai.defineTool(
-    {
-        name: 'searchNodesForQuery',
-        description: 'Cerca in TUTTI gli alberi della company i nodi che contengono una keyword specifica nelle query SQL, codice Python, nomi dei risultati, domande o decisioni.',
-        inputSchema: z.object({
-            companyId: z.string().describe("L'ID della company. Lo trovi nel system prompt."),
-            searchTerm: z.string().describe('Il termine di ricerca (es. "fatturato", "vendite", "ordini", "capacita", "ore", "HR").'),
-        }),
-        outputSchema: z.string().describe('Lista dei nodi trovati con il contesto rilevante.'),
-    },
-    async (input) => {
-        try {
-            const trees = await fetchTreesForCompany(input.companyId);
-            if (trees.length === 0) return JSON.stringify({ results: [], message: 'Nessun albero trovato' });
+// Tool 3: Search nodes across all trees (plain async function)
+async function searchNodesForQuery(input: { companyId: string; searchTerm: string }): Promise<string> {
+    try {
+        const trees = await fetchTreesForCompany(input.companyId);
+        if (trees.length === 0) return JSON.stringify({ results: [], message: 'Nessun albero trovato' });
 
-            const term = input.searchTerm.toLowerCase();
-            const matches: any[] = [];
+        const term = input.searchTerm.toLowerCase();
+        const matches: any[] = [];
 
-            for (const tree of trees) {
-                try {
-                    const treeData = JSON.parse(tree.jsonDecisionTree);
-                    const nodes = collectNodes(treeData, tree.name, tree.id);
+        for (const tree of trees) {
+            try {
+                const treeData = JSON.parse(tree.jsonDecisionTree);
+                const nodes = collectNodes(treeData, tree.name, tree.id);
 
-                    for (const node of nodes) {
-                        const searchableText = [
-                            node.sqlQuery,
-                            node.pythonCode,
-                            node.sqlResultName,
-                            node.pythonResultName,
-                            node.question,
-                            node.decision,
-                        ].filter(Boolean).join(' ').toLowerCase();
+                for (const node of nodes) {
+                    const searchableText = [
+                        node.sqlQuery,
+                        node.pythonCode,
+                        node.sqlResultName,
+                        node.pythonResultName,
+                        node.question,
+                        node.decision,
+                    ].filter(Boolean).join(' ').toLowerCase();
 
-                        if (searchableText.includes(term)) {
-                            matches.push(node);
-                        }
+                    if (searchableText.includes(term)) {
+                        matches.push(node);
                     }
-                } catch { /* ignore malformed trees */ }
-            }
-
-            if (matches.length === 0) {
-                return JSON.stringify({ results: [], message: `Nessun nodo trovato per "${input.searchTerm}". Prova con termini diversi o usa listTreesAndPipelines per vedere tutti gli alberi disponibili.` });
-            }
-
-            return JSON.stringify({ resultCount: matches.length, results: matches.slice(0, 20) }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: `Errore: ${e.message}` });
+                }
+            } catch { /* ignore malformed trees */ }
         }
-    }
-);
 
-// Tool 4: Execute SQL query (uses _bypassAuth)
-const executeSqlQuery = ai.defineTool(
-    {
-        name: 'executeSqlQuery',
-        description: 'Esegue una query SQL su un connettore database. Puoi eseguire sia query esistenti trovate nei nodi, sia query nuove scritte da te.',
-        inputSchema: z.object({
-            query: z.string().describe('La query SQL da eseguire.'),
-            connectorId: z.string().describe("L'ID del connettore database da usare. Trovalo nei dettagli dei nodi (sqlConnectorId)."),
-        }),
-        outputSchema: z.string().describe('Risultati della query in formato JSON. Massimo 100 righe.'),
-    },
-    async (input) => {
-        try {
-            // Use _bypassAuth=true since we're calling from within Genkit (no HTTP session)
-            const result = await executeSqlPreviewAction(input.query, input.connectorId, [], true);
-            if (result.error) return JSON.stringify({ error: result.error });
-            const data = result.data || [];
-            const truncated = data.length > 100;
-            return JSON.stringify({
-                rowCount: data.length,
-                data: data.slice(0, 100),
-                truncated,
-                columns: data.length > 0 ? Object.keys(data[0]) : [],
-            }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: `Errore esecuzione SQL: ${e.message}` });
+        if (matches.length === 0) {
+            return JSON.stringify({ results: [], message: `Nessun nodo trovato per "${input.searchTerm}". Prova con termini diversi o usa listTreesAndPipelines per vedere tutti gli alberi disponibili.` });
         }
+
+        return JSON.stringify({ resultCount: matches.length, results: matches.slice(0, 20) }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: `Errore: ${e.message}` });
     }
-);
+}
 
-// Tool 5: Execute Python code (uses _bypassAuth)
-const executePythonCode = ai.defineTool(
-    {
-        name: 'executePythonCode',
-        description: "Esegue codice Python. Puoi usarlo per analisi dati, calcoli o generazione di variabili.",
-        inputSchema: z.object({
-            code: z.string().describe('Il codice Python da eseguire.'),
-            outputType: z.enum(['table', 'variable', 'chart']).describe("Tipo di output: 'table' per dati tabellari, 'variable' per valori singoli, 'chart' per grafici."),
-            connectorId: z.string().optional().describe('ID del connettore (opzionale).'),
-        }),
-        outputSchema: z.string().describe('Risultati Python in formato JSON.'),
-    },
-    async (input) => {
-        try {
-            // Use _bypassAuth=true
-            const result = await executePythonPreviewAction(
-                input.code,
-                input.outputType,
-                {},
-                [],
-                input.connectorId,
-                true
-            );
-            if (!result.success) return JSON.stringify({ error: result.error || 'Errore esecuzione Python' });
-
-            return JSON.stringify({
-                data: result.data?.slice(0, 100),
-                variables: result.variables,
-                columns: result.columns,
-                rowCount: result.rowCount,
-                stdout: result.stdout,
-            }, null, 2);
-        } catch (e: any) {
-            return JSON.stringify({ error: `Errore esecuzione Python: ${e.message}` });
-        }
+// Tool 4: Execute SQL query (plain async function)
+async function executeSqlQuery(input: { query: string; connectorId: string }): Promise<string> {
+    try {
+        const result = await executeSqlPreviewAction(input.query, input.connectorId, [], true);
+        if (result.error) return JSON.stringify({ error: result.error });
+        const data = result.data || [];
+        const truncated = data.length > 100;
+        return JSON.stringify({
+            rowCount: data.length,
+            data: data.slice(0, 100),
+            truncated,
+            columns: data.length > 0 ? Object.keys(data[0]) : [],
+        }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: `Errore esecuzione SQL: ${e.message}` });
     }
-);
+}
 
-// Tool 6: Search Knowledge Base
-const searchKnowledgeBase = ai.defineTool(
-    {
-        name: 'searchKnowledgeBase',
-        description: 'Cerca nella Knowledge Base aziendale. Contiene correzioni e risposte validate dagli utenti.',
-        inputSchema: z.object({
-            query: z.string().describe('Termine di ricerca per trovare entry nella KB.'),
-            companyId: z.string().describe("L'ID della company. Lo trovi nel system prompt."),
-        }),
-        outputSchema: z.string().describe('Entry della Knowledge Base trovate.'),
-    },
-    async (input) => {
-        try {
-            const term = input.query.toLowerCase();
-            const entries = await db.knowledgeBaseEntry.findMany({
-                where: {
-                    companyId: input.companyId,
-                    OR: [
-                        { question: { contains: term, mode: 'insensitive' } },
-                        { answer: { contains: term, mode: 'insensitive' } },
-                        { tags: { hasSome: [term] } },
-                        { category: { contains: term, mode: 'insensitive' } },
-                    ],
-                },
-                take: 10,
-                orderBy: { updatedAt: 'desc' },
-            });
+// Tool 5: Execute Python code (plain async function)
+async function executePythonCode(input: { code: string; outputType: 'table' | 'variable' | 'chart'; connectorId?: string }): Promise<string> {
+    try {
+        const result = await executePythonPreviewAction(
+            input.code,
+            input.outputType,
+            {},
+            [],
+            input.connectorId,
+            true
+        );
+        if (!result.success) return JSON.stringify({ error: result.error || 'Errore esecuzione Python' });
 
-            if (entries.length === 0) {
-                return JSON.stringify({ results: [], message: 'Nessuna entry trovata nella Knowledge Base.' });
+        return JSON.stringify({
+            data: result.data?.slice(0, 100),
+            variables: result.variables,
+            columns: result.columns,
+            rowCount: result.rowCount,
+            stdout: result.stdout,
+        }, null, 2);
+    } catch (e: any) {
+        return JSON.stringify({ error: `Errore esecuzione Python: ${e.message}` });
+    }
+}
+
+// Tool 6: Search Knowledge Base (plain async function)
+async function searchKnowledgeBase(input: { query: string; companyId: string }): Promise<string> {
+    try {
+        const term = input.query.toLowerCase();
+        const entries = await db.knowledgeBaseEntry.findMany({
+            where: {
+                companyId: input.companyId,
+                OR: [
+                    { question: { contains: term, mode: 'insensitive' } },
+                    { answer: { contains: term, mode: 'insensitive' } },
+                    { tags: { hasSome: [term] } },
+                    { category: { contains: term, mode: 'insensitive' } },
+                ],
+            },
+            take: 10,
+            orderBy: { updatedAt: 'desc' },
+        });
+
+        if (entries.length === 0) {
+            return JSON.stringify({ results: [], message: 'Nessuna entry trovata nella Knowledge Base.' });
             }
 
             return JSON.stringify({
@@ -511,81 +433,30 @@ const searchKnowledgeBase = ai.defineTool(
         } catch (e: any) {
             return JSON.stringify({ error: `Errore ricerca KB: ${e.message}` });
         }
+}
+
+// Tool 7: Save to Knowledge Base (plain async function)
+async function saveToKnowledgeBase(input: { question: string; answer: string; tags: string[]; category?: string; companyId: string }): Promise<string> {
+    try {
+        const entry = await db.knowledgeBaseEntry.create({
+            data: {
+                question: input.question,
+                answer: input.answer,
+                tags: input.tags,
+                category: input.category || 'Generale',
+                companyId: input.companyId,
+            },
+        });
+        return JSON.stringify({ success: true, id: entry.id, message: 'Entry salvata nella Knowledge Base.' });
+    } catch (e: any) {
+        return JSON.stringify({ error: `Errore salvataggio KB: ${e.message}` });
     }
-);
+}
 
-// Tool 7: Save to Knowledge Base
-const saveToKnowledgeBase = ai.defineTool(
-    {
-        name: 'saveToKnowledgeBase',
-        description: "Salva una nuova entry nella Knowledge Base. Usa quando l'utente ti corregge o per memorizzare risposte importanti.",
-        inputSchema: z.object({
-            question: z.string().describe('La domanda o il contesto originale.'),
-            answer: z.string().describe('La risposta corretta o la correzione.'),
-            tags: z.array(z.string()).describe('Tag per categorizzare (es. ["vendite", "fatturato", "SQL"]).'),
-            category: z.string().optional().describe('Categoria (es. "SQL", "Python", "Procedure", "Dati").'),
-            companyId: z.string().describe("L'ID della company. Lo trovi nel system prompt."),
-        }),
-        outputSchema: z.string().describe('Conferma del salvataggio.'),
-    },
-    async (input) => {
-        try {
-            const entry = await db.knowledgeBaseEntry.create({
-                data: {
-                    question: input.question,
-                    answer: input.answer,
-                    tags: input.tags,
-                    category: input.category || 'Generale',
-                    companyId: input.companyId,
-                },
-            });
-            return JSON.stringify({ success: true, id: entry.id, message: 'Entry salvata nella Knowledge Base.' });
-        } catch (e: any) {
-            return JSON.stringify({ error: `Errore salvataggio KB: ${e.message}` });
-        }
-    }
-);
-
-// Tool 8: Create Widget (decision tree with SQL → Python → Chart nodes)
-const createWidget = ai.defineTool(
-    {
-        name: 'createWidget',
-        description: `Crea un albero decisionale (widget) di tipo PIPELINE con nodi SQL → Python → Grafico gia' configurati e pronti all'uso.
-Usa questo tool quando l'utente chiede di creare un widget, un albero, o di salvare un'analisi come pipeline.
-IMPORTANTE: Passa la query SQL e il connectorId che hai gia' usato nella conversazione, insieme ai dati e la configurazione del grafico.`,
-        inputSchema: z.object({
-            treeName: z.string().describe("Nome dell'albero/widget (es. 'Ricavi Mensili 2024-2026')."),
-            chartType: z.string().describe("Tipo di grafico: 'bar-chart', 'line-chart', 'area-chart', 'pie-chart', 'scatter-chart'."),
-            sqlQuery: z.string().optional().describe('La query SQL usata per estrarre i dati. Copiala da executeSqlQuery.'),
-            connectorId: z.string().optional().describe('ID del connettore database usato per la query SQL.'),
-            pythonCode: z.string().optional().describe('Codice Python usato (opzionale, se hai usato executePythonCode).'),
-            xAxisKey: z.string().optional().describe("Nome della colonna per l'asse X del grafico."),
-            dataKeys: z.array(z.string()).optional().describe("Nomi delle colonne per l'asse Y del grafico (serie dati)."),
-            data: z.array(z.any()).optional().describe('I dati del grafico (array di oggetti). Necessario solo se non hai una query SQL.'),
-            companyId: z.string().describe("L'ID della company. Lo trovi nel system prompt."),
-        }),
-        outputSchema: z.string().describe("Risultato della creazione: JSON con success, treeId e treeName, oppure errore."),
-    },
-    async (input) => {
-        const result = await createWidgetTree(input);
-        return JSON.stringify(result);
-    }
-);
-
-// Helper: Map OpenRouter model IDs to Genkit Google AI model IDs
-function mapToGenkitModel(openRouterModel?: string): string {
-    if (!openRouterModel) return 'googleai/gemini-2.5-flash';
-
-    // Map OpenRouter Google model IDs to Genkit format
-    if (openRouterModel.startsWith('google/')) {
-        const modelName = openRouterModel.replace('google/', '');
-        // Remove version suffixes like -001, -002 etc.
-        const cleanName = modelName.replace(/-\d{3}$/, '');
-        return `googleai/${cleanName}`;
-    }
-
-    // For non-Google models, we'll use OpenRouter API directly (see below)
-    return openRouterModel;
+// Tool 8: Create Widget (plain async function)
+async function createWidget(input: Parameters<typeof createWidgetTree>[0]): Promise<string> {
+    const result = await createWidgetTree(input);
+    return JSON.stringify(result);
 }
 
 // Input/Output schemas
@@ -797,30 +668,7 @@ OGNI VOLTA che mostri un grafico (recharts) o una tabella con dati estratti da S
 
     const fullHistory = [systemMessage, ...cleanHistory];
 
-    const genkitModel = mapToGenkitModel(input.model);
-    const isGoogleModel = genkitModel.startsWith('googleai/');
-
-    if (isGoogleModel) {
-        // Use Genkit directly for Google models (with tool support)
-        const { text } = await ai.generate({
-            model: genkitModel,
-            messages: fullHistory,
-            tools: [
-                listSqlConnectors,
-                listTreesAndPipelines,
-                getTreeContent,
-                searchNodesForQuery,
-                executeSqlQuery,
-                executePythonCode,
-                searchKnowledgeBase,
-                saveToKnowledgeBase,
-                createWidget,
-            ],
-        });
-        return { message: text, consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined };
-    }
-
-    // For non-Google models, use OpenRouter API with function calling
+    // All models go through OpenRouter API with function calling
     const responseText = await callOpenRouterWithTools(input, fullHistory, consultedNodes);
     return { message: responseText, consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined };
 }

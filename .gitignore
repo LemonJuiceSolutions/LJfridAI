@@ -105,3 +105,4 @@ python-backend/**/*.html
 
 # Large data files
 public/documents/rating_farmaceutico_finale.xlsx
+.ai/

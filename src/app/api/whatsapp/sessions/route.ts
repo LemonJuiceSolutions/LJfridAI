@@ -17,7 +17,7 @@ import { db } from '@/lib/db';
  */
 export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.companyId) {
+    if (!(session?.user as any)?.companyId) {
         return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
 
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     const flat = searchParams.get('flat') === 'true';
 
     try {
-        const where: any = { companyId: session.user.companyId };
+        const where: any = { companyId: (session!.user as any).companyId };
         if (phone) where.phoneNumber = { contains: phone.replace(/[\s\-+]/g, '') };
         if (status) where.status = status;
 

@@ -46,13 +46,6 @@ export function streamFromClaudeCli(opts: ClaudeCliOptions): ClaudeCliResult {
     // Bypass permission checks so tools (MCP, etc.) run autonomously
     args.push('--permission-mode', 'bypassPermissions');
 
-    // Restrict to MCP tools only — block built-in Write/Edit/Bash to prevent disk writes
-    if (opts.allowedTools && opts.allowedTools.length > 0) {
-        for (const tool of opts.allowedTools) {
-            args.push('--allowedTools', tool);
-        }
-    }
-
     // Combine system prompt + user prompt
     // Claude CLI doesn't have a separate --system-prompt flag in print mode,
     // so we prepend it as XML in the prompt text.
@@ -60,6 +53,13 @@ export function streamFromClaudeCli(opts: ClaudeCliOptions): ClaudeCliResult {
         ? `<system>\n${opts.systemPrompt}\n</system>\n\n${opts.userPrompt}`
         : opts.userPrompt;
     args.push(fullPrompt);
+
+    // Restrict to MCP tools only — block built-in Write/Edit/Bash to prevent disk writes.
+    // MUST come AFTER the prompt: --allowedTools is variadic (<tools...>) and would
+    // swallow the prompt as a tool name if placed before it.
+    if (opts.allowedTools && opts.allowedTools.length > 0) {
+        args.push('--allowedTools', opts.allowedTools.join(','));
+    }
 
     const child = spawn(claudePath, args, {
         cwd: opts.cwd || process.cwd(),
@@ -163,17 +163,17 @@ export async function runClaudeCliSync(opts: ClaudeCliOptions): Promise<{
     args.push('-p', '--output-format', 'stream-json', '--verbose');
     args.push('--permission-mode', 'bypassPermissions');
 
-    // Restrict to MCP tools only — block built-in Write/Edit/Bash to prevent disk writes
-    if (opts.allowedTools && opts.allowedTools.length > 0) {
-        for (const tool of opts.allowedTools) {
-            args.push('--allowedTools', tool);
-        }
-    }
-
     const fullPrompt = opts.systemPrompt
         ? `<system>\n${opts.systemPrompt}\n</system>\n\n${opts.userPrompt}`
         : opts.userPrompt;
     args.push(fullPrompt);
+
+    // Restrict to MCP tools only — block built-in Write/Edit/Bash to prevent disk writes.
+    // MUST come AFTER the prompt: --allowedTools is variadic (<tools...>) and would
+    // swallow the prompt as a tool name if placed before it.
+    if (opts.allowedTools && opts.allowedTools.length > 0) {
+        args.push('--allowedTools', opts.allowedTools.join(','));
+    }
 
     return new Promise((resolve, reject) => {
         const child = spawn(claudePath, args, {

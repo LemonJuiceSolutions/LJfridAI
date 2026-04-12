@@ -7,7 +7,7 @@
  * - FixScriptOutput - The TypeScript type for the fixScript function output.
  */
 
-import { z } from 'genkit';
+import { z } from 'zod';
 
 export const FixScriptInputSchema = z.object({
   instruction: z.string().describe('The instruction for the AI (e.g., "Fix this script", "Complete this script").'),
