@@ -1215,7 +1215,10 @@ export async function executePythonPreviewAction(
             const port = process.env.PORT || '9002';
             envVars['QUERY_DB_ENDPOINT'] = `http://localhost:${port}/api/internal/query-db`;
             envVars['QUERY_DB_CONNECTOR_ID'] = effectiveConnectorId;
-            envVars['QUERY_DB_TOKEN'] = process.env.INTERNAL_QUERY_TOKEN || 'fridai-internal-query-2024';
+            if (!process.env.INTERNAL_QUERY_TOKEN) {
+                throw new Error('Missing required env var: INTERNAL_QUERY_TOKEN');
+            }
+            envVars['QUERY_DB_TOKEN'] = process.env.INTERNAL_QUERY_TOKEN;
             console.log(`[Python] query_db() enabled with connector ${effectiveConnectorId}`);
         } else {
             console.warn(`[Python] WARNING: No SQL connector available — query_db() will NOT work in this script`);

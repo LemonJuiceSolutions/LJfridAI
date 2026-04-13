@@ -349,7 +349,10 @@ export async function executePythonPreview(
       const port = process.env.PORT || '9002';
       envVars['QUERY_DB_ENDPOINT'] = `http://localhost:${port}/api/internal/query-db`;
       envVars['QUERY_DB_CONNECTOR_ID'] = connectorId;
-      envVars['QUERY_DB_TOKEN'] = process.env.INTERNAL_QUERY_TOKEN || 'fridai-internal-query-2024';
+      if (!process.env.INTERNAL_QUERY_TOKEN) {
+        throw new Error('Missing required env var: INTERNAL_QUERY_TOKEN');
+      }
+      envVars['QUERY_DB_TOKEN'] = process.env.INTERNAL_QUERY_TOKEN;
     }
 
     // Resolve SQL dependencies not already in inputData

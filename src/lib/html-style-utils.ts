@@ -15,7 +15,10 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
   // baseUrl must be provided at call site (from window.location.origin) since this may run server-side
   const base = opts?.baseUrl || '';
   // internalToken for /api/update-commessa Mode 1 (raw SQL queries)
-  const token = opts?.internalToken || process.env.INTERNAL_QUERY_TOKEN || 'fridai-internal-query-2024';
+  if (!process.env.INTERNAL_QUERY_TOKEN) {
+    throw new Error('Missing required env var: INTERNAL_QUERY_TOKEN');
+  }
+  const token = opts?.internalToken || process.env.INTERNAL_QUERY_TOKEN;
 
   // Polyfill script: overrides fetch, injects saveToDb(), intercepts postMessage saves
   const polyfillScript = `<script>(function(){` +

@@ -51,7 +51,10 @@ export async function POST(req: NextRequest) {
 
         // Mode 1: Raw SQL + connectorId + token (from Python-generated HTML)
         if (body.query && body.connectorId && body.internalToken) {
-            const expectedToken = process.env.INTERNAL_QUERY_TOKEN || 'fridai-internal-query-2024';
+            if (!process.env.INTERNAL_QUERY_TOKEN) {
+                return NextResponse.json({ success: false, message: 'Server misconfiguration: INTERNAL_QUERY_TOKEN not set' }, { status: 500, headers: corsHeaders() });
+            }
+            const expectedToken = process.env.INTERNAL_QUERY_TOKEN;
             if (body.internalToken !== expectedToken) {
                 return NextResponse.json({ success: false, message: 'Token non valido' }, { status: 401, headers: corsHeaders() });
             }

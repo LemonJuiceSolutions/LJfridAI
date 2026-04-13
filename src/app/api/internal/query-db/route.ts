@@ -27,7 +27,13 @@ export async function POST(req: NextRequest) {
         }
 
         // Verify internal token (shared secret between Next.js and Python backend)
-        const expectedToken = process.env.INTERNAL_QUERY_TOKEN || 'fridai-internal-query-2024';
+        if (!process.env.INTERNAL_QUERY_TOKEN) {
+            return NextResponse.json(
+                { error: 'Server misconfiguration: INTERNAL_QUERY_TOKEN not set' },
+                { status: 500 }
+            );
+        }
+        const expectedToken = process.env.INTERNAL_QUERY_TOKEN;
         if (internalToken !== expectedToken) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
