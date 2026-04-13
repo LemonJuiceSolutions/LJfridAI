@@ -107,3 +107,12 @@ python-backend/**/*.html
 public/documents/rating_farmaceutico_finale.xlsx
 .ai/
 backups/
+
+# === Pulizia root - no file agente/campagne ===
+.ai/
+ANALYSIS_REPORT.md
+output_kpi/
+__pycache__/
+*.backup_*
+*.log
+.DS_Store

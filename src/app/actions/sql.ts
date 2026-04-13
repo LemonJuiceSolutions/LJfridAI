@@ -526,6 +526,7 @@ export async function executeSqlPreviewAction(
 
         const data: any[] = result.recordset;
         console.log(`[PIPELINE] Query returned ${data?.length || 0} rows`);
+
         const returnObj: any = { data, error: null };
         if (depWarnings.length > 0) {
             returnObj._depWarnings = depWarnings;

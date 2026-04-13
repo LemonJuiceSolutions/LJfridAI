@@ -11,8 +11,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Check, X, GitBranch, Database, Upload, AlertCircle } from 'lucide-react';
-import { executeSqlPreviewAction, executePythonPreviewAction, exportTableToSqlAction, getTreeAction, getTreesAction } from '@/app/actions';
-import { saveAncestorPreviewsBatchAction } from '@/app/actions/scheduler';
+import { exportTableToSqlAction, getTreeAction, getTreesAction } from '@/app/actions';
+
 import { useToast } from '@/hooks/use-toast';
 import { pushConnectorAlert } from '@/hooks/use-connector-alerts';
 
@@ -568,23 +568,27 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                             }
                             console.log(`[PIPELINE] Python exec: name=${node.sqlResultName || node.pythonResultName || node.name}, outputType=${pyOutputType}, connectorId=${pyConnectorId || 'NONE'}, inputDataKeys=${Object.keys(inputData).join(',') || 'EMPTY'}, depsCount=${executionDeps.length}`);
 
-                            const res = await executePythonPreviewAction(
-                                node.pythonCode,
-                                pyOutputType,
-                                inputData,
-                                executionDeps.map((d: any) => ({
-                                    tableName: d.tableName,
-                                    query: d.query,
-                                    isPython: d.isPython,
-                                    pythonCode: d.pythonCode,
-                                    connectorId: d.connectorId,
-                                    pipelineDependencies: d.pipelineDependencies,
-                                    selectedDocuments: d.selectedDocuments
-                                })),
-                                pyConnectorId,
-                                undefined,
-                                node.selectedDocuments?.length > 0 ? node.selectedDocuments : undefined
-                            );
+                            const pyResponse = await fetch('/api/internal/execute-python', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    code: node.pythonCode,
+                                    outputType: pyOutputType,
+                                    inputData,
+                                    dependencies: executionDeps.map((d: any) => ({
+                                        tableName: d.tableName,
+                                        query: d.query,
+                                        isPython: d.isPython,
+                                        pythonCode: d.pythonCode,
+                                        connectorId: d.connectorId,
+                                        pipelineDependencies: d.pipelineDependencies,
+                                        selectedDocuments: d.selectedDocuments
+                                    })),
+                                    connectorId: pyConnectorId,
+                                    selectedDocuments: node.selectedDocuments?.length > 0 ? node.selectedDocuments : undefined
+                                }),
+                            });
+                            const res = await pyResponse.json();
                             console.log(`[PIPELINE] Python result: success=${res.success}, hasData=${!!res.data}, dataLen=${res.data?.length ?? 'N/A'}, hasHtml=${!!(res as any).html}, autoSwitch=${(res as any)._autoSwitchedOutputType || 'none'}, warning=${(res as any)._warning || 'none'}`);
                             if (res.success) {
                                 success = true;
@@ -743,7 +747,16 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                                     columns // schema hint for empty temp tables
                                 };
                             });
-                            const res = await executeSqlPreviewAction(node.sqlQuery || node.query, node.connectorId || node.sqlConnectorId, inputTables);
+                            const sqlResponse = await fetch('/api/internal/execute-sql', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    query: node.sqlQuery || node.query,
+                                    connectorId: node.connectorId || node.sqlConnectorId,
+                                    dependencies: inputTables,
+                                }),
+                            });
+                            const res = await sqlResponse.json();
                             if (res.data) {
                                 success = true;
                                 ancestorResults[node.sqlResultName || node.name] = { data: res.data };
@@ -841,7 +854,12 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
                 }
             }
             if (previewBatch.length > 0) {
-                const saveResult = await saveAncestorPreviewsBatchAction(treeId, previewBatch);
+                const saveResponse = await fetch('/api/internal/save-previews', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ treeId, previewBatch }),
+                });
+                const saveResult = await saveResponse.json();
                 if (!saveResult.success) {
                     console.warn('[PIPELINE] Preview save failed, widgets may show stale data');
                 }
