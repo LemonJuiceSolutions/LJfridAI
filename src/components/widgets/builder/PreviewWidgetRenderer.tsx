@@ -32,6 +32,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
     const { toast } = useToast();
     const { activeStyle } = useActiveUnifiedStyle();
     const isLoadingRef = useRef(false);
+    const iframeRef = useRef<HTMLIFrameElement>(null);
 
     const loadPreview = useCallback(async (showLoading = true) => {
         // Prevent concurrent loads
@@ -79,15 +80,23 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                 console.log(`[PreviewWidget] getNodePreviewAction(${treeId.slice(-6)}, ${nodeId}):`, cached ? `keys=${Object.keys(cached).join(',')}` : 'null');
                 if (cached) {
                     node = cached; // cached has sqlPreviewData, pythonPreviewResult, etc.
-                    // Also resolve the path for deep-linking (non-blocking)
-                    getCachedTree(treeId, true).then(r => {
-                        if (r.data) {
-                            const jsonTree = typeof r.data.jsonDecisionTree === 'string'
-                                ? JSON.parse(r.data.jsonDecisionTree) : r.data.jsonDecisionTree;
+                    // Cache doesn't store pythonConnectorId — MUST load from tree to get
+                    // the correct connector. Without it, saves go to the wrong database.
+                    try {
+                        const treeResult = await getCachedTree(treeId, true);
+                        if (treeResult.data) {
+                            const jsonTree = typeof treeResult.data.jsonDecisionTree === 'string'
+                                ? JSON.parse(treeResult.data.jsonDecisionTree) : treeResult.data.jsonDecisionTree;
                             const p = findPathById(jsonTree, nodeId);
-                            if (p) setNodePath(p);
+                            if (p) {
+                                setNodePath(p);
+                                const lodashPath = p.replace(/^root\.?/, '');
+                                const treeNode = lodashPath ? get(jsonTree, lodashPath) : jsonTree;
+                                const cid = treeNode?.pythonConnectorId || treeNode?.connectorId || treeNode?.sqlConnectorId;
+                                if (cid) node.pythonConnectorId = cid;
+                            }
                         }
-                    }).catch(() => {});
+                    } catch { /* tree load is best-effort */ }
                 }
             } catch (cacheErr: any) {
                 console.warn(`[PreviewWidget] Cache load failed for ${nodeId}:`, cacheErr.message);
@@ -182,6 +191,37 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
         window.addEventListener('tree-cache-invalidated', handler);
         return () => window.removeEventListener('tree-cache-invalidated', handler);
     }, [treeId, loadPreview]);
+
+    // Listen for DB write success from iframe (saveToDb) and re-execute pipeline.
+    // Uses CustomEvent (direct, from same-origin iframe) + postMessage (fallback).
+    const isHtmlWidget = previewData?.type === 'html';
+    useEffect(() => {
+        if (!isHtmlWidget) return; // Only HTML widgets have iframes with saveToDb
+
+        const triggerReExecution = () => {
+            console.log('[PreviewWidget] DB write success - triggering re-execution...');
+            toast({ title: 'Salvato nel DB!', description: 'Ri-esecuzione per aggiornare grafico e tabella...' });
+            setTimeout(() => setShowExecutionDialog(true), 500);
+        };
+
+        // Primary: CustomEvent dispatched directly on parent window by the polyfill
+        const customHandler = () => triggerReExecution();
+        window.addEventListener('iframe-db-write-success', customHandler);
+
+        // Fallback: postMessage (in case CustomEvent doesn't work)
+        const msgHandler = (e: MessageEvent) => {
+            if (e.data?.type === 'iframe-db-write-success') {
+                if (!iframeRef.current || e.source !== iframeRef.current.contentWindow) return;
+                triggerReExecution();
+            }
+        };
+        window.addEventListener('message', msgHandler);
+
+        return () => {
+            window.removeEventListener('iframe-db-write-success', customHandler);
+            window.removeEventListener('message', msgHandler);
+        };
+    }, [isHtmlWidget, toast]);
 
     // Listen for page-level queue trigger: open this widget's PipelineExecutionDialog
     const isQueuedRef = useRef(false);
@@ -447,6 +487,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                 ) : previewData.type === 'html' && previewData.html ? (
                     <div className="w-full h-full bg-white dark:bg-zinc-950 overflow-hidden min-h-[300px]">
                         <iframe
+                            ref={iframeRef}
                             key={previewData.timestamp || Date.now()}
                             srcDoc={(() => {
                                 const htmlOverrides = previewData.htmlStyleOverrides || activeStyle?.html || {};

@@ -4,27 +4,21 @@
  * Inject a fetch polyfill into srcdoc HTML so that:
  * 1. Relative URLs (e.g. /api/...) are resolved to the app's absolute origin
  * 2. credentials: 'include' is added to every request
- * 3. connectorId AND internalToken are injected into POST bodies when missing
+ * 3. connectorId is injected into POST bodies when missing
  * 4. Successful POST writes send a postMessage to the parent frame
  *
  * This is needed because srcdoc iframes have origin "null" which breaks fetch.
- * The internalToken is required for Mode 1 (raw SQL) on /api/update-commessa.
  */
-export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: string; baseUrl?: string; internalToken?: string }): string {
+export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: string; baseUrl?: string }): string {
   const cid = opts?.connectorId || '';
   // baseUrl must be provided at call site (from window.location.origin) since this may run server-side
   const base = opts?.baseUrl || '';
-  // internalToken for /api/update-commessa Mode 1 (raw SQL queries)
-  if (!process.env.INTERNAL_QUERY_TOKEN) {
-    throw new Error('Missing required env var: INTERNAL_QUERY_TOKEN');
-  }
-  const token = opts?.internalToken || process.env.INTERNAL_QUERY_TOKEN;
 
   // Polyfill script: overrides fetch, injects saveToDb(), intercepts postMessage saves
   const polyfillScript = `<script>(function(){` +
     // --- Save originals & config ---
     `var F=window.fetch;var _origPM=window.parent.postMessage.bind(window.parent);` +
-    `var B=${JSON.stringify(base)};var CID=${JSON.stringify(cid)};var TK=${JSON.stringify(token)};` +
+    `var B=${JSON.stringify(base)};var CID=${JSON.stringify(cid)};` +
     // --- 1. Fetch polyfill (resolves URLs, injects credentials, redirects wrong-URL POSTs) ---
     `window.fetch=function(u,o){` +
     // Resolve relative URLs
@@ -33,12 +27,11 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     // For POST requests with JSON body: detect wrong URLs and redirect to /api/update-commessa
     `if(o.method&&o.method.toUpperCase()==='POST'&&o.body){try{var b=JSON.parse(o.body);var changed=false;` +
     // Redirect: if URL is NOT /api/update-commessa and body has data fields, use saveToDb or redirect
-    `var isCorrectUrl=(typeof u==='string'&&(u.indexOf('/api/update-commessa')>=0||u.indexOf('/api/external-agent/')>=0));` +
+    `var isCorrectUrl=(typeof u==='string'&&(u.indexOf('/api/update-commessa')>=0||u.indexOf('/api/internal/query-db')>=0||u.indexOf('/api/external-agent/')>=0));` +
     `if(!isCorrectUrl&&typeof b==='object'&&Object.keys(b).length>0){` +
     `console.warn('[polyfill] fetch POST to wrong URL intercepted:',u);` +
-    // If body has 'query', just redirect URL. Otherwise use saveToDb with __DB_TABLE__
-    `if(b.query){u=B+'/api/update-commessa';changed=true}` +
-    `else if(window.__DB_TABLE__){console.warn('[polyfill] -> converting to saveToDb(',window.__DB_TABLE__,')');` +
+    // Convert to saveToDb with __DB_TABLE__ metadata
+    `if(window.__DB_TABLE__){console.warn('[polyfill] -> converting to saveToDb(',window.__DB_TABLE__,')');` +
     `return window.saveToDb(window.__DB_TABLE__,b,window.__DB_PK__||[])}` +
     // Fallback: no query, no __DB_TABLE__ — return fake error Response so .then() sees {success:false}
     // This prevents .catch(() => resolve({success:true})) from hiding the real error
@@ -47,50 +40,48 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     `var errEl=document.getElementById('statusMessage');` +
     `if(errEl){errEl.textContent=errMsg;errEl.className='status-message error';errEl.style.display='block'}` +
     `return Promise.resolve(new Response(JSON.stringify({success:false,message:errMsg}),{status:200,headers:{'Content-Type':'application/json'}}))}}` +
-    // Inject connectorId and internalToken
-    `if(CID&&!b.connectorId){b.connectorId=CID;changed=true}if(TK&&!b.internalToken){b.internalToken=TK;changed=true}` +
+    // Inject connectorId
+    `if(CID&&!b.connectorId){b.connectorId=CID;changed=true}` +
     `if(changed)o.body=JSON.stringify(b)}catch(e){}}` +
     `return F.call(this,u,o).then(function(r){if(o.method&&o.method.toUpperCase()==='POST'){` +
-    `r.clone().json().then(function(j){if(j.success){_origPM({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})};` +
-    // --- 2. saveToDb: universal DB save function (constructs UPDATE query, calls polyfilled fetch) ---
-    // Usage: saveToDb('dbo.TableName', {col1:val1, col2:val2}, ['pkCol1']).then(r => ...)
+    `r.clone().json().then(function(j){if(j.success){` +
+    `console.log('[polyfill] POST success, notifying parent...');` +
+    `try{window.parent.dispatchEvent(new CustomEvent('iframe-db-write-success',{detail:{success:true,rowsAffected:j.rowsAffected}}))}catch(e){console.warn('[polyfill] dispatchEvent failed, trying postMessage',e)}` +
+    `_origPM({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})};` +
+    // --- Helper: escape SQL value ---
+    `function esc(v){if(v==null)return 'NULL';if(typeof v==='number')return String(v);` +
+    `return "N'"+String(v).replace(/'/g,"''")+"'"}` +
+    // --- 2. saveToDb: builds UPDATE SQL, sends to update-commessa ---
     `window.saveToDb=function(tbl,data,pks){` +
     `if(!tbl||!data)return Promise.reject(new Error('Missing table or data'));` +
-    `var S=[],W=[];pks=pks||[];` +
+    `pks=pks||[];var S=[],W=[];` +
     `for(var k in data){if(!data.hasOwnProperty(k))continue;` +
-    `var v=data[k]==null?'':String(data[k]).replace(/'/g,"''");` +
-    `if(pks.indexOf(k)>=0)W.push(k+"='"+v+"'");else S.push(k+"='"+v+"'")}` +
+    `if(pks.indexOf(k)>=0)W.push('['+k+']='+esc(data[k]));else S.push('['+k+']='+esc(data[k]))}` +
     `if(S.length===0&&W.length>1){S=W.slice(1);W=[W[0]]}` +
     `if(W.length===0)return Promise.reject(new Error('No PK for WHERE clause'));` +
-    `var q="UPDATE "+tbl+" SET "+S.join(", ")+" WHERE "+W.join(" AND ");` +
+    `var q='UPDATE '+tbl+' SET '+S.join(', ')+' WHERE '+W.join(' AND ');` +
+    `console.log('[saveToDb] query:',q);console.log('[saveToDb] connectorId:',CID);` +
     `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
-    `body:JSON.stringify({query:q})}).then(function(r){return r.json()})};` +
-    // --- 2b. insertToDb: universal DB insert function (constructs INSERT query, calls polyfilled fetch) ---
-    // Usage: insertToDb('dbo.TableName', {col1:val1, col2:val2}).then(r => ...)
+    `body:JSON.stringify({query:q,connectorId:CID})}).then(function(r){return r.json().then(function(j){` +
+    `console.log('[saveToDb] response:',JSON.stringify(j));return j})})};` +
+    // --- 2b. insertToDb: builds INSERT SQL ---
     `window.insertToDb=function(tbl,data){` +
     `if(!tbl||!data)return Promise.reject(new Error('Missing table or data'));` +
-    `var C=[],V=[];` +
-    `for(var k in data){if(!data.hasOwnProperty(k))continue;` +
-    `if(k.charAt(0)==='_')continue;` + // skip internal fields like _isNew
-    `C.push(k);` +
-    `var v=data[k]==null?'NULL':"'"+String(data[k]).replace(/'/g,"''")+"'";` +
-    `V.push(v)}` +
+    `var C=[],V=[];for(var k in data){if(!data.hasOwnProperty(k)||k.charAt(0)==='_')continue;` +
+    `C.push('['+k+']');V.push(esc(data[k]))}` +
     `if(C.length===0)return Promise.reject(new Error('No columns to insert'));` +
-    `var q="INSERT INTO "+tbl+" ("+C.join(", ")+") VALUES ("+V.join(", ")+")";` +
+    `var q='INSERT INTO '+tbl+' ('+C.join(', ')+') VALUES ('+V.join(', ')+')';` +
     `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
-    `body:JSON.stringify({query:q})}).then(function(r){return r.json()})};` +
-    // --- 2c. deleteFromDb: universal DB delete function (constructs DELETE query, calls polyfilled fetch) ---
-    // Usage: deleteFromDb('dbo.TableName', {pkCol1:val1, pkCol2:val2}, ['pkCol1','pkCol2']).then(r => ...)
+    `body:JSON.stringify({query:q,connectorId:CID})}).then(function(r){return r.json()})};` +
+    // --- 2c. deleteFromDb: builds DELETE SQL ---
     `window.deleteFromDb=function(tbl,data,pks){` +
     `if(!tbl||!data||!pks||pks.length===0)return Promise.reject(new Error('Missing table, data or PKs'));` +
-    `var W=[];` +
-    `for(var i=0;i<pks.length;i++){var k=pks[i];` +
+    `var W=[];for(var i=0;i<pks.length;i++){var k=pks[i];` +
     `if(!data.hasOwnProperty(k))return Promise.reject(new Error('PK field missing: '+k));` +
-    `var v=data[k]==null?'':String(data[k]).replace(/'/g,"''");` +
-    `W.push(k+"='"+v+"'")}` +
-    `var q="DELETE FROM "+tbl+" WHERE "+W.join(" AND ");` +
+    `W.push('['+k+']='+esc(data[k]))}` +
+    `var q='DELETE FROM '+tbl+' WHERE '+W.join(' AND ');` +
     `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
-    `body:JSON.stringify({query:q})}).then(function(r){return r.json()})};` +
+    `body:JSON.stringify({query:q,connectorId:CID})}).then(function(r){return r.json()})};` +
     // --- 3. PostMessage interceptor: auto-converts save-type postMessage to saveToDb ---
     // When AI generates postMessage({type:'SAVE_...', data:...}), this interceptor
     // catches it and redirects to saveToDb using __DB_TABLE__ and __DB_PK__ metadata
@@ -111,12 +102,6 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     `}).catch(function(e){var el=document.getElementById('statusMessage');` +
     `if(el){el.textContent='Errore: '+e.message;el.className='status-message error';el.style.display='block'}});` +
     `return}` +
-    // If data has a raw 'query' field, use it directly
-    `if(d.query){fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
-    `body:JSON.stringify({query:d.query})}).then(function(r){return r.json()}).then(function(r){` +
-    `var el=document.getElementById('statusMessage');` +
-    `if(r.success&&el){el.textContent='Salvato!';el.className='status-message success';el.style.display='block'}` +
-    `}).catch(function(){});return}` +
     // No table metadata - show error
     `var errDiv=document.getElementById('_pm_save_error');` +
     `if(!errDiv){errDiv=document.createElement('div');errDiv.id='_pm_save_error';` +
