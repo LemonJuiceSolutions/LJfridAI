@@ -45,6 +45,7 @@ model Company {
   activeUnifiedStyleId     String?
   whatsAppSessions         WhatsAppSession[]
   whatsAppContacts         WhatsAppContact[]
+  subscription             Subscription?
 }
 
 model Department {
@@ -632,6 +633,25 @@ model LeadGeneratorConversation {
   leadSearches LeadSearch[]
 
   @@index([companyId])
+}
+
+model Subscription {
+  id                   String   @id @default(cuid())
+  companyId            String   @unique
+  company              Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  stripeCustomerId     String   @unique
+  stripeSubscriptionId String?  @unique
+  stripePriceId        String?
+  plan                 String   @default("free") // free, starter, professional, enterprise
+  status               String   @default("active") // active, canceled, past_due, trialing
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
 }
 
 model AuditLog {
