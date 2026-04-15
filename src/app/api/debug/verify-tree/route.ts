@@ -1,11 +1,19 @@
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { StoredTree, Variable, VariableOption } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+    const session = await getServerSession(authOptions);
+    const companyId = (session?.user as any)?.companyId as string | undefined;
+    if (!companyId) {
+        return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
+    }
+
     const searchParams = req.nextUrl.searchParams;
     const treeId = searchParams.get('treeId');
 
@@ -14,7 +22,7 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-        const tree = await db.tree.findUnique({ where: { id: treeId } });
+        const tree = await db.tree.findFirst({ where: { id: treeId, companyId } });
         if (!tree) {
             return NextResponse.json({ error: 'Tree not found' }, { status: 404 });
         }

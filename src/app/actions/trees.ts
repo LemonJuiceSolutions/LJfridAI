@@ -22,7 +22,7 @@ import { callOpenRouterJSON } from './openrouter';
 import { extractFirstJSON, sanitizeJSONString } from '@/lib/json-utils';
 import { findNodeByQuestion, getLastAssistantQuestion, findNodeById, formatVariablesToTable, extractSubTreeRefs, recursiveTreeUpdate, recursiveTreeUpdateById } from '@/lib/tree-utils';
 
-async function checkSubTreeCycle(originalTreeId: string, treeIdToCheck: string, visited: Set<string> = new Set()) {
+async function checkSubTreeCycle(originalTreeId: string, treeIdToCheck: string, companyId: string, visited: Set<string> = new Set()) {
     if (treeIdToCheck === originalTreeId) {
         throw new Error("Errore: Rilevato riferimento circolare. L'albero non può contenere se stesso (direttamente o indirettamente).");
     }
@@ -30,7 +30,7 @@ async function checkSubTreeCycle(originalTreeId: string, treeIdToCheck: string, 
     if (visited.has(treeIdToCheck)) return;
     visited.add(treeIdToCheck);
 
-    const treeData = await db.tree.findUnique({ where: { id: treeIdToCheck } });
+    const treeData = await db.tree.findFirst({ where: { id: treeIdToCheck, companyId } });
     if (!treeData) return;
 
     if (!treeData.jsonDecisionTree) return;
@@ -44,7 +44,7 @@ async function checkSubTreeCycle(originalTreeId: string, treeIdToCheck: string, 
 
     const subRefs = extractSubTreeRefs(jsonTree);
     for (const ref of subRefs) {
-        await checkSubTreeCycle(originalTreeId, ref, visited);
+        await checkSubTreeCycle(originalTreeId, ref, companyId, visited);
     }
 }
 
@@ -430,7 +430,7 @@ export async function updateTreeNodeAction({
                 if (newRefs.length > 0) {
                     try {
                         for (const ref of newRefs) {
-                            await checkSubTreeCycle(treeId, ref);
+                            await checkSubTreeCycle(treeId, ref, user.companyId);
                         }
                     } catch (e) {
                         const error = e instanceof Error ? e.message : "Rilevato ciclo di dipendenze.";
@@ -476,7 +476,8 @@ export async function regenerateNaturalLanguageAction(
             throw new Error("ID albero mancante.");
         }
 
-        const treeDoc = await db.tree.findUnique({ where: { id: treeId } });
+        const user = await getAuthenticatedUser();
+        const treeDoc = await db.tree.findFirst({ where: { id: treeId, companyId: user.companyId } });
         if (!treeDoc) {
             throw new Error("Albero non trovato.");
         }

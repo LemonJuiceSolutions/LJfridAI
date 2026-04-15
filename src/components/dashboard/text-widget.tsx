@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
@@ -337,7 +338,7 @@ export default function TextWidget({
                     ref={editorRef}
                     contentEditable={true}
                     suppressContentEditableWarning={true}
-                    dangerouslySetInnerHTML={{ __html: liveContent }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(liveContent) }}
                     onBlur={handleBlur}
                     className="prose prose-sm dark:prose-invert max-w-none h-full w-full p-1 focus:outline-none focus:ring-1 focus:ring-ring rounded-sm"
                 />

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import DOMPurify from 'dompurify';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import type { UIMessage } from 'ai';
@@ -406,9 +407,9 @@ function RichContent({ content, charts, onApplyCode }: { content: string; charts
         if (!part.trim()) return null;
         return (
           <div key={i} className="whitespace-pre-wrap break-words min-w-0" dangerouslySetInnerHTML={{
-            __html: part
+            __html: DOMPurify.sanitize(part
               .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-              .replace(/`([^`]+)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-[11px]">$1</code>')
+              .replace(/`([^`]+)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-[11px]">$1</code>'))
           }} />
         );
       })}

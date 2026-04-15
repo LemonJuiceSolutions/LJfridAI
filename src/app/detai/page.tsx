@@ -15,6 +15,7 @@ import type { DetaiInput } from '@/ai/flows/detai-flow';
 import { Badge } from '@/components/ui/badge';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import { getAiProviderAction } from '@/actions/ai-settings';
+import DOMPurify from 'dompurify';
 
 
 type Message = {
@@ -307,7 +308,7 @@ export default function DetaiPage() {
             <div className="space-y-3">
                 {segments.map((segment, index) => {
                     if (segment.type === 'text' && segment.content.trim()) {
-                        return <p key={index} dangerouslySetInnerHTML={{ __html: formatText(segment.content) }} />;
+                        return <p key={index} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(formatText(segment.content)) }} />;
                     }
                     if (segment.type === 'source' && segment.sourceId) {
                         if (!sourceIdToColorIndex.has(segment.sourceId)) {
@@ -317,7 +318,7 @@ export default function DetaiPage() {
                         const colorClass = sourceColors[sourceIdToColorIndex.get(segment.sourceId)!];
                         return (
                             <div key={index} className={cn('p-3 rounded-lg border', colorClass)}>
-                                <p dangerouslySetInnerHTML={{ __html: formatText(segment.content) }} />
+                                <p dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(formatText(segment.content)) }} />
                                 <Link href={`/view/${segment.sourceId}`} passHref>
                                     <Badge variant="outline" className="mt-3 cursor-pointer hover:border-primary/80">
                                         <LinkIcon className="h-3 w-3 mr-1.5" />
@@ -372,7 +373,7 @@ export default function DetaiPage() {
                                                             {m.text.includes('[Fonte:') ? (
                                                                 <AttributedMessage text={m.text} toolResponse={prevMessage?.role === 'tool' ? prevMessage.toolResponse : undefined} />
                                                             ) : (
-                                                                <p dangerouslySetInnerHTML={{ __html: formatText(m.text) }} />
+                                                                <p dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(formatText(m.text)) }} />
                                                             )}
                                                         </div>
                                                     )}

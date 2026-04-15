@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import {
     Send, Bot, Loader2, Trash2, UserSearch, Download, Search,
     Users, Building2, Mail, Phone, Linkedin, Globe, FileSpreadsheet,
@@ -128,7 +129,7 @@ function MarkdownTextBlock({ text }: { text: string }) {
             const cls = level === 1 ? 'text-base font-bold mt-3 mb-1'
                 : level === 2 ? 'text-sm font-bold mt-2 mb-1'
                 : 'text-sm font-semibold mt-1.5 mb-0.5';
-            elements.push(<div key={key++} className={cls} dangerouslySetInnerHTML={{ __html: inlineFormat(headerMatch[2]) }} />);
+            elements.push(<div key={key++} className={cls} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(inlineFormat(headerMatch[2])) }} />);
             idx++; continue;
         }
 
@@ -148,7 +149,7 @@ function MarkdownTextBlock({ text }: { text: string }) {
             elements.push(
                 <ul key={key++} className="list-disc list-outside ml-4 space-y-0.5">
                     {items.map((item, j) => (
-                        <li key={j} dangerouslySetInnerHTML={{ __html: inlineFormat(item) }} />
+                        <li key={j} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(inlineFormat(item)) }} />
                     ))}
                 </ul>
             );
@@ -165,7 +166,7 @@ function MarkdownTextBlock({ text }: { text: string }) {
             elements.push(
                 <ol key={key++} className="list-decimal list-outside ml-4 space-y-0.5">
                     {items.map((item, j) => (
-                        <li key={j} dangerouslySetInnerHTML={{ __html: inlineFormat(item) }} />
+                        <li key={j} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(inlineFormat(item)) }} />
                     ))}
                 </ol>
             );
@@ -182,7 +183,7 @@ function MarkdownTextBlock({ text }: { text: string }) {
         }
         if (paraLines.length > 0) {
             elements.push(
-                <p key={key++} className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: inlineFormat(paraLines.join('\n')) }} />
+                <p key={key++} className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(inlineFormat(paraLines.join('\n'))) }} />
             );
         }
     }

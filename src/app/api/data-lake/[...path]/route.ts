@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { readFile, stat } from 'fs/promises';
 import { join, extname } from 'path';
 import { getDataLakePath } from '@/lib/data-lake';
@@ -19,6 +21,11 @@ export async function GET(
     _request: NextRequest,
     { params }: { params: Promise<{ path: string[] }> }
 ) {
+    const session = await getServerSession(authOptions);
+    if (!(session?.user as any)?.companyId) {
+        return new NextResponse('Non autorizzato', { status: 401 });
+    }
+
     try {
         const { path } = await params;
         const filepath = getDataLakePath(...path);

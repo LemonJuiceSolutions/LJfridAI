@@ -1,3 +1,5 @@
+import '@/lib/env';
+
 // Node.js 25+ exposes a broken localStorage global (Proxy without Web Storage API methods).
 // This causes "localStorage.getItem is not a function" errors during SSR.
 // Replace it with a no-op implementation so libraries that check for localStorage don't crash.
