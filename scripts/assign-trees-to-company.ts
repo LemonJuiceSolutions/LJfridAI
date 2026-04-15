@@ -17,9 +17,9 @@ async function assignTreeToCompany() {
         console.log(`\n✅ Utente trovato: ${user.email}`);
         console.log(`✅ Azienda: ${user.companyId}`);
 
-        // Find trees without company
+        // Find trees without company (cast needed: companyId is required in schema but may be null in legacy data)
         const orphanTrees = await prisma.tree.findMany({
-            where: { companyId: null }
+            where: { companyId: null as unknown as undefined }
         });
 
         console.log(`\n🌳 Alberi senza azienda trovati: ${orphanTrees.length}`);

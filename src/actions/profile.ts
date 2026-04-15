@@ -35,7 +35,7 @@ export async function updateProfileAction(data: { name: string; email: string; c
             data: {
                 name: data.name,
                 email: data.email,
-                companyId: data.companyId || null
+                companyId: data.companyId || undefined
             }
         });
 

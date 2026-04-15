@@ -46,6 +46,7 @@ model Company {
   whatsAppSessions         WhatsAppSession[]
   whatsAppContacts         WhatsAppContact[]
   subscription             Subscription?
+  vpnConfig                VpnConfig?
 }
 
 model Department {
@@ -87,6 +88,7 @@ model User {
   company              Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   department           Department?     @relation(fields: [departmentId], references: [id])
   userRole             Role?           @relation(fields: [roleId], references: [id])
+  vpnPeers             VpnPeer[]
 
   @@index([companyId])
   @@index([departmentId])
@@ -652,6 +654,39 @@ model Subscription {
 
   @@index([companyId])
   @@index([status])
+}
+
+model VpnConfig {
+  id              String    @id @default(cuid())
+  companyId       String    @unique
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  serverPublicKey String
+  subnet          String    // e.g. "10.1.0.0/24"
+  port            Int       @default(51820)
+  enabled         Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  peers           VpnPeer[]
+
+  @@index([companyId])
+}
+
+model VpnPeer {
+  id           String    @id @default(cuid())
+  vpnConfigId  String
+  vpnConfig    VpnConfig @relation(fields: [vpnConfigId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicKey    String
+  allowedIps   String    // e.g. "10.1.0.2/32"
+  name         String    // device name, e.g. "MacBook Pro di Mario"
+  enabled      Boolean   @default(true)
+  lastHandshake DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@unique([vpnConfigId, userId, name])
+  @@index([vpnConfigId])
+  @@index([userId])
 }
 
 model AuditLog {

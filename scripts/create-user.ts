@@ -25,6 +25,7 @@ async function main() {
             password: hashedPassword,
             role: "admin",
             emailVerified: new Date(),
+            company: { create: { name: "Default Company" } },
         }
     });
 

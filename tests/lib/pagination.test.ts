@@ -71,4 +71,39 @@ describe('paginateResult', () => {
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeNull();
   });
+
+  it('handles exactly 1 item over limit', () => {
+    const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const result = paginateResult(items, 2);
+    expect(result.items).toHaveLength(2);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe('b');
+  });
+
+  it('handles single item within limit', () => {
+    const items = [{ id: 'only' }];
+    const result = paginateResult(items, 5);
+    expect(result.items).toHaveLength(1);
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it('handles limit of 1 with multiple items', () => {
+    const items = [{ id: 'first' }, { id: 'second' }];
+    const result = paginateResult(items, 1);
+    expect(result.items).toHaveLength(1);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe('first');
+  });
+
+  it('preserves extra properties on items', () => {
+    const items = [
+      { id: '1', name: 'Alice' },
+      { id: '2', name: 'Bob' },
+      { id: '3', name: 'Charlie' },
+    ];
+    const result = paginateResult(items, 2);
+    expect(result.items[0]).toEqual({ id: '1', name: 'Alice' });
+    expect(result.items[1]).toEqual({ id: '2', name: 'Bob' });
+  });
 });
