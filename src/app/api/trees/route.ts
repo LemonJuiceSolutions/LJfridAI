@@ -1,25 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processDescriptionAction, getTreesAction } from '@/app/actions';
+import { parsePaginationParams, paginateResult } from '@/lib/pagination';
 
 /**
- * GET /api/trees - List all trees
+ * GET /api/trees - List all trees (cursor-based pagination)
+ * Query params: limit (1-100, default 20), cursor (tree id)
  */
 export async function GET(request: NextRequest) {
     try {
+        const { searchParams } = new URL(request.url);
+        const { limit, cursor } = parsePaginationParams(searchParams);
+
         const result = await getTreesAction();
 
         if (result.error) {
             return NextResponse.json({ success: false, error: result.error }, { status: 500 });
         }
 
+        const allTrees = (result.data?.map(tree => ({
+            id: tree.id,
+            name: tree.name,
+            description: tree.description,
+            createdAt: tree.createdAt
+        })) || []);
+
+        // Apply cursor: skip items up to and including the cursor
+        let startIndex = 0;
+        if (cursor) {
+            const cursorIndex = allTrees.findIndex(t => t.id === cursor);
+            if (cursorIndex !== -1) {
+                startIndex = cursorIndex + 1;
+            }
+        }
+
+        const sliced = allTrees.slice(startIndex, startIndex + limit + 1);
+        const paginated = paginateResult(sliced, limit);
+
         return NextResponse.json({
             success: true,
-            trees: result.data?.map(tree => ({
-                id: tree.id,
-                name: tree.name,
-                description: tree.description,
-                createdAt: tree.createdAt
-            })) || []
+            ...paginated,
         });
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Errore interno del server';

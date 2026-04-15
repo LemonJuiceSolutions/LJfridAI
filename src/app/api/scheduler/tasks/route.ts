@@ -12,6 +12,7 @@ import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getSchedulerClient } from '@/lib/scheduler/scheduler-client';
 import { z } from 'zod';
+import { parsePaginationParams, paginateResult } from '@/lib/pagination';
 
 // ============================================
 // Validation Schemas
@@ -74,13 +75,14 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
     const type = searchParams.get('type');
     const includeExecutions = searchParams.get('includeExecutions') === 'true';
+    const { limit, cursor } = parsePaginationParams(searchParams);
 
     // Build where clause
     const where: any = { companyId: user.companyId };
     if (status) where.status = status;
     if (type) where.type = type;
 
-    // Fetch tasks
+    // Fetch tasks with cursor-based pagination
     const tasks = await db.scheduledTask.findMany({
       where,
       include: {
@@ -96,7 +98,9 @@ export async function GET(request: NextRequest) {
           }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     });
 
     // Enrich with tree names
@@ -118,7 +122,8 @@ export async function GET(request: NextRequest) {
       return { ...t, treeName: treeId ? treeNameMap[treeId] || null : null };
     });
 
-    return NextResponse.json({ tasks: enrichedTasks });
+    const paginated = paginateResult(enrichedTasks, limit);
+    return NextResponse.json(paginated);
   } catch (error: any) {
     console.error('[API] Error fetching scheduled tasks:', error);
     return NextResponse.json(

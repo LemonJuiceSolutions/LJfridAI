@@ -633,3 +633,19 @@ model LeadGeneratorConversation {
 
   @@index([companyId])
 }
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  companyId String
+  action    String   // e.g. "gdpr.export", "gdpr.delete", "tree.create", "login"
+  resource  String?  // e.g. "Tree:abc123"
+  details   Json?    // additional context
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
