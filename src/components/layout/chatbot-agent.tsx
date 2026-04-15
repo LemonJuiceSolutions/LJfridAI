@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import DOMPurify from 'dompurify';
+import DOMPurify from 'isomorphic-dompurify';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import type { UIMessage } from 'ai';

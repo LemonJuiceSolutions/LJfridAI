@@ -15,7 +15,7 @@ import type { DetaiInput } from '@/ai/flows/detai-flow';
 import { Badge } from '@/components/ui/badge';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import { getAiProviderAction } from '@/actions/ai-settings';
-import DOMPurify from 'dompurify';
+import DOMPurify from 'isomorphic-dompurify';
 
 
 type Message = {

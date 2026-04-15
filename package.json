@@ -63,6 +63,7 @@
     "dotenv": "^16.4.5",
     "embla-carousel-react": "^8.6.0",
     "fast-xml-parser": "^5.3.7",
+    "isomorphic-dompurify": "^3.8.0",
     "lodash": "^4.17.21",
     "lucide-react": "^0.475.0",
     "luxon": "^3.7.2",

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import DOMPurify from 'dompurify';
+import DOMPurify from 'isomorphic-dompurify';
 import {
     Send, Bot, Loader2, Trash2, UserSearch, Download, Search,
     Users, Building2, Mail, Phone, Linkedin, Globe, FileSpreadsheet,

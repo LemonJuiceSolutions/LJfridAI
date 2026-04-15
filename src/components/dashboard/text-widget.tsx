@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import DOMPurify from 'dompurify';
+import DOMPurify from 'isomorphic-dompurify';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
