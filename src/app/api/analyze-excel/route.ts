@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { join } from 'path';
 import { access } from 'fs/promises';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { getDataLakePath } from '@/lib/data-lake';
 import { getPythonBackendUrl } from '@/lib/python-backend';
 // join is kept for the EEXXCC path below
 
 export async function POST(request: NextRequest) {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+        return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
+    }
+
     try {
         const body = await request.json();
         const filename = body.filename as string;

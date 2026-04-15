@@ -400,8 +400,12 @@ const TOOL_MAP: Record<string, (params: any) => Promise<string>> = {
 
 export async function POST(req: NextRequest) {
     // Verify shared secret
+    const expectedSecret = process.env.MCP_INTERNAL_SECRET;
+    if (!expectedSecret) {
+        console.error('[mcp-tool] MCP_INTERNAL_SECRET not configured');
+        return NextResponse.json({ error: 'MCP_INTERNAL_SECRET not configured' }, { status: 500 });
+    }
     const secret = req.headers.get('x-mcp-secret');
-    const expectedSecret = process.env.MCP_INTERNAL_SECRET || 'fridai-mcp-local';
     if (secret !== expectedSecret) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

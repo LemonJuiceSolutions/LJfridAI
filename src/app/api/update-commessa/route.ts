@@ -54,7 +54,7 @@ function corsHeaders(req?: NextRequest) {
     const allowedOrigin = process.env.NEXTAUTH_URL || 'http://localhost:9002';
     const origin = req?.headers.get('origin');
     return {
-        'Access-Control-Allow-Origin': origin === allowedOrigin || origin === 'null' ? (origin === 'null' ? allowedOrigin : origin) : '',
+        'Access-Control-Allow-Origin': origin === allowedOrigin ? origin : '',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Credentials': 'true',
@@ -156,6 +156,13 @@ export async function POST(req: NextRequest) {
 
         // ── Proxy mode: client sends {query, connectorId?} — execute directly with COMMIT ──
         if (body.query) {
+            const userRole = (user as any).role;
+            if (userRole !== 'admin' && userRole !== 'superadmin') {
+                return NextResponse.json(
+                    { success: false, error: 'Accesso negato: solo admin possono eseguire query dirette' },
+                    { status: 403, headers: corsHeaders(req) }
+                );
+            }
             // Resolve connectorId: use provided one or find company's first SQL connector
             let connectorId = body.connectorId || '';
             if (connectorId) {

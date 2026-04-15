@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { getDataLakePath } from '@/lib/data-lake';
 
 export async function POST(request: NextRequest) {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+        return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
+    }
+
     try {
         const data = await request.formData();
         const file: File | null = data.get('file') as unknown as File;
@@ -25,6 +32,9 @@ export async function POST(request: NextRequest) {
 
         // Sanitize filename
         const customName = data.get('name') as string;
+        if (customName && customName.includes('..')) {
+            return NextResponse.json({ success: false, error: 'Invalid filename' }, { status: 400 });
+        }
         const filename = customName ? customName : file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
         const filepath = join(uploadDir, filename);
 

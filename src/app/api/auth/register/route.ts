@@ -22,9 +22,14 @@ export async function POST(request: Request) {
             );
         }
 
-        if (password.length < 6) {
+        if (
+            password.length < 8 ||
+            !/[A-Z]/.test(password) ||
+            !/[a-z]/.test(password) ||
+            !/[0-9]/.test(password)
+        ) {
             return NextResponse.json(
-                { error: 'La password deve essere di almeno 6 caratteri' },
+                { error: 'La password deve avere almeno 8 caratteri, una maiuscola, una minuscola e un numero' },
                 { status: 400 }
             );
         }

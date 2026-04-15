@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readdir, unlink, stat } from 'fs/promises';
 import { join } from 'path';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { getDataLakePath } from '@/lib/data-lake';
 
 export async function GET(request: NextRequest) {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+        return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
+    }
+
     try {
         const { searchParams } = new URL(request.url);
         const folder = searchParams.get('folder') || 'data_lake';
@@ -42,6 +49,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+        return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
+    }
+
     try {
         const { searchParams } = new URL(request.url);
         const name = searchParams.get('name');

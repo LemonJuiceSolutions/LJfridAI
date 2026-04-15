@@ -67,7 +67,7 @@ model User {
   password             String?
   image                String?
   role                 String          @default("user")
-  companyId            String?
+  companyId            String
   departmentId         String?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
@@ -83,7 +83,7 @@ model User {
   pageLayouts          PageLayout[]
   createdTasks         ScheduledTask[]
   sessions             Session[]
-  company              Company?        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company              Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   department           Department?     @relation(fields: [departmentId], references: [id])
   userRole             Role?           @relation(fields: [roleId], references: [id])
 
@@ -145,9 +145,9 @@ model Tree {
   jsonDecisionTree            String
   questionsScript             String
   createdAt                   DateTime @default(now())
-  companyId                   String?
+  companyId                   String
   type                        String   @default("RULE")
-  company                     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company                     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   previewCache                NodePreviewCache[]
 
   @@index([companyId])
@@ -172,8 +172,8 @@ model Variable {
   type           String
   possibleValues Json     @default("[]")
   createdAt      DateTime @default(now())
-  companyId      String?
-  company        Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
 }
@@ -431,11 +431,11 @@ model AgentConversation {
   tableSchema Json?
   inputTables Json?
   messages           Json
-  companyId          String?
+  companyId          String
   claudeCliSessionId String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
-  company            Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company            Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([nodeId, agentType])
   @@index([nodeId])
