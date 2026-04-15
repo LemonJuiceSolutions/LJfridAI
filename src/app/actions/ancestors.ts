@@ -10,8 +10,30 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { executeAncestors, executeChain } from '@/lib/ancestor-executor';
+import { executeAncestors, executeChain, NodeExecutionResult } from '@/lib/ancestor-executor';
 import { Node, Edge } from '@/lib/topological-sort';
+
+/**
+ * Strip large data from node results before sending through RSC serialization.
+ * RSC has a ~10MB limit — SQL results can easily exceed this.
+ */
+function stripLargeResults(results: NodeExecutionResult[]): NodeExecutionResult[] {
+  return results.map(r => {
+    if (!r.data) return r;
+    try {
+      const size = JSON.stringify(r.data).length;
+      if (size > 1_000_000) { // >1MB — replace with metadata
+        return {
+          ...r,
+          data: { __stripped: true, rowCount: Array.isArray(r.data) ? r.data.length : (r.data?.rowCount || 0), sizeBytes: size },
+        };
+      }
+    } catch { /* if stringify fails, strip it */
+      return { ...r, data: { __stripped: true, error: 'data too large to serialize' } };
+    }
+    return r;
+  });
+}
 
 async function getSession() {
   return await getServerSession(authOptions);
@@ -111,7 +133,7 @@ export async function executeAncestorChainAction(
 
     return {
       success: result.success,
-      results: result.results,
+      results: stripLargeResults(result.results),
       errors: result.errors,
       executionTime: result.executionTime,
       error: null
@@ -175,7 +197,7 @@ export async function executeFullChainAction(
 
     return {
       success: result.success,
-      results: result.results,
+      results: stripLargeResults(result.results),
       errors: result.errors,
       executionTime: result.executionTime,
       error: null
