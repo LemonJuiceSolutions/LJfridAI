@@ -11,9 +11,7 @@ import { MissedTasksDialog } from '@/components/layout/missed-tasks-dialog';
 import { FailedTasksDialog } from '@/components/layout/failed-tasks-dialog';
 import { ConnectorAlertBanner } from '@/components/layout/connector-alert-banner';
 import { Inter } from 'next/font/google';
-import dynamic from 'next/dynamic';
-
-const CookieConsent = dynamic(() => import('@/components/cookie-consent'), { ssr: false });
+import { CookieConsent } from '@/components/cookie-consent';
 
 const inter = Inter({
   subsets: ['latin'],

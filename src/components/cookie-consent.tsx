@@ -12,7 +12,7 @@ interface CookieConsentData {
 
 const STORAGE_KEY = 'cookie-consent-accepted';
 
-export default function CookieConsent() {
+export function CookieConsent() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
