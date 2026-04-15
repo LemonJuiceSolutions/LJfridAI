@@ -11,10 +11,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Check, X, GitBranch, Database, Upload, AlertCircle } from 'lucide-react';
-import { exportTableToSqlAction, getTreeAction, getTreesAction } from '@/app/actions';
+import { getTreeAction, getTreesAction } from '@/app/actions';
 
 import { useToast } from '@/hooks/use-toast';
-import { pushConnectorAlert } from '@/hooks/use-connector-alerts';
 
 type PipelineStatus = {
     name: string;
@@ -496,374 +495,108 @@ export function PipelineExecutionDialog({ isOpen, onClose, treeId, nodeId, onSuc
             setExecutionPipeline(steps.map(s => ({ name: s.label, type: s.pipelineType, status: 'pending' })));
             setProgressStep(2);
 
-            // 5. Execute Sequence
-            const ancestorResults: Record<string, any> = {};
-            // FIX: Track results by composite key (nodeId + type) to prevent preview corruption
-            // when nodes share the same name (different nodes) or same nodeId (hybrid SQL+Python nodes)
-            const nodeIdResults: Record<string, any> = {};
-            for (const step of steps) {
-                if (!isExecutingRef.current) break;
-                // Trust the step's pipelineType from construction — it already accounts for hybrid AI+SQL nodes.
-                // Only override to AI as a fallback if the step was misclassified (ancestor nodes without explicit type).
-                const stepNode = step.type === 'final' ? targetNode : step.ancestor;
-                let runtimeType = step.pipelineType;
-                if (runtimeType !== 'ai' && runtimeType !== 'python' && runtimeType !== 'sql') {
-                    // Only check runtime AI override for ambiguous types
-                    const runtimeIsAi = !!(stepNode?.aiConfig?.outputName && stepNode?.aiConfig?.prompt &&
-                        stepNode.aiConfig.outputName === (stepNode.name || stepNode.aiConfig.outputName));
-                    if (runtimeIsAi) runtimeType = 'ai';
-                }
-                setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'running', type: runtimeType as any } : p));
-                const startTime = Date.now();
-                let success = false;
-                let stepError: string | null = null;
-                let stepMessage: string | null = null;
-
-                try {
-                    if (step.type === 'execution' || step.type === 'final') {
-                        const node = step.type === 'final' ? targetNode : step.ancestor;
-                        // Trust the step's pipelineType — hybrid nodes already have separate AI and SQL/Python steps.
-                        const nType = (step as any).pipelineType as string;
-
-                        // Priority 1: Python execution — use nType (pipelineType) to determine execution branch.
-                        // FIX: Previously `if (node.pythonCode)` made Python always win on hybrid nodes.
-                        // Using nType respects: isPython flag for ancestor steps, getNodeType() for final step.
-                        if (nType === 'python' && node.pythonCode) {
-                            const inputData: Record<string, any[]> = {};
-                            for (const [key, val] of Object.entries(ancestorResults)) {
-                                if (val && val.data && Array.isArray(val.data)) {
-                                    inputData[key] = val.data;
-                                }
-                            }
-
-                            // Calculate dependencies: For final step, we must resolve them dynamically
-                            // For ancestors, they are already resolved and stored in pipelineDependencies during collection
-                            const executionDeps = step.type === 'final' ? resolveDependencies(node) : (node.pipelineDependencies || []);
-
-                            const pyOutputType = node.pythonOutputType || 'table';
-                            // Connector resolution: node's own > inherited from deps > inherited from any executed ancestor
-                            let pyConnectorId = node.connectorId || node.pythonConnectorId;
-                            if (!pyConnectorId) {
-                                // Try to inherit from dependencies
-                                for (const d of executionDeps) {
-                                    if (d.connectorId) { pyConnectorId = d.connectorId; break; }
-                                }
-                            }
-                            if (!pyConnectorId) {
-                                // Try to inherit from any previously executed ancestor that had a connector
-                                for (const [, val] of Object.entries(ancestorResults)) {
-                                    const ar = val as any;
-                                    if (ar?._connectorId) { pyConnectorId = ar._connectorId; break; }
-                                }
-                            }
-                            if (!pyConnectorId) {
-                                // Try from ANY ancestor step node that has a SQL connector configured
-                                for (const s of steps) {
-                                    const an = s.ancestor;
-                                    if (an?.connectorId || an?.sqlConnectorId) {
-                                        pyConnectorId = an.connectorId || an.sqlConnectorId;
-                                        break;
-                                    }
-                                }
-                            }
-                            console.log(`[PIPELINE] Python exec: name=${node.sqlResultName || node.pythonResultName || node.name}, outputType=${pyOutputType}, connectorId=${pyConnectorId || 'NONE'}, inputDataKeys=${Object.keys(inputData).join(',') || 'EMPTY'}, depsCount=${executionDeps.length}`);
-
-                            const pyResponse = await fetch('/api/internal/execute-python', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    code: node.pythonCode,
-                                    outputType: pyOutputType,
-                                    inputData,
-                                    dependencies: executionDeps.map((d: any) => ({
-                                        tableName: d.tableName,
-                                        query: d.query,
-                                        isPython: d.isPython,
-                                        pythonCode: d.pythonCode,
-                                        connectorId: d.connectorId,
-                                        pipelineDependencies: d.pipelineDependencies,
-                                        selectedDocuments: d.selectedDocuments
-                                    })),
-                                    connectorId: pyConnectorId,
-                                    selectedDocuments: node.selectedDocuments?.length > 0 ? node.selectedDocuments : undefined
-                                }),
-                            });
-                            const res = await pyResponse.json();
-                            console.log(`[PIPELINE] Python result: success=${res.success}, hasData=${!!res.data}, dataLen=${res.data?.length ?? 'N/A'}, hasHtml=${!!(res as any).html}, autoSwitch=${(res as any)._autoSwitchedOutputType || 'none'}, warning=${(res as any)._warning || 'none'}`);
-                            if (res.success) {
-                                success = true;
-                                ancestorResults[node.sqlResultName || node.pythonResultName || node.name] = res;
-                                if (node.id) nodeIdResults[`${node.id}_py`] = res;
-                                // Show warning in UI if result has 0 rows or backend sent a warning
-                                const pyWarning = (res as any)._warning;
-                                const stepLabel = node.sqlResultName || node.pythonResultName || node.name || step.label;
-                                if (pyWarning) {
-                                    stepMessage = pyWarning;
-                                    pushConnectorAlert(stepLabel, "0 righe restituite — possibile problema connettore SQL o query vuota.");
-                                } else if (res.data && Array.isArray(res.data) && res.data.length === 0) {
-                                    stepMessage = "Script completato ma 0 righe restituite. Verificare connettore SQL o query.";
-                                    pushConnectorAlert(stepLabel, "0 righe restituite — verificare il connettore SQL nelle impostazioni.");
-                                }
-                            } else {
-                                stepError = res.error || "Execution failed";
-                            }
-                        }
-                        // Priority 2: AI node — re-execute via /api/ai-node/execute
-                        else if (nType === 'ai') {
-                            const aiCfg = node.aiConfig;
-                            if (!aiCfg?.prompt || !aiCfg?.model || !aiCfg?.outputType) {
-                                stepError = "Configurazione AI mancante (prompt/model/outputType). Configura l'agente AI nel nodo.";
-                            } else {
-                                // Interpolate placeholders with pipeline data
-                                let interpolatedPrompt = aiCfg.prompt;
-                                interpolatedPrompt = interpolatedPrompt.replace(
-                                    /\{\{TABELLA:([^}]+)\}\}/g,
-                                    (_: string, name: string) => {
-                                        const res = ancestorResults[name];
-                                        if (res?.data) {
-                                            const rows = Array.isArray(res.data) ? res.data.slice(0, 100) : res.data;
-                                            return JSON.stringify(rows);
-                                        }
-                                        return `[Tabella "${name}" non trovata]`;
-                                    }
-                                );
-                                interpolatedPrompt = interpolatedPrompt.replace(
-                                    /\{\{VARIABILE:([^}]+)\}\}/g,
-                                    (_: string, name: string) => {
-                                        const res = ancestorResults[name];
-                                        if (res?.data) return JSON.stringify(res.data);
-                                        return `[Variabile "${name}" non trovata]`;
-                                    }
-                                );
-                                interpolatedPrompt = interpolatedPrompt.replace(
-                                    /\{\{GRAFICO:([^}]+)\}\}/g,
-                                    (_: string, name: string) => `[Grafico "${name}"]`
-                                );
-
-                                // Call AI execution endpoint (streaming)
-                                setExecutionPipeline(prev => prev.map(p =>
-                                    p.name === step.label ? { ...p, message: 'Esecuzione AI in corso...' } : p
-                                ));
-                                const aiResponse = await fetch('/api/ai-node/execute', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        prompt: interpolatedPrompt,
-                                        model: aiCfg.model,
-                                        outputType: aiCfg.outputType,
-                                    }),
-                                });
-
-                                if (!aiResponse.ok) {
-                                    let errMsg = `Errore AI (${aiResponse.status})`;
-                                    try { const errData = await aiResponse.json(); errMsg = errData.error || errMsg; } catch { /* */ }
-                                    stepError = errMsg;
-                                } else {
-                                    // Read streaming response
-                                    const reader = aiResponse.body?.getReader();
-                                    if (!reader) {
-                                        stepError = 'Stream AI non disponibile';
-                                    } else {
-                                        const decoder = new TextDecoder();
-                                        let buf = '';
-                                        let aiResult: any = null;
-                                        let aiErr: string | null = null;
-
-                                        while (true) {
-                                            const { done, value } = await reader.read();
-                                            if (done) break;
-                                            buf += decoder.decode(value, { stream: true });
-                                            const lines = buf.split('\n');
-                                            buf = lines.pop() || '';
-                                            for (const line of lines) {
-                                                if (!line.trim()) continue;
-                                                try {
-                                                    const evt = JSON.parse(line);
-                                                    if (evt.type === 'step') {
-                                                        setExecutionPipeline(prev => prev.map(p =>
-                                                            p.name === step.label ? { ...p, message: evt.label } : p
-                                                        ));
-                                                    } else if (evt.type === 'result') {
-                                                        if (evt.success) aiResult = evt.result;
-                                                        else aiErr = evt.error || 'Errore AI sconosciuto';
-                                                    }
-                                                } catch { /* skip malformed line */ }
-                                            }
-                                        }
-                                        // Process remaining buffer
-                                        if (buf.trim()) {
-                                            try {
-                                                const evt = JSON.parse(buf);
-                                                if (evt.type === 'result') {
-                                                    if (evt.success) aiResult = evt.result;
-                                                    else aiErr = evt.error;
-                                                }
-                                            } catch { /* ignore */ }
-                                        }
-
-                                        if (aiResult !== null && aiResult !== undefined) {
-                                            success = true;
-                                            const data = Array.isArray(aiResult) ? aiResult : [aiResult];
-                                            const resultName = aiCfg.outputName || node.name;
-                                            ancestorResults[resultName] = { data };
-                                            if (node.id) nodeIdResults[`${node.id}_ai`] = { data };
-                                            stepMessage = `Risultato AI (${data.length} righe)`;
-                                        } else {
-                                            stepError = aiErr || 'Nessun risultato AI prodotto';
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        // Priority 3: Specialized actions
-                        else if (nType === 'sharepoint') {
-                            success = true;
-                            stepMessage = "Anteprima SharePoint simulata (azione reale saltata)";
-                        } else if (nType === 'email') {
-                            success = true;
-                            stepMessage = "Anteprima invio mail simulata (invio reale saltato)";
-                        } else if (nType === 'hubspot') {
-                            success = true;
-                            stepMessage = "Anteprima HubSpot simulata (azione reale saltata)";
-                        }
-                        // Priority 3: Default SQL execution
-                        else {
-                            const deps = step.type === 'final' ? resolveDependencies(node) : node.pipelineDependencies || [];
-                            const inputTables = deps.map((t: any) => {
-                                const ancestorRes = ancestorResults[t.tableName];
-                                const data = ancestorRes?.data || ancestorRes?.rechartsData;
-                                const columns = ancestorRes?.columns; // Pass column schema for empty results
-                                if (!data && ancestorRes) {
-                                    console.warn(`[PIPELINE] SQL dep '${t.tableName}': ancestor result exists but has no .data (autoSwitch=${ancestorRes._autoSwitchedOutputType || 'none'}, hasHtml=${!!ancestorRes.html}). Will re-fetch.`);
-                                }
-                                return {
-                                    tableName: t.tableName,
-                                    query: t.query,
-                                    isPython: t.isPython,
-                                    pythonCode: t.pythonCode,
-                                    connectorId: t.connectorId,
-                                    pipelineDependencies: t.pipelineDependencies,
-                                    data,
-                                    columns // schema hint for empty temp tables
-                                };
-                            });
-                            const sqlResponse = await fetch('/api/internal/execute-sql', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    query: node.sqlQuery || node.query,
-                                    connectorId: node.connectorId || node.sqlConnectorId,
-                                    dependencies: inputTables,
-                                }),
-                            });
-                            const res = await sqlResponse.json();
-                            if (res.data) {
-                                success = true;
-                                ancestorResults[node.sqlResultName || node.name] = { data: res.data };
-                                if (node.id) nodeIdResults[`${node.id}_sql`] = { data: res.data };
-                                // Show dependency warnings (non-blocking dep failures upstream)
-                                const sqlDepWarnings = (res as any)?._depWarnings;
-                                if (sqlDepWarnings && Array.isArray(sqlDepWarnings) && sqlDepWarnings.length > 0) {
-                                    const sqlLabel = node.sqlResultName || node.name || step.label;
-                                    stepMessage = `⚠️ ${sqlDepWarnings.length} dipendenza/e con problemi — risultato parziale`;
-                                    for (const w of sqlDepWarnings) {
-                                        pushConnectorAlert(sqlLabel, w);
-                                    }
-                                }
-                            } else {
-                                stepError = res.error || "Query failed";
-                                // Push connector alert for SQL failures that look like connection issues
-                                const sqlLabel = node.sqlResultName || node.name || step.label;
-                                if (res.error && (res.error.includes('Connettore') || res.error.includes('ECONNREFUSED') || res.error.includes('login failed') || res.error.includes('timeout'))) {
-                                    pushConnectorAlert(sqlLabel, res.error);
-                                }
-                            }
-                        }
-                    } else if (step.type === 'write') {
-                        const ancestor = step.ancestor;
-                        const sourceData = ancestorResults[ancestor.name]?.data;
-                        if (sourceData) {
-                            const targetConnectorId = ancestor.sqlExportTargetConnectorId || ancestor.connectorId;
-                            const targetTableName = ancestor.sqlExportTargetTableName;
-                            if (targetConnectorId && targetTableName) {
-                                const writeRes = await exportTableToSqlAction(targetConnectorId, targetTableName, sourceData, true);
-                                if (writeRes.success) success = true;
-                                else stepError = writeRes.error || "Write failed";
-                            } else {
-                                success = true; // Skip if no config
-                            }
-                        } else {
-                            stepError = "No data to write";
-                        }
-                    }
-
-                    if (success) {
-                        setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'success', executionTime: Date.now() - startTime, message: stepMessage || undefined } : p));
-                    } else {
-                        setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'error', message: stepError || 'Errore' } : p));
-                        // Non-blocking: log error but continue pipeline.
-                        // Only the FINAL step failure is fatal (throws to stop).
-                        if (step.type === 'final') {
-                            throw new Error(stepError || "Pipeline failed");
-                        } else {
-                            console.warn(`[PIPELINE] Step "${step.label}" failed (non-blocking): ${stepError}`);
-                        }
-                    }
-                } catch (e: any) {
-                    setExecutionPipeline(prev => prev.map(p => p.name === step.label ? { ...p, status: 'error', message: e.message } : p));
-                    // Only final step failures abort the entire pipeline
-                    if (step.type === 'final') throw e;
-                    else console.warn(`[PIPELINE] Step "${step.label}" exception (non-blocking):`, e.message);
-                }
-            }
-
-            // 6. Save Previews
-            const previewBatch: any[] = [];
-            for (const step of steps) {
-                if (step.type === 'write') continue;
+            // 5. Execute pipeline server-side (data stays in server memory)
+            const stepPayloads = steps.map(step => {
                 const node = step.type === 'final' ? targetNode : step.ancestor;
+                const nType = step.pipelineType;
+                const deps = step.type === 'final'
+                    ? resolveDependencies(node)
+                    : (node?.pipelineDependencies || []);
 
-                // AI nodes: save lastResult back to the node's aiConfig
-                if ((step as any).pipelineType === 'ai') {
-                    const aiResultKey = node.aiConfig?.outputName || node.name;
-                    const aiRes = nodeIdResults[`${node.id}_ai`] || ancestorResults[aiResultKey];
-                    if (aiRes && node.id) {
-                        previewBatch.push({
-                            nodeId: node.id,
-                            isPython: false,
-                            isAi: true,
-                            aiResult: aiRes.data,
-                            aiOutputType: node.aiConfig?.outputType,
-                            result: aiRes
-                        });
-                    }
-                    continue;
-                }
+                return {
+                    id: step.id,
+                    type: step.type,
+                    label: step.label,
+                    pipelineType: nType,
+                    resultName: node?.aiConfig?.outputName || node?.sqlResultName || node?.pythonResultName || node?.name || step.label,
+                    nodeId: node?.id,
+                    sqlQuery: nType !== 'python' && nType !== 'ai' ? (node?.sqlQuery || node?.query) : undefined,
+                    connectorId: node?.connectorId || node?.sqlConnectorId || node?.pythonConnectorId,
+                    pythonCode: nType === 'python' ? node?.pythonCode : undefined,
+                    pythonOutputType: nType === 'python' ? node?.pythonOutputType : undefined,
+                    selectedDocuments: node?.selectedDocuments?.length > 0 ? node?.selectedDocuments : undefined,
+                    aiConfig: nType === 'ai' ? (node?.aiConfig || step.aiConfig) : undefined,
+                    sourceAncestorName: step.sourceAncestorName,
+                    sqlExportTargetTableName: node?.sqlExportTargetTableName,
+                    sqlExportTargetConnectorId: node?.sqlExportTargetConnectorId,
+                    dependencies: deps.map((d: any) => ({
+                        tableName: d.tableName,
+                        query: d.query,
+                        isPython: d.isPython,
+                        pythonCode: d.pythonCode,
+                        connectorId: d.connectorId,
+                        pipelineDependencies: d.pipelineDependencies,
+                        selectedDocuments: d.selectedDocuments,
+                    })),
+                    isPython: nType === 'python',
+                    isAi: nType === 'ai',
+                };
+            });
 
-                // FIX: Use step's pipelineType (not pythonCode presence) for composite key and classification.
-                const isPy = (step as any).pipelineType === 'python';
-                const compositeKey = node.id ? `${node.id}_${isPy ? 'py' : 'sql'}` : null;
-                const res = (compositeKey && nodeIdResults[compositeKey]) || ancestorResults[node.sqlResultName || node.pythonResultName || node.name];
-                if (res) {
-                    previewBatch.push({
-                        nodeId: node.id,
-                        isPython: isPy,
-                        pythonOutputType: node.pythonOutputType,
-                        result: res
-                    });
+            const pipelineResponse = await fetch('/api/internal/execute-pipeline', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ treeId, steps: stepPayloads }),
+            });
+
+            if (!pipelineResponse.ok) {
+                let errMsg = 'Pipeline execution failed';
+                try { const err = await pipelineResponse.json(); errMsg = err.error || errMsg; } catch { /* */ }
+                throw new Error(errMsg);
+            }
+
+            // Read NDJSON streaming progress from server
+            const reader = pipelineResponse.body?.getReader();
+            if (!reader) throw new Error('Stream non disponibile');
+
+            const decoder = new TextDecoder();
+            let buf = '';
+            let pipelineError: string | null = null;
+
+            while (true) {
+                if (!isExecutingRef.current) { reader.cancel(); break; }
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const lines = buf.split('\n');
+                buf = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        const evt = JSON.parse(line);
+                        if (evt.type === 'step-start') {
+                            setExecutionPipeline(prev => prev.map((p, idx) =>
+                                idx === evt.index ? { ...p, status: 'running' } : p
+                            ));
+                        } else if (evt.type === 'step-done') {
+                            setExecutionPipeline(prev => prev.map((p, idx) =>
+                                idx === evt.index ? {
+                                    ...p,
+                                    status: evt.success ? 'success' : 'error',
+                                    executionTime: evt.executionTime,
+                                    message: evt.error || evt.message || undefined,
+                                } : p
+                            ));
+                            // Track final step failure
+                            if (!evt.success && steps[evt.index]?.type === 'final') {
+                                pipelineError = evt.error || 'Pipeline failed';
+                            }
+                        } else if (evt.type === 'done') {
+                            if (!evt.success) pipelineError = evt.error || 'Pipeline failed';
+                        }
+                    } catch { /* skip malformed line */ }
                 }
             }
-            if (previewBatch.length > 0) {
-                const saveResponse = await fetch('/api/internal/save-previews', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ treeId, previewBatch }),
-                });
-                const saveResult = await saveResponse.json();
-                if (!saveResult.success) {
-                    console.warn('[PIPELINE] Preview save failed, widgets may show stale data');
-                }
+            // Process remaining buffer
+            if (buf.trim()) {
+                try {
+                    const evt = JSON.parse(buf);
+                    if (evt.type === 'done' && !evt.success) pipelineError = evt.error;
+                } catch { /* ignore */ }
             }
+
+            if (pipelineError) throw new Error(pipelineError);
 
             setProgressStep(3);
             if (onSuccess) onSuccess();

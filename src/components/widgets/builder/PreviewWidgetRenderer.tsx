@@ -73,33 +73,47 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                 return search(root, 'root');
             };
 
-            // 1. Try loading directly from NodePreviewCache (avoids serializing entire tree)
+            // 0. Try preloaded batch cache first (filled by DynamicGridPage on mount — zero network)
             try {
+                const { getPreloadedWidgetData } = await import('@/lib/widget-preload-cache');
+                const preloaded = getPreloadedWidgetData(treeId, nodeId);
+                if (preloaded) {
+                    node = preloaded;
+                }
+            } catch { /* preload cache not available */ }
+
+            // 1. Fallback: load directly from NodePreviewCache via Server Action
+            if (!node) try {
                 const { getNodePreviewAction } = await import('@/app/actions');
                 const cached = await getNodePreviewAction(treeId, nodeId);
-                console.log(`[PreviewWidget] getNodePreviewAction(${treeId.slice(-6)}, ${nodeId}):`, cached ? `keys=${Object.keys(cached).join(',')}` : 'null');
                 if (cached) {
-                    node = cached; // cached has sqlPreviewData, pythonPreviewResult, etc.
-                    // Cache doesn't store pythonConnectorId — MUST load from tree to get
-                    // the correct connector. Without it, saves go to the wrong database.
-                    try {
-                        const treeResult = await getCachedTree(treeId, true);
-                        if (treeResult.data) {
-                            const jsonTree = typeof treeResult.data.jsonDecisionTree === 'string'
-                                ? JSON.parse(treeResult.data.jsonDecisionTree) : treeResult.data.jsonDecisionTree;
-                            const p = findPathById(jsonTree, nodeId);
-                            if (p) {
-                                setNodePath(p);
-                                const lodashPath = p.replace(/^root\.?/, '');
-                                const treeNode = lodashPath ? get(jsonTree, lodashPath) : jsonTree;
-                                const cid = treeNode?.pythonConnectorId || treeNode?.connectorId || treeNode?.sqlConnectorId;
-                                if (cid) node.pythonConnectorId = cid;
-                            }
-                        }
-                    } catch { /* tree load is best-effort */ }
+                    node = cached;
                 }
             } catch (cacheErr: any) {
                 console.warn(`[PreviewWidget] Cache load failed for ${nodeId}:`, cacheErr.message);
+            }
+
+            // Connector ID resolution — deferred (lazy load tree only on first user action,
+            // not on initial render). The full tree is expensive to load just for one field.
+            if (node && !node.pythonConnectorId) {
+                // Schedule a background tree load after the widget is already rendering
+                getCachedTree(treeId, false).then(treeResult => {
+                    if (!treeResult?.data) return;
+                    try {
+                        const jsonTree = typeof treeResult.data.jsonDecisionTree === 'string'
+                            ? JSON.parse(treeResult.data.jsonDecisionTree) : treeResult.data.jsonDecisionTree;
+                        const p = findPathById(jsonTree, nodeId);
+                        if (p) {
+                            setNodePath(p);
+                            const lodashPath = p.replace(/^root\.?/, '');
+                            const treeNode = lodashPath ? get(jsonTree, lodashPath) : jsonTree;
+                            const cid = treeNode?.pythonConnectorId || treeNode?.connectorId || treeNode?.sqlConnectorId;
+                            if (cid) {
+                                setPreviewData((prev: any) => prev ? { ...prev, pythonConnectorId: cid } : prev);
+                            }
+                        }
+                    } catch { /* best-effort */ }
+                }).catch(() => {});
             }
 
             // 2. Fallback / merge: load tree + find node inline

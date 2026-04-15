@@ -940,6 +940,37 @@ export async function hydrateTreePreviewsAction(treeId: string, parsedTree: any)
     }
 }
 
+/**
+ * Lightweight preview metadata for widget discovery.
+ * Returns ONLY nodeId + presence flags — no actual data arrays.
+ * Single DB query per tree, no Parquet reads, minimal RSC payload.
+ */
+export async function getTreePreviewMetadataAction(treeId: string): Promise<
+    Record<string, { hasSql: boolean; pythonType?: string; aiOutputType?: string }>
+> {
+    try {
+        const entries = await db.nodePreviewCache.findMany({
+            where: { treeId },
+            select: { nodeId: true, data: true },
+        });
+
+        const meta: Record<string, { hasSql: boolean; pythonType?: string; aiOutputType?: string }> = {};
+        for (const entry of entries) {
+            const cached = entry.data as any;
+            if (!cached) continue;
+            meta[entry.nodeId] = {
+                hasSql: !!(cached.sqlPreviewData),
+                pythonType: cached.pythonPreviewResult?.type || undefined,
+                aiOutputType: cached.aiPreviewResult?.outputType || undefined,
+            };
+        }
+        return meta;
+    } catch (err: any) {
+        console.warn('[getTreePreviewMetadataAction] Error:', err.message);
+        return {};
+    }
+}
+
 export async function getNodePreviewAction(treeId: string, nodeId: string, maxRows?: number): Promise<any | null> {
     try {
         const { db } = await import('@/lib/db');

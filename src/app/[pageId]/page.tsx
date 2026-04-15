@@ -5,10 +5,28 @@ import dynamic from 'next/dynamic';
 import { notFound } from 'next/navigation';
 import { useParams } from 'next/navigation';
 
-// Import dynamically to avoid SSR issues with grid layout
+// Import dynamically to avoid SSR issues with grid layout.
+// Provide a lightweight loading skeleton so the page shell renders immediately
+// (FCP during SSR) instead of blank screen while JS bundle loads.
 const DynamicGridPage = dynamic(
     () => import('@/components/layout/dynamic-grid-page').then(mod => mod.DynamicGridPage),
-    { ssr: false }
+    {
+        ssr: false,
+        loading: () => (
+            <div className="h-full w-full p-6 animate-pulse space-y-4">
+                <div className="flex gap-4">
+                    <div className="h-8 w-40 bg-muted rounded" />
+                    <div className="h-8 w-32 bg-muted rounded" />
+                    <div className="h-8 w-36 bg-muted rounded" />
+                </div>
+                <div className="grid grid-cols-3 gap-4 mt-4">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="h-48 bg-muted rounded-lg" />
+                    ))}
+                </div>
+            </div>
+        ),
+    }
 );
 
 // Define default layouts/items OUTSIDE the component to prevent new object references on each render

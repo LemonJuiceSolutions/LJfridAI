@@ -33,6 +33,7 @@ import { NodeWidgetRenderer } from '../widgets/builder/NodeWidgetRenderer';
 import { useSession } from 'next-auth/react';
 import { useToast } from '@/hooks/use-toast';
 import { useDashboardLayout } from '@/hooks/use-dashboard-data';
+import { preloadWidgetData } from '@/lib/widget-preload-cache';
 
 // Remove WidthProvider
 // const ResponsiveGridLayout = WidthProvider(Responsive);
@@ -118,7 +119,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
 
     const [layouts, setLayouts] = useState<any>(generateLayouts(defaultItems, defaultLayouts));
     const [items, setItems] = useState<Item[]>(defaultItems);
-    const [isComponentMounted, setIsComponentMounted] = useState(false);
+    // isComponentMounted removed — was causing an unnecessary full re-render of the grid
     const [hiddenWidgets, setHiddenWidgets] = useState<Set<string>>(new Set());
     const [widgetToDelete, setWidgetToDelete] = useState<string | null>(null);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -238,6 +239,9 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
             setLayouts(layoutData.layouts);
             // Reset interaction flag when new data arrives from DB
             hasUserInteractedRef.current = false;
+            // Batch-preload preview data for ALL widgets on this page (1 HTTP call)
+            // This fills the client cache before individual widgets mount.
+            preloadWidgetData(layoutData.items).catch(() => {});
         }
     }, [layoutData]);
 
@@ -260,9 +264,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         return () => resizeObserver.disconnect();
     }, []);
 
-    useEffect(() => {
-        setIsComponentMounted(true);
-    }, []);
+    // isComponentMounted useEffect removed — see comment above
 
     // Load hidden widgets from localStorage
     useEffect(() => {
@@ -282,7 +284,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     }, [pageId]);
 
     const saveDashboardState = useCallback((newLayouts: any, newItems: any) => {
-        if (!session?.user || !isComponentMounted || isLayoutLoading) return;
+        if (!session?.user || isLayoutLoading) return;
 
         // Debounce saves: wait 800ms of inactivity before persisting
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -293,7 +295,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
                 toast({ variant: "destructive", title: "Error", description: "Session expired. Please refresh." });
             }
         }, 800);
-    }, [session, isComponentMounted, isLayoutLoading, pageId, toast]);
+    }, [session, isLayoutLoading, pageId, toast]);
 
     // Cleanup debounce timer on unmount
     useEffect(() => {
@@ -303,7 +305,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     }, []);
 
     const handleLayoutChange = useCallback((_layout: Layout[], allLayouts: ReactGridLayouts) => {
-        if (isComponentMounted && !isLayoutLoading) {
+        if (!isLayoutLoading) {
             setLayouts(allLayouts);
             // Skip the first call (grid mount) - only save on actual user interaction
             if (!hasUserInteractedRef.current) {
@@ -312,7 +314,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
             }
             saveDashboardState(allLayouts, items);
         }
-    }, [isComponentMounted, isLayoutLoading, saveDashboardState, items]);
+    }, [isLayoutLoading, saveDashboardState, items]);
 
     const addTextWidget = () => {
         const newItemId = `text-${Date.now()}`;
@@ -480,7 +482,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
     }, [availableWidgets, editMode, handleTextChange, FallbackLoader, LazyPipelineOutputWidget]);
 
     // Optimized skeleton loader - shows placeholder widgets while loading
-    if (isLayoutLoading || status === 'loading' || !isComponentMounted) {
+    if (isLayoutLoading || status === 'loading') {
         return (
             <div className='flex flex-col gap-4'>
                 {editMode && (
