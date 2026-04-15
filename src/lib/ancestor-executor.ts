@@ -154,11 +154,23 @@ async function executeSqlNode(node: Node, context: ExecutionContext): Promise<an
   const dependencies = buildDependencies(node, context);
 
   // Execute SQL query
-  const result = await executeSqlPreviewAction(
-    node.sqlQuery,
-    node.sqlConnectorId || '',
-    dependencies
-  );
+  let result: any;
+  try {
+    result = await executeSqlPreviewAction(
+      node.sqlQuery,
+      node.sqlConnectorId || '',
+      dependencies
+    );
+  } catch (e: any) {
+    // Handle JSON serialization errors for very large SQL results (>10MB)
+    if (e?.message?.includes('JSON') || e?.message?.includes('Unterminated')) {
+      throw new Error(
+        `Il risultato SQL del nodo "${node.name || node.id}" è troppo grande per essere serializzato. ` +
+        `Aggiungi TOP o WHERE per limitare le righe, oppure usa aggregazioni (SUM, COUNT, AVG).`
+      );
+    }
+    throw e;
+  }
 
   if (result.error) {
     throw new Error(result.error);
