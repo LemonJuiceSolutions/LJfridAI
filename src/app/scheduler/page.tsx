@@ -202,7 +202,7 @@ export default function SchedulerPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setTasks(data.tasks);
+        setTasks(data.items || data.tasks || []);
       } else {
         toast({
           variant: 'destructive',
