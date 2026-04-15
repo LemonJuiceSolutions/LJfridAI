@@ -166,14 +166,15 @@ async function executeSqlNode(node: Node, context: ExecutionContext): Promise<an
     }
   }
 
-  // If we have a connectorId and no dependencies that need temp-table setup,
-  // use the direct executor (bypasses RSC serialization entirely)
-  if (connectorId && dependencies.length === 0) {
+  // Use direct executor — bypasses RSC serialization entirely.
+  // Handles both cases: with and without dependencies (temp tables).
+  if (connectorId) {
     const result = await executePipelineSql(
       node.sqlQuery,
       connectorId,
       context.executionId,
       node.name || node.id,
+      dependencies.length > 0 ? dependencies : undefined,
     );
 
     if (result.error) {
@@ -183,11 +184,9 @@ async function executeSqlNode(node: Node, context: ExecutionContext): Promise<an
     return result.data;
   }
 
-  // Fallback: use Server Action for cases with dependencies (temp tables)
-  // or when no connectorId is available (needs auth-based lookup)
+  // Fallback: only when no connectorId (needs auth-based lookup from Server Action)
   const { executeSqlPreviewAction } = await import('@/app/actions');
 
-  // Resolve any large result refs in dependencies before passing to Server Action
   const resolvedDeps = dependencies.map(dep => ({
     ...dep,
     data: dep.data ? resolveResult(dep.data) : dep.data,
@@ -195,26 +194,18 @@ async function executeSqlNode(node: Node, context: ExecutionContext): Promise<an
 
   let result: any;
   try {
-    result = await executeSqlPreviewAction(
-      node.sqlQuery,
-      connectorId,
-      resolvedDeps,
-    );
+    result = await executeSqlPreviewAction(node.sqlQuery, connectorId, resolvedDeps);
   } catch (e: any) {
-    // Handle JSON serialization errors for very large SQL results (>10MB)
     if (e?.message?.includes('JSON') || e?.message?.includes('Unterminated')) {
       throw new Error(
-        `Il risultato SQL del nodo "${node.name || node.id}" è troppo grande per essere serializzato. ` +
-        `Aggiungi TOP o WHERE per limitare le righe, oppure usa aggregazioni (SUM, COUNT, AVG).`
+        `Il risultato SQL del nodo "${node.name || node.id}" è troppo grande. ` +
+        `Usa TOP o WHERE per limitare le righe.`
       );
     }
     throw e;
   }
 
-  if (result.error) {
-    throw new Error(result.error);
-  }
-
+  if (result.error) throw new Error(result.error);
   return result.data;
 }
 
