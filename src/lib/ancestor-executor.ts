@@ -103,16 +103,16 @@ async function executeNode(node: Node, context: ExecutionContext): Promise<NodeE
 
     // Persist result if treeId is available
     if (context.treeId) {
-      // Import dynamically to avoid circular dependencies
       const { saveNodeExecutionResultAction } = await import('@/app/actions/scheduler');
-      // We don't await this to avoid blocking the chain execution too much, 
-      // or we DO await to ensure consistency? 
-      // Better to await to catch errors and ensuring it's saved before moving on (or failing gracefully)
       try {
+        // For large results (file refs), only persist metadata — not the full data
+        const persistData = isLargeResultRef(result)
+          ? { __large: true, rowCount: result.rowCount, sizeBytes: result.sizeBytes }
+          : result;
         await saveNodeExecutionResultAction(
           context.treeId,
           node.id,
-          result,
+          persistData,
           'success',
           undefined,
           Date.now() - startTime
@@ -122,11 +122,18 @@ async function executeNode(node: Node, context: ExecutionContext): Promise<NodeE
       }
     }
 
+    // For the client response: strip large data, only send metadata
+    const clientData = isLargeResultRef(result)
+      ? { __large: true, rowCount: result.rowCount, sizeBytes: result.sizeBytes }
+      : (Array.isArray(result) && JSON.stringify(result).length > 5_000_000)
+        ? { __large: true, rowCount: result.length, sizeBytes: JSON.stringify(result).length }
+        : result;
+
     return {
       nodeId: node.id,
       nodeName: node.name,
       success: true,
-      data: result,
+      data: clientData,
       executionTime: Date.now() - startTime
     };
   } catch (error) {
