@@ -7,6 +7,13 @@
 
 import { Node, Edge, topologicalSort, calculateDepths } from './topological-sort';
 import { generateText } from 'ai';
+import { randomUUID } from 'crypto';
+import {
+  executePipelineSql,
+  resolveResult,
+  cleanupPipelineCache,
+  isLargeResultRef,
+} from './pipeline-sql-executor';
 
 /**
  * Python output type definition
@@ -44,6 +51,7 @@ export interface ExecutionContext {
   sqlPool?: any;
   transaction?: any;
   treeId?: string;
+  executionId: string;  // unique ID for this pipeline run (used for disk caching)
 }
 
 /**
@@ -147,19 +155,50 @@ async function executeSqlNode(node: Node, context: ExecutionContext): Promise<an
     throw new Error('SQL node missing sqlQuery');
   }
 
-  // Import executeSqlPreviewAction dynamically to avoid circular dependencies
-  const { executeSqlPreviewAction } = await import('@/app/actions');
-
   // Build dependencies from context
   const dependencies = buildDependencies(node, context);
 
-  // Execute SQL query
+  // Find the connector ID — check node, then inherit from dependencies
+  let connectorId = node.sqlConnectorId || '';
+  if (!connectorId) {
+    for (const dep of dependencies) {
+      if (dep.connectorId) { connectorId = dep.connectorId; break; }
+    }
+  }
+
+  // If we have a connectorId and no dependencies that need temp-table setup,
+  // use the direct executor (bypasses RSC serialization entirely)
+  if (connectorId && dependencies.length === 0) {
+    const result = await executePipelineSql(
+      node.sqlQuery,
+      connectorId,
+      context.executionId,
+      node.name || node.id,
+    );
+
+    if (result.error) {
+      throw new Error(result.error);
+    }
+
+    return result.data;
+  }
+
+  // Fallback: use Server Action for cases with dependencies (temp tables)
+  // or when no connectorId is available (needs auth-based lookup)
+  const { executeSqlPreviewAction } = await import('@/app/actions');
+
+  // Resolve any large result refs in dependencies before passing to Server Action
+  const resolvedDeps = dependencies.map(dep => ({
+    ...dep,
+    data: dep.data ? resolveResult(dep.data) : dep.data,
+  }));
+
   let result: any;
   try {
     result = await executeSqlPreviewAction(
       node.sqlQuery,
-      node.sqlConnectorId || '',
-      dependencies
+      connectorId,
+      resolvedDeps,
     );
   } catch (e: any) {
     // Handle JSON serialization errors for very large SQL results (>10MB)
@@ -201,9 +240,10 @@ async function executePythonNode(node: Node, context: ExecutionContext): Promise
   // can skip re-fetching data that's already available from parent nodes
   const inputData: Record<string, any[]> = {};
   for (const dep of dependencies) {
-    if (dep.data && Array.isArray(dep.data)) {
-      inputData[dep.tableName] = dep.data;
-      console.log(`[executePythonNode] Pre-loaded ${dep.data.length} rows for "${dep.tableName}" from pipeline context`);
+    const resolved = dep.data ? resolveResult(dep.data) : dep.data;
+    if (resolved && Array.isArray(resolved)) {
+      inputData[dep.tableName] = resolved;
+      console.log(`[executePythonNode] Pre-loaded ${resolved.length} rows for "${dep.tableName}" from pipeline context`);
     }
   }
 
@@ -530,7 +570,7 @@ function buildDependencies(node: Node, context: ExecutionContext): any[] {
       const result = context.results.get(depName);
       dependencies.push({
         tableName: depName,
-        data: Array.isArray(result) ? result : (result?.data || result),
+        data: isLargeResultRef(result) ? result : (Array.isArray(result) ? result : (result?.data || result)),
         isPython: false
       });
       found = true;
@@ -605,24 +645,31 @@ export async function executeChain(
   const sortedNodes = topologicalSort(nodes, edges);
 
   // Initialize execution context
+  const executionId = randomUUID();
   const context: ExecutionContext = {
     results: new Map(),
     executedNodes: new Set(),
-    treeId
+    treeId,
+    executionId,
   };
 
   // Execute nodes in order
-  for (const node of sortedNodes) {
-    const result = await executeNode(node, context);
-    results.push(result);
+  try {
+    for (const node of sortedNodes) {
+      const result = await executeNode(node, context);
+      results.push(result);
 
-    if (!result.success) {
-      errors.push(`Node ${node.name || node.id}: ${result.error}`);
+      if (!result.success) {
+        errors.push(`Node ${node.name || node.id}: ${result.error}`);
 
-      if (stopOnError) {
-        break;
+        if (stopOnError) {
+          break;
+        }
       }
     }
+  } finally {
+    // Clean up any large-result cache files written during this execution
+    cleanupPipelineCache(executionId);
   }
 
   return {
