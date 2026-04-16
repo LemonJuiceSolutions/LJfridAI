@@ -89,7 +89,7 @@ export const sendPasswordResetEmail = async (
                     pass: ephemeralConfig.pass,
                 },
                 tls: {
-                    rejectUnauthorized: false
+                    rejectUnauthorized: process.env.NODE_ENV !== 'production'
                 }
             });
             fromAddress = ephemeralConfig.user;
@@ -127,7 +127,7 @@ export const sendPasswordResetEmail = async (
                             pass: conf.password,
                         },
                         tls: {
-                            rejectUnauthorized: false
+                            rejectUnauthorized: process.env.NODE_ENV !== 'production'
                         }
                     });
 
@@ -154,7 +154,7 @@ export const sendPasswordResetEmail = async (
                         pass: process.env.SMTP_PASSWORD,
                     },
                     tls: {
-                        rejectUnauthorized: false
+                        rejectUnauthorized: process.env.NODE_ENV !== 'production'
                     }
                 });
             } else {

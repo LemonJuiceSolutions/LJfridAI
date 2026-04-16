@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
             database: conf.database,
             options: {
                 encrypt: conf.host?.includes('database.windows.net') ?? false,
-                trustServerCertificate: true,
+                trustServerCertificate: process.env.NODE_ENV !== 'production',
                 connectTimeout: 60000,
                 requestTimeout: 300000,
             },

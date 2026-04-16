@@ -225,7 +225,7 @@ function buildSqlConfig(conf: any, requestTimeoutMs = 120000) {
         database: conf.database,
         options: {
             encrypt: conf.host && conf.host.includes('database.windows.net'),
-            trustServerCertificate: true,
+            trustServerCertificate: process.env.NODE_ENV !== 'production',
             connectTimeout: 30000,
             requestTimeout: requestTimeoutMs,
         },

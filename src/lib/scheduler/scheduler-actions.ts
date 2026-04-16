@@ -59,7 +59,7 @@ function getMssqlConfig(conf: any): sql.config {
     database: conf.database,
     options: {
       encrypt: !!(conf.host && conf.host.includes('database.windows.net')),
-      trustServerCertificate: true,
+      trustServerCertificate: process.env.NODE_ENV !== 'production',
       connectTimeout: 60000,
       requestTimeout: 600000,
     },

@@ -76,7 +76,7 @@ async function getPool(connectorId: string): Promise<{ pool: sql.ConnectionPool;
         user: conf.user, password: conf.password, server: conf.host, database: conf.database,
         options: {
             encrypt: conf.host?.includes('database.windows.net') ?? false,
-            trustServerCertificate: true,
+            trustServerCertificate: process.env.NODE_ENV !== 'production',
             requestTimeout: 300000,
         },
         ...(conf.port ? { port: parseInt(conf.port) } : {}),

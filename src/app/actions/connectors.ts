@@ -270,7 +270,7 @@ export async function executeSqlPreviewAction(query: string, connectorId: string
             database: conf.database,
             options: {
                 encrypt: conf.host && conf.host.includes('database.windows.net'),
-                trustServerCertificate: true,
+                trustServerCertificate: process.env.NODE_ENV !== 'production',
                 connectTimeout: 15000
             }
         };
@@ -315,7 +315,7 @@ export async function executeSqlAction(query: string, connectorId: string) {
             database: conf.database,
             options: {
                 encrypt: conf.host && conf.host.includes('database.windows.net'),
-                trustServerCertificate: true,
+                trustServerCertificate: process.env.NODE_ENV !== 'production',
                 connectTimeout: 15000
             }
         };
@@ -362,7 +362,7 @@ export async function testConnectorAction(type: string, config: string) {
                     database: conf.database,
                     options: {
                         encrypt: conf.host && conf.host.includes('database.windows.net'), // Encrypt only for Azure, false for local/IP
-                        trustServerCertificate: true,
+                        trustServerCertificate: process.env.NODE_ENV !== 'production',
                         connectTimeout: 15000 // Increased to 15s
                     }
                 };
@@ -395,7 +395,7 @@ export async function testConnectorAction(type: string, config: string) {
                         pass: conf.password,
                     },
                     tls: {
-                        rejectUnauthorized: false
+                        rejectUnauthorized: process.env.NODE_ENV !== 'production'
                     },
                     connectionTimeout: 5000
                 });
@@ -561,7 +561,7 @@ export async function sendEmailWithConnectorAction(params: {
                 pass: conf.password,
             },
             tls: {
-                rejectUnauthorized: false
+                rejectUnauthorized: process.env.NODE_ENV !== 'production'
             }
         });
 
@@ -719,7 +719,7 @@ export async function sendTestEmailWithDataAction(params: {
                 database: sqlConf.database,
                 options: {
                     encrypt: sqlConf.host?.includes('database.windows.net'),
-                    trustServerCertificate: true,
+                    trustServerCertificate: process.env.NODE_ENV !== 'production',
                     connectTimeout: 30000,
                     requestTimeout: 120000
                 }
@@ -1723,7 +1723,7 @@ print(f"PNG generated: {len(result)} chars base64")
             port: parseInt(smtpConf.port) || 587,
             secure: parseInt(smtpConf.port) === 465,
             auth: { user: smtpConf.user, pass: smtpConf.password },
-            tls: { rejectUnauthorized: false }
+            tls: { rejectUnauthorized: process.env.NODE_ENV !== 'production' }
         });
 
         const mailOptions: any = {

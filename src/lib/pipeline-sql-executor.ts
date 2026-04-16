@@ -46,7 +46,7 @@ async function getPool(connectorId: string): Promise<sql.ConnectionPool> {
       encrypt:
         config.encrypt ??
         !!(config.server || config.host || '').includes('database.windows.net'),
-      trustServerCertificate: config.trustServerCertificate ?? true,
+      trustServerCertificate: config.trustServerCertificate ?? (process.env.NODE_ENV !== 'production'),
       enableArithAbort: true,
     },
     requestTimeout: 300000, // 5 minutes
