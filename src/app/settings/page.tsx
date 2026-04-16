@@ -1117,6 +1117,99 @@ export default function SettingsPage() {
                         </CardContent>
                     </Card>
 
+                    {/* GDPR Section */}
+                    <Card className="border-destructive/30">
+                        <CardHeader className="p-3 pb-2">
+                            <CardTitle className="text-sm flex items-center gap-1.5">
+                                <Settings className="h-4 w-4" />
+                                Privacy & Dati (GDPR)
+                            </CardTitle>
+                            <CardDescription className="text-[10px]">
+                                Esporta o elimina i tuoi dati personali.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-3 pt-0 space-y-3">
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex-1 h-8 text-xs"
+                                    onClick={async () => {
+                                        try {
+                                            const res = await fetch('/api/gdpr/export');
+                                            if (!res.ok) {
+                                                const err = await res.json();
+                                                toast({ title: 'Errore', description: err.error || 'Export fallito', variant: 'destructive' });
+                                                return;
+                                            }
+                                            const blob = await res.blob();
+                                            const url = URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = `gdpr-export-${new Date().toISOString().split('T')[0]}.json`;
+                                            a.click();
+                                            URL.revokeObjectURL(url);
+                                            toast({ title: 'Esportato', description: 'I tuoi dati sono stati scaricati.' });
+                                        } catch {
+                                            toast({ title: 'Errore', description: 'Impossibile esportare i dati.', variant: 'destructive' });
+                                        }
+                                    }}
+                                >
+                                    <Save className="mr-1.5 h-3 w-3" />
+                                    Esporta i miei dati
+                                </Button>
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="flex-1 h-8 text-xs"
+                                    onClick={async () => {
+                                        const confirmed = window.confirm(
+                                            'ATTENZIONE: Questa azione è irreversibile.\n\n' +
+                                            'Verranno eliminati:\n' +
+                                            '- Il tuo account\n' +
+                                            '- Le tue impostazioni\n' +
+                                            '- I tuoi layout salvati\n' +
+                                            '- I tuoi task schedulati\n\n' +
+                                            'Vuoi procedere?'
+                                        );
+                                        if (!confirmed) return;
+
+                                        const doubleConfirm = window.prompt(
+                                            'Per confermare, scrivi "DELETE MY ACCOUNT":'
+                                        );
+                                        if (doubleConfirm !== 'DELETE MY ACCOUNT') {
+                                            toast({ title: 'Annullato', description: 'Eliminazione annullata.' });
+                                            return;
+                                        }
+
+                                        try {
+                                            const res = await fetch('/api/gdpr/delete', {
+                                                method: 'DELETE',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ confirmation: 'DELETE MY ACCOUNT' }),
+                                            });
+                                            const data = await res.json();
+                                            if (res.ok && data.success) {
+                                                toast({ title: 'Account eliminato', description: 'Il tuo account è stato eliminato.' });
+                                                window.location.href = '/auth/signin';
+                                            } else {
+                                                toast({ title: 'Errore', description: data.error || 'Eliminazione fallita', variant: 'destructive' });
+                                            }
+                                        } catch {
+                                            toast({ title: 'Errore', description: 'Impossibile eliminare l\'account.', variant: 'destructive' });
+                                        }
+                                    }}
+                                >
+                                    <Trash2 className="mr-1.5 h-3 w-3" />
+                                    Elimina account
+                                </Button>
+                            </div>
+                            <p className="text-[9px] text-muted-foreground">
+                                Art. 17 (Diritto alla cancellazione) e Art. 20 (Portabilità dei dati) del GDPR.
+                            </p>
+                        </CardContent>
+                    </Card>
+
                     </div>
                 </div>
             </main>
