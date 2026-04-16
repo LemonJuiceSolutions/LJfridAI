@@ -13,7 +13,7 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
-        if (!session?.user) {
+        if (!(session?.user as any)?.companyId) {
             return NextResponse.json({ success: false, savedCount: 0 }, { status: 401 });
         }
 

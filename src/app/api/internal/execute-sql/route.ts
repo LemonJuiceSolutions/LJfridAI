@@ -87,7 +87,7 @@ function resolveCacheRef(ref: any): any[] | null {
 export async function POST(req: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
-        if (!session?.user) {
+        if (!(session?.user as any)?.companyId) {
             return NextResponse.json({ data: null, error: 'Unauthorized' }, { status: 401 });
         }
 

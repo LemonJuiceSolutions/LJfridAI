@@ -395,7 +395,7 @@ export async function testConnectorAction(type: string, config: string) {
                         pass: conf.password,
                     },
                     tls: {
-                        rejectUnauthorized: process.env.NODE_ENV !== 'production'
+                        rejectUnauthorized: process.env.NODE_ENV === 'production'
                     },
                     connectionTimeout: 5000
                 });
@@ -561,7 +561,7 @@ export async function sendEmailWithConnectorAction(params: {
                 pass: conf.password,
             },
             tls: {
-                rejectUnauthorized: process.env.NODE_ENV !== 'production'
+                rejectUnauthorized: process.env.NODE_ENV === 'production'
             }
         });
 
@@ -1723,7 +1723,7 @@ print(f"PNG generated: {len(result)} chars base64")
             port: parseInt(smtpConf.port) || 587,
             secure: parseInt(smtpConf.port) === 465,
             auth: { user: smtpConf.user, pass: smtpConf.password },
-            tls: { rejectUnauthorized: process.env.NODE_ENV !== 'production' }
+            tls: { rejectUnauthorized: process.env.NODE_ENV === 'production' }
         });
 
         const mailOptions: any = {

@@ -13,7 +13,7 @@ export const maxDuration = 300; // 5 minutes
 export async function POST(req: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
-        if (!session?.user) {
+        if (!(session?.user as any)?.companyId) {
             return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
         }
 

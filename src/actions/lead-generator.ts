@@ -654,7 +654,7 @@ export async function sendLeadEmailAction(params: {
             port: parseInt(conf.port) || 587,
             secure: parseInt(conf.port) === 465,
             auth: { user: conf.user, pass: conf.password },
-            tls: { rejectUnauthorized: process.env.NODE_ENV !== 'production' },
+            tls: { rejectUnauthorized: process.env.NODE_ENV === 'production' },
         });
 
         await transporter.sendMail({
