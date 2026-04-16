@@ -95,7 +95,16 @@ export async function getVariablesAction(): Promise<{ data: Variable[] | null; e
 
 export async function deleteAllVariablesAction(): Promise<{ success: boolean, error: string | null }> {
     try {
-        await db.variable.deleteMany();
+        // SECURITY CRITICAL: scope by companyId — without this, ANY user wipes
+        // variables for ALL companies. Also restrict to admin role.
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return { success: false, error: 'Non autorizzato.' };
+        }
+        if (user.role !== 'admin' && user.role !== 'superadmin') {
+            return { success: false, error: 'Solo gli admin possono eseguire questa azione.' };
+        }
+        await db.variable.deleteMany({ where: { companyId: user.companyId } });
         return { success: true, error: null };
     } catch (e) {
         const error = e instanceof Error ? e.message : "Si è verificato un errore imprevisto durante l'eliminazione di massa.";

@@ -59,8 +59,9 @@ export async function findAncestorsAction(
     const companyId = (session.user as any).companyId;
 
     // 1. Retrieve the tree from the database
-    const tree = await db.tree.findUnique({
-      where: { id: treeId }
+    // SECURITY CRITICAL: scope by companyId to prevent cross-tenant tree access
+    const tree = await db.tree.findFirst({
+      where: { id: treeId, companyId }
     });
 
     if (!tree) {
@@ -114,8 +115,9 @@ export async function executeAncestorChainAction(
     const companyId = (session.user as any).companyId;
 
     // 1. Retrieve the tree from the database
-    const tree = await db.tree.findUnique({
-      where: { id: treeId }
+    // SECURITY CRITICAL: scope by companyId to prevent cross-tenant tree access
+    const tree = await db.tree.findFirst({
+      where: { id: treeId, companyId }
     });
 
     if (!tree) {
@@ -178,8 +180,9 @@ export async function executeFullChainAction(
     const companyId = (session.user as any).companyId;
 
     // 1. Retrieve the tree from the database
-    const tree = await db.tree.findUnique({
-      where: { id: treeId }
+    // SECURITY CRITICAL: scope by companyId to prevent cross-tenant tree access
+    const tree = await db.tree.findFirst({
+      where: { id: treeId, companyId }
     });
 
     if (!tree) {
@@ -369,8 +372,9 @@ export async function getNodeExecutionStatusAction(
     const companyId = (session.user as any).companyId;
 
     // 1. Retrieve the tree from the database
-    const tree = await db.tree.findUnique({
-      where: { id: treeId }
+    // SECURITY CRITICAL: scope by companyId to prevent cross-tenant tree access
+    const tree = await db.tree.findFirst({
+      where: { id: treeId, companyId }
     });
 
     if (!tree) {

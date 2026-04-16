@@ -40,9 +40,11 @@ async function doSuperListTrees(params: { companyId: string; type?: string }) {
     return JSON.stringify({ count: trees.length, trees }, null, 2);
 }
 
-async function doSuperGetTreeContent(params: { treeId: string }) {
-    const tree = await db.tree.findUnique({
-        where: { id: params.treeId },
+async function doSuperGetTreeContent(params: { treeId: string; companyId?: string }) {
+    // SECURITY CRITICAL: scope by companyId to prevent cross-tenant tree reads
+    if (!params.companyId) return JSON.stringify({ error: 'companyId richiesto' });
+    const tree = await db.tree.findFirst({
+        where: { id: params.treeId, companyId: params.companyId },
         select: { id: true, name: true, description: true, type: true, jsonDecisionTree: true },
     });
     if (!tree) return JSON.stringify({ error: 'Albero non trovato' });
@@ -267,15 +269,17 @@ const TOOL_MAP: Record<string, (params: any) => Promise<string>> = {
     pySaveToKnowledgeBase: doPySaveToKB,
     pyBrowseOtherScripts: doPyBrowseOtherScripts,
     // Python agent — updateNodeScript (writes script directly to the node in the tree)
-    updateNodeScript: async (params: { script: string; outputType?: string; nodeId?: string; treeId?: string }) => {
+    updateNodeScript: async (params: { script: string; outputType?: string; nodeId?: string; treeId?: string; companyId?: string }) => {
         // This tool is called by Claude CLI to sync edited code back to the node's pythonCode field.
         // It needs nodeId and treeId from the MCP context (injected by CallToolRequestSchema handler).
-        const { script, outputType, nodeId, treeId } = params;
+        const { script, outputType, nodeId, treeId, companyId } = params;
         if (!nodeId || !treeId) {
             return JSON.stringify({ error: 'nodeId e treeId richiesti per aggiornare il nodo.' });
         }
+        // SECURITY CRITICAL: scope by companyId to prevent cross-tenant tree mutations
+        if (!companyId) return JSON.stringify({ error: 'companyId richiesto.' });
         try {
-            const tree = await db.tree.findUnique({ where: { id: treeId }, select: { jsonDecisionTree: true } });
+            const tree = await db.tree.findFirst({ where: { id: treeId, companyId }, select: { jsonDecisionTree: true } });
             if (!tree) return JSON.stringify({ error: 'Albero non trovato.' });
 
             const json = JSON.parse(tree.jsonDecisionTree);
@@ -312,14 +316,15 @@ const TOOL_MAP: Record<string, (params: any) => Promise<string>> = {
             return JSON.stringify({ error: e.message });
         }
     },
-    loadScriptFromFile: async (params: { filePath: string; nodeId?: string; treeId?: string }) => {
-        const { filePath, nodeId, treeId } = params;
+    loadScriptFromFile: async (params: { filePath: string; nodeId?: string; treeId?: string; companyId?: string }) => {
+        const { filePath, nodeId, treeId, companyId } = params;
         const result = await doLoadScriptFromFile({ filePath });
         // If successful, also update the node's pythonCode
         try {
             const parsed = JSON.parse(result);
-            if (parsed.success && parsed.content && nodeId && treeId) {
-                const tree = await db.tree.findUnique({ where: { id: treeId }, select: { jsonDecisionTree: true } });
+            // SECURITY CRITICAL: require companyId before any DB write
+            if (parsed.success && parsed.content && nodeId && treeId && companyId) {
+                const tree = await db.tree.findFirst({ where: { id: treeId, companyId }, select: { jsonDecisionTree: true } });
                 if (tree) {
                     const json = JSON.parse(tree.jsonDecisionTree);
                     const _ = await import('lodash');
@@ -335,12 +340,13 @@ const TOOL_MAP: Record<string, (params: any) => Promise<string>> = {
         } catch { /* ignore DB errors — the file content is still returned */ }
         return result;
     },
-    editScript: async (params: { oldString: string; newString: string; replaceAll?: boolean; nodeId?: string; treeId?: string }) => {
-        const { oldString, newString, replaceAll, nodeId, treeId } = params;
+    editScript: async (params: { oldString: string; newString: string; replaceAll?: boolean; nodeId?: string; treeId?: string; companyId?: string }) => {
+        const { oldString, newString, replaceAll, nodeId, treeId, companyId } = params;
         // Get current script from the node
         let currentScript = '';
-        if (nodeId && treeId) {
-            const tree = await db.tree.findUnique({ where: { id: treeId }, select: { jsonDecisionTree: true } });
+        // SECURITY CRITICAL: companyId required to scope tree access
+        if (nodeId && treeId && companyId) {
+            const tree = await db.tree.findFirst({ where: { id: treeId, companyId }, select: { jsonDecisionTree: true } });
             if (tree) {
                 const json = JSON.parse(tree.jsonDecisionTree);
                 const _ = await import('lodash');
@@ -352,8 +358,8 @@ const TOOL_MAP: Record<string, (params: any) => Promise<string>> = {
         // If successful, update the node
         try {
             const parsed = JSON.parse(result);
-            if (parsed.success && parsed.updatedScript && nodeId && treeId) {
-                const tree = await db.tree.findUnique({ where: { id: treeId }, select: { jsonDecisionTree: true } });
+            if (parsed.success && parsed.updatedScript && nodeId && treeId && companyId) {
+                const tree = await db.tree.findFirst({ where: { id: treeId, companyId }, select: { jsonDecisionTree: true } });
                 if (tree) {
                     const json = JSON.parse(tree.jsonDecisionTree);
                     const _ = await import('lodash');
@@ -369,11 +375,12 @@ const TOOL_MAP: Record<string, (params: any) => Promise<string>> = {
         } catch { /* ignore */ }
         return result;
     },
-    readScriptLines: async (params: { startLine?: number; endLine?: number; searchPattern?: string; nodeId?: string; treeId?: string }) => {
-        const { startLine, endLine, searchPattern, nodeId, treeId } = params;
+    readScriptLines: async (params: { startLine?: number; endLine?: number; searchPattern?: string; nodeId?: string; treeId?: string; companyId?: string }) => {
+        const { startLine, endLine, searchPattern, nodeId, treeId, companyId } = params;
         let currentScript = '';
-        if (nodeId && treeId) {
-            const tree = await db.tree.findUnique({ where: { id: treeId }, select: { jsonDecisionTree: true } });
+        // SECURITY CRITICAL: companyId required to scope tree access
+        if (nodeId && treeId && companyId) {
+            const tree = await db.tree.findFirst({ where: { id: treeId, companyId }, select: { jsonDecisionTree: true } });
             if (tree) {
                 const json = JSON.parse(tree.jsonDecisionTree);
                 const _ = await import('lodash');

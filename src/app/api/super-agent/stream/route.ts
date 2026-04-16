@@ -60,8 +60,9 @@ async function fetchTreesForCompany(companyId: string, type?: string) {
     return db.tree.findMany({ where, select: { id: true, name: true, description: true, type: true, jsonDecisionTree: true } });
 }
 
-async function fetchTreeById(treeId: string) {
-    return db.tree.findUnique({ where: { id: treeId }, select: { id: true, name: true, description: true, type: true, jsonDecisionTree: true } });
+async function fetchTreeById(treeId: string, companyId: string) {
+    // SECURITY CRITICAL: scope by companyId (was findUnique without filter)
+    return db.tree.findFirst({ where: { id: treeId, companyId }, select: { id: true, name: true, description: true, type: true, jsonDecisionTree: true } });
 }
 
 // ─── Tools Factory ───────────────────────────────────────────────────────────
@@ -118,7 +119,7 @@ function createSuperAgentTools(companyId: string) {
             }),
             execute: async ({ treeId }) => {
                 try {
-                    const tree = await fetchTreeById(treeId);
+                    const tree = await fetchTreeById(treeId, companyId);
                     if (!tree) return JSON.stringify({ error: 'Albero non trovato' });
                     const treeData = JSON.parse(tree.jsonDecisionTree);
                     const nodes = collectNodes(treeData, tree.name, tree.id);
@@ -425,7 +426,8 @@ Trova il nodo per ID nell'albero, aggiorna la query SQL o il codice Python, e ri
             }),
             execute: async ({ treeId, nodeId, newSqlQuery, newPythonCode }) => {
                 try {
-                    const tree = await db.tree.findUnique({ where: { id: treeId } });
+                    // SECURITY CRITICAL: scope by companyId to prevent cross-tenant tree mutations
+                    const tree = await db.tree.findFirst({ where: { id: treeId, companyId } });
                     if (!tree) return JSON.stringify({ error: 'Albero non trovato' });
 
                     const treeData = JSON.parse(tree.jsonDecisionTree);

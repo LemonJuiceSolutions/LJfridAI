@@ -39,8 +39,8 @@ interface RunAllState {
   startedBy: string;
 }
 
-// Singleton — one run-all at a time
-let currentRun: RunAllState | null = null;
+// SECURITY CRITICAL: per-company runs (was singleton — leaked state cross-tenant)
+const runs = new Map<string, RunAllState>();
 
 // ============================================
 // GET: Poll current run-all progress
@@ -48,10 +48,12 @@ let currentRun: RunAllState | null = null;
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const companyId = (session?.user as any)?.companyId as string | undefined;
+  if (!session?.user?.email || !companyId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const currentRun = runs.get(companyId);
   if (!currentRun) {
     return NextResponse.json({ active: false });
   }
@@ -68,11 +70,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const sessionCompanyId = (session?.user as any)?.companyId as string | undefined;
+  if (!session?.user?.email || !sessionCompanyId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const body = await request.json().catch(() => ({}));
+  let currentRun = runs.get(sessionCompanyId);
 
   // Abort request
   if (body.action === 'abort') {
@@ -88,7 +92,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ aborted: false, reason: 'No active run' });
   }
 
-  // Already running?
+  // Already running for this company?
   if (currentRun?.status === 'running') {
     return NextResponse.json(
       { error: 'Un run-all è già in corso', runId: currentRun.id },
@@ -159,6 +163,8 @@ export async function POST(request: NextRequest) {
       };
     }),
   };
+  // Persist per-company state (was singleton — leaked cross-tenant)
+  runs.set(sessionCompanyId, currentRun);
 
   // Enrich with tree names
   const treeIds = [...new Set(tasks.map(t => (t.config as any)?.treeId).filter(Boolean))];

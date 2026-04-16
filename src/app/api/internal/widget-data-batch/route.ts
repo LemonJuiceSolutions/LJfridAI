@@ -16,7 +16,8 @@ export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const companyId = (session?.user as any)?.companyId as string | undefined;
+    if (!companyId) {
         return NextResponse.json({}, { status: 401 });
     }
 
@@ -34,12 +35,24 @@ export async function POST(req: NextRequest) {
             byTree.get(w.treeId)!.push(w.nodeId);
         }
 
+        // SECURITY CRITICAL: filter treeIds to those owned by user's company
+        // before reading preview cache (prevents cross-tenant data leak).
+        const requestedTreeIds = Array.from(byTree.keys());
+        const ownedTrees = await db.tree.findMany({
+            where: { id: { in: requestedTreeIds }, companyId },
+            select: { id: true },
+        });
+        const ownedTreeIds = new Set(ownedTrees.map(t => t.id));
+
         // Load all preview cache entries in parallel (one query per tree)
-        const queries = Array.from(byTree.entries()).map(([treeId, nodeIds]) =>
-            db.nodePreviewCache.findMany({
-                where: { treeId, nodeId: { in: nodeIds } },
-            }).then(entries => entries.map(e => ({ ...e, treeId })))
-        );
+        // Only for trees the user's company owns.
+        const queries = Array.from(byTree.entries())
+            .filter(([treeId]) => ownedTreeIds.has(treeId))
+            .map(([treeId, nodeIds]) =>
+                db.nodePreviewCache.findMany({
+                    where: { treeId, nodeId: { in: nodeIds } },
+                }).then(entries => entries.map(e => ({ ...e, treeId })))
+            );
 
         const results = await Promise.all(queries);
 
