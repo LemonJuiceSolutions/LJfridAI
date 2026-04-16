@@ -18,9 +18,11 @@ const ResetSchema = z.object({
 });
 
 const NewPasswordSchema = z.object({
-    password: z.string().min(6, {
-        message: "Minimo 6 caratteri richiesti",
-    }),
+    password: z.string().min(8, {
+        message: "Minimo 8 caratteri richiesti",
+    }).regex(/[A-Z]/, { message: "Almeno una lettera maiuscola" })
+      .regex(/[a-z]/, { message: "Almeno una lettera minuscola" })
+      .regex(/[0-9]/, { message: "Almeno un numero" }),
 });
 
 export const resetPassword = async (values: z.infer<typeof ResetSchema>) => {
@@ -41,42 +43,16 @@ export const resetPassword = async (values: z.infer<typeof ResetSchema>) => {
         return { success: "Email di reset inviata!" };
     }
 
-    // Custom logic for fixed security code "1230" as requested
-    const fixedToken = "1230";
-    const expires = new Date(new Date().getTime() + 3600 * 1000); // 1 hour
-
-    // Delete any existing token for this email OR existing "1230" token to prevent conflicts
-    await db.passwordResetToken.deleteMany({
-        where: {
-            OR: [
-                { email },
-                { token: fixedToken }
-            ]
-        }
-    });
-
-    const passwordResetToken = await db.passwordResetToken.create({
-        data: {
-            email,
-            token: fixedToken,
-            expires
-        }
-    });
+    const passwordResetToken = await generatePasswordResetToken(email);
 
     // Send Email
     let ephemeralConfig = undefined;
 
-    // Check if ephemeral SMTP details were provided
-    // @ts-ignore - access optional fields that might be passed despite Zod strictness if we loosen it, or just from the validated types
     if (validatedFields.data.smtpHost && validatedFields.data.smtpUser && validatedFields.data.smtpPass) {
         ephemeralConfig = {
-            // @ts-ignore
             host: validatedFields.data.smtpHost,
-            // @ts-ignore
             user: validatedFields.data.smtpUser,
-            // @ts-ignore
             pass: validatedFields.data.smtpPass,
-            // @ts-ignore
             port: parseInt(validatedFields.data.smtpPort || "587")
         };
     }
@@ -113,17 +89,11 @@ export const newPassword = async (
 
     const { password } = validatedFields.data;
 
-    console.log(`[RESET-DEBUG] Attempting reset with token: '${token}'`);
-
     const existingToken = await getPasswordResetTokenByToken(token);
 
     if (!existingToken) {
-        console.log(`[RESET-DEBUG] Token not found in DB!`);
-        // Debug: list all tokens for this email if possible? No, can't easily.
         return { error: "Token non valido!" };
     }
-
-    console.log(`[RESET-DEBUG] Token found for email: ${existingToken.email}`);
 
     const hasExpired = new Date(existingToken.expires) < new Date();
 
