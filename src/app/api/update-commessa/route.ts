@@ -71,7 +71,7 @@ async function getPool(connectorId: string): Promise<{ pool: sql.ConnectionPool;
         return { pool: null as any, error: `Connettore SQL non trovato (id=${connectorId})` };
     }
     const conf = JSON.parse(connector.config);
-    console.log(`[update-commessa] connector=${connector.id} name=${connector.name} server=${conf.host} database=${conf.database}`);
+    console.log(`[update-commessa] connector=${connector.id} database=${conf.database}`);
     const sqlConfig: sql.config = {
         user: conf.user, password: conf.password, server: conf.host, database: conf.database,
         options: {
@@ -86,39 +86,50 @@ async function getPool(connectorId: string): Promise<{ pool: sql.ConnectionPool;
     return { pool };
 }
 
-// Escape a value for safe SQL embedding (server-side only, never from raw client SQL)
-function escapeSqlValue(value: string | number | boolean | null): string {
-    if (value === null) return 'NULL';
-    if (typeof value === 'boolean') return value ? '1' : '0';
-    if (typeof value === 'number') return String(value);
-    // Escape single quotes by doubling them — standard SQL injection prevention
-    return `N'${String(value).replace(/'/g, "''")}'`;
-}
+// Dangerous DDL statements that should never come through this endpoint
+const BLOCKED_DDL_RE = /^\s*(DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE|xp_|sp_)\b/i;
 
-// Build SQL with escaped literals (same execution path as query-db which works).
-// Safe because: table validated by TABLE_RE, columns validated by IDENTIFIER_RE (no ] allowed),
-// values escaped server-side. No client-provided raw SQL.
-function buildDirectQuery(
+// Build a parameterized mssql request — values bound as @p0, @p1, etc.
+// Table and column names are validated by TABLE_RE / IDENTIFIER_RE and bracket-quoted.
+function buildParameterizedQuery(
+    request: sql.Request,
     operation: 'update' | 'insert' | 'delete',
     table: string,
     data: Record<string, string | number | boolean | null>,
     primaryKeys: string[],
 ): string {
     const entries = Object.entries(data);
+    let paramIdx = 0;
+
+    function addParam(value: string | number | boolean | null): string {
+        const name = `p${paramIdx++}`;
+        if (value === null) {
+            request.input(name, sql.NVarChar, null);
+        } else if (typeof value === 'boolean') {
+            request.input(name, sql.Bit, value);
+        } else if (typeof value === 'number') {
+            request.input(name, Number.isInteger(value) ? sql.BigInt : sql.Float, value);
+        } else {
+            request.input(name, sql.NVarChar, String(value));
+        }
+        return `@${name}`;
+    }
 
     switch (operation) {
         case 'update': {
             const setCols = entries.filter(([k]) => !primaryKeys.includes(k));
             if (setCols.length === 0) throw new Error('Nessuna colonna da aggiornare');
-            const setClause = setCols.map(([k, v]) => `[${k}] = ${escapeSqlValue(v)}`).join(', ');
-            const whereClause = primaryKeys.map(k => `[${k}] = ${escapeSqlValue(data[k])}`).join(' AND ');
+            const setClause = setCols.map(([k, v]) => `[${k}] = ${addParam(v)}`).join(', ');
+            const whereClause = primaryKeys.map(k => `[${k}] = ${addParam(data[k])}`).join(' AND ');
             return `UPDATE ${table} SET ${setClause} WHERE ${whereClause}`;
         }
         case 'insert': {
-            return `INSERT INTO ${table} (${entries.map(([k]) => `[${k}]`).join(', ')}) VALUES (${entries.map(([, v]) => escapeSqlValue(v)).join(', ')})`;
+            const cols = entries.map(([k]) => `[${k}]`).join(', ');
+            const vals = entries.map(([, v]) => addParam(v)).join(', ');
+            return `INSERT INTO ${table} (${cols}) VALUES (${vals})`;
         }
         case 'delete': {
-            const whereClause = primaryKeys.map(k => `[${k}] = ${escapeSqlValue(data[k])}`).join(' AND ');
+            const whereClause = primaryKeys.map(k => `[${k}] = ${addParam(data[k])}`).join(' AND ');
             return `DELETE FROM ${table} WHERE ${whereClause}`;
         }
     }
@@ -163,6 +174,13 @@ export async function POST(req: NextRequest) {
                     { status: 403, headers: corsHeaders(req) }
                 );
             }
+            // Block dangerous DDL statements
+            if (BLOCKED_DDL_RE.test(body.query)) {
+                return NextResponse.json(
+                    { success: false, error: 'Query DDL non consentita (DROP, TRUNCATE, ALTER, CREATE, EXEC)' },
+                    { status: 403, headers: corsHeaders(req) }
+                );
+            }
             // Resolve connectorId: use provided one or find company's first SQL connector
             let connectorId = body.connectorId || '';
             if (connectorId) {
@@ -191,7 +209,7 @@ export async function POST(req: NextRequest) {
             // Append COMMIT for write queries to ensure persistence
             const isWrite = /^\s*(UPDATE|INSERT|DELETE|MERGE)\b/i.test(body.query);
             const fullQuery = isWrite ? body.query + '; IF @@TRANCOUNT > 0 COMMIT' : body.query;
-            console.log(`[update-commessa] proxy direct | user=${user.id} | connector=${connectorId} | query: ${fullQuery.substring(0, 300)}`);
+            console.log(`[update-commessa] proxy direct | user=${user.id} | connector=${connectorId} | isWrite=${isWrite}`);
 
             const result = await pool.request().query(fullQuery);
             const rowsAffected = result.rowsAffected ? result.rowsAffected.reduce((a: number, b: number) => a + b, 0) : 0;
@@ -228,10 +246,11 @@ export async function POST(req: NextRequest) {
             if (error) return NextResponse.json({ success: false, message: error }, { status: 400, headers: corsHeaders(req) });
             pool = p;
 
-            const query = buildDirectQuery(operation, table, data, primaryKeys);
+            const request = pool.request();
+            const query = buildParameterizedQuery(request, operation, table, data, primaryKeys);
             const fullQuery = query + '; IF @@TRANCOUNT > 0 COMMIT';
-            console.log(`[update-commessa] ${operation} ${table} | query: ${fullQuery.substring(0, 500)}`);
-            const result = await pool.request().query(fullQuery);
+            console.log(`[update-commessa] ${operation} ${table} | parameterized query`);
+            const result = await request.query(fullQuery);
 
             const rowsAffected = result.rowsAffected?.[0] || 0;
             console.log(`[update-commessa] ${operation} ${table} by user=${user.id}: ${rowsAffected} rows`);
@@ -268,14 +287,21 @@ export async function POST(req: NextRequest) {
         if (error) return NextResponse.json({ success: false, message: error }, { status: 400, headers: corsHeaders(req) });
         pool = p;
 
-        const result = await pool.request().query(`
+        const legacyReq = pool.request();
+        legacyReq.input('Descrizione', sql.NVarChar, Descrizione || null);
+        legacyReq.input('Codice', sql.NVarChar, Codice || null);
+        legacyReq.input('Cliente', sql.NVarChar, Cliente || null);
+        legacyReq.input('Inizio', sql.NVarChar, Inizio || null);
+        legacyReq.input('Fine', sql.NVarChar, Fine || null);
+        legacyReq.input('Job', sql.NVarChar, Job);
+        const result = await legacyReq.query(`
             UPDATE dbo.CommesseHubSpot
-            SET Descrizione = ${escapeSqlValue(Descrizione || null)},
-                Codice = ${escapeSqlValue(Codice || null)},
-                Cliente = ${escapeSqlValue(Cliente || null)},
-                Inizio = ${escapeSqlValue(Inizio || null)},
-                Fine = ${escapeSqlValue(Fine || null)}
-            WHERE Job = ${escapeSqlValue(Job)};
+            SET Descrizione = @Descrizione,
+                Codice = @Codice,
+                Cliente = @Cliente,
+                Inizio = @Inizio,
+                Fine = @Fine
+            WHERE Job = @Job;
             IF @@TRANCOUNT > 0 COMMIT
         `);
 

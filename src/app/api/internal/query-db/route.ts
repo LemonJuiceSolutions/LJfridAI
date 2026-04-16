@@ -41,7 +41,16 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        console.log(`[internal/query-db] Executing DIRECT query: "${query.substring(0, 200)}" with connectorId: ${connectorId}`);
+        // Block dangerous DDL/exec statements
+        const BLOCKED_DDL_RE = /^\s*(DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE|xp_|sp_)\b/i;
+        if (BLOCKED_DDL_RE.test(query)) {
+            return NextResponse.json(
+                { error: 'DDL/EXEC statements are not allowed (DROP, TRUNCATE, ALTER, CREATE, EXEC)' },
+                { status: 403 }
+            );
+        }
+
+        console.log(`[internal/query-db] Executing query (${query.length} chars) with connectorId: ${connectorId}`);
 
         // Find the connector
         const connector = await db.connector.findUnique({ where: { id: connectorId } });
