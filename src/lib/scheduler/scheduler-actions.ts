@@ -353,6 +353,7 @@ export async function executePythonPreview(
         throw new Error('Missing required env var: INTERNAL_QUERY_TOKEN');
       }
       envVars['QUERY_DB_TOKEN'] = process.env.INTERNAL_QUERY_TOKEN;
+      envVars['QUERY_DB_COMPANY_ID'] = companyId || '';
     }
 
     // Resolve SQL dependencies not already in inputData

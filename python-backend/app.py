@@ -423,9 +423,10 @@ def execute_python():
         query_db_endpoint = env_vars.get('QUERY_DB_ENDPOINT', '')
         query_db_connector = env_vars.get('QUERY_DB_CONNECTOR_ID', '')
         query_db_token = env_vars.get('QUERY_DB_TOKEN', '')
+        query_db_company = env_vars.get('QUERY_DB_COMPANY_ID', '')
         if query_db_endpoint and query_db_connector:
             import requests as _requests
-            def _make_query_db(endpoint, connector_id, token):
+            def _make_query_db(endpoint, connector_id, token, company_id):
                 def query_db(sql_query):
                     """Esegue una query SQL sul database e restituisce un DataFrame pandas.
                     Uso: df = query_db("SELECT * FROM dbo.NomeTabella")
@@ -437,6 +438,7 @@ def execute_python():
                             'query': sql_query,
                             'connectorId': connector_id,
                             'internalToken': token,
+                            'companyId': company_id,
                         }, timeout=120)
                         if resp.ok:
                             resp_json = resp.json()
@@ -469,7 +471,7 @@ def execute_python():
                         print(f"❌ {error_msg}")
                         raise RuntimeError(error_msg)
                 return query_db
-            ns['query_db'] = _make_query_db(query_db_endpoint, query_db_connector, query_db_token)
+            ns['query_db'] = _make_query_db(query_db_endpoint, query_db_connector, query_db_token, query_db_company)
             print(f"   ✅ query_db() injected (endpoint: {query_db_endpoint})")
 
             # --- Inject execute_db() for write operations (UPDATE/INSERT/DELETE) ---
@@ -485,6 +487,7 @@ def execute_python():
                             'query': sql_query,
                             'connectorId': connector_id,
                             'internalToken': token,
+                            'companyId': company_id,
                         }, timeout=120)
                         if resp.ok:
                             resp_json = resp.json()

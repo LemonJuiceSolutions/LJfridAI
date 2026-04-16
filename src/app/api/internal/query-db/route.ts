@@ -16,12 +16,12 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const { query, connectorId, internalToken } = body;
+        const { query, connectorId, internalToken, companyId } = body;
 
         // Basic validation
-        if (!query || !connectorId) {
+        if (!query || !connectorId || !companyId) {
             return NextResponse.json(
-                { error: 'Missing query or connectorId' },
+                { error: 'Missing query, connectorId, or companyId' },
                 { status: 400 }
             );
         }
@@ -52,8 +52,8 @@ export async function POST(req: NextRequest) {
 
         console.log(`[internal/query-db] Executing query (${query.length} chars) with connectorId: ${connectorId}`);
 
-        // Find the connector
-        const connector = await db.connector.findUnique({ where: { id: connectorId } });
+        // Find the connector — scoped to companyId for tenant isolation
+        const connector = await db.connector.findFirst({ where: { id: connectorId, companyId } });
         if (!connector || connector.type !== 'SQL') {
             return NextResponse.json(
                 { error: 'Connettore SQL non trovato o non configurato.' },

@@ -1219,6 +1219,7 @@ export async function executePythonPreviewAction(
                 throw new Error('Missing required env var: INTERNAL_QUERY_TOKEN');
             }
             envVars['QUERY_DB_TOKEN'] = process.env.INTERNAL_QUERY_TOKEN;
+            envVars['QUERY_DB_COMPANY_ID'] = user?.companyId || '';
             console.log(`[Python] query_db() enabled with connector ${effectiveConnectorId}`);
         } else {
             console.warn(`[Python] WARNING: No SQL connector available — query_db() will NOT work in this script`);
