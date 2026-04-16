@@ -230,10 +230,23 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // If the agent didn't return updatedScript in structured form,
+    // try extracting from ```python or ```sql code blocks in the message text
+    let finalUpdatedScript = agentResponse.updatedScript;
+    if (!finalUpdatedScript && agentResponse.message) {
+      const pythonMatch = agentResponse.message.match(/```python\s*\n([\s\S]*?)```/i);
+      const sqlMatch = agentResponse.message.match(/```sql\s*\n([\s\S]*?)```/i);
+      if (pythonMatch) {
+        finalUpdatedScript = pythonMatch[1].trim();
+      } else if (sqlMatch) {
+        finalUpdatedScript = sqlMatch[1].trim();
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: agentResponse.message,
-      updatedScript: agentResponse.updatedScript,
+      updatedScript: finalUpdatedScript,
       needsClarification: agentResponse.needsClarification,
       clarificationQuestions: agentResponse.clarificationQuestions,
       conversationId: conversation.id,

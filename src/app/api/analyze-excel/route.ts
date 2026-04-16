@@ -21,6 +21,10 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: 'Nessun file specificato' }, { status: 400 });
         }
 
+        if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+            return NextResponse.json({ success: false, error: 'Invalid filename' }, { status: 400 });
+        }
+
         // Search in multiple folders
         const searchDirs = [
             getDataLakePath(),

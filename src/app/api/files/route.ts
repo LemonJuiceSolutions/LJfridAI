@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readdir, unlink, stat } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDataLakePath } from '@/lib/data-lake';
@@ -14,6 +14,10 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const folder = searchParams.get('folder') || 'data_lake';
+
+        if (folder.includes('..') || folder.includes('/') || folder.includes('\\')) {
+            return NextResponse.json({ success: false, error: 'Invalid folder' }, { status: 400 });
+        }
 
         // Special folders outside public/
         const ALLOWED_EXTRA_DIRS: Record<string, string> = {
@@ -61,12 +65,26 @@ export async function DELETE(request: NextRequest) {
 
         if (!name) return NextResponse.json({ success: false, error: 'Filename required' }, { status: 400 });
 
+        if (folder.includes('..') || folder.includes('/') || folder.includes('\\')) {
+            return NextResponse.json({ success: false, error: 'Invalid folder' }, { status: 400 });
+        }
+
+        if (name.includes('..') || name.includes('/') || name.includes('\\')) {
+            return NextResponse.json({ success: false, error: 'Invalid filename' }, { status: 400 });
+        }
+
         const ALLOWED_EXTRA_DIRS: Record<string, string> = {
             'excel-etl': join(process.cwd(), 'python-backend', 'EEXXCC'),
             'data_lake': getDataLakePath(),
         };
         const baseDir = ALLOWED_EXTRA_DIRS[folder] || join(process.cwd(), 'public', folder);
         const filepath = join(baseDir, name);
+
+        // Verify resolved path stays within base directory
+        if (!resolve(filepath).startsWith(resolve(baseDir))) {
+            return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+        }
+
         await unlink(filepath);
 
         return NextResponse.json({ success: true });

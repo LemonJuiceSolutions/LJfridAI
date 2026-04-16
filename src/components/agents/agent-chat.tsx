@@ -891,10 +891,13 @@ export function AgentChat({
 
       if (res.provider === 'claude-cli') {
         setAvailableModels(CLAUDE_MODELS);
+        const validCliIds = CLAUDE_MODELS.map(m => m.id);
         // For sql/python agents: load per-agent saved model first
         if (agentType === 'sql' || agentType === 'python') {
           getAgentTypeModelAction(agentType).then(result => {
-            applyModel(result.model || res.claudeCliModel || 'claude-sonnet-4-6');
+            // Only use saved model if it's a valid Claude model (not a leftover OpenRouter slug)
+            const saved = result.model && validCliIds.includes(result.model) ? result.model : undefined;
+            applyModel(saved || res.claudeCliModel || 'claude-sonnet-4-6');
           });
         } else {
           applyModel(res.claudeCliModel || 'claude-sonnet-4-6');
@@ -1153,53 +1156,14 @@ export function AgentChat({
                 }, 500);
                 return;
               }
-            } else if (!data.updatedScript && retryAttempt < MAX_AUTO_RETRIES) {
-              // Agent responded without updatedScript - re-send insisting
+            } else if (!data.updatedScript) {
+              // Agent responded without updatedScript even after server-side extraction.
+              // Stop retrying to avoid flash loops — show message to user instead.
               setMessages(prev => [...prev, {
-                role: 'user' as const,
-                content: `⚠️ **Manca updatedScript** - reinvio richiesta di correzione...`,
+                role: 'assistant' as const,
+                content: `⚠️ **L'agente non ha restituito codice corretto.** Prova a dare istruzioni più specifiche sull'errore.`,
                 timestamp: Date.now(),
               }]);
-
-              const insistMessage = `NON hai incluso il codice nella risposta precedente. DEVI restituire il codice COMPLETO corretto in un blocco \`\`\`python nel messaggio. Riprova ora - correggi l'errore e includi il codice completo nel blocco python.`;
-
-              const retryResponse = await fetch('/api/agents/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  nodeId,
-                  agentType,
-                  userMessage: insistMessage,
-                  script: scriptToExecute,
-                  tableSchema,
-                  inputTables,
-                  nodeQueries,
-                  connectorId,
-                  selectedDocuments,
-                }),
-              });
-
-              const retryData: AgentResponse = await retryResponse.json();
-
-              if (retryData.success) {
-                setMessages(prev => [...prev, {
-                  role: 'assistant' as const,
-                  content: retryData.message,
-                  timestamp: Date.now(),
-                  scriptSnapshot: retryData.updatedScript || scriptToExecute,
-                  consultedNodes: retryData.consultedNodes,
-                }]);
-
-                if (retryData.updatedScript && onScriptUpdate) {
-                  onScriptUpdate(retryData.updatedScript);
-                  setIsLoading(false);
-                  setLoadingStatus('');
-                  setTimeout(() => {
-                    triggerAutoExecute(retryData.updatedScript!, retryAttempt + 1);
-                  }, 500);
-                  return;
-                }
-              }
             }
           }
         } catch (agentError: any) {

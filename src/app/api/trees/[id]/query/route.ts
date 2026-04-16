@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { diagnoseProblemAction } from '@/app/actions';
 
 /**
@@ -15,6 +17,11 @@ export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const session = await getServerSession(authOptions);
+    if (!(session?.user as any)?.companyId) {
+        return NextResponse.json({ success: false, error: 'Non autorizzato' }, { status: 401 });
+    }
+
     try {
         const { id } = await params;
         const body = await request.json();

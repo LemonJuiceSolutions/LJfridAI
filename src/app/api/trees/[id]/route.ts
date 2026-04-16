@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { getTreeAction } from '@/app/actions';
 import { deleteTreeAction } from '@/app/actions/tree';
 
@@ -9,6 +11,11 @@ export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const session = await getServerSession(authOptions);
+    if (!(session?.user as any)?.companyId) {
+        return NextResponse.json({ success: false, error: 'Non autorizzato' }, { status: 401 });
+    }
+
     try {
         const { id } = await params;
 
@@ -45,6 +52,11 @@ export async function DELETE(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const session = await getServerSession(authOptions);
+    if (!(session?.user as any)?.companyId) {
+        return NextResponse.json({ success: false, error: 'Non autorizzato' }, { status: 401 });
+    }
+
     try {
         const { id } = await params;
 

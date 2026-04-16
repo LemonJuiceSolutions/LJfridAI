@@ -946,7 +946,10 @@ export async function POST(request: NextRequest) {
         let model: string | undefined;
 
         if (aiProvider === 'claude-cli') {
-            model = requestModel || providerSettings.claudeCliModel || 'claude-sonnet-4-6';
+            // Only use requestModel if it's a valid Claude model (not a leftover OpenRouter slug)
+            const validCliModels = ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5', 'sonnet', 'opus', 'haiku'];
+            const safeRequestModel = requestModel && validCliModels.includes(requestModel) ? requestModel : undefined;
+            model = safeRequestModel || providerSettings.claudeCliModel || 'claude-sonnet-4-6';
             console.log('[chat-stream] Using Claude CLI, model:', model);
         } else {
             const settings = await getOpenRouterSettingsAction();

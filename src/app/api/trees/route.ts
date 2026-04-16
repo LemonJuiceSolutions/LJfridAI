@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { processDescriptionAction, getTreesAction } from '@/app/actions';
 import { parsePaginationParams, paginateResult } from '@/lib/pagination';
 
@@ -7,6 +9,11 @@ import { parsePaginationParams, paginateResult } from '@/lib/pagination';
  * Query params: limit (1-100, default 20), cursor (tree id)
  */
 export async function GET(request: NextRequest) {
+    const session = await getServerSession(authOptions);
+    if (!(session?.user as any)?.companyId) {
+        return NextResponse.json({ success: false, error: 'Non autorizzato' }, { status: 401 });
+    }
+
     try {
         const { searchParams } = new URL(request.url);
         const { limit, cursor } = parsePaginationParams(searchParams);
@@ -51,6 +58,11 @@ export async function GET(request: NextRequest) {
  * Body: { description: string, openRouterApiKey?: string, openRouterModel?: string }
  */
 export async function POST(request: NextRequest) {
+    const session = await getServerSession(authOptions);
+    if (!(session?.user as any)?.companyId) {
+        return NextResponse.json({ success: false, error: 'Non autorizzato' }, { status: 401 });
+    }
+
     try {
         const body = await request.json();
         const { description, openRouterApiKey, openRouterModel } = body;
