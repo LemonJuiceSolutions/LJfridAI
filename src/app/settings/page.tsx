@@ -427,6 +427,7 @@ export default function SettingsPage() {
                                         setIsSavingProvider(true);
                                         await saveAiProviderAction('openrouter');
                                         setIsSavingProvider(false);
+                                        window.dispatchEvent(new Event('ai-provider-changed'));
                                         toast({ title: 'Provider impostato', description: 'OpenRouter attivo.' });
                                     }}
                                 >
@@ -442,6 +443,7 @@ export default function SettingsPage() {
                                         setIsSavingProvider(true);
                                         await saveAiProviderAction('claude-cli', claudeCliModel);
                                         setIsSavingProvider(false);
+                                        window.dispatchEvent(new Event('ai-provider-changed'));
                                         toast({ title: 'Provider impostato', description: 'Claude Code CLI attivo.' });
                                     }}
                                 >
