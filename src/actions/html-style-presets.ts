@@ -214,10 +214,18 @@ async function callOpenRouterJSON(apiKey: string, model: string, prompt: string,
 
 export async function scrapeWebsiteStyleAction(
     url: string,
-    openRouterApiKey: string,
-    openRouterModel: string
+    openRouterApiKey?: string,
+    openRouterModel?: string
 ): Promise<{ overrides?: Partial<HtmlStyleOverrides>; error?: string }> {
     try {
+        // SECURITY: resolve masked/missing key from DB server-side
+        const { resolveOpenRouterConfig } = await import('@/lib/openrouter-credentials');
+        const effectiveConfig = await resolveOpenRouterConfig(
+            openRouterApiKey ? { apiKey: openRouterApiKey, model: openRouterModel } : undefined
+        );
+        if (!effectiveConfig) {
+            return { error: 'API key OpenRouter mancante. Configurala nelle impostazioni.' };
+        }
         // 1. Call Python backend to extract CSS
         const cssResponse = await fetch(`${getPythonBackendUrl()}/scrape-css`, {
             method: 'POST',
@@ -263,8 +271,8 @@ Genera un oggetto JSON HtmlStyleOverrides che ricrea lo stile visivo di questo s
 
         // 3. Call OpenRouter AI
         const result = await callOpenRouterJSON(
-            openRouterApiKey,
-            openRouterModel,
+            effectiveConfig.apiKey,
+            effectiveConfig.model,
             userPrompt,
             systemPrompt
         );

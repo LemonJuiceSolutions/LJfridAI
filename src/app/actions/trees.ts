@@ -181,8 +181,12 @@ export async function processDescriptionAction(
         let debugInfo = null;
         let suggestedName = '';
 
-        if (openRouterConfig && openRouterConfig.apiKey) {
-            const result = await processDescriptionWithOpenRouter(textDescription, openRouterConfig);
+        // SECURITY: resolve key from DB if client passed masked value or nothing
+        const { resolveOpenRouterConfig } = await import('@/lib/openrouter-credentials');
+        const effectiveConfig = await resolveOpenRouterConfig(openRouterConfig);
+
+        if (effectiveConfig) {
+            const result = await processDescriptionWithOpenRouter(textDescription, effectiveConfig);
             extractedVariables = result.variables;
             suggestedName = result.suggestedName || '';
             decisionTreeResult = {
@@ -260,7 +264,10 @@ export async function processDescriptionAction(
 
 export async function rephraseQuestionAction(question: string, context: string, openRouterConfig?: { apiKey: string, model: string }): Promise<{ data: string | null, error: string | null }> {
     try {
-        if (openRouterConfig && openRouterConfig.apiKey) {
+        const { resolveOpenRouterConfig } = await import('@/lib/openrouter-credentials');
+        const effectiveConfig = await resolveOpenRouterConfig(openRouterConfig);
+
+        if (effectiveConfig) {
             const systemPrompt = `You are an AI assistant designed to rephrase questions for clarity or suggest related options.
   You MUST respond in Italian.
 
@@ -270,7 +277,7 @@ export async function rephraseQuestionAction(question: string, context: string, 
 
             const prompt = `Original Question: ${question}\nContext: ${context}`;
 
-            const result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, prompt, systemPrompt);
+            const result = await callOpenRouterJSON(effectiveConfig.apiKey, effectiveConfig.model, prompt, systemPrompt);
             return { data: result.rephrasedQuestion, error: null };
         } else {
             const result = await rephraseQuestion({ question, context });
@@ -716,7 +723,10 @@ export async function searchTreesAction(query: string, openRouterConfig?: { apiK
         content: t.naturalLanguageDecisionTree,
     }));
 
-    if (openRouterConfig && openRouterConfig.apiKey) {
+    const { resolveOpenRouterConfig: resolveCfgSearch } = await import('@/lib/openrouter-credentials');
+    const effectiveConfig = await resolveCfgSearch(openRouterConfig);
+
+    if (effectiveConfig) {
         const systemPrompt = `Sei un assistente di ricerca intelligente.
 Analizza la lista di alberi decisionali fornita e restituisci solo quelli che sono altamente pertinenti alla query dell'utente.
 Per ogni albero pertinente, devi fornire un breve riassunto della procedura.
@@ -743,7 +753,7 @@ Alberi disponibili:
             } `;
 
         try {
-            const result = await callOpenRouterJSON(openRouterConfig.apiKey, openRouterConfig.model, userPrompt, systemPrompt);
+            const result = await callOpenRouterJSON(effectiveConfig.apiKey, effectiveConfig.model, userPrompt, systemPrompt);
             if (!result || !result.relevantTrees || result.relevantTrees.length === 0) {
                 return 'Nessun risultato trovato.';
             }

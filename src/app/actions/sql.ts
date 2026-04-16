@@ -843,15 +843,19 @@ Rules:
             { role: "user", content: `Generate a SQL query for: ${userDescription}` }
         ];
 
-        if (openRouterConfig && openRouterConfig.apiKey) {
+        // SECURITY: resolve masked/missing key from DB server-side
+        const { resolveOpenRouterConfig: resolveSqlCfg } = await import('@/lib/openrouter-credentials');
+        const effectiveSqlCfg = await resolveSqlCfg(openRouterConfig);
+
+        if (effectiveSqlCfg) {
             const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                 method: "POST",
                 headers: {
-                    "Authorization": `Bearer ${openRouterConfig.apiKey}`,
+                    "Authorization": `Bearer ${effectiveSqlCfg.apiKey}`,
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                    model: openRouterConfig.model,
+                    model: effectiveSqlCfg.model,
                     messages: messages
                 })
             });
@@ -1014,14 +1018,19 @@ STRICT RULES:
             { role: 'user', content: `Generate Python code for: ${userDescription}` }
         ];
 
+        // SECURITY: resolve masked/missing key from DB server-side
+        const { resolveOpenRouterConfig: resolvePyCfg } = await import('@/lib/openrouter-credentials');
+        const effectivePyCfg = await resolvePyCfg(openRouterConfig);
+        if (!effectivePyCfg) throw new Error('API key OpenRouter mancante. Configurala nelle impostazioni.');
+
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${openRouterConfig.apiKey}`,
+                'Authorization': `Bearer ${effectivePyCfg.apiKey}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: openRouterConfig.model,
+                model: effectivePyCfg.model,
                 messages: messages
             })
         });

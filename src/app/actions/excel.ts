@@ -23,7 +23,10 @@ export async function processExcelToPipelineAction(
         const { buildExcelAnalysisPrompt, parseAIResponseToSteps, buildPipelineTreeFromSteps } = await import('@/ai/flows/excel-to-pipeline-flow');
         type DatabaseSchemaInfo = import('@/ai/flows/excel-to-pipeline-flow').DatabaseSchemaInfo;
 
-        if (!openRouterConfig || !openRouterConfig.apiKey) {
+        // SECURITY: resolve masked/missing key from DB server-side
+        const { resolveOpenRouterConfig } = await import('@/lib/openrouter-credentials');
+        const effectiveConfig = await resolveOpenRouterConfig(openRouterConfig);
+        if (!effectiveConfig) {
             return { data: null, error: 'Configurazione OpenRouter necessaria per questa funzione. Vai nelle impostazioni per configurare la chiave API.' };
         }
 
@@ -74,8 +77,8 @@ export async function processExcelToPipelineAction(
             'nvidia/nemotron-3-nano-30b-a3b:free',
         ];
 
-        const apiKey = openRouterConfig.apiKey;
-        const userModel = openRouterConfig.model;
+        const apiKey = effectiveConfig.apiKey;
+        const userModel = effectiveConfig.model;
 
         async function callWithFallback(prompt: string, sysPrompt: string, maxTokens: number): Promise<any> {
             const modelsToTry = [userModel, ...FREE_MODELS];

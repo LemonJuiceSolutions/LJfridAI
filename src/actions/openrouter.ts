@@ -42,8 +42,16 @@ export async function getOpenRouterSettingsAction(): Promise<{
             return { error: "Utente non trovato" };
         }
 
+        // SECURITY: mask API key before sending to client.
+        // Server actions that need the real key should use resolveOpenRouterConfig()
+        // from @/lib/openrouter-credentials which reads directly from DB.
+        const rawKey = user.openRouterApiKey || '';
+        const maskedKey = rawKey.length > 4
+            ? '••••••••' + rawKey.slice(-4)
+            : '';
+
         return {
-            apiKey: user.openRouterApiKey || '',
+            apiKey: maskedKey,
             model: user.openRouterModel || 'google/gemini-2.0-flash-001'
         };
     } catch (error) {
@@ -70,13 +78,14 @@ export async function saveOpenRouterSettingsAction(
     }
 
     try {
-        await db.user.update({
-            where: { id: userId },
-            data: {
-                openRouterApiKey: apiKey,
-                openRouterModel: model
-            }
-        });
+        // Skip key update if user submitted a masked value (••••XXXX) — means they
+        // didn't type a new key, just re-saved other fields. Avoid clobbering DB
+        // with masked string.
+        const isMasked = apiKey.startsWith('••');
+        const data: any = { openRouterModel: model };
+        if (!isMasked && apiKey) data.openRouterApiKey = apiKey;
+
+        await db.user.update({ where: { id: userId }, data });
 
         revalidatePath('/settings');
         return { success: true };

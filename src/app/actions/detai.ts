@@ -74,10 +74,14 @@ Diagnostica il prossimo passo.`;
 
         let diagnosisOutput: DiagnoseProblemOutput | null = null;
 
-        if (openRouterConfig && openRouterConfig.apiKey) {
+        // SECURITY: resolve masked/missing apiKey from DB server-side
+        const { resolveOpenRouterConfig } = await import('@/lib/openrouter-credentials');
+        const effectiveOrConfig = await resolveOpenRouterConfig(openRouterConfig);
+
+        if (effectiveOrConfig) {
             const result = await callOpenRouterJSON(
-                openRouterConfig.apiKey,
-                openRouterConfig.model,
+                effectiveOrConfig.apiKey,
+                effectiveOrConfig.model,
                 userPrompt,
                 systemPrompt
             );
@@ -155,6 +159,10 @@ export async function detaiAction(
     claudeCliConfig?: { model: string }
 ): Promise<{ data: any | null; error: string | null; }> {
     try {
+        // SECURITY: resolve masked/missing apiKey from DB server-side
+        const { resolveOpenRouterConfig } = await import('@/lib/openrouter-credentials');
+        const effectiveOrConfig = await resolveOpenRouterConfig(openRouterConfig);
+
         if (claudeCliConfig) {
             const { exec } = require('child_process');
             const { promisify } = require('util');
@@ -219,7 +227,7 @@ REGOLE:
                 console.error('Claude CLI error:', cliError);
                 return { data: null, error: `Claude CLI errore: ${cliError.message}` };
             }
-        } else if (openRouterConfig && openRouterConfig.apiKey) {
+        } else if (effectiveOrConfig) {
             const lastInputMsg = input.messages[input.messages.length - 1];
             if (lastInputMsg?.role === 'model' && lastInputMsg.content[0].toolRequest) {
                 const toolReq = lastInputMsg.content[0].toolRequest;
@@ -231,7 +239,7 @@ REGOLE:
                         return { data: { toolResponse: { id: toolReq.id, result: "Error parsing arguments" } }, error: null };
                     }
 
-                    const searchResult = await searchTreesAction(args.query, openRouterConfig);
+                    const searchResult = await searchTreesAction(args.query, effectiveOrConfig);
 
                     return {
                         data: {
@@ -300,7 +308,7 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
                 }
             }];
 
-            const responseMessage = await callOpenRouterWithTools(openRouterConfig.apiKey, openRouterConfig.model, messages, tools);
+            const responseMessage = await callOpenRouterWithTools(effectiveOrConfig.apiKey, effectiveOrConfig.model, messages, tools);
 
             console.log("OpenRouter Response Message:", JSON.stringify(responseMessage, null, 2));
 

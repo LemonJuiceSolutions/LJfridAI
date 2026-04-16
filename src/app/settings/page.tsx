@@ -100,11 +100,11 @@ export default function SettingsPage() {
     const [isUploading, setIsUploading] = useState(false);
     const [uploadQueue, setUploadQueue] = useState<{ name: string; progress: number }[]>([]);
 
-    const loadOpenRouterCredits = async (key: string) => {
-        if (!key) return;
+    const loadOpenRouterCredits = async (_key?: string) => {
+        // Key is resolved server-side from DB — client no longer passes it.
         setIsLoadingCredits(true);
         try {
-            const res = await getOpenRouterCreditsAction(key);
+            const res = await getOpenRouterCreditsAction();
             if (res.success && res.credits) {
                 setOrCredits(res.credits);
             }

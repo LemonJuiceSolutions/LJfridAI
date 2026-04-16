@@ -627,11 +627,12 @@ export default function HtmlStyleEditor({
   };
 
   const handleScrape = async () => {
-    if (!scrapeUrl.trim() || !openRouterConfig?.apiKey) return;
+    if (!scrapeUrl.trim()) return;
     setIsScraping(true);
     setScrapeError('');
     try {
-      const res = await scrapeWebsiteStyleAction(scrapeUrl.trim(), openRouterConfig.apiKey, openRouterConfig.model);
+      // Key resolved server-side from DB — client no longer passes it
+      const res = await scrapeWebsiteStyleAction(scrapeUrl.trim());
       if (res.overrides) {
         // Unwrap nested AI response if AI returned { overrides: {...} } or similar wrapper
         let finalOverrides = res.overrides as any;

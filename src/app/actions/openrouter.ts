@@ -121,16 +121,24 @@ export async function callOpenRouterWithTools(apiKey: string, model: string, mes
     return data.choices[0].message;
 }
 
-export async function getOpenRouterCreditsAction(apiKey: string): Promise<{
+export async function getOpenRouterCreditsAction(apiKey?: string): Promise<{
     success: boolean;
     credits?: { totalCredits: number; totalUsage: number; remaining: number };
     error?: string;
 }> {
-    if (!apiKey?.trim()) return { success: false, error: 'API key mancante' };
+    // SECURITY: if apiKey not provided (or masked), resolve from DB server-side.
+    // This avoids the need for client to hold the raw key.
+    let effectiveKey = apiKey?.trim() || '';
+    if (!effectiveKey || effectiveKey.startsWith('••')) {
+        const { resolveOpenRouterConfig } = await import('@/lib/openrouter-credentials');
+        const cfg = await resolveOpenRouterConfig();
+        effectiveKey = cfg?.apiKey || '';
+    }
+    if (!effectiveKey) return { success: false, error: 'API key mancante' };
     try {
         const res = await fetch('https://openrouter.ai/api/v1/credits', {
             method: 'GET',
-            headers: { 'Authorization': `Bearer ${apiKey.trim()}` },
+            headers: { 'Authorization': `Bearer ${effectiveKey}` },
         });
         if (!res.ok) {
             return { success: false, error: `Errore ${res.status}: ${res.statusText}` };
@@ -154,11 +162,20 @@ export async function getOpenRouterCreditsAction(apiKey: string): Promise<{
 }
 
 export async function testOpenRouterConnection(apiKey: string, model: string): Promise<{ success: boolean; message: string }> {
+    // SECURITY: resolve masked/missing key from DB server-side
+    let effectiveKey = apiKey;
+    if (!effectiveKey || effectiveKey.startsWith('••')) {
+        const { resolveOpenRouterConfig } = await import('@/lib/openrouter-credentials');
+        const cfg = await resolveOpenRouterConfig();
+        effectiveKey = cfg?.apiKey || '';
+    }
+    if (!effectiveKey) return { success: false, message: 'API key mancante. Configurala nelle impostazioni.' };
+
     try {
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${apiKey}`,
+                "Authorization": `Bearer ${effectiveKey}`,
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
