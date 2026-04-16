@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['mssql'],
   experimental: {
     serverActions: {
-      bodySizeLimit: '50mb',
+      bodySizeLimit: '10mb',
     },
   },
   async headers() {
