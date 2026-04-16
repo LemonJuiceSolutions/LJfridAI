@@ -486,11 +486,14 @@ export function ChatBotAgent() {
         loadProviderSettings();
     }, [loadProviderSettings]);
 
-    // Re-sync provider when chatbot opens (user may have changed settings)
+    // Re-sync provider when chatbot opens or window regains focus (settings may have changed)
     useEffect(() => {
         if (isChatbotOpen) {
             loadProviderSettings();
         }
+        const onFocus = () => { if (isChatbotOpen) loadProviderSettings(); };
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
     }, [isChatbotOpen, loadProviderSettings]);
 
     const handleProviderToggle = async () => {
