@@ -28,8 +28,12 @@ export const sendPasswordResetEmail = async (
         <p>Se non hai richiesto tu il reset, ignora questa email.</p>
     `;
 
+    // SECURITY: mask email in logs to avoid PII leakage
+    const emailDomainOnly = email.split('@')[1] || 'unknown';
+    const maskedEmail = `*@${emailDomainOnly}`;
+
     try {
-        console.log(`[MAIL] Attempting to send password reset email to ${email}`);
+        console.log(`[MAIL] Attempting to send password reset email to ${maskedEmail}`);
 
         // 1. Find the user to get Company ID (for Connector lookup)
         const user = await db.user.findUnique({
@@ -159,11 +163,9 @@ export const sendPasswordResetEmail = async (
                 });
             } else {
                 console.warn("[MAIL] No SMTP configuration found (neither Connector nor Env).");
-                console.log("--- EMAIL CONTENT ---");
-                console.log(`To: ${email}`);
-                console.log(`Subject: ${subject}`);
-                console.log(`Link: ${confirmLink}`);
-                console.log("---------------------");
+                // SECURITY: do NOT log full email or reset link (sensitive PII + token)
+                const emailDomain = email.split('@')[1] || 'unknown';
+                console.log(`[MAIL] Would have sent reset email to *@${emailDomain} (subject: ${subject})`);
 
                 // Return special status so UI can prompt for credentials
                 return { success: false, missingSmtp: true };
@@ -180,9 +182,8 @@ export const sendPasswordResetEmail = async (
             html: htmlBody,
         });
 
-        console.log(`[MAIL] Password reset email sent successfully to ${email}`);
+        console.log(`[MAIL] Password reset email sent successfully to ${maskedEmail}`);
         console.log(`[MAIL] MessageID: ${info.messageId}`);
-        console.log(`[MAIL] Response: ${info.response}`);
         return { success: true };
 
     } catch (error: any) {
