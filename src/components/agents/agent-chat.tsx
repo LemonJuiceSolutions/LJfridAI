@@ -904,24 +904,28 @@ export function AgentChat({
         }
       } else {
         // OpenRouter: load models list
+        const validCliIds = CLAUDE_MODELS.map(m => m.id);
+        const isValidOpenRouterModel = (m: string) => !validCliIds.includes(m);
+
         fetchOpenRouterModelsAction().then(result => {
           if (result.data) setAvailableModels(result.data);
         });
         // For sql/python agents: load per-agent saved model
         if (agentType === 'sql' || agentType === 'python') {
           getAgentTypeModelAction(agentType).then(result => {
-            if (result.model) {
+            // Only use saved model if it's a valid OpenRouter model (not a leftover Claude slug)
+            if (result.model && isValidOpenRouterModel(result.model)) {
               applyModel(result.model);
               return;
             }
             // Fallback to generic agent model
             getOpenRouterAgentModelAction().then(r => {
-              if (r.model) applyModel(r.model);
+              if (r.model && isValidOpenRouterModel(r.model)) applyModel(r.model);
             });
           });
         } else {
           getOpenRouterAgentModelAction().then(result => {
-            if (result.model) applyModel(result.model);
+            if (result.model && isValidOpenRouterModel(result.model)) applyModel(result.model);
           });
           getOpenRouterSettingsAction().then((settings) => {
             if (settings?.model && !model) applyModel(settings.model);

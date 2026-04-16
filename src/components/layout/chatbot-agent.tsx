@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import DOMPurify from 'isomorphic-dompurify';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
@@ -446,34 +446,52 @@ export function ChatBotAgent() {
         prevStreamStatusRef.current = streamStatus;
     }, [streamStatus]);
 
-    // Load AI provider and models on mount
-    useEffect(() => {
+    // Load AI provider and models — on mount AND when chatbot opens (to catch settings changes)
+    const loadProviderSettings = useCallback(() => {
+        const CLAUDE_MODELS = [
+            { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+            { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+            { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+            { id: 'sonnet', name: 'sonnet (latest)' },
+            { id: 'opus', name: 'opus (latest)' },
+            { id: 'haiku', name: 'haiku (latest)' },
+        ];
+        const validCliIds = CLAUDE_MODELS.map(m => m.id);
+
         getAiProviderAction().then(res => {
             if (!res.error) {
                 setAiProvider(res.provider);
-                if (res.provider === 'claude-cli' && res.claudeCliModel) {
-                    setModel(res.claudeCliModel);
-                    // Set Claude models as available
-                    setAvailableModels([
-                        { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
-                        { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
-                        { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
-                        { id: 'sonnet', name: 'sonnet (latest)' },
-                        { id: 'opus', name: 'opus (latest)' },
-                        { id: 'haiku', name: 'haiku (latest)' },
-                    ]);
+                if (res.provider === 'claude-cli') {
+                    setModel(res.claudeCliModel || 'claude-sonnet-4-6');
+                    setAvailableModels(CLAUDE_MODELS);
                 } else {
                     // Load OpenRouter models
                     fetchOpenRouterModelsAction().then(result => {
                         if (result.data) setAvailableModels(result.data);
                     });
                     getOpenRouterAgentModelAction().then(result => {
-                        if (result.model) setModel(result.model);
+                        // Validate model belongs to OpenRouter (not a leftover Claude slug)
+                        if (result.model && !validCliIds.includes(result.model)) {
+                            setModel(result.model);
+                        } else {
+                            setModel('google/gemini-2.0-flash-001');
+                        }
                     });
                 }
             }
         });
     }, []);
+
+    useEffect(() => {
+        loadProviderSettings();
+    }, [loadProviderSettings]);
+
+    // Re-sync provider when chatbot opens (user may have changed settings)
+    useEffect(() => {
+        if (isChatbotOpen) {
+            loadProviderSettings();
+        }
+    }, [isChatbotOpen, loadProviderSettings]);
 
     const handleProviderToggle = async () => {
         const CLAUDE_CLI_MODELS = [
