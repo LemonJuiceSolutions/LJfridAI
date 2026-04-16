@@ -9,6 +9,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { tryDecrypt } from "@/lib/encryption";
 
 export interface OpenRouterCredentials {
     apiKey: string;
@@ -31,8 +32,11 @@ export async function getOpenRouterCredentials(): Promise<OpenRouterCredentials 
 
     if (!user?.openRouterApiKey) return null;
 
+    // Transparently decrypt at-rest value (returns plaintext if legacy unencrypted)
+    const apiKey = tryDecrypt(user.openRouterApiKey) || user.openRouterApiKey;
+
     return {
-        apiKey: user.openRouterApiKey,
+        apiKey,
         model: user.openRouterModel || "google/gemini-2.0-flash-001",
     };
 }

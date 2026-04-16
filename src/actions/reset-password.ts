@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { generatePasswordResetToken, getPasswordResetTokenByToken } from "@/lib/tokens";
 import { sendPasswordResetEmail } from "@/lib/mail";
+import { rateLimit } from "@/lib/rate-limit";
 
 const ResetSchema = z.object({
     email: z.string().email({
@@ -33,6 +34,13 @@ export const resetPassword = async (values: z.infer<typeof ResetSchema>) => {
     }
 
     const { email } = validatedFields.data;
+
+    // SECURITY M-06: rate limit — 3 reset requests per hour per email
+    const rl = rateLimit(`reset:${email.toLowerCase()}`, 3, 60 * 60 * 1000);
+    if (!rl.allowed) {
+        const mins = Math.ceil((rl.retryAfterMs || 0) / 60000);
+        return { error: `Troppi tentativi. Riprova tra ${mins} minuti.` };
+    }
 
     const existingUser = await db.user.findUnique({
         where: { email }

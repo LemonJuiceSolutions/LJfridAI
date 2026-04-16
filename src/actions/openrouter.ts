@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { getAuthenticatedUser } from "@/lib/session";
 import { getAgentUsageCache } from "@/lib/agent-usage-cache";
+import { encrypt, tryDecrypt } from "@/lib/encryption";
 
 async function getSession() {
     return await getServerSession(authOptions);
@@ -42,10 +43,11 @@ export async function getOpenRouterSettingsAction(): Promise<{
             return { error: "Utente non trovato" };
         }
 
-        // SECURITY: mask API key before sending to client.
-        // Server actions that need the real key should use resolveOpenRouterConfig()
-        // from @/lib/openrouter-credentials which reads directly from DB.
-        const rawKey = user.openRouterApiKey || '';
+        // SECURITY: decrypt DB value (handles legacy unencrypted values) then mask
+        // for client. Server actions that need the real key should use
+        // resolveOpenRouterConfig() from @/lib/openrouter-credentials.
+        const storedKey = user.openRouterApiKey || '';
+        const rawKey = storedKey ? (tryDecrypt(storedKey) || storedKey) : '';
         const maskedKey = rawKey.length > 4
             ? '••••••••' + rawKey.slice(-4)
             : '';
@@ -83,7 +85,10 @@ export async function saveOpenRouterSettingsAction(
         // with masked string.
         const isMasked = apiKey.startsWith('••');
         const data: any = { openRouterModel: model };
-        if (!isMasked && apiKey) data.openRouterApiKey = apiKey;
+        if (!isMasked && apiKey) {
+            // SECURITY: encrypt at rest before storing
+            data.openRouterApiKey = encrypt(apiKey);
+        }
 
         await db.user.update({ where: { id: userId }, data });
 

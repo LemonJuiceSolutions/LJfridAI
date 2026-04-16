@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { auditLog } from '@/lib/audit';
+import { rateLimit } from '@/lib/rate-limit';
 
 /**
  * GET /api/gdpr/export - GDPR Data Export (Art. 15, 20)
@@ -17,6 +18,12 @@ export async function GET(request: NextRequest) {
   const user = session.user as { id: string; companyId: string };
   const userId = user.id;
   const companyId = user.companyId;
+
+  // SECURITY M-06: rate limit — max 5 exports per hour per user
+  const rl = rateLimit(`gdpr-export:${userId}`, 5, 60 * 60 * 1000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Troppi tentativi. Riprova più tardi.' }, { status: 429 });
+  }
 
   try {
     // Fetch user profile (exclude password hash)

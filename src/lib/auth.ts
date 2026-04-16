@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(db) as any,
@@ -16,6 +17,13 @@ export const authOptions: NextAuthOptions = {
             async authorize(credentials) {
                 if (!credentials?.email || !credentials?.password) {
                     throw new Error("Email e password sono obbligatori");
+                }
+
+                // SECURITY M-06: rate limit login attempts — 5 per 15 min per email
+                const rl = rateLimit(`login:${credentials.email.toLowerCase()}`, 5, 15 * 60 * 1000);
+                if (!rl.allowed) {
+                    const mins = Math.ceil((rl.retryAfterMs || 0) / 60000);
+                    throw new Error(`Troppi tentativi di login. Riprova tra ${mins} minuti.`);
                 }
 
                 const user = await db.user.findUnique({
