@@ -107,3 +107,15 @@ export function cleanupRateLimitBuckets(maxAgeMs = 3600_000): void {
         }
     }
 }
+
+// Schedule periodic cleanup so the in-memory map cannot grow forever.
+// `.unref()` lets the process exit if this is the only remaining handle.
+// Guarded on globalThis so HMR re-imports do not stack intervals.
+declare global {
+    // eslint-disable-next-line no-var
+    var _rateLimitCleanupScheduled: boolean | undefined;
+}
+if (!useUpstash && !globalThis._rateLimitCleanupScheduled) {
+    globalThis._rateLimitCleanupScheduled = true;
+    setInterval(() => cleanupRateLimitBuckets(), 10 * 60_000).unref();
+}
