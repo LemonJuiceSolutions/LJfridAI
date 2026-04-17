@@ -48,40 +48,36 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     `console.log('[polyfill] POST success, notifying parent...');` +
     `try{window.parent.dispatchEvent(new CustomEvent('iframe-db-write-success',{detail:{success:true,rowsAffected:j.rowsAffected}}))}catch(e){console.warn('[polyfill] dispatchEvent failed, trying postMessage',e)}` +
     `_origPM({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})};` +
-    // --- Helper: escape SQL value ---
-    `function esc(v){if(v==null)return 'NULL';if(typeof v==='number')return String(v);` +
-    `return "N'"+String(v).replace(/'/g,"''")+"'"}` +
-    // --- 2. saveToDb: builds UPDATE SQL, sends to update-commessa ---
+    // --- Helper: strip internal UI-only fields ('_isNew', '_rowId', etc.) before sending ---
+    `function clean(d){var o={};for(var k in d){if(d.hasOwnProperty(k)&&k.charAt(0)!=='_')o[k]=d[k]}return o}` +
+    // --- 2. saveToDb: structured UPDATE payload (no raw SQL) ---
+    // Sends {operation, table, data, primaryKeys, connectorId} — server parameterizes.
+    // Previously sent raw SQL via `body.query` which was restricted to superadmin
+    // after the security hardening pass. Structured path has always been allowed
+    // for any authenticated user in the company.
     `window.saveToDb=function(tbl,data,pks){` +
     `if(!tbl||!data)return Promise.reject(new Error('Missing table or data'));` +
-    `pks=pks||[];var S=[],W=[];` +
-    `for(var k in data){if(!data.hasOwnProperty(k))continue;` +
-    `if(pks.indexOf(k)>=0)W.push('['+k+']='+esc(data[k]));else S.push('['+k+']='+esc(data[k]))}` +
-    `if(S.length===0&&W.length>1){S=W.slice(1);W=[W[0]]}` +
-    `if(W.length===0)return Promise.reject(new Error('No PK for WHERE clause'));` +
-    `var q='UPDATE '+tbl+' SET '+S.join(', ')+' WHERE '+W.join(' AND ');` +
-    `console.log('[saveToDb] query:',q);console.log('[saveToDb] connectorId:',CID);` +
+    `pks=pks||[];if(pks.length===0)return Promise.reject(new Error('No PK for WHERE clause'));` +
+    `var payload={operation:'update',table:tbl,data:clean(data),primaryKeys:pks,connectorId:CID};` +
+    `console.log('[saveToDb]',payload);` +
     `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
-    `body:JSON.stringify({query:q,connectorId:CID})}).then(function(r){return r.json().then(function(j){` +
+    `body:JSON.stringify(payload)}).then(function(r){return r.json().then(function(j){` +
     `console.log('[saveToDb] response:',JSON.stringify(j));return j})})};` +
-    // --- 2b. insertToDb: builds INSERT SQL ---
+    // --- 2b. insertToDb: structured INSERT payload ---
     `window.insertToDb=function(tbl,data){` +
     `if(!tbl||!data)return Promise.reject(new Error('Missing table or data'));` +
-    `var C=[],V=[];for(var k in data){if(!data.hasOwnProperty(k)||k.charAt(0)==='_')continue;` +
-    `C.push('['+k+']');V.push(esc(data[k]))}` +
-    `if(C.length===0)return Promise.reject(new Error('No columns to insert'));` +
-    `var q='INSERT INTO '+tbl+' ('+C.join(', ')+') VALUES ('+V.join(', ')+')';` +
+    `var cleaned=clean(data);` +
+    `if(Object.keys(cleaned).length===0)return Promise.reject(new Error('No columns to insert'));` +
+    `var payload={operation:'insert',table:tbl,data:cleaned,primaryKeys:[],connectorId:CID};` +
     `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
-    `body:JSON.stringify({query:q,connectorId:CID})}).then(function(r){return r.json()})};` +
-    // --- 2c. deleteFromDb: builds DELETE SQL ---
+    `body:JSON.stringify(payload)}).then(function(r){return r.json()})};` +
+    // --- 2c. deleteFromDb: structured DELETE payload ---
     `window.deleteFromDb=function(tbl,data,pks){` +
     `if(!tbl||!data||!pks||pks.length===0)return Promise.reject(new Error('Missing table, data or PKs'));` +
-    `var W=[];for(var i=0;i<pks.length;i++){var k=pks[i];` +
-    `if(!data.hasOwnProperty(k))return Promise.reject(new Error('PK field missing: '+k));` +
-    `W.push('['+k+']='+esc(data[k]))}` +
-    `var q='DELETE FROM '+tbl+' WHERE '+W.join(' AND ');` +
+    `for(var i=0;i<pks.length;i++){if(!data.hasOwnProperty(pks[i]))return Promise.reject(new Error('PK field missing: '+pks[i]))}` +
+    `var payload={operation:'delete',table:tbl,data:clean(data),primaryKeys:pks,connectorId:CID};` +
     `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
-    `body:JSON.stringify({query:q,connectorId:CID})}).then(function(r){return r.json()})};` +
+    `body:JSON.stringify(payload)}).then(function(r){return r.json()})};` +
     // --- 3. PostMessage interceptor: auto-converts save-type postMessage to saveToDb ---
     // When AI generates postMessage({type:'SAVE_...', data:...}), this interceptor
     // catches it and redirects to saveToDb using __DB_TABLE__ and __DB_PK__ metadata
