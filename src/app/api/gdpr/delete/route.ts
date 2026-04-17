@@ -20,7 +20,7 @@ export async function DELETE(request: NextRequest) {
   const companyId = user.companyId;
 
   // SECURITY M-06: rate limit — max 2 delete attempts per hour per user
-  const rl = rateLimit(`gdpr-delete:${userId}`, 2, 60 * 60 * 1000);
+  const rl = await rateLimit(`gdpr-delete:${userId}`, 2, 60 * 60 * 1000);
   if (!rl.allowed) {
     return NextResponse.json({ error: 'Troppi tentativi. Riprova più tardi.' }, { status: 429 });
   }

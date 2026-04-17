@@ -74,13 +74,35 @@ export async function GET(request: NextRequest) {
     }
 
     const enrichedExecutions = executions.map(e => {
-      const treeId = (e.task?.config as any)?.treeId;
+      const cfg = (e.task?.config as any) || {};
+      const treeId = cfg.treeId;
+
+      // Mirror the logic in /api/scheduler/run-all so the two progress views
+      // stay consistent: extract the leaf node name from the nodePath and a
+      // "detail" line (email subject / SQL or Python result name).
+      let nodeName: string | null = null;
+      if (typeof cfg.nodePath === 'string') {
+        const matches = cfg.nodePath.match(/\['([^']+)'\]/g);
+        if (matches && matches.length > 0) {
+          nodeName = matches[matches.length - 1].replace(/\['|'\]/g, '');
+        }
+      }
+      let detail: string | null = null;
+      const ttype = e.task?.type;
+      if (ttype === 'EMAIL_SEND' || ttype === 'email_send') {
+        detail = cfg.subject || cfg.emailSubject || null;
+      } else {
+        detail = cfg.sqlResultName || cfg.pythonResultName || cfg.name || null;
+      }
+
       return {
         ...e,
         task: e.task ? {
           ...e.task,
-          treeName: treeId ? treeNameMap[treeId] || null : null
-        } : e.task
+          treeName: treeId ? treeNameMap[treeId] || null : null,
+          nodeName,
+          detail,
+        } : e.task,
       };
     });
 

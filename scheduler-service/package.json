@@ -4,8 +4,8 @@
   "private": true,
   "description": "Standalone scheduler microservice for FridAI — runs cron/interval tasks isolated from the Next.js process",
   "scripts": {
-    "start": "tsx index.ts",
-    "dev": "tsx watch index.ts",
+    "start": "NODE_OPTIONS=\"--max-old-space-size=$(node -e \"try{console.log(require('../config/system-budget.json').schedulerHeapMb||4096)}catch{console.log(4096)}\")\" tsx index.ts",
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=$(node -e \"try{console.log(require('../config/system-budget.json').schedulerHeapMb||4096)}catch{console.log(4096)}\")\" tsx watch index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

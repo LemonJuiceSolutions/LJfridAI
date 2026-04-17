@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   const companyId = user.companyId;
 
   // SECURITY M-06: rate limit — max 5 exports per hour per user
-  const rl = rateLimit(`gdpr-export:${userId}`, 5, 60 * 60 * 1000);
+  const rl = await rateLimit(`gdpr-export:${userId}`, 5, 60 * 60 * 1000);
   if (!rl.allowed) {
     return NextResponse.json({ error: 'Troppi tentativi. Riprova più tardi.' }, { status: 429 });
   }

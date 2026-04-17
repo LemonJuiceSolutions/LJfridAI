@@ -12,6 +12,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      // 'server-only' is a runtime guard that has no node entry; alias to a
+      // no-op stub so server-side modules can be imported in unit tests.
+      'server-only': path.resolve(__dirname, 'tests/stubs/server-only.ts'),
     },
   },
 });

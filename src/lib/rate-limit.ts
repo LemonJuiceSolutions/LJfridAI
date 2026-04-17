@@ -1,10 +1,13 @@
 /**
- * Simple in-memory sliding-window rate limiter.
+ * Sliding-window rate limiter with optional Upstash Redis backend.
  *
- * Use only for single-instance deployments. For multi-instance, swap the
- * store for Redis (e.g. upstash/ratelimit) — the interface stays the same.
+ * - If UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN are set, requests
+ *   go through a REST pipeline (works across horizontal scaling).
+ * - Otherwise, falls back to an in-memory map (single-instance only).
  *
- * Security: addresses M-06 from 2026-04-14 audit.
+ * The async signature lets both backends share the same callers. Upstash
+ * network failures silently fall back to in-memory to avoid 429-ing
+ * legitimate traffic during an Upstash outage.
  */
 import "server-only";
 
@@ -21,13 +24,57 @@ if (!globalForRateLimit._rateLimitBuckets) {
 }
 const buckets = globalForRateLimit._rateLimitBuckets;
 
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, '');
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const useUpstash = !!(UPSTASH_URL && UPSTASH_TOKEN);
+
 export interface RateLimitResult {
-    /** True if the request is allowed. False if the caller exceeded the limit. */
     allowed: boolean;
-    /** Requests remaining in the current window. */
     remaining: number;
-    /** Milliseconds until the caller can retry (only when !allowed). */
     retryAfterMs?: number;
+}
+
+function rateLimitInMemory(key: string, limit: number, windowMs: number): RateLimitResult {
+    const now = Date.now();
+    const cutoff = now - windowMs;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+        bucket = { hits: [] };
+        buckets.set(key, bucket);
+    }
+    bucket.hits = bucket.hits.filter(t => t > cutoff);
+    if (bucket.hits.length >= limit) {
+        const oldest = bucket.hits[0];
+        return { allowed: false, remaining: 0, retryAfterMs: Math.max(0, oldest + windowMs - now) };
+    }
+    bucket.hits.push(now);
+    return { allowed: true, remaining: limit - bucket.hits.length };
+}
+
+async function rateLimitUpstash(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
+    const fullKey = `rl:${key}`;
+    const ttlSec = Math.max(1, Math.ceil(windowMs / 1000));
+    try {
+        const res = await fetch(`${UPSTASH_URL}/pipeline`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${UPSTASH_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify([
+                ['INCR', fullKey],
+                ['EXPIRE', fullKey, String(ttlSec), 'NX'],
+                ['PTTL', fullKey],
+            ]),
+            signal: AbortSignal.timeout(1500),
+        });
+        if (!res.ok) throw new Error(`Upstash HTTP ${res.status}`);
+        const json: any = await res.json();
+        const count = Number(json?.[0]?.result ?? 0);
+        const pttl = Number(json?.[2]?.result ?? windowMs);
+        if (!Number.isFinite(count) || count <= 0) throw new Error('Bad Upstash response');
+        if (count > limit) return { allowed: false, remaining: 0, retryAfterMs: pttl > 0 ? pttl : windowMs };
+        return { allowed: true, remaining: Math.max(0, limit - count) };
+    } catch {
+        return rateLimitInMemory(key, limit, windowMs);
+    }
 }
 
 /**
@@ -37,33 +84,9 @@ export interface RateLimitResult {
  * @param limit   Max requests allowed within `windowMs`.
  * @param windowMs Window duration in ms.
  */
-export function rateLimit(key: string, limit: number, windowMs: number): RateLimitResult {
-    const now = Date.now();
-    const cutoff = now - windowMs;
-
-    let bucket = buckets.get(key);
-    if (!bucket) {
-        bucket = { hits: [] };
-        buckets.set(key, bucket);
-    }
-
-    // Drop expired hits (sliding window)
-    bucket.hits = bucket.hits.filter(t => t > cutoff);
-
-    if (bucket.hits.length >= limit) {
-        const oldest = bucket.hits[0];
-        return {
-            allowed: false,
-            remaining: 0,
-            retryAfterMs: Math.max(0, oldest + windowMs - now),
-        };
-    }
-
-    bucket.hits.push(now);
-    return {
-        allowed: true,
-        remaining: limit - bucket.hits.length,
-    };
+export async function rateLimit(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
+    if (useUpstash) return rateLimitUpstash(key, limit, windowMs);
+    return rateLimitInMemory(key, limit, windowMs);
 }
 
 /** Extract client IP from NextRequest headers (proxy-aware). */

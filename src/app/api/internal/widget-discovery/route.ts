@@ -11,32 +11,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { CACHE_TTL, cache, type DiscoveredWidget } from './cache';
 
 export const maxDuration = 30;
-
-interface DiscoveredWidget {
-    widgetId: string;
-    name: string;
-    treeId: string;
-    nodeId: string;
-    /** 'sql' | 'python' | 'node' (published widgetConfig) | 'pipeline' */
-    type: string;
-    resultName?: string;
-    /** For python widgets: chart | table | variable | html */
-    pythonType?: string;
-}
-
-// ---------------------------------------------------------------------------
-// In-memory cache — avoids re-parsing all trees on every call
-// ---------------------------------------------------------------------------
-const CACHE_TTL = 30_000; // 30 seconds
-const cache = new Map<string, { widgets: DiscoveredWidget[]; ts: number }>();
-
-// Allow external invalidation (e.g., after pipeline execution saves previews)
-export function invalidateWidgetDiscoveryCache(companyId?: string) {
-    if (companyId) cache.delete(companyId);
-    else cache.clear();
-}
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);

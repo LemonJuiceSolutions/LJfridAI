@@ -96,12 +96,14 @@ ${input.variablesTable}
     let attempts = 0;
     const maxAttempts = 3;
 
+    const { maybeRedact } = await import('@/lib/pii-redact');
+    const redactedPrompt = maybeRedact(promptText);
     while (attempts < maxAttempts) {
         try {
             const provider = getOpenRouterProvider();
             const { object } = await generateObject({
                 model: provider(DEFAULT_MODEL),
-                prompt: promptText,
+                prompt: redactedPrompt,
                 schema: GenerateDecisionTreeOutputSchema,
             });
 

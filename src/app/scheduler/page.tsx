@@ -119,8 +119,18 @@ export default function SchedulerPage() {
   const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Global background-task tracking
-  // taskId -> { startedAt (ms), elapsedSec }
-  const [bgRunning, setBgRunning] = useState<Record<string, { startedAt: number; elapsed: number }>>({});
+  // taskId -> { startedAt (ms), elapsedSec, name, type, treeName, nodeName, detail }
+  const [bgRunning, setBgRunning] = useState<Record<string, {
+    startedAt: number;
+    elapsed: number;
+    name?: string;
+    type?: string;
+    treeName?: string | null;
+    nodeName?: string | null;
+    detail?: string | null;
+    executionId?: string;
+  }>>({});
+  const [bgDialogOpen, setBgDialogOpen] = useState(false);
   const bgPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bgElapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [bgTick, setBgTick] = useState(0); // forces re-render for elapsed
@@ -165,10 +175,33 @@ export default function SchedulerPage() {
     };
   }, []);
 
+  // Pause all polling while the tab is hidden — prevents hundreds of
+  // background requests piling up on the dev server (which caused the
+  // `--max-old-space-size` OOM restart and UI freeze reported in the log).
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (bgPollRef.current) { clearInterval(bgPollRef.current); bgPollRef.current = null; }
+        if (bgElapsedRef.current) { clearInterval(bgElapsedRef.current); bgElapsedRef.current = null; }
+        if (runAllPollRef.current) { clearInterval(runAllPollRef.current); runAllPollRef.current = null; }
+      } else {
+        if (!bgPollRef.current) startBgPolling();
+        if (runAllData?.active && !runAllPollRef.current) startRunAllPolling();
+        // Fetch immediately so state is fresh when user returns to the tab.
+        pollRunAll();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [runAllData?.active]);
+
   const startBgPolling = () => {
-    // Elapsed ticker: every second
-    bgElapsedRef.current = setInterval(() => setBgTick(t => t + 1), 1000);
-    // Running-task poll: every 2.5s
+    // Elapsed ticker: every 3s (was every 1s — too chatty, re-renders whole
+    // page tree and was a contributor to the UI freeze reported on the
+    // scheduler page under memory pressure).
+    bgElapsedRef.current = setInterval(() => setBgTick(t => t + 1), 3000);
+    // Running-task poll: every 4s (was 2.5s). Still plenty fresh, but ~40%
+    // less DB + server pressure while long tasks are running.
     bgPollRef.current = setInterval(async () => {
       try {
         const res = await fetch('/api/scheduler/executions?status=running&limit=20');
@@ -176,12 +209,21 @@ export default function SchedulerPage() {
         const data = await res.json();
         const runningExecs: any[] = data.executions || [];
         setBgRunning(prev => {
-          const next: Record<string, { startedAt: number; elapsed: number }> = {};
+          const next: Record<string, typeof prev[string]> = {};
           for (const exec of runningExecs) {
             const taskId = exec.task?.id || exec.taskId;
             if (!taskId) continue;
             const startedAt = prev[taskId]?.startedAt ?? new Date(exec.startedAt).getTime();
-            next[taskId] = { startedAt, elapsed: Math.floor((Date.now() - startedAt) / 1000) };
+            next[taskId] = {
+              startedAt,
+              elapsed: Math.floor((Date.now() - startedAt) / 1000),
+              name: exec.task?.name ?? prev[taskId]?.name,
+              type: exec.task?.type ?? prev[taskId]?.type,
+              treeName: exec.task?.treeName ?? prev[taskId]?.treeName ?? null,
+              nodeName: exec.task?.nodeName ?? prev[taskId]?.nodeName ?? null,
+              detail: exec.task?.detail ?? prev[taskId]?.detail ?? null,
+              executionId: exec.id ?? prev[taskId]?.executionId,
+            };
           }
           // If something finished (was in prev but not in next), refresh tasks
           const prevIds = Object.keys(prev);
@@ -192,7 +234,7 @@ export default function SchedulerPage() {
           return next;
         });
       } catch { /* ignore */ }
-    }, 2500);
+    }, 4000);
   };
 
   const fetchTasks = async (silent = false) => {
@@ -334,6 +376,10 @@ export default function SchedulerPage() {
 
   const startRunAllPolling = () => {
     if (runAllPollRef.current) return;
+    // 3s cadence (was 1.5s). The indeterminate progress bar and per-task
+    // animation already convey "something is happening" — we don't need
+    // sub-2s poll granularity, and doubling the interval halves the server
+    // load while long-running python/SQL steps are executing.
     runAllPollRef.current = setInterval(async () => {
       try {
         const res = await fetch('/api/scheduler/run-all');
@@ -346,7 +392,7 @@ export default function SchedulerPage() {
           fetchTasks(true);
         }
       } catch { /* ignore */ }
-    }, 1500);
+    }, 3000);
   };
 
   const handleRunAll = async () => {
@@ -388,7 +434,27 @@ export default function SchedulerPage() {
 
   const closeRunAllDialog = () => {
     setRunAllOpen(false);
-    if (runAllPollRef.current) { clearInterval(runAllPollRef.current); runAllPollRef.current = null; }
+    // Keep polling alive while a run-all is still active so that re-opening
+    // the dialog (via the "1 task in esecuzione" banner) shows fresh state.
+    // Only stop polling once the run has actually finished.
+    if (runAllPollRef.current && !runAllData?.active) {
+      clearInterval(runAllPollRef.current);
+      runAllPollRef.current = null;
+    }
+  };
+
+  // Banner click: decide which progress view to open.
+  //   - If there's an active `Lancia Tutto` batch → open the run-all dialog.
+  //   - Otherwise the banner is showing individual running tasks from the
+  //     scheduler-service; open a lightweight list dialog for those.
+  const reopenRunAllDialog = async () => {
+    await pollRunAll(); // refresh run-all state
+    if (runAllData?.active) {
+      setRunAllOpen(true);
+      if (!runAllPollRef.current) startRunAllPolling();
+    } else {
+      setBgDialogOpen(true);
+    }
   };
 
   const handleTriggerTask = async (task: ScheduledTask) => {
@@ -507,12 +573,20 @@ export default function SchedulerPage() {
 
       {/* ── Global "tasks running" banner ── */}
       {bgRunningCount > 0 && (
-        <div className="mb-4 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/20 px-4 py-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={reopenRunAllDialog}
+          title="Clicca per vedere avanzamento"
+          className="mb-4 w-full text-left rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/30 transition-colors px-4 py-3 flex items-center gap-3 cursor-pointer"
+        >
           <Loader2 className="w-4 h-4 animate-spin text-violet-600 shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-sm font-medium text-violet-800 dark:text-violet-300">
                 {bgRunningCount === 1 ? '1 task in esecuzione' : `${bgRunningCount} task in esecuzione`}
+                <span className="ml-2 text-xs font-normal text-violet-600 dark:text-violet-400 underline">
+                  vedi avanzamento
+                </span>
               </span>
               <span className="text-xs text-violet-600 dark:text-violet-400 flex items-center gap-1">
                 <Timer className="w-3 h-3" />
@@ -528,7 +602,7 @@ export default function SchedulerPage() {
                 style={{ width: '40%', animation: 'bgSlide 1.8s ease-in-out infinite' }} />
             </div>
           </div>
-        </div>
+        </button>
       )}
 
       <style>{`
@@ -1062,6 +1136,89 @@ export default function SchedulerPage() {
             )}
             <Button variant="outline" size="sm" onClick={closeRunAllDialog}>
               {runAllData?.active ? 'Chiudi (continua in background)' : 'Chiudi'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Background individual-task progress dialog (shown when banner is
+          clicked and no run-all batch is active). The scheduler-service runs
+          tasks in a separate process — Next only has poll-level visibility,
+          so this view lists task name + elapsed time, not per-step detail. */}
+      <Dialog open={bgDialogOpen} onOpenChange={setBgDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
+              Task in esecuzione
+            </DialogTitle>
+            <DialogDescription>
+              {bgRunningCount === 1
+                ? '1 task in background'
+                : `${bgRunningCount} task in background`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+            {Object.entries(bgRunning).length === 0 && (
+              <div className="text-xs text-muted-foreground py-4 text-center">
+                Nessun task attivo. L'esecuzione è terminata da poco.
+              </div>
+            )}
+            {Object.entries(bgRunning).map(([taskId, info]) => {
+              const seconds = Math.floor((Date.now() - info.startedAt) / 1000);
+              const mins = Math.floor(seconds / 60);
+              const secs = seconds % 60;
+              const elapsedLabel = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+              // Prefer human-readable labels (same priority as run-all view):
+              //   primary = nodeName (the leaf step the user authored)
+              //   else    = treeName (the decision tree the task runs on)
+              //   else    = raw task.name ("Node-xxx-yyy" — id-like fallback)
+              const primary = info.nodeName || info.treeName || info.name || taskId;
+              // Subtitle row: show "tree · type" or just type if no tree.
+              const subtitleParts: string[] = [];
+              if (info.nodeName && info.treeName) subtitleParts.push(info.treeName);
+              if (info.type) subtitleParts.push(info.type.replace(/_/g, ' '));
+              const subtitle = subtitleParts.join(' · ');
+
+              return (
+                <div
+                  key={taskId}
+                  className="flex items-start justify-between gap-2 rounded-md border bg-violet-50/30 dark:bg-violet-900/10 px-3 py-2"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium truncate" title={primary}>
+                      {primary}
+                    </div>
+                    {subtitle && (
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">
+                        {subtitle}
+                      </div>
+                    )}
+                    {info.detail && (
+                      <div className="text-[10px] text-muted-foreground/80 truncate mt-0.5" title={info.detail}>
+                        {info.detail}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400 shrink-0 tabular-nums pt-0.5">
+                    <Timer className="w-3 h-3" />
+                    {elapsedLabel}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between pt-2 text-[10px] text-muted-foreground">
+            <span>Aggiornamento ogni 4s</span>
+            <span>Guarda "Registro Invii" per lo storico.</span>
+          </div>
+
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setBgDialogOpen(false)}>
+              Chiudi
             </Button>
           </div>
         </DialogContent>

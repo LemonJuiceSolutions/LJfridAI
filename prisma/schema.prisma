@@ -704,3 +704,26 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
 }
+
+// GDPR Art. 7 — proof of consent. Server-side log (localStorage alone is
+// not enough to discharge the burden of proof under Art. 7.1).
+model ConsentLog {
+  id          String   @id @default(cuid())
+  // Optional: anonymous visitors don't have a user yet.
+  userId      String?
+  // Stable anonymous fingerprint set by the consent component (cookie/UUID).
+  anonymousId String?
+  // Per-purpose granular flags.
+  essential   Boolean  @default(true)
+  analytics   Boolean  @default(false)
+  marketing   Boolean  @default(false)
+  // Bumped whenever we change cookie text or purposes — re-prompts users.
+  policyVersion String  @default("1.0")
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([anonymousId])
+  @@index([createdAt])
+}

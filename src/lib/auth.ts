@@ -1,12 +1,15 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { db } from "@/lib/db";
+import { db, dbRaw } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const authOptions: NextAuthOptions = {
-    adapter: PrismaAdapter(db) as any,
+    // Use raw client — PrismaAdapter inspects internal Prisma state that the
+    // $extends proxy can interfere with. User/Account/Session have no PII
+    // fields registered for encryption, so bypassing the extension is safe.
+    adapter: PrismaAdapter(dbRaw) as any,
     providers: [
         CredentialsProvider({
             name: "credentials",
@@ -20,7 +23,7 @@ export const authOptions: NextAuthOptions = {
                 }
 
                 // SECURITY M-06: rate limit login attempts — 5 per 15 min per email
-                const rl = rateLimit(`login:${credentials.email.toLowerCase()}`, 5, 15 * 60 * 1000);
+                const rl = await rateLimit(`login:${credentials.email.toLowerCase()}`, 5, 15 * 60 * 1000);
                 if (!rl.allowed) {
                     const mins = Math.ceil((rl.retryAfterMs || 0) / 60000);
                     throw new Error(`Troppi tentativi di login. Riprova tra ${mins} minuti.`);

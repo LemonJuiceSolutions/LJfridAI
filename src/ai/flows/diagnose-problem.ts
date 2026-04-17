@@ -107,9 +107,10 @@ Follow these steps with absolute rigor:
     *   **CRITICAL: Include Attachments**: If the current node (question or decision) in the JSON tree contains 'media', 'links', or 'triggers', you MUST include them in your output exactly as they appear in the JSON.`;
 
     const provider = getOpenRouterProvider();
+    const { maybeRedact } = await import('@/lib/pii-redact');
     const { object } = await generateObject({
         model: provider(DEFAULT_MODEL),
-        prompt,
+        prompt: maybeRedact(prompt),
         schema: DiagnoseProblemOutputSchema,
     });
 

@@ -67,6 +67,24 @@ export async function runOpenRouterAgentLoop(
         throw new Error('API key OpenRouter mancante. Configura la chiave nelle Impostazioni.');
     }
 
+    // GDPR: redact PII in messages before sending to OpenRouter. Idempotent
+    // for callers that already redacted upstream (sql-agent, super-agent).
+    const { maybeRedact } = await import('@/lib/pii-redact');
+    function redactMessage(m: any): any {
+        if (!m || typeof m !== 'object') return m;
+        const out: any = { ...m };
+        if (typeof out.content === 'string') {
+            out.content = maybeRedact(out.content);
+        } else if (Array.isArray(out.content)) {
+            out.content = out.content.map((part: any) =>
+                part && typeof part === 'object' && typeof part.text === 'string'
+                    ? { ...part, text: maybeRedact(part.text) }
+                    : part,
+            );
+        }
+        return out;
+    }
+
     // Clone messages to avoid mutating input
     const currentMessages = [...messages];
     const MAX_ROUNDS = 15; // Safety limit
@@ -84,7 +102,7 @@ export async function runOpenRouterAgentLoop(
             },
             body: JSON.stringify({
                 model: model,
-                messages: currentMessages,
+                messages: currentMessages.map(redactMessage),
                 tools: tools.length > 0 ? tools : undefined,
                 temperature: 0.7, // Consistent with Genkit config
             })

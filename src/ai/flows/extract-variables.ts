@@ -124,9 +124,10 @@ ${input}
 `;
 
     const provider = getOpenRouterProvider();
+    const { maybeRedact } = await import('@/lib/pii-redact');
     const { object } = await generateObject({
         model: provider(DEFAULT_MODEL),
-        prompt,
+        prompt: maybeRedact(prompt),
         schema: RawOutputSchema,
     });
     return object;

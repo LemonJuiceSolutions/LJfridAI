@@ -17,6 +17,7 @@ import { createInvitationAction, getInvitationsAction, revokeInvitationAction } 
 import { getOpenRouterSettingsAction, saveOpenRouterSettingsAction } from '@/actions/openrouter';
 import { getAiProviderAction, saveAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import { ConnectorsManager } from './connectors-manager';
+import { SystemBudgetCard } from './system-budget-card';
 import { Users, UserPlus, Copy, UserSearch } from 'lucide-react';
 import {
     getLeadGenApiKeysAction, saveLeadGenApiKeysAction,
@@ -1116,6 +1117,9 @@ export default function SettingsPage() {
 
                         </CardContent>
                     </Card>
+
+                    {/* System Budget Card */}
+                    <SystemBudgetCard />
 
                     {/* GDPR Section */}
                     <Card className="border-destructive/30">

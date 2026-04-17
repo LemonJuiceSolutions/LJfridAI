@@ -1,0 +1,7 @@
+{
+  "nextHeapMb": 6144,
+  "schedulerHeapMb": 4096,
+  "updatedAt": null,
+  "updatedBy": null,
+  "_comment": "RAM budget per process (MB). Edited via Settings → Risorse Sistema. Restart required after change: ctrl+c dev then npm run dev."
+}

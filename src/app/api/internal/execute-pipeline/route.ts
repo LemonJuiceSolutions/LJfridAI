@@ -195,7 +195,7 @@ export async function POST(req: NextRequest) {
             // Invalidate widget discovery cache so new widgets appear immediately
             try {
                 const { invalidateWidgetDiscoveryCache } = await import(
-                    '@/app/api/internal/widget-discovery/route'
+                    '@/app/api/internal/widget-discovery/cache'
                 );
                 invalidateWidgetDiscoveryCache();
             } catch { /* best effort */ }

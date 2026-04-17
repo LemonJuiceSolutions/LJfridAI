@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, AGENT2.0]
+  pull_request:
+    branches: [main, AGENT2.0]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Build/typecheck do not need real DB credentials but Prisma needs SOMETHING.
+  DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+  # 32-byte base64 placeholder used only by code paths that import the helper.
+  ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  NEXTAUTH_SECRET: ci-only-not-a-real-secret-do-not-reuse
+  NEXTAUTH_URL: http://localhost:9002
+
+jobs:
+  quality:
+    name: Lint + Typecheck + Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint --if-present
+        continue-on-error: true # ESLint currently soft-failing per next.config.ts
+
+      - name: Tests
+        run: npm test
+
+  build:
+    name: Next build
+    runs-on: ubuntu-latest
+    needs: quality
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Build
+        run: npm run build
