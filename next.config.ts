@@ -5,14 +5,14 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   /* config options here */
   typescript: {
-    // TODO 2026-04-17: 70 pre-existing `implicitly has any` errors across
-    // ~30 files (mostly Prisma findMany callbacks). Build was failing on
-    // AGENT2.0 before the GDPR/security fix sprint. Re-enable strict mode
-    // after a dedicated typing sweep — track via the architecture audit.
-    ignoreBuildErrors: true,
+    // Re-enabled 2026-04-17: 70 implicit-any errors swept, build passes.
+    ignoreBuildErrors: false,
   },
   eslint: {
-    ignoreDuringBuilds: true,
+    // Enforced: 0 errors in .eslintrc.json rule config. Warnings remain but
+    // do not fail the build. React rules-of-hooks + unused-expressions are
+    // tracked as warn pending a per-component audit.
+    ignoreDuringBuilds: false,
   },
   images: {
     remotePatterns: [

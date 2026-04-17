@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
         if (format === 'excel') {
             // Use Python backend for Excel generation
             try {
-                const excelData = leads.map(l => ({
+                const excelData = leads.map((l: any) => ({
                     'Nome': l.fullName || `${l.firstName || ''} ${l.lastName || ''}`.trim(),
                     'Ruolo': l.jobTitle || '',
                     'Email': l.email || '',
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
 
         // CSV format
         const headers = ['Nome', 'Ruolo', 'Email', 'Telefono', 'LinkedIn', 'Azienda', 'Settore', 'Città', 'Paese', 'Sito Web', 'Fonte'];
-        const rows = leads.map(l => [
+        const rows = leads.map((l: any) => [
             l.fullName || `${l.firstName || ''} ${l.lastName || ''}`.trim(),
             l.jobTitle || '', l.email || '', l.phone || '', l.linkedinUrl || '',
             l.companyName || '', l.companyIndustry || '', l.companyCity || '',

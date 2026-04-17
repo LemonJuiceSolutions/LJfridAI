@@ -11,7 +11,7 @@ import { runClaudeCliSync } from '@/ai/providers/claude-cli-provider';
 
 // ─── Debounced save to avoid writing 30MB on every single field edit ─────────
 let _debouncedSaveTimer: ReturnType<typeof setTimeout> | null = null;
-let _debouncedSavePromise: Promise<void> | null = null;
+const _debouncedSavePromise: Promise<void> | null = null;
 let _debouncedSaveResolvers: (() => void)[] = [];
 const DEBOUNCE_SAVE_MS = 2000;
 
@@ -1368,7 +1368,7 @@ export async function generateDescriptionBatchAction(
         // Helper: process a single sub-batch with retry
         // Track temporarily rate-limited models (shared across sub-batches)
         const rateLimitedModels = new Set<string>();
-        let batchUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 };
+        const batchUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 };
 
         async function processSubBatch(batch: TableInfo[], subIdx: number): Promise<{ ok: boolean; tables: number }> {
             let tablesSummary: string;
@@ -1868,7 +1868,7 @@ export async function inferRelationshipsAIAction(
         }
 
         let newCount = 0;
-        let relUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 };
+        const relUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 };
 
         // Process sub-batches in parallel
         const rateLimitedRel = new Set<string>();

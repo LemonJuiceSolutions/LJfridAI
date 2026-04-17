@@ -253,7 +253,7 @@ export async function saveNodeExecutionResultAction(
         }
 
         let companyId = user?.companyId;
-        let userId = user?.id;
+        const userId = user?.id;
 
         if (!companyId) {
             // Find tree to get company
@@ -348,10 +348,10 @@ export async function saveNodeExecutionResultAction(
             orderBy: { startedAt: 'desc' },
             skip: 20,
             select: { id: true },
-        }).then(old => {
+        }).then((old: any) => {
             if (old.length > 0) {
                 return db.scheduledTaskExecution.deleteMany({
-                    where: { id: { in: old.map(r => r.id) } },
+                    where: { id: { in: old.map((r: any) => r.id) } },
                 });
             }
         }).catch(() => { /* non-critical */ });

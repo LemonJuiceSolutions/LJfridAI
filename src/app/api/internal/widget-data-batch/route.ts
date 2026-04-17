@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
             where: { id: { in: requestedTreeIds }, companyId },
             select: { id: true },
         });
-        const ownedTreeIds = new Set(ownedTrees.map(t => t.id));
+        const ownedTreeIds = new Set(ownedTrees.map((t: any) => t.id));
 
         // Load all preview cache entries in parallel (one query per tree)
         // Only for trees the user's company owns.
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
             .map(([treeId, nodeIds]) =>
                 db.nodePreviewCache.findMany({
                     where: { treeId, nodeId: { in: nodeIds } },
-                }).then(entries => entries.map(e => ({ ...e, treeId })))
+                }).then((entries: any) => entries.map((e: any) => ({ ...e, treeId })))
             );
 
         const results = await Promise.all(queries);

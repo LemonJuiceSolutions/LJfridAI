@@ -165,7 +165,7 @@ function useFlowExecution() {
 
 
         const currentData: Record<string, any> = {};
-        let cacheHitCount = 0; // Track cache hits for stats
+        const cacheHitCount = 0; // Track cache hits for stats
 
         const initialStepsRef = initialSteps; // Keep ref for easy access
 
@@ -725,7 +725,7 @@ function PythonDataPreview({
 
             // PRE-PROCESSING: Remove Python comments before extracting identifiers
             // This prevents words in comments from being detected as dependencies
-            let cleanedCode = code
+            const cleanedCode = code
                 // Remove triple-quoted strings (docstrings) - both ''' and """
                 .replace(/'''[\s\S]*?'''/g, '')
                 .replace(/"""[\s\S]*?"""/g, '')

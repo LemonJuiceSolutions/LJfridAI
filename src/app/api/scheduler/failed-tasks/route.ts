@@ -59,7 +59,7 @@ export async function GET() {
   // Enrich with tree names
   const treeIds = [...new Set(
     failedTasks
-      .map(t => (t.config as any)?.treeId)
+      .map((t: any) => (t.config as any)?.treeId)
       .filter(Boolean) as string[]
   )];
   const treeNameMap: Record<string, string> = {};
@@ -73,7 +73,7 @@ export async function GET() {
     }
   }
 
-  const enriched = failedTasks.map(t => ({
+  const enriched = failedTasks.map((t: any) => ({
     ...t,
     treeName: (t.config as any)?.treeId ? treeNameMap[(t.config as any).treeId] || null : null,
     lastExecution: t.executions[0] || null,

@@ -1802,5 +1802,12 @@ if __name__ == '__main__':
     else:
         logging.basicConfig(level=logging.WARNING)
 
-    print("🐍 Starting Python Execution Backend on port 5005...")
-    app.run(host='0.0.0.0', port=5005, debug=True, use_reloader=False, threaded=True)
+    # SECURITY: bind to loopback by default. /execute runs arbitrary Python with
+    # __builtins__ exposed — full RCE if port reachable externally. Set
+    # PYTHON_BACKEND_HOST=0.0.0.0 only inside an isolated Docker network where
+    # nothing but the Next.js service can reach it.
+    import os
+    host = os.environ.get('PYTHON_BACKEND_HOST', '127.0.0.1')
+    debug_env = os.environ.get('PYTHON_BACKEND_DEBUG', 'false').lower() == 'true'
+    print(f"🐍 Starting Python Execution Backend on {host}:5005...")
+    app.run(host=host, port=5005, debug=debug_env, use_reloader=False, threaded=True)

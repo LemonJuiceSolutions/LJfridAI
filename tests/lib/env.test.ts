@@ -14,7 +14,7 @@ describe('env validation', () => {
   it('exports env without throwing when required vars are set', async () => {
     process.env.DATABASE_URL = 'postgresql://localhost:5432/test';
     process.env.NEXTAUTH_SECRET = 'a-secret-that-is-long-enough';
-    process.env.NODE_ENV = 'test';
+    (process.env as any).NODE_ENV = 'test';
 
     const mod = await import('@/lib/env');
     expect(mod.env).toBeDefined();
@@ -24,7 +24,7 @@ describe('env validation', () => {
   it('returns undefined env when required vars are missing in non-production', async () => {
     delete process.env.DATABASE_URL;
     delete process.env.NEXTAUTH_SECRET;
-    process.env.NODE_ENV = 'test';
+    (process.env as any).NODE_ENV = 'test';
 
     const mod = await import('@/lib/env');
     expect(mod.env).toBeUndefined();
@@ -35,7 +35,7 @@ describe('env validation', () => {
     process.env.NEXTAUTH_SECRET = 'a-secret-that-is-long-enough';
     delete process.env.PYTHON_BACKEND_URL;
     delete process.env.DATA_LAKE_PATH;
-    process.env.NODE_ENV = 'test';
+    (process.env as any).NODE_ENV = 'test';
 
     const mod = await import('@/lib/env');
     expect(mod.env).toBeDefined();

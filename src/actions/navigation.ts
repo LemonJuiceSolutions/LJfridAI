@@ -35,8 +35,8 @@ export async function getNavigationItems() {
         });
 
         return {
-            main: items.filter(i => i.group === 'main'),
-            settings: items.filter(i => i.group === 'settings')
+            main: items.filter((i: any) => i.group === 'main'),
+            settings: items.filter((i: any) => i.group === 'settings')
         };
     } catch (error) {
         console.error("Failed to fetch navigation items:", error);

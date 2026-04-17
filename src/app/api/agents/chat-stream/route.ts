@@ -159,6 +159,10 @@ Usa i tool a tua disposizione per esplorare il DB, testare le query, e poi rispo
 }
 
 // ─── Python System Prompt Builder ────────────────────────────────────────────
+// SYNC NEEDED WITH: src/ai/flows/python-agent-flow.ts (legacy non-streaming
+// prompt). This is the canonical/active prompt used by the streaming UX. When
+// updating `saveToDb` / `insertToDb` / `deleteFromDb` guidance here, mirror
+// the change in the legacy flow to keep both call sites consistent.
 
 function buildPythonSystemPrompt(opts: {
     modelName: string;
@@ -869,6 +873,16 @@ export async function POST(request: NextRequest) {
             console.log('[chat-stream] Unauthorized');
             return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
         }
+        // Rate limit: 60 AI streams per minute per user. Prevents token-cost DoS
+        // from a malicious authenticated user.
+        {
+            const { rateLimit } = await import('@/lib/rate-limit');
+            const uid = (session.user as { id?: string; email?: string }).id || session.user.email;
+            const rl = await rateLimit(`ai:chat-stream:${uid}`, 60, 60_000);
+            if (!rl.allowed) {
+                return new Response(JSON.stringify({ error: 'Rate limit superato. Riprova tra poco.' }), { status: 429 });
+            }
+        }
 
         const body = await request.json();
         const {
@@ -1137,6 +1151,9 @@ export async function POST(request: NextRequest) {
             system: systemPrompt,
             messages: [{ role: 'user' as const, content: userPrompt }],
             tools,
+            // Propagate client disconnect so the LLM call and any in-flight
+            // tool calls (SQL, Python) cancel instead of burning tokens.
+            abortSignal: request.signal,
             // Allow up to 25 tool-call round-trips for deeper agentic exploration
             stopWhen: stepCountIs(25),
             maxRetries: 2,

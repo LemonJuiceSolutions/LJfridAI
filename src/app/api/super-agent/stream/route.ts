@@ -104,7 +104,7 @@ function createSuperAgentTools(companyId: string) {
                     if (trees.length === 0) return JSON.stringify({ error: 'Nessun albero trovato' });
                     return JSON.stringify({
                         count: trees.length,
-                        trees: trees.map(t => ({ id: t.id, name: t.name, description: t.description, type: t.type })),
+                        trees: trees.map((t: any) => ({ id: t.id, name: t.name, description: t.description, type: t.type })),
                     }, null, 2);
                 } catch (e: any) {
                     return JSON.stringify({ error: `Errore: ${e.message}` });
@@ -224,7 +224,7 @@ function createSuperAgentTools(companyId: string) {
                         orderBy: { updatedAt: 'desc' },
                     });
                     if (entries.length === 0) return JSON.stringify({ results: [], message: 'Nessuna entry trovata nella Knowledge Base.' });
-                    return JSON.stringify({ results: entries.map(e => ({ id: e.id, question: e.question, answer: e.answer, tags: e.tags, category: e.category })) }, null, 2);
+                    return JSON.stringify({ results: entries.map((e: any) => ({ id: e.id, question: e.question, answer: e.answer, tags: e.tags, category: e.category })) }, null, 2);
                 } catch (e: any) {
                     return JSON.stringify({ error: `Errore ricerca KB: ${e.message}` });
                 }
@@ -518,6 +518,13 @@ export async function POST(request: NextRequest) {
         if (!session?.user?.email) {
             return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
         }
+        {
+            const { rateLimit } = await import('@/lib/rate-limit');
+            const rl = await rateLimit(`ai:super-agent:${session.user.email}`, 60, 60_000);
+            if (!rl.allowed) {
+                return new Response(JSON.stringify({ error: 'Rate limit superato. Riprova tra poco.' }), { status: 429 });
+            }
+        }
 
         const user = await db.user.findUnique({
             where: { email: session.user.email },
@@ -569,7 +576,7 @@ export async function POST(request: NextRequest) {
         try {
             const trees = await fetchTreesForCompany(companyId);
             if (trees.length > 0) {
-                const summaries = trees.map(t => {
+                const summaries = trees.map((t: any) => {
                     let nodeCount = 0, sqlCount = 0, pythonCount = 0;
                     try {
                         const nodes = collectNodes(JSON.parse(t.jsonDecisionTree), t.name, t.id);
@@ -749,6 +756,8 @@ OGNI VOLTA che mostri un grafico (recharts) o una tabella con dati estratti da S
             system: systemPrompt,
             messages: streamMessages,
             tools,
+            // Cancel LLM + tool execution on client disconnect (saves tokens).
+            abortSignal: request.signal,
             stopWhen: stepCountIs(30),
             maxRetries: 2,
             temperature: 0.3,

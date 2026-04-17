@@ -363,7 +363,7 @@ export class SchedulerService {
 
     for (const task of tasksWithSlots) {
       const execTimes = execsByTask.get(task.id) || [];
-      const missedSlots = task.expectedSlots.filter(slot => {
+      const missedSlots = task.expectedSlots.filter((slot: any) => {
         const slotMs = slot.getTime();
         return !execTimes.some(execMs => Math.abs(execMs - slotMs) <= TOLERANCE_MS);
       });
@@ -2191,7 +2191,7 @@ export class SchedulerService {
 
     // 4. Export if configured (only if table data available)
     if (sqlExportConfig && sqlExportConfig.targetConnectorId && sqlExportConfig.targetTableName) {
-      let dataToExport = result.data;
+      const dataToExport = result.data;
       if (!Array.isArray(dataToExport) || dataToExport.length === 0) {
         return { success: true, message: "Executed, but no data to export." };
       }
@@ -2375,7 +2375,7 @@ export function calculateNextRunForTask(task: any, timezone: string, referenceDa
 
       const isDaily = task.daysOfWeek === '*' || !task.daysOfWeek;
 
-      let candidates: DateTime[] = [];
+      const candidates: DateTime[] = [];
       // Look ahead 14 days
       for (let d = 0; d < 14; d++) {
         const refDate = now.plus({ days: d });

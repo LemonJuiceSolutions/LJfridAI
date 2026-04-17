@@ -34,7 +34,7 @@ export async function exportSettingsAction() {
         const backupData: BackupData = {
             version: '1.0',
             exportDate: new Date().toISOString(),
-            connectors: connectors.map(c => ({
+            connectors: connectors.map((c: any) => ({
                 name: c.name,
                 type: c.type,
                 config: JSON.parse(c.config)

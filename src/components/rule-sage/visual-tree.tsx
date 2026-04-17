@@ -148,7 +148,7 @@ const calculateLayout = (root: DecisionNode, nodeMap: Map<string, DecisionNode>)
             const effectiveWidth = (type === 'link') ? 0 : NODE_WIDTH;
             const effectiveHeight = (type === 'link') ? 0 : NODE_HEIGHT;
 
-            let nodeWithLayout: TreeNodeWithLayout = {
+            const nodeWithLayout: TreeNodeWithLayout = {
                 node, path, id, x, y,
                 width: effectiveWidth, height: effectiveHeight,
                 type,
@@ -172,7 +172,7 @@ const calculateLayout = (root: DecisionNode, nodeMap: Map<string, DecisionNode>)
 
         // First pass: calculate dimensions
         const childrenDims = children.map(([option, childNode]) => {
-            let optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
+            const optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
 
             const startY = y + NODE_HEIGHT + V_SPACING + OPTION_NODE_HEIGHT;
 
@@ -218,7 +218,7 @@ const calculateLayout = (root: DecisionNode, nodeMap: Map<string, DecisionNode>)
             const [option, childNode] = child;
             const branchInfo = childrenDims[i];
             const branchWidth = branchInfo.width;
-            let optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
+            const optionPath = `${path}.options['${option.replace(/'/g, "\\'")}']`;
 
             const optionId = `${id}-${option}`;
             const variableId = node.variableId;
@@ -237,7 +237,7 @@ const calculateLayout = (root: DecisionNode, nodeMap: Map<string, DecisionNode>)
             };
             layout.set(optionId, optionNodeLayout);
 
-            let childStartY = y + NODE_HEIGHT + (V_SPACING / 2) + OPTION_NODE_HEIGHT + 30;
+            const childStartY = y + NODE_HEIGHT + (V_SPACING / 2) + OPTION_NODE_HEIGHT + 30;
 
             if (Array.isArray(childNode)) {
                 const totalContentWidth = branchInfo.subDims.reduce((sum, d) => sum + d.width, 0) + (Math.max(0, childNode.length - 1) * H_SPACING);
@@ -1131,7 +1131,7 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
 
         const varId = parentNode?.variableId;
 
-        let nodesToDelete: string[] = [];
+        const nodesToDelete: string[] = [];
         const findChildrenText = (node: any) => {
             if (typeof node === 'string') {
                 nodesToDelete.push(`Decision: ${node}`);
@@ -1285,8 +1285,8 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             if (!node.parent) return null;
 
             const parent = node.parent;
-            let startX = parent.x + parent.width / 2;
-            let startY = parent.y + parent.height;
+            const startX = parent.x + parent.width / 2;
+            const startY = parent.y + parent.height;
 
             let endX = node.x + node.width / 2;
             let endY = node.y;

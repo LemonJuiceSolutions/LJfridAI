@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
 
     // Enrich with tree names
     const treeIds = [...new Set(
-      executions.map(e => (e.task?.config as any)?.treeId).filter(Boolean)
+      executions.map((e: any) => (e.task?.config as any)?.treeId).filter(Boolean)
     )] as string[];
 
     let treeNameMap: Record<string, string> = {};
@@ -70,10 +70,10 @@ export async function GET(request: NextRequest) {
         where: { id: { in: treeIds } },
         select: { id: true, name: true }
       });
-      treeNameMap = Object.fromEntries(trees.map(t => [t.id, t.name]));
+      treeNameMap = Object.fromEntries(trees.map((t: any) => [t.id, t.name]));
     }
 
-    const enrichedExecutions = executions.map(e => {
+    const enrichedExecutions = executions.map((e: any) => {
       const cfg = (e.task?.config as any) || {};
       const treeId = cfg.treeId;
 

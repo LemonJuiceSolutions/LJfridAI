@@ -16,7 +16,7 @@ export interface ConnectorAlert {
 type Listener = () => void;
 
 let alerts: ConnectorAlert[] = [];
-let listeners: Set<Listener> = new Set();
+const listeners: Set<Listener> = new Set();
 
 function emit() {
   listeners.forEach((l) => l());

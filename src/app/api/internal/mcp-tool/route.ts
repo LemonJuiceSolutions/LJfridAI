@@ -119,7 +119,7 @@ async function doSuperSearchKB(params: { query: string; companyId: string }) {
         take: 10,
         orderBy: { updatedAt: 'desc' },
     });
-    return JSON.stringify({ results: entries.map(e => ({ id: e.id, question: e.question, answer: e.answer, tags: e.tags, category: e.category })) }, null, 2);
+    return JSON.stringify({ results: entries.map((e: any) => ({ id: e.id, question: e.question, answer: e.answer, tags: e.tags, category: e.category })) }, null, 2);
 }
 
 async function doSuperSaveToKB(params: { question: string; answer: string; tags: string[]; category?: string; companyId: string }) {
@@ -144,7 +144,7 @@ async function doSuperCreateTree(params: {
         select: { openRouterApiKey: true, openRouterModel: true },
     });
     // Find first user with a non-empty API key
-    const companyUser = companyUsers.find(u => u.openRouterApiKey && u.openRouterApiKey.trim() !== '');
+    const companyUser = companyUsers.find((u: any) => u.openRouterApiKey && u.openRouterApiKey.trim() !== '');
     const openRouterConfig = companyUser?.openRouterApiKey
         ? { apiKey: companyUser.openRouterApiKey, model: companyUser.openRouterModel || 'google/gemini-2.0-flash-001' }
         : undefined;

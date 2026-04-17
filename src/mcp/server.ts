@@ -71,14 +71,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                             type: 'string',
                             description: 'Descrizione in linguaggio naturale del processo decisionale',
                         },
-                        openRouterApiKey: {
-                            type: 'string',
-                            description: 'API Key OpenRouter (opzionale)',
-                        },
-                        openRouterModel: {
-                            type: 'string',
-                            description: 'Modello OpenRouter da usare (opzionale, default: google/gemini-2.0-flash-001)',
-                        },
                     },
                     required: ['description'],
                 },
@@ -156,12 +148,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
         switch (name) {
             case 'create_tree': {
+                // SECURITY: API keys resolved server-side from authenticated session.
+                // MCP clients cannot inject arbitrary OpenRouter credentials.
                 const result = await apiCall('/api/trees', {
                     method: 'POST',
                     body: JSON.stringify({
                         description: args?.description,
-                        openRouterApiKey: args?.openRouterApiKey,
-                        openRouterModel: args?.openRouterModel,
                     }),
                 });
                 return {

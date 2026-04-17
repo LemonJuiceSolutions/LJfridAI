@@ -123,7 +123,7 @@ async function doSearchKB(input: { query: string, companyId: string }) {
             orderBy: { updatedAt: 'desc' },
         });
         if (entries.length === 0) return JSON.stringify({ results: [], message: 'Nessuna entry trovata.' });
-        return JSON.stringify({ results: entries.map(e => ({ question: e.question, answer: e.answer, category: e.category })) }, null, 2);
+        return JSON.stringify({ results: entries.map((e: any) => ({ question: e.question, answer: e.answer, category: e.category })) }, null, 2);
     } catch (e: any) {
         return JSON.stringify({ error: e.message });
     }

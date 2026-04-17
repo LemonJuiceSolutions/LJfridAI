@@ -265,7 +265,7 @@ async function listTreesAndPipelines(input: { companyId: string; type?: string }
         const trees = await fetchTreesForCompany(input.companyId, input.type);
         if (trees.length === 0) return JSON.stringify({ error: 'Nessun albero trovato' });
 
-        const summary = trees.map(t => {
+        const summary = trees.map((t: any) => {
             let nodeCount = 0;
             let nodesWithSQL = 0;
             let nodesWithPython = 0;
@@ -424,7 +424,7 @@ async function searchKnowledgeBase(input: { query: string; companyId: string }):
             }
 
             return JSON.stringify({
-                results: entries.map(e => ({
+                results: entries.map((e: any) => ({
                     id: e.id,
                     question: e.question,
                     answer: e.answer,
@@ -501,7 +501,7 @@ export async function superAgentFlow(input: SuperAgentInput): Promise<SuperAgent
     try {
         const trees = await fetchTreesForCompany(input.companyId);
         if (trees.length > 0) {
-            const summaries = trees.map(t => {
+            const summaries = trees.map((t: any) => {
                 let nodeCount = 0;
                 let sqlCount = 0;
                 let pythonCount = 0;
@@ -837,7 +837,7 @@ async function executeToolCall(name: string, args: any): Promise<string> {
         case 'listTreesAndPipelines': {
             const trees = await fetchTreesForCompany(args.companyId, args.type);
             if (trees.length === 0) return JSON.stringify({ error: 'Nessun albero trovato' });
-            const summary = trees.map(t => {
+            const summary = trees.map((t: any) => {
                 let nodeCount = 0, nodesWithSQL = 0, nodesWithPython = 0;
                 try {
                     const treeData = JSON.parse(t.jsonDecisionTree);
@@ -896,7 +896,7 @@ async function executeToolCall(name: string, args: any): Promise<string> {
                 take: 10, orderBy: { updatedAt: 'desc' },
             });
             if (entries.length === 0) return JSON.stringify({ results: [], message: 'Nessuna entry nella KB.' });
-            return JSON.stringify({ results: entries.map(e => ({ id: e.id, question: e.question, answer: e.answer, tags: e.tags, category: e.category })) }, null, 2);
+            return JSON.stringify({ results: entries.map((e: any) => ({ id: e.id, question: e.question, answer: e.answer, tags: e.tags, category: e.category })) }, null, 2);
         }
         case 'saveToKnowledgeBase': {
             const entry = await db.knowledgeBaseEntry.create({

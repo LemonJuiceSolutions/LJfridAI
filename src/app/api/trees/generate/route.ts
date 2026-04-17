@@ -176,6 +176,13 @@ export async function POST(req: NextRequest) {
         if (!session?.user?.email) {
             return NextResponse.json({ data: null, error: 'Non autorizzato.' }, { status: 401 });
         }
+        {
+            const { rateLimit } = await import('@/lib/rate-limit');
+            const rl = await rateLimit(`ai:trees-generate:${session.user.email}`, 20, 60_000);
+            if (!rl.allowed) {
+                return NextResponse.json({ data: null, error: 'Rate limit superato. Riprova tra poco.' }, { status: 429 });
+            }
+        }
 
         const user = await db.user.findUnique({
             where: { email: session.user.email },

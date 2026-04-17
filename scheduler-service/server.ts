@@ -18,7 +18,17 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { SchedulerService } from '../src/lib/scheduler/scheduler-service';
 
-const INTERNAL_SECRET = process.env.SCHEDULER_INTERNAL_SECRET || 'change-me-in-production';
+// SECURITY: fail-closed on missing secret in production. In dev, allow a
+// deterministic dev-only value (never accept the literal placeholder silently).
+const INTERNAL_SECRET = (() => {
+  const env = process.env.SCHEDULER_INTERNAL_SECRET;
+  if (env && env !== 'change-me-in-production') return env;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SCHEDULER_INTERNAL_SECRET must be set in production');
+  }
+  console.warn('[scheduler] SCHEDULER_INTERNAL_SECRET not set — using dev-only fallback. DO NOT deploy like this.');
+  return 'dev-only-change-me-' + Math.random().toString(36).slice(2, 10);
+})();
 
 function authMiddleware(req: Request, res: Response, next: NextFunction) {
   // Health endpoint is public — no auth needed

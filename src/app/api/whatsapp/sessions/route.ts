@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
         if (flat) {
             // Return flat array of messages — easier for Python/Pandas
-            const messages = sessions.flatMap(s => {
+            const messages = sessions.flatMap((s: any) => {
                 const msgs = Array.isArray(s.messages) ? s.messages : [];
                 return msgs.map((m: any) => ({
                     session_id: s.id,
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Return grouped by session
-        const data = sessions.map(s => ({
+        const data = sessions.map((s: any) => ({
             id: s.id,
             phone: s.phoneNumber,
             status: s.status,

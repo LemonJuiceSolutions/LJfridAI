@@ -131,7 +131,10 @@ export async function POST(request: Request) {
         const priceId = subscription.items.data[0]?.price?.id ?? null;
         const { currentPeriodStart, currentPeriodEnd } = getPeriodDates(subscription);
 
-        await db.subscription.update({
+        // Stripe delivery order is not guaranteed: this event may arrive BEFORE
+        // checkout.session.completed. Use updateMany to avoid P2025 (row missing
+        // for unique where) which would 500 → Stripe retries forever.
+        const updated = await db.subscription.updateMany({
           where: { stripeCustomerId: customerId },
           data: {
             stripeSubscriptionId: subscription.id,
@@ -143,6 +146,9 @@ export async function POST(request: Request) {
             cancelAtPeriodEnd: subscription.cancel_at_period_end,
           },
         });
+        if (updated.count === 0) {
+          console.warn(`[billing/webhook] subscription.updated for unknown customer ${customerId} — will backfill on checkout.session.completed`);
+        }
         break;
       }
 
@@ -150,13 +156,13 @@ export async function POST(request: Request) {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
 
-        await db.subscription.update({
+        const deleted = await db.subscription.updateMany({
           where: { stripeCustomerId: customerId },
-          data: {
-            status: 'canceled',
-            cancelAtPeriodEnd: false,
-          },
+          data: { status: 'canceled', cancelAtPeriodEnd: false },
         });
+        if (deleted.count === 0) {
+          console.warn(`[billing/webhook] subscription.deleted for unknown customer ${customerId}`);
+        }
         break;
       }
 
@@ -164,10 +170,13 @@ export async function POST(request: Request) {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
 
-        await db.subscription.update({
+        const pastDue = await db.subscription.updateMany({
           where: { stripeCustomerId: customerId },
           data: { status: 'past_due' },
         });
+        if (pastDue.count === 0) {
+          console.warn(`[billing/webhook] payment_failed for unknown customer ${customerId}`);
+        }
         break;
       }
 

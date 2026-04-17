@@ -72,7 +72,7 @@ export async function doPyTestSqlQuery(input: { query: string; connectorId: stri
 
 export async function doPyTestCode(input: { code: string; outputType: string; connectorId?: string; sqlQuery?: string }) {
     try {
-        let inputData: Record<string, any[]> = {};
+        const inputData: Record<string, any[]> = {};
 
         // If sqlQuery is provided, pre-fetch data from the database so that `df` is populated
         if (input.sqlQuery && input.connectorId) {
@@ -120,7 +120,7 @@ export async function doPySearchKB(input: { query: string; companyId: string }) 
             orderBy: { updatedAt: 'desc' },
         });
         if (entries.length === 0) return JSON.stringify({ results: [], message: 'Nessuna entry trovata.' });
-        return JSON.stringify({ results: entries.map(e => ({ question: e.question, answer: e.answer, category: e.category })) }, null, 2);
+        return JSON.stringify({ results: entries.map((e: any) => ({ question: e.question, answer: e.answer, category: e.category })) }, null, 2);
     } catch (e: any) {
         return JSON.stringify({ error: e.message });
     }

@@ -36,7 +36,7 @@ export function extractFirstJSON(str: string): any {
     const firstOpen = str.indexOf('{');
     const firstArrayOpen = str.indexOf('[');
     if (firstOpen === -1 && firstArrayOpen === -1) return null;
-    let startIndex = (firstOpen !== -1 && (firstArrayOpen === -1 || firstOpen < firstArrayOpen)) ? firstOpen : firstArrayOpen;
+    const startIndex = (firstOpen !== -1 && (firstArrayOpen === -1 || firstOpen < firstArrayOpen)) ? firstOpen : firstArrayOpen;
     let braceCount = 0;
     let inString = false;
     let escaped = false;

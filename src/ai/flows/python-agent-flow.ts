@@ -1,6 +1,12 @@
 'use server';
 /**
  * @fileOverview Python agent with tool-based exploration - never gives up.
+ *
+ * SYNC NEEDED WITH: src/app/api/agents/chat-stream/route.ts → buildPythonSystemPrompt().
+ * When touching any `saveToDb` / `insertToDb` / `deleteFromDb` example here,
+ * mirror the change in the active route handler. The legacy prompt in this
+ * file is kept for the non-streaming call site; the streaming route is the
+ * primary UX path and must stay in sync.
  */
 
 import { z } from 'zod';
@@ -87,7 +93,7 @@ async function doPySearchKB(input: { query: string, companyId: string }) {
             orderBy: { updatedAt: 'desc' },
         });
         if (entries.length === 0) return JSON.stringify({ results: [], message: 'Nessuna entry trovata.' });
-        return JSON.stringify({ results: entries.map(e => ({ question: e.question, answer: e.answer, category: e.category })) }, null, 2);
+        return JSON.stringify({ results: entries.map((e: any) => ({ question: e.question, answer: e.answer, category: e.category })) }, null, 2);
     } catch (e: any) {
         return JSON.stringify({ error: e.message });
     }
@@ -1094,7 +1100,7 @@ Analizza, usa i tool per esplorare i dati se necessario, poi rispondi in JSON.`;
 
         if (parsedMetadata) {
             // Append the code to the message so it's visible in the UI
-            let displayMessage = parsedMetadata.message || 'Ecco il codice aggiornato:';
+            const displayMessage = parsedMetadata.message || 'Ecco il codice aggiornato:';
 
             // Prefer extracted script from markdown, fallback to JSON script if provided (legacy/fallback)
             const finalScript = extractedScript || parsedMetadata.updatedScript;

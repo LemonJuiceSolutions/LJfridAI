@@ -55,20 +55,37 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Utente non trovato' }, { status: 404 });
     }
 
-    // Fetch agent conversations
-    const conversations = await db.agentConversation.findMany({
-      where: { companyId },
-    });
-
-    // Fetch lead searches
-    const searches = await db.leadSearch.findMany({
-      where: { companyId },
-    });
-
-    // Fetch scheduled tasks created by this user
-    const tasks = await db.scheduledTask.findMany({
-      where: { createdBy: userId },
-    });
+    // Fetch all company-scoped conversations and company-scoped PII.
+    // Note: these tables are company-scoped (shared), included for completeness
+    // as the user is a member of the company. Art. 20 export covers data
+    // processed on the data subject's behalf.
+    const [
+      conversations,
+      superAgentConversations,
+      leadGeneratorConversations,
+      searches,
+      leads,
+      whatsappSessions,
+      whatsappContacts,
+      tasks,
+      pageLayouts,
+      consentLogs,
+      auditLogs,
+      vpnPeers,
+    ] = await Promise.all([
+      db.agentConversation.findMany({ where: { companyId } }),
+      db.superAgentConversation.findMany({ where: { companyId } }),
+      db.leadGeneratorConversation.findMany({ where: { companyId } }),
+      db.leadSearch.findMany({ where: { companyId } }),
+      db.lead.findMany({ where: { companyId } }),
+      db.whatsAppSession.findMany({ where: { companyId } }),
+      db.whatsAppContact.findMany({ where: { companyId } }),
+      db.scheduledTask.findMany({ where: { createdBy: userId } }),
+      db.pageLayout.findMany({ where: { userId } }),
+      db.consentLog.findMany({ where: { userId } }),
+      db.auditLog.findMany({ where: { userId } }),
+      db.vpnPeer.findMany({ where: { userId } }),
+    ]);
 
     const exportDate = new Date().toISOString();
     const dateStr = new Date().toISOString().split('T')[0];
@@ -76,10 +93,25 @@ export async function GET(request: NextRequest) {
     const exportData = {
       exportDate,
       userId,
+      companyId,
       profile,
-      conversations,
-      searches,
-      tasks,
+      // User-tied personal data (Art. 15/20)
+      pageLayouts,
+      consentLogs,
+      auditLogs,
+      vpnPeers,
+      tasksCreated: tasks,
+      // Company-scoped data the user participated in (included for completeness)
+      sharedCompanyData: {
+        note: 'These records are company-scoped. Contact an admin for full account closure.',
+        conversations,
+        superAgentConversations,
+        leadGeneratorConversations,
+        searches,
+        leads,
+        whatsappSessions,
+        whatsappContacts,
+      },
     };
 
     // Audit log
@@ -90,8 +122,17 @@ export async function GET(request: NextRequest) {
       action: 'gdpr.export',
       details: {
         conversationCount: conversations.length,
+        superAgentConversationCount: superAgentConversations.length,
+        leadGeneratorConversationCount: leadGeneratorConversations.length,
         searchCount: searches.length,
+        leadCount: leads.length,
+        whatsappSessionCount: whatsappSessions.length,
+        whatsappContactCount: whatsappContacts.length,
         taskCount: tasks.length,
+        pageLayoutCount: pageLayouts.length,
+        consentLogCount: consentLogs.length,
+        auditLogCount: auditLogs.length,
+        vpnPeerCount: vpnPeers.length,
       },
       ipAddress: ipAddress || undefined,
     });

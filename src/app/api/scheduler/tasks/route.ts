@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
 
     // Enrich with tree names
     const treeIds = [...new Set(
-      tasks.map(t => (t.config as any)?.treeId).filter(Boolean)
+      tasks.map((t: any) => (t.config as any)?.treeId).filter(Boolean)
     )] as string[];
 
     let treeNameMap: Record<string, string> = {};
@@ -114,10 +114,10 @@ export async function GET(request: NextRequest) {
         where: { id: { in: treeIds } },
         select: { id: true, name: true }
       });
-      treeNameMap = Object.fromEntries(trees.map(t => [t.id, t.name]));
+      treeNameMap = Object.fromEntries(trees.map((t: any) => [t.id, t.name]));
     }
 
-    const enrichedTasks = tasks.map(t => {
+    const enrichedTasks = tasks.map((t: any) => {
       const treeId = (t.config as any)?.treeId;
       return { ...t, treeName: treeId ? treeNameMap[treeId] || null : null };
     });

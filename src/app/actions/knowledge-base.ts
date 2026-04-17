@@ -129,8 +129,8 @@ export async function getKnowledgeBaseCategoriesAction(): Promise<{ data: string
         });
 
         const categories = entries
-            .map(e => e.category)
-            .filter((c): c is string => c !== null);
+            .map((e: any) => e.category)
+            .filter((c: any): c is string => c !== null);
 
         return { data: categories, error: null };
     } catch (e: any) {

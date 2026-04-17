@@ -1091,7 +1091,7 @@ export async function executePythonPreviewAction(
         } else {
             user = await getAuthenticatedUser();
         }
-        let envVars: Record<string, string> = {};
+        const envVars: Record<string, string> = {};
 
         if (connectorId && connectorId !== 'none') {
             const connector = await db.connector.findUnique({

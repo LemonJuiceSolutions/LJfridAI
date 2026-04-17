@@ -37,7 +37,7 @@ export async function getVariablesAction(): Promise<{ data: Variable[] | null; e
 
         const [treesData, variablesData] = await Promise.all([treesPromise, variablesPromise]);
 
-        const variables: Variable[] = variablesData.map(v => ({
+        const variables: Variable[] = variablesData.map((v: any) => ({
             id: v.id,
             name: v.name,
             type: v.type as Variable['type'],
@@ -222,7 +222,7 @@ export async function mergeVariablesAction(
             if (affectedTreesResult.error) throw new Error(affectedTreesResult.error);
 
             for (const tree of affectedTreesResult.data!) {
-                let jsonTree = JSON.parse(tree.jsonDecisionTree);
+                const jsonTree = JSON.parse(tree.jsonDecisionTree);
 
                 const replaceVarId = (node: any) => {
                     if (typeof node !== 'object' || node === null) return node;

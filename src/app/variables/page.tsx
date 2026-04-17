@@ -147,7 +147,7 @@ function VariablesContent() {
             'name'
         );
 
-        let updatePayload: Partial<Variable> = {};
+        const updatePayload: Partial<Variable> = {};
 
         if (newName !== originalVariable.name) {
             updatePayload.name = newName;

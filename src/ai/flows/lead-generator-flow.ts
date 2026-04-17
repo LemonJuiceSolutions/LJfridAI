@@ -1393,7 +1393,7 @@ export async function executeToolCall(
                 }
 
                 const headers = ['Nome', 'Ruolo', 'Email', 'Telefono', 'LinkedIn', 'Azienda', 'Settore', 'Citta\'', 'Paese', 'Fonte'];
-                const rows = leads.map(l => [
+                const rows = leads.map((l: any) => [
                     l.fullName || `${l.firstName || ''} ${l.lastName || ''}`.trim(),
                     l.jobTitle || '', l.email || '', l.phone || '', l.linkedinUrl || '',
                     l.companyName || '', l.companyIndustry || '', l.companyCity || '',

@@ -341,6 +341,14 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) return Response.json({ success: false, error: 'Non autorizzato' }, { status: 401 });
 
+    {
+        const { rateLimit } = await import('@/lib/rate-limit');
+        const rl = await rateLimit(`ai:ai-node:${session.user.email}`, 60, 60_000);
+        if (!rl.allowed) {
+            return Response.json({ success: false, error: 'Rate limit superato. Riprova tra poco.' }, { status: 429 });
+        }
+    }
+
     const user = await db.user.findUnique({ where: { email: session.user.email }, include: { company: true } });
     if (!user?.company) return Response.json({ success: false, error: 'Utente non trovato' }, { status: 400 });
 
@@ -411,7 +419,7 @@ export async function POST(request: NextRequest) {
 
                 // ── STEP 1: Ricerca Web (automatic, supplementary to embedded data) ──
                 let gatheredContext = '';
-                let allSources: { title: string; url: string; snippet: string }[] = [];
+                const allSources: { title: string; url: string; snippet: string }[] = [];
 
                 // Always try web search for enrichment, but don't block on failure if we have embedded data
                 send({ type: 'step', round, step: 'gather', status: 'running', label: hasEmbeddedData ? `Ricerca web di arricchimento...${roundLabel}` : `Ricerca dati sul web...${roundLabel}` });

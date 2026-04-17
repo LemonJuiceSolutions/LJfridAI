@@ -65,7 +65,7 @@ export async function getInvitationsAction() {
 
         // Convert dates to ISO strings for client components if needed, or return raw dates (Server Actions can return dates now in recent Nextjs but safe to serialize)
         // Serialize manually just in case
-        const serialized = invitations.map(inv => ({
+        const serialized = invitations.map((inv: any) => ({
             ...inv,
             createdAt: inv.createdAt.toISOString(),
             expires: inv.expires.toISOString()

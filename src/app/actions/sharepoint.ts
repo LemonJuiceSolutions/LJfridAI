@@ -408,7 +408,7 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
     }
 
     try {
-        const cachedData = await loadTokenCache(companyId);
+        const cachedData = await loadTokenCache(companyId!);
         if (!cachedData) {
             // No cached token - try Client Credentials if clientSecret available
             if (clientSecret) {
@@ -428,7 +428,7 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
                     const data = await response.json();
                     if (data.access_token) {
                         console.log(`[SharePoint Auth] Client Credentials flow successful (no cache)!`);
-                        await saveTokenCache(companyId, JSON.stringify({
+                        await saveTokenCache(companyId!, JSON.stringify({
                             accessToken: data.access_token,
                             expiresOn: new Date(Date.now() + data.expires_in * 1000).toISOString(),
                             tokenType: data.token_type
@@ -486,7 +486,7 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
                 if (data.access_token) {
                     console.log(`[SharePoint Auth] Refresh successful! New expiry: ${new Date(Date.now() + data.expires_in * 1000).toISOString()}`);
                     // Update cache with new token
-                    await saveTokenCache(companyId, JSON.stringify({
+                    await saveTokenCache(companyId!, JSON.stringify({
                         accessToken: data.access_token,
                         refreshToken: data.refresh_token || tokenData.refreshToken,
                         expiresOn: new Date(Date.now() + data.expires_in * 1000).toISOString(),
@@ -525,7 +525,7 @@ export async function getCachedSharePointTokenAction(tenantId: string, clientId:
                     if (data.access_token) {
                         console.log(`[SharePoint Auth] Client Credentials flow successful! Expiry: ${new Date(Date.now() + data.expires_in * 1000).toISOString()}`);
                         // Save to cache (no refresh token with client_credentials)
-                        await saveTokenCache(companyId, JSON.stringify({
+                        await saveTokenCache(companyId!, JSON.stringify({
                             accessToken: data.access_token,
                             refreshToken: tokenData?.refreshToken, // Keep old refresh token if any
                             expiresOn: new Date(Date.now() + data.expires_in * 1000).toISOString(),

@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import sql from 'mssql';
+import { rejectDangerousSql } from '@/lib/sql-guard';
 
 export async function POST(req: NextRequest) {
     let pool: sql.ConnectionPool | null = null;
@@ -41,11 +42,11 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Block dangerous DDL/exec statements
-        const BLOCKED_DDL_RE = /^\s*(DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE|xp_|sp_)\b/i;
-        if (BLOCKED_DDL_RE.test(query)) {
+        // SECURITY: shared SQL guard (@/lib/sql-guard) — strip comments, split on
+        // `;`, reject DDL/system statements per-segment.
+        if (rejectDangerousSql(String(query))) {
             return NextResponse.json(
-                { error: 'DDL/EXEC statements are not allowed (DROP, TRUNCATE, ALTER, CREATE, EXEC)' },
+                { error: 'Query non consentita: parola chiave bloccata o statement DDL/sistema' },
                 { status: 403 }
             );
         }

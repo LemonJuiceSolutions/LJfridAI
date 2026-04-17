@@ -508,7 +508,7 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                                 // Merge UI overrides: per-node takes precedence over active style
                                 const uiOverrides = { ...(activeStyle?.ui || {}), ...(previewData.uiStyleOverrides || {}) };
                                 const uiCss = generateUiElementsCss(uiOverrides);
-                                let styledHtml = applyHtmlStyleOverrides(previewData.html, htmlOverrides, false, uiCss);
+                                const styledHtml = applyHtmlStyleOverrides(previewData.html, htmlOverrides, false, uiCss);
                                 return injectIframeFetchPolyfill(styledHtml, {
                                     connectorId: previewData.connectorId,
                                     baseUrl: typeof window !== 'undefined' ? window.location.origin : '',

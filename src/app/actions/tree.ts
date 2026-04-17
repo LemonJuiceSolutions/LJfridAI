@@ -105,7 +105,7 @@ export async function searchTreesByNodeContentAction(query: string): Promise<{ d
             select: { id: true, name: true, description: true, type: true, createdAt: true, jsonDecisionTree: true },
         });
 
-        const results: TreeNodeSearchResult[] = trees.map(t => {
+        const results: TreeNodeSearchResult[] = trees.map((t: any) => {
             let matchingNodes: NodeSearchMatch[] = [];
             try {
                 const parsed = JSON.parse(t.jsonDecisionTree);

@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
 
             if (node.variableId) {
                 report.standardNodes++;
-                const dbVar = dbVariables.find(v => v.id === node.variableId);
+                const dbVar = dbVariables.find((v: any) => v.id === node.variableId);
 
                 if (!dbVar) {
                     report.missingVariables.push({

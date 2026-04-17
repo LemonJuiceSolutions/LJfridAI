@@ -166,6 +166,33 @@ export async function PUT(
       );
     }
 
+    // SECURITY: any connectorId referenced in `config` MUST belong to caller's company.
+    // Prevents a user from pointing their own task at another tenant's connector.
+    if (validatedData.config) {
+      const connectorIds = [
+        validatedData.config.connectorId,
+        validatedData.config.connectorIdSql,
+        validatedData.config.sourceConnectorId,
+        validatedData.config.targetConnectorId,
+      ].filter((x): x is string => typeof x === 'string' && x.length > 0);
+
+      if (connectorIds.length > 0) {
+        const owned = await db.connector.findMany({
+          where: { id: { in: connectorIds }, companyId: user.companyId },
+          select: { id: true },
+        });
+        const ownedSet = new Set(owned.map((c: any) => c.id));
+        const foreign = connectorIds.filter(id => !ownedSet.has(id));
+        if (foreign.length > 0) {
+          console.warn(`[scheduler/tasks] connectorId cross-tenant attempt by user=${user.id}: ${foreign.join(',')}`);
+          return NextResponse.json(
+            { error: 'Connector non autorizzato per questo tenant' },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
     // Prepare update data
     const updateData: any = {};
     if (validatedData.name !== undefined) updateData.name = validatedData.name;

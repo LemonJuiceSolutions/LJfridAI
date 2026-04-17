@@ -11,6 +11,7 @@ import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import sql from 'mssql';
 import { z } from 'zod';
+import { rejectDangerousSql } from '@/lib/sql-guard';
 
 // Column/identifier: any printable chars except [ and ] — safe because we always bracket-quote [identifier] in SQL.
 // Blocking ] prevents breaking out of bracket quoting; blocking [ prevents nested brackets.
@@ -86,8 +87,8 @@ async function getPool(connectorId: string): Promise<{ pool: sql.ConnectionPool;
     return { pool };
 }
 
-// Dangerous DDL statements that should never come through this endpoint
-const BLOCKED_DDL_RE = /^\s*(DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE|xp_|sp_)\b/i;
+// SECURITY: SQL statement-level safety check. Implementation in @/lib/sql-guard
+// so it's unit-testable and reusable (also used by /api/internal/query-db).
 
 // Build a parameterized mssql request — values bound as @p0, @p1, etc.
 // Table and column names are validated by TABLE_RE / IDENTIFIER_RE and bracket-quoted.
@@ -168,16 +169,22 @@ export async function POST(req: NextRequest) {
         // ── Proxy mode: client sends {query, connectorId?} — execute directly with COMMIT ──
         if (body.query) {
             const userRole = (user as any).role;
-            if (userRole !== 'admin' && userRole !== 'superadmin') {
+            // SECURITY: raw-query escape hatch restricted to superadmin.
+            // Previously admin-tier could execute arbitrary SQL against any of their
+            // connectors; too broad. Structured path covers normal write needs.
+            if (userRole !== 'superadmin') {
                 return NextResponse.json(
-                    { success: false, error: 'Accesso negato: solo admin possono eseguire query dirette' },
+                    { success: false, error: 'Accesso negato: solo superadmin possono eseguire query dirette' },
                     { status: 403, headers: corsHeaders(req) }
                 );
             }
-            // Block dangerous DDL statements
-            if (BLOCKED_DDL_RE.test(body.query)) {
+            // SECURITY: normalize (strip comments) and reject multi-statement batches
+            // or any segment containing a blocked keyword.
+            const offending = rejectDangerousSql(String(body.query));
+            if (offending) {
+                console.warn(`[update-commessa] blocked SQL segment by user=${user.id}: ${offending}`);
                 return NextResponse.json(
-                    { success: false, error: 'Query DDL non consentita (DROP, TRUNCATE, ALTER, CREATE, EXEC)' },
+                    { success: false, error: 'Query non consentita: parola chiave bloccata o statement DDL/sistema' },
                     { status: 403, headers: corsHeaders(req) }
                 );
             }

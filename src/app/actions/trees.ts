@@ -322,7 +322,7 @@ export async function getTreesAction(ids?: string[], type?: string, lightweight?
             });
         }
 
-        const trees: StoredTree[] = treesData.map(t => ({
+        const trees: StoredTree[] = treesData.map((t: any) => ({
             ...t,
             jsonDecisionTree: (t as any).jsonDecisionTree ?? '',
             naturalLanguageDecisionTree: (t as any).naturalLanguageDecisionTree ?? '',

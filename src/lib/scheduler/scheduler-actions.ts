@@ -413,11 +413,13 @@ export async function executePythonPreview(
         return { success: true, ...result };
       } catch (err: any) {
         clearTimeout(timeoutId);
-        if (attempt < MAX_RETRIES && !err.message?.includes('backend')) {
+        // Retry classification — see @/lib/scheduler/retry-policy (unit-tested).
+        const { isRetriable } = await import('@/lib/scheduler/retry-policy');
+        if (attempt < MAX_RETRIES && isRetriable(err)) {
           await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
           continue;
         }
-        return { success: false, error: err.message };
+        return { success: false, error: String(err?.message || '') };
       }
     }
 

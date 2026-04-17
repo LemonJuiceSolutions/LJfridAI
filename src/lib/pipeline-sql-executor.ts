@@ -18,11 +18,34 @@ const LARGE_RESULT_THRESHOLD = 5 * 1024 * 1024; // 5MB — save to file if large
 // Pool cache (reuse connections across pipeline nodes)
 const poolCache = new Map<string, sql.ConnectionPool>();
 
+/**
+ * Close and evict a cached pool. Silent on error — caller has already decided
+ * the pool is bad (connection test failed, connector config changed, etc.).
+ */
+async function evictPool(connectorId: string): Promise<void> {
+  const pool = poolCache.get(connectorId);
+  poolCache.delete(connectorId);
+  if (pool) {
+    try { await pool.close(); } catch { /* ignore */ }
+  }
+}
+
 async function getPool(connectorId: string): Promise<sql.ConnectionPool> {
   if (poolCache.has(connectorId)) {
     const cached = poolCache.get(connectorId)!;
-    if (cached.connected) return cached;
-    poolCache.delete(connectorId);
+    // Validate on borrow — a disconnected or poisoned pool (e.g. connector
+    // password rotated) would otherwise silently return errors for the
+    // process lifetime. A 1s SELECT 1 is cheap.
+    if (cached.connected) {
+      try {
+        await cached.request().query('SELECT 1 AS ok');
+        return cached;
+      } catch {
+        await evictPool(connectorId);
+      }
+    } else {
+      await evictPool(connectorId);
+    }
   }
 
   const connector = await db.connector.findUnique({
@@ -55,6 +78,39 @@ async function getPool(connectorId: string): Promise<sql.ConnectionPool> {
 
   poolCache.set(connectorId, pool);
   return pool;
+}
+
+/**
+ * Startup sweep: delete pipeline-cache directories older than MAX_AGE_HOURS.
+ * If the process crashed mid-execution, the `cleanupPipelineCache` call in
+ * the finally block never ran — files would linger forever.
+ */
+const CACHE_MAX_AGE_HOURS = 24;
+let cacheSweepScheduled = false;
+export function startPipelineCacheSweep(): void {
+  if (cacheSweepScheduled) return;
+  cacheSweepScheduled = true;
+
+  const sweep = () => {
+    const cacheRoot = path.join(process.cwd(), DATA_LAKE_PATH, 'pipeline-cache');
+    fs.promises.readdir(cacheRoot).then(async (entries) => {
+      const cutoff = Date.now() - CACHE_MAX_AGE_HOURS * 60 * 60 * 1000;
+      for (const entry of entries) {
+        const full = path.join(cacheRoot, entry);
+        try {
+          const s = await fs.promises.stat(full);
+          if (s.mtimeMs < cutoff) {
+            await fs.promises.rm(full, { recursive: true, force: true });
+            console.log(`[PipelineSQL] swept stale cache dir: ${entry}`);
+          }
+        } catch { /* ignore per-entry errors */ }
+      }
+    }).catch(() => { /* cache root may not exist yet */ });
+  };
+
+  // Run once at startup, then every hour.
+  sweep();
+  setInterval(sweep, 60 * 60 * 1000).unref();
 }
 
 // ---------------------------------------------------------------------------

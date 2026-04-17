@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
 
     // ─── Save message to session (log only, no auto-reply) ──────────────────
     try {
-        let session = await db.whatsAppSession.findUnique({
+        const session = await db.whatsAppSession.findUnique({
             where: { phoneNumber_connectorId: { phoneNumber: from, connectorId: connector.id } },
         });
 

@@ -4,6 +4,7 @@ import { join } from 'path';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDataLakePath } from '@/lib/data-lake';
+import { isMagicCompatible } from '@/lib/upload-validation';
 
 // SECURITY: hard limits to prevent disk-fill DoS and stored XSS via polyglots.
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -31,6 +32,8 @@ function getExtension(name: string): string {
     const i = name.lastIndexOf('.');
     return i >= 0 ? name.slice(i + 1).toLowerCase() : '';
 }
+
+// Magic-byte validator lives in @/lib/upload-validation for unit testability.
 
 export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -71,6 +74,15 @@ export async function POST(request: NextRequest) {
 
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
+
+        // SECURITY: verify content matches declared MIME via magic-byte sniff.
+        // Blocks polyglots (e.g. HTML/JS smuggled inside a .png).
+        if (!isMagicCompatible(file.type, buffer)) {
+            return NextResponse.json(
+                { success: false, error: `Contenuto del file non corrisponde al tipo dichiarato (${file.type})` },
+                { status: 415 }
+            );
+        }
 
         // SECURITY CRITICAL: scope upload dir per companyId to prevent cross-tenant access
         const isLegacyPublic = ['uploads', 'documents', 'images', 'videos'].includes(folder);

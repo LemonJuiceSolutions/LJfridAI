@@ -69,38 +69,37 @@ export async function DELETE(request: NextRequest) {
 
     console.log(`[GDPR Delete] Deleting account for user ${userId} (company ${companyId})`);
 
-    // Delete in order to respect FK constraints
-    // 1. AgentConversation (scoped by companyId — these are company-level, but we delete user's data)
-    //    Note: AgentConversation has no userId field, it's company-scoped.
-    //    We skip this as it's shared company data, not personal data.
-
-    // 2. LeadSearch (company-scoped, no userId)
-    //    Same as above — shared company data.
-
-    // 3. ScheduledTask where createdBy = userId (inactive only, we checked above)
-    await db.scheduledTask.deleteMany({
-      where: { createdBy: userId },
-    });
-
-    // 4. PageLayout where userId
-    await db.pageLayout.deleteMany({
-      where: { userId },
-    });
-
-    // 5. Account where userId (OAuth accounts)
-    await db.account.deleteMany({
-      where: { userId },
-    });
-
-    // 6. Session where userId
-    await db.session.deleteMany({
-      where: { userId },
-    });
-
-    // 7. User where id = userId
-    await db.user.delete({
-      where: { id: userId },
-    });
+    // Delete in a transaction so a partial failure rolls back.
+    // Order respects FK constraints.
+    // Company-scoped tables (AgentConversation, LeadSearch, Lead, WhatsAppSession,
+    // WhatsAppContact, SuperAgentConversation, LeadGeneratorConversation) are NOT
+    // deleted here — they belong to the company and may contain other users' work.
+    // AuditLog is retained but pseudonymized (legal/regulatory retention obligation).
+    await db.$transaction([
+      // ScheduledTask where createdBy = userId (inactive only, we checked above)
+      db.scheduledTask.deleteMany({ where: { createdBy: userId } }),
+      // PageLayout where userId
+      db.pageLayout.deleteMany({ where: { userId } }),
+      // ConsentLog where userId (GDPR Art. 17 — consent records for this user)
+      db.consentLog.deleteMany({ where: { userId } }),
+      // VpnPeer where userId
+      db.vpnPeer.deleteMany({ where: { userId } }),
+      // PasswordResetToken is keyed by email — delete
+      db.passwordResetToken.deleteMany({
+        where: { email: (session.user as { email?: string }).email || '' },
+      }),
+      // AuditLog: pseudonymize userId to preserve audit trail while removing PII
+      db.auditLog.updateMany({
+        where: { userId },
+        data: { userId: `deleted-${Date.now()}`, ipAddress: null },
+      }),
+      // Account where userId (OAuth accounts)
+      db.account.deleteMany({ where: { userId } }),
+      // Session where userId
+      db.session.deleteMany({ where: { userId } }),
+      // User where id = userId
+      db.user.delete({ where: { id: userId } }),
+    ]);
 
     console.log(`[GDPR Delete] Account deleted for user ${userId}`);
 

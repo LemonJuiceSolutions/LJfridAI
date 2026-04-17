@@ -49,8 +49,8 @@ export async function GET(req: NextRequest) {
             }).catch(() => [] as any[]),
         ]);
 
-        const treeIds = treesLightweight.map(t => t.id);
-        const treeNameMap = new Map(treesLightweight.map(t => [t.id, t.name]));
+        const treeIds = treesLightweight.map((t: any) => t.id);
+        const treeNameMap = new Map(treesLightweight.map((t: any) => [t.id, t.name]));
 
         // 2. Load preview metadata for all trees
         const allPreviews = treeIds.length > 0
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
                 select: { id: true, jsonDecisionTree: true },
             })
             : [];
-        const treeJsonMap = new Map(treesWithJson.map(t => [t.id, t.jsonDecisionTree]));
+        const treeJsonMap = new Map(treesWithJson.map((t: any) => [t.id, t.jsonDecisionTree]));
 
         // 4. Scan trees for widgets
         const widgets: DiscoveredWidget[] = [];

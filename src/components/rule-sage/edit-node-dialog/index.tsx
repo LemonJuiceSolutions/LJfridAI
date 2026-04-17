@@ -2050,7 +2050,7 @@ export default function EditNodeDialog({
 
       const finalMedia = [...media, ...uploadedMedia];
 
-      let newNodeData: any = { ...initialNode };
+      const newNodeData: any = { ...initialNode };
 
       console.log('[TYPE SWITCH DEBUG] currentNodeType:', currentNodeType);
       console.log('[TYPE SWITCH DEBUG] questionText:', questionText);
@@ -5114,7 +5114,7 @@ export default function EditNodeDialog({
                               // Iterate over all potential outputs and add if selected or placed in body
                               for (const output of allPotentialOutputs) {
                                 const inBody = safeEmailAttachments.pythonOutputsInBody.includes(output.name) || allReferencedPythonNames.includes(output.name);
-                                let asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name);
+                                const asAttachment = safeEmailAttachments.pythonOutputsAsAttachment.includes(output.name);
 
                                 if (inBody || asAttachment) {
                                   let dependencies = output.dependenciesOverride || [];

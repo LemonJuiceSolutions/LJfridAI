@@ -9,7 +9,8 @@ import { getPythonBackendUrl } from '@/lib/python-backend';
 
 export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session) {
+    const companyId = (session?.user as any)?.companyId as string | undefined;
+    if (!companyId) {
         return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
 
@@ -25,15 +26,18 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: 'Invalid filename' }, { status: 400 });
         }
 
-        // Search in multiple folders
+        // SECURITY: scope search dirs per companyId to prevent cross-tenant Excel read.
+        const { resolve: pathResolve } = await import('path');
         const searchDirs = [
-            getDataLakePath(),
-            join(process.cwd(), 'python-backend', 'EEXXCC'),
+            join(getDataLakePath(), companyId),
+            join(process.cwd(), 'python-backend', 'EEXXCC', companyId),
         ];
 
         let filepath = '';
         for (const dir of searchDirs) {
             const candidate = join(dir, filename);
+            // Belt-and-braces: reject any resolved path that escapes the scoped base.
+            if (!pathResolve(candidate).startsWith(pathResolve(dir))) continue;
             try {
                 await access(candidate);
                 filepath = candidate;

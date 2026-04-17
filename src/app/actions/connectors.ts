@@ -1816,7 +1816,7 @@ export async function sendWhatsAppTestMessageAction(
 async function logTestMessage(connectorId: string, companyId: string, phone: string, content: string, role: 'user' | 'assistant') {
     try {
         // Find or create session for this phone number
-        let session = await db.whatsAppSession.findUnique({
+        const session = await db.whatsAppSession.findUnique({
             where: { phoneNumber_connectorId: { phoneNumber: phone, connectorId } },
         });
 
@@ -1879,10 +1879,10 @@ export async function getWhatsAppSessionsAction(
             where: { companyId: user.companyId },
             select: { phoneNumber: true, name: true },
         });
-        const contactMap = Object.fromEntries(contacts.map(c => [c.phoneNumber, c.name]));
+        const contactMap = Object.fromEntries(contacts.map((c: any) => [c.phoneNumber, c.name]));
 
         // Enrich sessions with contact names
-        const enriched = sessions.map(s => ({
+        const enriched = sessions.map((s: any) => ({
             ...s,
             contactName: contactMap[s.phoneNumber] || null,
         }));

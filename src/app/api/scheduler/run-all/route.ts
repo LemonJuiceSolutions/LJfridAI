@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
     status: 'running',
     currentIndex: 0,
     startedBy: session.user.email,
-    tasks: tasks.map(t => {
+    tasks: tasks.map((t: any) => {
       const cfg = (t.config as any) || {};
       // Extract leaf node name from nodePath (e.g. root.options['A'].options['Mail'] -> 'Mail')
       let nodeName: string | null = null;
@@ -167,16 +167,16 @@ export async function POST(request: NextRequest) {
   runs.set(sessionCompanyId, currentRun);
 
   // Enrich with tree names
-  const treeIds = [...new Set(tasks.map(t => (t.config as any)?.treeId).filter(Boolean))];
+  const treeIds = [...new Set(tasks.map((t: any) => (t.config as any)?.treeId).filter(Boolean))];
   if (treeIds.length > 0) {
     const trees = await db.tree.findMany({
       where: { id: { in: treeIds } },
       select: { id: true, name: true },
     });
-    const treeMap = new Map(trees.map(t => [t.id, t.name]));
+    const treeMap = new Map(trees.map((t: any) => [t.id, t.name]));
     for (const ts of currentRun.tasks) {
-      const treeId = (tasks.find(t => t.id === ts.taskId)?.config as any)?.treeId;
-      if (treeId) ts.treeName = treeMap.get(treeId) || null;
+      const treeId = (tasks.find((t: any) => t.id === ts.taskId)?.config as any)?.treeId;
+      if (treeId) ts.treeName = (treeMap.get(treeId) as string | undefined) || null;
     }
   }
 

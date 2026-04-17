@@ -15,7 +15,7 @@ describe('logger', () => {
 
   it('outputs debug messages when LOG_LEVEL is debug', async () => {
     process.env.LOG_LEVEL = 'debug';
-    process.env.NODE_ENV = 'test';
+    (process.env as any).NODE_ENV = 'test';
     const spy = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
     const { logger } = await import('@/lib/logger');
@@ -27,7 +27,7 @@ describe('logger', () => {
 
   it('suppresses debug messages when LOG_LEVEL is info', async () => {
     process.env.LOG_LEVEL = 'info';
-    process.env.NODE_ENV = 'test';
+    (process.env as any).NODE_ENV = 'test';
     const spy = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
     const { logger } = await import('@/lib/logger');
@@ -38,7 +38,7 @@ describe('logger', () => {
 
   it('outputs info messages when LOG_LEVEL is info', async () => {
     process.env.LOG_LEVEL = 'info';
-    process.env.NODE_ENV = 'test';
+    (process.env as any).NODE_ENV = 'test';
     const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
 
     const { logger } = await import('@/lib/logger');
@@ -50,7 +50,7 @@ describe('logger', () => {
 
   it('outputs warn messages at warn level', async () => {
     process.env.LOG_LEVEL = 'warn';
-    process.env.NODE_ENV = 'test';
+    (process.env as any).NODE_ENV = 'test';
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const { logger } = await import('@/lib/logger');
@@ -61,7 +61,7 @@ describe('logger', () => {
 
   it('outputs error messages at error level', async () => {
     process.env.LOG_LEVEL = 'error';
-    process.env.NODE_ENV = 'test';
+    (process.env as any).NODE_ENV = 'test';
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const { logger } = await import('@/lib/logger');
@@ -71,7 +71,7 @@ describe('logger', () => {
   });
 
   it('formats as JSON in production', async () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as any).NODE_ENV = 'production';
     process.env.LOG_LEVEL = 'info';
     const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
 
@@ -88,7 +88,7 @@ describe('logger', () => {
   });
 
   it('formats as plain text in development', async () => {
-    process.env.NODE_ENV = 'development';
+    (process.env as any).NODE_ENV = 'development';
     process.env.LOG_LEVEL = 'info';
     const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
 

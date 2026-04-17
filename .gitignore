@@ -107,6 +107,11 @@ python-backend/**/*.html
 public/documents/rating_farmaceutico_finale.xlsx
 .ai/
 backups/
+backup-trees/
+scheduler_debug.log
+python-backend/scheduler_debug.log
+data_lake/
+pipeline-cache/
 
 # === Pulizia root - no file agente/campagne ===
 .ai/
