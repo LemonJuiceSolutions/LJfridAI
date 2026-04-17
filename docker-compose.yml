@@ -70,6 +70,10 @@ services:
       # Gunicorn settings (override Dockerfile defaults via env)
       - GUNICORN_WORKERS=4
       - GUNICORN_TIMEOUT=600
+      # Bind to all interfaces inside the isolated Docker network so the
+      # `app` service can reach `http://python-backend:5005`. Outside Docker,
+      # app.py defaults to 127.0.0.1 for safety (see python-backend/app.py).
+      - PYTHON_BACKEND_HOST=0.0.0.0
     # In dev: use Flask dev server with hot reload instead of Gunicorn
     # Uncomment the next line for development:
     # command: ["python", "app.py"]

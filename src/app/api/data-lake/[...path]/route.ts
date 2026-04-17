@@ -29,13 +29,16 @@ export async function GET(
 
     try {
         const { path } = await params;
-        // SECURITY: enforce first path segment matches caller's companyId.
-        // Legacy files without a company prefix remain inaccessible until moved
-        // (the migration script handles this).
-        if (!path || path.length === 0 || path[0] !== companyId) {
-            return new NextResponse('Forbidden', { status: 403 });
+        if (!path || path.length === 0) {
+            return new NextResponse('Not Found', { status: 404 });
         }
-        const filepath = getDataLakePath(...path);
+
+        // SECURITY: resolve the file under the caller's companyId subtree.
+        // Legacy URLs built before tenant scoping lack the companyId prefix —
+        // we prepend it so saved widgets keep working. Cross-tenant reads are
+        // impossible because the server, not the client, decides the prefix.
+        const scopedPath = path[0] === companyId ? path : [companyId, ...path];
+        const filepath = getDataLakePath(...scopedPath);
 
         // Prevent path traversal — resolved path must stay inside company's subtree.
         const { resolve: pathResolve } = await import('path');

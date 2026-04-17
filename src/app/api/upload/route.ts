@@ -109,8 +109,12 @@ export async function POST(request: NextRequest) {
 
         await writeFile(filepath, buffer);
 
-        // Legacy public folders use static URL; data lake files served via API
-        const subpath = folder === 'data_lake' ? filename : `${folder}/${filename}`;
+        // Legacy public folders use static URL; data lake files served via API.
+        // Data-lake URL includes companyId so the GET route can enforce tenant
+        // isolation against the first path segment.
+        const subpath = folder === 'data_lake'
+            ? `${companyId}/${filename}`
+            : `${companyId}/${folder}/${filename}`;
         const url = isLegacyPublic
             ? `/${folder}/${companyId}/${filename}`
             : `/api/data-lake/${subpath}`;
