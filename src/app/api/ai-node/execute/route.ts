@@ -223,14 +223,16 @@ async function scrapePageContent(url: string): Promise<string> {
     } catch { /* scraper not available */ }
 
     // Fallback: direct fetch + basic HTML text extraction
+    // SECURITY: SSRF guard via safeFetch (blocks loopback, private, AWS metadata)
     try {
-        const r = await fetch(url, {
+        const { safeFetch } = await import('@/lib/safe-fetch');
+        const r = await safeFetch(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (compatible; FridAI/1.0)',
                 'Accept': 'text/html,application/xhtml+xml',
                 'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8',
             },
-            signal: AbortSignal.timeout(10000),
+            timeoutMs: 10000,
         });
         if (r.ok) {
             const html = await r.text();
@@ -371,7 +373,12 @@ export async function POST(request: NextRequest) {
                 const contents: string[] = [];
                 for (const dn of documents) {
                     const doc = docResult.files.find((f: { name: string; url: string }) => f.name === dn);
-                    if (doc?.url) try { const r = await fetch(doc.url); if (r.ok) contents.push(`[DOC: ${dn}]\n${(await r.text()).slice(0, 5000)}\n[/DOC]`); } catch { /* */ }
+                    // SECURITY: SSRF guard — doc URLs may be user-supplied
+                    if (doc?.url) try {
+                        const { safeFetch } = await import('@/lib/safe-fetch');
+                        const r = await safeFetch(doc.url, { timeoutMs: 10000 });
+                        if (r.ok) contents.push(`[DOC: ${dn}]\n${(await r.text()).slice(0, 5000)}\n[/DOC]`);
+                    } catch { /* */ }
                 }
                 if (contents.length > 0) fullPrompt += `\n\nDOCUMENTI:\n${contents.join('\n\n')}`;
             }

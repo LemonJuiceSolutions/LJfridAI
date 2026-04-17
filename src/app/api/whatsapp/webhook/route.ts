@@ -1,9 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { db } from '@/lib/db';
 import { transcribeAudioWithGroq } from '@/lib/groq-whisper';
 import { downloadWhatsAppMedia } from '@/lib/whatsapp-send';
 
 export const maxDuration = 60;
+
+/**
+ * Verify Meta's X-Hub-Signature-256 HMAC against the App Secret.
+ * Returns true if signature matches the raw body, false otherwise.
+ */
+function verifyMetaSignature(rawBody: string, signatureHeader: string | null, appSecret: string): boolean {
+    if (!signatureHeader || !appSecret) return false;
+    const expected = 'sha256=' + createHmac('sha256', appSecret).update(rawBody, 'utf8').digest('hex');
+    try {
+        const a = Buffer.from(signatureHeader);
+        const b = Buffer.from(expected);
+        if (a.length !== b.length) return false;
+        return timingSafeEqual(a, b);
+    } catch {
+        return false;
+    }
+}
 
 // ─── GET: Meta webhook verification ─────────────────────────────────────────
 export async function GET(request: NextRequest) {
@@ -40,9 +58,17 @@ export async function GET(request: NextRequest) {
 
 // ─── POST: Receive messages ──────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
+    // SECURITY CRITICAL: read raw body for HMAC verification (do not parse first)
+    let rawBody: string;
+    try {
+        rawBody = await request.text();
+    } catch {
+        return new NextResponse('Bad Request', { status: 400 });
+    }
+
     let body: any;
     try {
-        body = await request.json();
+        body = JSON.parse(rawBody);
     } catch {
         return new NextResponse('Bad Request', { status: 400 });
     }
@@ -64,19 +90,39 @@ export async function POST(request: NextRequest) {
         return new NextResponse('OK', { status: 200 });
     }
 
-    // Find the matching WHATSAPP connector
-    const connector = await db.connector.findFirst({
+    // SECURITY CRITICAL: match connector by phoneNumberId (was findFirst — cross-tenant routing risk)
+    const candidates = await db.connector.findMany({
         where: { type: 'WHATSAPP' },
     });
+    let connector: typeof candidates[number] | null = null;
+    let conf: any = null;
+    for (const c of candidates) {
+        try {
+            const cfg = JSON.parse(c.config);
+            if (cfg.phoneNumberId === phoneNumberId) {
+                connector = c;
+                conf = cfg;
+                break;
+            }
+        } catch { /* skip malformed */ }
+    }
 
-    if (!connector) {
-        console.error('[WhatsApp Webhook] No WHATSAPP connector found');
+    if (!connector || !conf) {
+        console.error(`[WhatsApp Webhook] No WHATSAPP connector matches phoneNumberId ${phoneNumberId}`);
         return new NextResponse('OK', { status: 200 });
     }
 
-    let conf: any = {};
-    try { conf = JSON.parse(connector.config); } catch {
-        return new NextResponse('OK', { status: 200 });
+    // SECURITY CRITICAL: verify Meta HMAC signature against App Secret.
+    // Without this, anyone who knows the URL can forge events.
+    const appSecret = conf.appSecret || process.env.WHATSAPP_APP_SECRET || '';
+    if (appSecret) {
+        const sigHeader = request.headers.get('x-hub-signature-256');
+        if (!verifyMetaSignature(rawBody, sigHeader, appSecret)) {
+            console.warn('[WhatsApp Webhook] Invalid HMAC signature — rejecting');
+            return new NextResponse('Forbidden', { status: 403 });
+        }
+    } else {
+        console.warn('[WhatsApp Webhook] No appSecret configured — signature check disabled (set conf.appSecret or WHATSAPP_APP_SECRET)');
     }
 
     const { accessToken } = conf;

@@ -17,6 +17,43 @@ import os
 import json
 import re
 from chart_to_recharts_converter import matplotlib_to_recharts, plotly_to_recharts, infer_chart_type
+import socket
+import ipaddress
+from urllib.parse import urlparse
+
+
+# --- SSRF guard: block private/loopback/metadata addresses --------------------
+def _is_blocked_ip(ip: str) -> bool:
+    """Return True if IP is loopback / private / link-local / multicast / reserved."""
+    try:
+        addr = ipaddress.ip_address(ip)
+        return (
+            addr.is_loopback or addr.is_private or addr.is_link_local
+            or addr.is_multicast or addr.is_reserved or addr.is_unspecified
+        )
+    except ValueError:
+        return True
+
+
+def assert_safe_url(url: str) -> str:
+    """Validate URL is safe for server-side fetch. Raises ValueError on violation.
+    Resolves hostname and rejects if any address is private/loopback/metadata.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        raise ValueError(f"scheme not allowed: {parsed.scheme}")
+    host = (parsed.hostname or '').lower()
+    if not host or host in ('localhost', 'ip6-localhost', 'ip6-loopback'):
+        raise ValueError(f"host blocked: {host}")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        raise ValueError(f"DNS resolution failed: {e}")
+    for info in infos:
+        ip = info[4][0]
+        if _is_blocked_ip(ip):
+            raise ValueError(f"private/loopback address: {ip}")
+    return url
 
 # --- Monkey-patch requests to enforce longer timeout ---
 try:
@@ -169,11 +206,29 @@ def scrape_website():
         if not url.startswith('http'):
             url = 'https://' + url
 
+        # SECURITY: SSRF guard — block loopback/private/metadata
+        try:
+            assert_safe_url(url)
+        except ValueError as e:
+            return jsonify({"error": f"URL non consentito: {e}"}), 400
+
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
 
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=30, allow_redirects=False)
+        # Manually follow redirects with SSRF check at each hop
+        hops = 0
+        while response.is_redirect and hops < 3:
+            next_url = response.headers.get('Location', '')
+            if not next_url:
+                break
+            try:
+                assert_safe_url(next_url)
+            except ValueError as e:
+                return jsonify({"error": f"Redirect blocked: {e}"}), 400
+            response = requests.get(next_url, headers=headers, timeout=30, allow_redirects=False)
+            hops += 1
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -266,6 +321,12 @@ def scrape_css():
 
         if not url.startswith('http'):
             url = 'https://' + url
+
+        # SECURITY: SSRF guard
+        try:
+            assert_safe_url(url)
+        except ValueError as e:
+            return jsonify({"error": f"URL non consentito: {e}"}), 400
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'

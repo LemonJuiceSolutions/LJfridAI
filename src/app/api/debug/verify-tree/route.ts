@@ -8,6 +8,15 @@ import { StoredTree, Variable, VariableOption } from '@/lib/types';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+    // SECURITY: gate debug endpoint. Production: admin only.
+    if (process.env.NODE_ENV === 'production') {
+        const session = await getServerSession(authOptions);
+        const role = (session?.user as any)?.role as string | undefined;
+        if (role !== 'admin' && role !== 'superadmin') {
+            return NextResponse.json({ error: 'Debug endpoint riservato agli admin in produzione' }, { status: 403 });
+        }
+    }
+
     const session = await getServerSession(authOptions);
     const companyId = (session?.user as any)?.companyId as string | undefined;
     if (!companyId) {

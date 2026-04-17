@@ -7,7 +7,8 @@ import { getDataLakePath } from '@/lib/data-lake';
 
 export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session) {
+    const companyId = (session?.user as any)?.companyId as string | undefined;
+    if (!companyId) {
         return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
 
@@ -19,13 +20,15 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ success: false, error: 'Invalid folder' }, { status: 400 });
         }
 
-        // Special folders outside public/
+        // SECURITY CRITICAL: scope dirs per companyId to prevent cross-tenant file access.
+        // Legacy unscoped files (uploaded before this change) sit under the root —
+        // admin migration script needed to move them under <companyId>/.
         const ALLOWED_EXTRA_DIRS: Record<string, string> = {
-            'excel-etl': join(process.cwd(), 'python-backend', 'EEXXCC'),
-            'data_lake': getDataLakePath(),
+            'excel-etl': join(process.cwd(), 'python-backend', 'EEXXCC', companyId),
+            'data_lake': join(getDataLakePath(), companyId),
         };
 
-        const uploadDir = ALLOWED_EXTRA_DIRS[folder] || join(process.cwd(), 'public', folder);
+        const uploadDir = ALLOWED_EXTRA_DIRS[folder] || join(process.cwd(), 'public', folder, companyId);
 
         try {
             const files = await readdir(uploadDir);
@@ -54,7 +57,8 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session) {
+    const companyId = (session?.user as any)?.companyId as string | undefined;
+    if (!companyId) {
         return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
 
@@ -73,11 +77,12 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ success: false, error: 'Invalid filename' }, { status: 400 });
         }
 
+        // SECURITY CRITICAL: scope dirs per companyId
         const ALLOWED_EXTRA_DIRS: Record<string, string> = {
-            'excel-etl': join(process.cwd(), 'python-backend', 'EEXXCC'),
-            'data_lake': getDataLakePath(),
+            'excel-etl': join(process.cwd(), 'python-backend', 'EEXXCC', companyId),
+            'data_lake': join(getDataLakePath(), companyId),
         };
-        const baseDir = ALLOWED_EXTRA_DIRS[folder] || join(process.cwd(), 'public', folder);
+        const baseDir = ALLOWED_EXTRA_DIRS[folder] || join(process.cwd(), 'public', folder, companyId);
         const filepath = join(baseDir, name);
 
         // Verify resolved path stays within base directory

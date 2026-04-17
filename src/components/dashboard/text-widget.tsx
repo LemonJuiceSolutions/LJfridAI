@@ -379,7 +379,9 @@ export default function TextWidget({
                                             className="w-full border-none"
                                             style={{ minHeight: 200, height: '100%' }}
                                             title="HTML Widget"
-                                            sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
+                                            // SECURITY: drop `allow-same-origin` to prevent sandbox escape via parent.document.
+                                            // AI-generated HTML is opaque-origin in this iframe; cannot reach parent.
+                                            sandbox="allow-scripts allow-forms allow-modals"
                                         />
                                     </div>
                                 );
@@ -394,7 +396,9 @@ export default function TextWidget({
                                 return <p key={index} className="text-xs text-muted-foreground my-4">[Tipo di report non supportato o non specificato ({reportType})]</p>;
                         }
                     }
-                    return <ReactMarkdown key={index} rehypePlugins={[rehypeRaw]}>{part}</ReactMarkdown>;
+                    // SECURITY: sanitize raw HTML inside markdown via DOMPurify before parsing.
+                    // Without this, `rehype-raw` allows <script>, onerror handlers, etc. → stored XSS.
+                    return <ReactMarkdown key={index} rehypePlugins={[rehypeRaw]}>{DOMPurify.sanitize(part)}</ReactMarkdown>;
                 })}
             </div>
         );
