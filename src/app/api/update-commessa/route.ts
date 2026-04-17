@@ -90,47 +90,51 @@ async function getPool(connectorId: string): Promise<{ pool: sql.ConnectionPool;
 // SECURITY: SQL statement-level safety check. Implementation in @/lib/sql-guard
 // so it's unit-testable and reusable (also used by /api/internal/query-db).
 
-// Build a parameterized mssql request — values bound as @p0, @p1, etc.
-// Table and column names are validated by TABLE_RE / IDENTIFIER_RE and bracket-quoted.
-function buildParameterizedQuery(
-    request: sql.Request,
+/**
+ * Escape a scalar value for safe embedding in T-SQL. Server-side only — never
+ * apply to raw client-provided SQL strings. Used by buildDirectQuery below.
+ */
+function escapeSqlValue(value: string | number | boolean | null): string {
+    if (value === null) return 'NULL';
+    if (typeof value === 'boolean') return value ? '1' : '0';
+    if (typeof value === 'number') return String(value);
+    return `N'${String(value).replace(/'/g, "''")}'`;
+}
+
+/**
+ * Build SQL with escaped literals. Safe because:
+ *   - table validated by TABLE_RE
+ *   - column names validated by IDENTIFIER_RE (no `]` allowed) and bracket-quoted
+ *   - values escaped by escapeSqlValue
+ *
+ * Previous parameterized implementation (via sql.input @p0, @p1...) silently
+ * matched zero rows in some legacy schemas due to node-mssql BigInt binding
+ * quirks vs int columns. Escaped literals round-trip predictably and are
+ * how the endpoint worked historically.
+ */
+function buildDirectQuery(
     operation: 'update' | 'insert' | 'delete',
     table: string,
     data: Record<string, string | number | boolean | null>,
     primaryKeys: string[],
 ): string {
     const entries = Object.entries(data);
-    let paramIdx = 0;
-
-    function addParam(value: string | number | boolean | null): string {
-        const name = `p${paramIdx++}`;
-        if (value === null) {
-            request.input(name, sql.NVarChar, null);
-        } else if (typeof value === 'boolean') {
-            request.input(name, sql.Bit, value);
-        } else if (typeof value === 'number') {
-            request.input(name, Number.isInteger(value) ? sql.BigInt : sql.Float, value);
-        } else {
-            request.input(name, sql.NVarChar, String(value));
-        }
-        return `@${name}`;
-    }
 
     switch (operation) {
         case 'update': {
             const setCols = entries.filter(([k]) => !primaryKeys.includes(k));
             if (setCols.length === 0) throw new Error('Nessuna colonna da aggiornare');
-            const setClause = setCols.map(([k, v]) => `[${k}] = ${addParam(v)}`).join(', ');
-            const whereClause = primaryKeys.map(k => `[${k}] = ${addParam(data[k])}`).join(' AND ');
+            const setClause = setCols.map(([k, v]) => `[${k}] = ${escapeSqlValue(v)}`).join(', ');
+            const whereClause = primaryKeys.map(k => `[${k}] = ${escapeSqlValue(data[k])}`).join(' AND ');
             return `UPDATE ${table} SET ${setClause} WHERE ${whereClause}`;
         }
         case 'insert': {
             const cols = entries.map(([k]) => `[${k}]`).join(', ');
-            const vals = entries.map(([, v]) => addParam(v)).join(', ');
+            const vals = entries.map(([, v]) => escapeSqlValue(v)).join(', ');
             return `INSERT INTO ${table} (${cols}) VALUES (${vals})`;
         }
         case 'delete': {
-            const whereClause = primaryKeys.map(k => `[${k}] = ${addParam(data[k])}`).join(' AND ');
+            const whereClause = primaryKeys.map(k => `[${k}] = ${escapeSqlValue(data[k])}`).join(' AND ');
             return `DELETE FROM ${table} WHERE ${whereClause}`;
         }
     }
@@ -253,11 +257,10 @@ export async function POST(req: NextRequest) {
             if (error) return NextResponse.json({ success: false, message: error }, { status: 400, headers: corsHeaders(req) });
             pool = p;
 
-            const request = pool.request();
-            const query = buildParameterizedQuery(request, operation, table, data, primaryKeys);
+            const query = buildDirectQuery(operation, table, data, primaryKeys);
             const fullQuery = query + '; IF @@TRANCOUNT > 0 COMMIT';
-            console.log(`[update-commessa] ${operation} ${table} | parameterized query`);
-            const result = await request.query(fullQuery);
+            console.log(`[update-commessa] ${operation} ${table} | query: ${fullQuery.substring(0, 500)}`);
+            const result = await pool.request().query(fullQuery);
 
             const rowsAffected = result.rowsAffected?.[0] || 0;
             console.log(`[update-commessa] ${operation} ${table} by user=${user.id}: ${rowsAffected} rows`);
