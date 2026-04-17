@@ -109,7 +109,9 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                             const treeNode = lodashPath ? get(jsonTree, lodashPath) : jsonTree;
                             const cid = treeNode?.pythonConnectorId || treeNode?.connectorId || treeNode?.sqlConnectorId;
                             if (cid) {
-                                setPreviewData((prev: any) => prev ? { ...prev, pythonConnectorId: cid } : prev);
+                                // The iframe polyfill reads `connectorId` (not `pythonConnectorId`).
+                                // Set both so saveToDb targets the right DB.
+                                setPreviewData((prev: any) => prev ? { ...prev, connectorId: cid, pythonConnectorId: cid } : prev);
                             }
                         }
                     } catch { /* best-effort */ }
