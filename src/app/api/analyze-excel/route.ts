@@ -46,10 +46,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Call Python backend to analyze the Excel file
+        // PERF: timeout to prevent hanging serverless function on Python backend stall
         const response = await fetch(`${getPythonBackendUrl()}/analyze-excel`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filepath }),
+            signal: AbortSignal.timeout(120_000), // 2 min for large Excel
         });
 
         if (!response.ok) {

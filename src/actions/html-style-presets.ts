@@ -227,10 +227,12 @@ export async function scrapeWebsiteStyleAction(
             return { error: 'API key OpenRouter mancante. Configurala nelle impostazioni.' };
         }
         // 1. Call Python backend to extract CSS
+        // PERF: timeout to prevent hanging on slow target sites
         const cssResponse = await fetch(`${getPythonBackendUrl()}/scrape-css`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url }),
+            signal: AbortSignal.timeout(60_000),
         });
 
         if (!cssResponse.ok) {

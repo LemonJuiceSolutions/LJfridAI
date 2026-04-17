@@ -121,7 +121,10 @@ export function DataTable<TData extends Record<string, any>>({
     const downloadExcel = async () => {
         if (filteredData.length === 0) return
         try {
-            const response = await fetch('http://localhost:5005/download-excel', {
+            // BUG fix: was hardcoded http://localhost:5005 — broke in production
+            // (CORS + unreachable Python backend) and in Docker. Now proxies via
+            // Next.js API route which calls Python backend server-side.
+            const response = await fetch('/api/files/download-excel', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

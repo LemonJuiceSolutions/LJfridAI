@@ -13,28 +13,32 @@ import set from 'lodash/set';
 
 import fs from 'fs';
 
-// Basic logger
+// PERF: file logging gated behind SCHEDULER_DEBUG=1 env var.
+// Was: every log line did sync fs.appendFileSync — blocked event loop in
+// scheduler hot path. Also leaks PII via JSON.stringify of task configs.
+const FILE_LOG = process.env.SCHEDULER_DEBUG === '1';
+
+function fileLog(line: string) {
+  if (!FILE_LOG) return;
+  // Async, fire-and-forget — does not block event loop
+  fs.promises.appendFile('./scheduler_debug.log', line).catch(() => {});
+}
+
 const logger = {
   log: (msg: string, ...args: any[]) => {
     const message = `[Scheduler] ${msg} ${args.map(a => JSON.stringify(a)).join(' ')}`;
     console.log(message);
-    try {
-      fs.appendFileSync('./scheduler_debug.log', `${new Date().toISOString()} ${message}\n`);
-    } catch (e) { }
+    fileLog(`${new Date().toISOString()} ${message}\n`);
   },
   error: (msg: string, ...args: any[]) => {
     const message = `[Scheduler] ERROR: ${msg} ${args.map(a => JSON.stringify(a)).join(' ')}`;
     console.error(message);
-    try {
-      fs.appendFileSync('./scheduler_debug.log', `${new Date().toISOString()} ${message}\n`);
-    } catch (e) { }
+    fileLog(`${new Date().toISOString()} ${message}\n`);
   },
   warn: (msg: string, ...args: any[]) => {
     const message = `[Scheduler] WARN: ${msg} ${args.map(a => JSON.stringify(a)).join(' ')}`;
     console.warn(message);
-    try {
-      fs.appendFileSync('./scheduler_debug.log', `${new Date().toISOString()} ${message}\n`);
-    } catch (e) { }
+    fileLog(`${new Date().toISOString()} ${message}\n`);
   },
 };
 

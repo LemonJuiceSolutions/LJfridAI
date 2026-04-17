@@ -199,6 +199,7 @@ async function searchWeb(query: string, serpApiKey: string): Promise<{ text: str
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=it`, extractType: 'text' }),
+                signal: AbortSignal.timeout(30_000),
             });
             if (r.ok) { const d = await r.json(); if (d.text) textParts.push(d.text.slice(0, 4000)); }
         } catch { /* scraper failed */ }
@@ -215,6 +216,7 @@ async function scrapePageContent(url: string): Promise<string> {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url, extractType: 'text' }),
+            signal: AbortSignal.timeout(30_000),
         });
         if (r.ok) {
             const d = await r.json();
