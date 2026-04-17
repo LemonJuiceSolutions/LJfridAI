@@ -363,9 +363,11 @@ async function executeSqlQuery(input: { query: string; connectorId: string }): P
         if (result.error) return JSON.stringify({ error: result.error });
         const data = result.data || [];
         const truncated = data.length > 100;
+        // SECURITY GDPR: redact PII before returning rows to LLM
+        const { maybeRedact } = await import('@/lib/pii-redact');
         return JSON.stringify({
             rowCount: data.length,
-            data: data.slice(0, 100),
+            data: maybeRedact(data.slice(0, 100)),
             truncated,
             columns: data.length > 0 ? Object.keys(data[0]) : [],
         }, null, 2);
@@ -876,12 +878,16 @@ async function executeToolCall(name: string, args: any): Promise<string> {
             const result = await executeSqlPreviewAction(args.query, args.connectorId, [], true);
             if (result.error) return JSON.stringify({ error: result.error });
             const data = result.data || [];
-            return JSON.stringify({ rowCount: data.length, data: data.slice(0, 100), columns: data.length > 0 ? Object.keys(data[0]) : [] }, null, 2);
+            // SECURITY GDPR: redact PII before returning rows to LLM
+            const { maybeRedact } = await import('@/lib/pii-redact');
+            return JSON.stringify({ rowCount: data.length, data: maybeRedact(data.slice(0, 100)), columns: data.length > 0 ? Object.keys(data[0]) : [] }, null, 2);
         }
         case 'executePythonCode': {
             const result = await executePythonPreviewAction(args.code, args.outputType, {}, [], args.connectorId, true);
             if (!result.success) return JSON.stringify({ error: result.error || 'Errore esecuzione Python' });
-            return JSON.stringify({ data: result.data?.slice(0, 100), variables: result.variables, columns: result.columns, rowCount: result.rowCount, stdout: result.stdout }, null, 2);
+            // SECURITY GDPR: redact PII before returning rows to LLM
+            const { maybeRedact: maybeRedact2 } = await import('@/lib/pii-redact');
+            return JSON.stringify({ data: maybeRedact2(result.data?.slice(0, 100)), variables: result.variables, columns: result.columns, rowCount: result.rowCount, stdout: result.stdout }, null, 2);
         }
         case 'searchKnowledgeBase': {
             const term = args.query.toLowerCase();

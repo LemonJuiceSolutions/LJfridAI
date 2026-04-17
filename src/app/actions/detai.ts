@@ -60,13 +60,15 @@ FORMATO RISPOSTA (JSON):
   "treeName": "Nome dell'albero usato (opzionale)"
 }`;
 
+        // SECURITY GDPR: redact PII from user-supplied text before sending to LLM
+        const { maybeRedact } = await import('@/lib/pii-redact');
         const formattedHistory = Array.isArray(input.history)
-            ? input.history.map(h => `${h.speaker.toUpperCase()}: ${h.text}`).join('\n')
-            : input.history;
+            ? input.history.map(h => `${h.speaker.toUpperCase()}: ${maybeRedact(h.text)}`).join('\n')
+            : maybeRedact(input.history);
 
-        const userPrompt = `Stato Utente: ${JSON.stringify(input.userState || {})}
-Problema Iniziale: ${input.userProblem || ''}
-Risposta Corrente: ${input.currentAnswer || ''}
+        const userPrompt = `Stato Utente: ${JSON.stringify(maybeRedact(input.userState || {}))}
+Problema Iniziale: ${maybeRedact(input.userProblem || '')}
+Risposta Corrente: ${maybeRedact(input.currentAnswer || '')}
 Cronologia Chat:
 ${formattedHistory}
 

@@ -94,11 +94,13 @@ async function doTestSqlQuery(input: { query: string, connectorId: string }) {
         const result = await executeSqlPreviewAction(input.query, input.connectorId, [], true);
         if (result.error) return JSON.stringify({ error: result.error, suggestion: 'Controlla nomi tabella e colonne. Usa exploreDbSchema e exploreTableColumns per verificare.' });
         const data = result.data || [];
+        // SECURITY GDPR: redact PII from sample rows before returning to LLM
+        const { maybeRedact } = await import('@/lib/pii-redact');
         return JSON.stringify({
             success: true,
             rowCount: data.length,
             columns: data.length > 0 ? Object.keys(data[0]) : [],
-            sampleData: data.slice(0, 5),
+            sampleData: maybeRedact(data.slice(0, 5)),
         }, null, 2);
     } catch (e: any) {
         return JSON.stringify({ error: e.message, suggestion: 'Verifica la sintassi SQL e i nomi delle tabelle/colonne.' });
@@ -422,10 +424,13 @@ export async function sqlAgentChat(input: AgentInput): Promise<AgentOutput> {
         }
 
         if (input.inputTables && Object.keys(input.inputTables).length > 0) {
+            // SECURITY GDPR: redact PII before embedding live DB rows in LLM prompt
+            const { maybeRedact } = await import('@/lib/pii-redact');
             context += '\nDATI DI ESEMPIO:\n';
             for (const [tableName, data] of Object.entries(input.inputTables)) {
                 if (Array.isArray(data) && data.length > 0) {
-                    context += `${tableName}: ${JSON.stringify((data as any[]).slice(0, 2))}\n`;
+                    const sample = maybeRedact((data as any[]).slice(0, 2));
+                    context += `${tableName}: ${JSON.stringify(sample)}\n`;
                 }
             }
         }
