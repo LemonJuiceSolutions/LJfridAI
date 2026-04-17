@@ -50,15 +50,18 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     `_origPM({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})};` +
     // --- Helper: strip internal UI-only fields ('_isNew', '_rowId', etc.) before sending ---
     `function clean(d){var o={};for(var k in d){if(d.hasOwnProperty(k)&&k.charAt(0)!=='_')o[k]=d[k]}return o}` +
+    // --- Helper: build structured payload; omit connectorId when empty
+    // (server Zod schema requires min(1) if the key is present) ---
+    `function wrap(p){if(CID)p.connectorId=CID;return p}` +
     // --- 2. saveToDb: structured UPDATE payload (no raw SQL) ---
-    // Sends {operation, table, data, primaryKeys, connectorId} — server parameterizes.
+    // Sends {operation, table, data, primaryKeys, connectorId?} — server parameterizes.
     // Previously sent raw SQL via `body.query` which was restricted to superadmin
     // after the security hardening pass. Structured path has always been allowed
     // for any authenticated user in the company.
     `window.saveToDb=function(tbl,data,pks){` +
     `if(!tbl||!data)return Promise.reject(new Error('Missing table or data'));` +
     `pks=pks||[];if(pks.length===0)return Promise.reject(new Error('No PK for WHERE clause'));` +
-    `var payload={operation:'update',table:tbl,data:clean(data),primaryKeys:pks,connectorId:CID};` +
+    `var payload=wrap({operation:'update',table:tbl,data:clean(data),primaryKeys:pks});` +
     `console.log('[saveToDb]',payload);` +
     `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
     `body:JSON.stringify(payload)}).then(function(r){return r.json().then(function(j){` +
@@ -68,14 +71,14 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     `if(!tbl||!data)return Promise.reject(new Error('Missing table or data'));` +
     `var cleaned=clean(data);` +
     `if(Object.keys(cleaned).length===0)return Promise.reject(new Error('No columns to insert'));` +
-    `var payload={operation:'insert',table:tbl,data:cleaned,primaryKeys:[],connectorId:CID};` +
+    `var payload=wrap({operation:'insert',table:tbl,data:cleaned,primaryKeys:[]});` +
     `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
     `body:JSON.stringify(payload)}).then(function(r){return r.json()})};` +
     // --- 2c. deleteFromDb: structured DELETE payload ---
     `window.deleteFromDb=function(tbl,data,pks){` +
     `if(!tbl||!data||!pks||pks.length===0)return Promise.reject(new Error('Missing table, data or PKs'));` +
     `for(var i=0;i<pks.length;i++){if(!data.hasOwnProperty(pks[i]))return Promise.reject(new Error('PK field missing: '+pks[i]))}` +
-    `var payload={operation:'delete',table:tbl,data:clean(data),primaryKeys:pks,connectorId:CID};` +
+    `var payload=wrap({operation:'delete',table:tbl,data:clean(data),primaryKeys:pks});` +
     `return fetch('/api/update-commessa',{method:'POST',headers:{'Content-Type':'application/json'},` +
     `body:JSON.stringify(payload)}).then(function(r){return r.json()})};` +
     // --- 3. PostMessage interceptor: auto-converts save-type postMessage to saveToDb ---
