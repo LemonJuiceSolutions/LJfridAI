@@ -207,21 +207,12 @@ async function executeAllSequentially(run: RunAllState, tasks: any[]) {
     const taskStart = Date.now();
 
     try {
-      // Clear zombie locks before triggering
-      (schedulerService as any).runningTasks?.delete(taskStatus.taskId);
-
-      // Temporarily disable retries so run-all doesn't block for minutes on failures
-      const task = await db.scheduledTask.findUnique({ where: { id: taskStatus.taskId }, select: { maxRetries: true } });
-      const origRetries = task?.maxRetries ?? 3;
-      await db.scheduledTask.update({ where: { id: taskStatus.taskId }, data: { maxRetries: 0 } });
-
-      let result;
-      try {
-        result = await schedulerService.executeTask(taskStatus.taskId);
-      } finally {
-        // Restore original retry setting
-        await db.scheduledTask.update({ where: { id: taskStatus.taskId }, data: { maxRetries: origRetries } }).catch(() => {});
-      }
+      // BUG fix: do NOT force-clear concurrency lock — was: (schedulerService as any)
+      // .runningTasks?.delete(...) — risked double-execution of legitimately
+      // running tasks. Now: respect lock; executeTask returns "skipped" if busy.
+      // BUG fix: pass maxRetriesOverride per-call instead of mutating DB
+      // (process crash between set 0 and restore would permanently disable retries).
+      const result = await schedulerService.executeTask(taskStatus.taskId, { maxRetriesOverride: 0 });
 
       taskStatus.durationMs = Date.now() - taskStart;
 

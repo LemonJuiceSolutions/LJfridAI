@@ -601,7 +601,7 @@ export class SchedulerService {
     return this.executeTask(taskId);
   }
 
-  public async executeTask(taskId: string): Promise<TaskExecutionResult> {
+  public async executeTask(taskId: string, options?: { maxRetriesOverride?: number }): Promise<TaskExecutionResult> {
     // Concurrency guard: skip if this task is already running
     if (this.runningTasks.has(taskId)) {
       logger.log(`⏭️ Task ${taskId} SKIPPED - still running from previous trigger`);
@@ -619,7 +619,9 @@ export class SchedulerService {
       const task = await db.scheduledTask.findUnique({ where: { id: taskId } });
       if (!task) return { success: false, error: 'Task not found' };
 
-      const maxRetries = task.maxRetries ?? 3;
+      // BUG fix: per-call override (was: callers mutated DB to disable retries
+      // — if process crashed before restore, retries permanently disabled).
+      const maxRetries = options?.maxRetriesOverride ?? task.maxRetries ?? 3;
       const retryDelayMin = task.retryDelayMinutes ?? 5;
 
       // 2. Create Execution Log (Pending)

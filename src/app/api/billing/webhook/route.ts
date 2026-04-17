@@ -62,6 +62,24 @@ export async function POST(request: Request) {
   }
 
   try {
+    // BUG fix: atomic idempotency. Was: separate findUnique + create — two
+    // concurrent Stripe retries could both find "not existing" and both
+    // execute the handler (duplicate emails / state changes).
+    // Now: single create — Prisma P2002 unique-violation indicates duplicate.
+    try {
+      await db.webhookEvent.create({
+        data: { stripeEventId: event.id, type: event.type },
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        // Duplicate — another delivery already processed it
+        console.log(`[billing/webhook] Skipping duplicate event ${event.id}`);
+        return NextResponse.json({ received: true });
+      }
+      // Table may not exist (migration pending) — log + continue without dedup
+      console.warn(`[billing/webhook] Idempotency table unavailable: ${e?.message || e}`);
+    }
+
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;

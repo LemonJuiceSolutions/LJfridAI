@@ -166,32 +166,57 @@ export async function executePipelineSql(
         const tempName = `##${safe}_${uid}`;
         nameMap.set(dep.tableName, tempName);
 
-        const columns = Object.keys(rows[0]);
+        // SECURITY CRITICAL: whitelist column names — they were interpolated raw
+        // into CREATE TABLE / INSERT, allowing SQL injection from malicious
+        // upstream Python nodes that produce rows with crafted column names.
+        const COLUMN_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+        const columns = Object.keys(rows[0]).filter(c => {
+          if (!COLUMN_RE.test(c)) {
+            console.warn(`[PipelineSQL] Dropping unsafe column name: ${c}`);
+            return false;
+          }
+          return true;
+        });
+        if (columns.length === 0) {
+          console.warn(`[PipelineSQL] All columns rejected for ${dep.tableName} — skipping`);
+          continue;
+        }
         const colDefs = columns.map(c => `[${c}] NVARCHAR(MAX)`).join(', ');
 
-        const req = pool.request();
-        await req.query(`IF OBJECT_ID('tempdb..${tempName}') IS NOT NULL DROP TABLE ${tempName};`);
-        await req.query(`CREATE TABLE ${tempName} (${colDefs});`);
+        const setupReq = pool.request();
+        await setupReq.query(`IF OBJECT_ID('tempdb..${tempName}') IS NOT NULL DROP TABLE ${tempName};`);
+        await setupReq.query(`CREATE TABLE ${tempName} (${colDefs});`);
         createdTempTables.push(tempName);
 
-        // Batch insert (100 rows at a time)
+        // SECURITY CRITICAL: parameterized inserts (was: string-concat with manual
+        // single-quote escape — vulnerable to NUL bytes and crafted column names).
         const batchSize = 100;
         for (let i = 0; i < rows.length; i += batchSize) {
           const batch = rows.slice(i, i + batchSize);
-          const values = batch.map(row => {
-            const vals = columns.map(col => {
+          const insertReq = pool.request();
+          const placeholders = batch.map((row, rowIdx) => {
+            const cellPlaceholders = columns.map((col, colIdx) => {
+              const param = `p_${i + rowIdx}_${colIdx}`;
               const v = row[col];
-              if (v === null || v === undefined) return 'NULL';
-              if (typeof v === 'number') return v.toString();
-              if (typeof v === 'boolean') return v ? '1' : '0';
-              if (v instanceof Date) return `'${v.toISOString()}'`;
-              return `N'${String(v).replace(/'/g, "''")}'`;
+              // Bind via mssql .input() — driver handles escaping/typing
+              if (v === null || v === undefined) {
+                insertReq.input(param, null);
+              } else if (typeof v === 'number') {
+                insertReq.input(param, v);
+              } else if (typeof v === 'boolean') {
+                insertReq.input(param, v ? 1 : 0);
+              } else if (v instanceof Date) {
+                insertReq.input(param, v.toISOString());
+              } else {
+                insertReq.input(param, String(v));
+              }
+              return `@${param}`;
             }).join(', ');
-            return `(${vals})`;
+            return `(${cellPlaceholders})`;
           }).join(', ');
 
-          if (values.length > 0) {
-            await req.query(`INSERT INTO ${tempName} VALUES ${values};`);
+          if (placeholders.length > 0) {
+            await insertReq.query(`INSERT INTO ${tempName} VALUES ${placeholders};`);
           }
         }
 
