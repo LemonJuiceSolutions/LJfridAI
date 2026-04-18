@@ -96,8 +96,10 @@ export async function executeSqlPreview(
   const createdTempTables: string[] = [];
 
   try {
-    // Resolve company from connector
-    let companyId = 'system-override';
+    // Resolve company from connector. MUST end up with a concrete companyId —
+    // falling back to an undefined Prisma filter would read connectors across
+    // every tenant in the database.
+    let companyId: string | null = null;
     let connector: any = null;
 
     if (connectorId) {
@@ -107,7 +109,7 @@ export async function executeSqlPreview(
       if (connector) companyId = connector.companyId;
     }
 
-    // Connector inheritance fallback
+    // Connector inheritance fallback via pipeline dependencies
     if (!connector) {
       const findInherited = (deps: SqlPreviewDep[]): string | undefined => {
         for (const d of deps) {
@@ -121,15 +123,21 @@ export async function executeSqlPreview(
       const inheritedId = findInherited(pipelineDependencies);
       if (inheritedId) {
         connector = await db.connector.findFirst({ where: { id: inheritedId, type: 'SQL' } });
+        if (connector) companyId = connector.companyId;
       }
-      if (!connector) {
+      if (!connector && companyId) {
         connector = await db.connector.findFirst({
-          where: { companyId: companyId !== 'system-override' ? companyId : undefined, type: 'SQL' },
+          where: { companyId, type: 'SQL' },
         });
       }
     }
 
-    if (!connector) return { data: null, error: 'Connettore SQL non trovato.' };
+    if (!connector || !companyId) {
+      return {
+        data: null,
+        error: '[Security] Scheduler cannot resolve companyId for SQL preview — no valid connector in node or dependencies.',
+      };
+    }
 
     let conf: any = connector.config;
     if (typeof conf === 'string') {
@@ -269,7 +277,10 @@ export async function executePythonPreview(
   overrideCompanyId?: string,
 ): Promise<PythonPreviewResult> {
   try {
-    let companyId = overrideCompanyId || 'system-override';
+    // companyId MUST be concrete. If neither overrideCompanyId nor a valid
+    // connectorId resolves to a tenant, refuse to run — chart theme and
+    // SharePoint fallback lookups would otherwise leak across tenants.
+    let companyId: string | null = overrideCompanyId ?? null;
     const envVars: Record<string, string> = {};
 
     // Resolve company and env vars from connector
@@ -277,6 +288,7 @@ export async function executePythonPreview(
       const connector = await db.connector.findUnique({ where: { id: connectorId } });
       if (connector) {
         companyId = connector.companyId;
+        const resolvedCompanyId: string = connector.companyId;
         let config: any = connector.config;
         if (typeof config === 'string') { try { config = JSON.parse(config); } catch { config = {}; } }
         if (config.accessToken) envVars['HUBSPOT_TOKEN'] = config.accessToken;
@@ -293,7 +305,7 @@ export async function executePythonPreview(
             const { getCachedSharePointTokenAction } = await import('@/app/actions/sharepoint');
             const tenantId = config.tenantId || '0089ad7d-e10f-49b4-bf68-60e706423382';
             const clientId = config.clientId || '7ff50e8a-eb8c-4bf8-9fa6-f4068c6fe82b';
-            const authResult = await getCachedSharePointTokenAction(tenantId, clientId, config.clientSecret, companyId);
+            const authResult = await getCachedSharePointTokenAction(tenantId, clientId, config.clientSecret, resolvedCompanyId);
             if (authResult.accessToken) {
               envVars['SHAREPOINT_TOKEN'] = authResult.accessToken;
               if (config._siteId) envVars['SHAREPOINT_SITE_ID'] = config._siteId;
@@ -309,7 +321,7 @@ export async function executePythonPreview(
     }
 
     // SharePoint company-wide fallback
-    if (!envVars['SHAREPOINT_TOKEN'] && companyId !== 'system-override') {
+    if (!envVars['SHAREPOINT_TOKEN'] && companyId) {
       try {
         const spConn = await db.connector.findFirst({ where: { companyId, type: 'SHAREPOINT' } });
         if (spConn?.config) {
@@ -344,8 +356,17 @@ export async function executePythonPreview(
       } catch { /* ignore */ }
     }
 
-    // query_db() support
+    // query_db() support. We only enable it when we have a resolved companyId,
+    // so the /api/internal/query-db endpoint can enforce tenant scoping on the
+    // other side. Running Python with an empty QUERY_DB_COMPANY_ID would make
+    // it depend on the endpoint's own defaults — safer to refuse here.
     if (connectorId && connectorId !== 'none') {
+      if (!companyId) {
+        return {
+          success: false,
+          error: '[Security] Connector supplied without a resolvable tenant — refusing to enable query_db() in Python.',
+        };
+      }
       const port = process.env.PORT || '9002';
       envVars['QUERY_DB_ENDPOINT'] = `http://localhost:${port}/api/internal/query-db`;
       envVars['QUERY_DB_CONNECTOR_ID'] = connectorId;
@@ -353,7 +374,7 @@ export async function executePythonPreview(
         throw new Error('Missing required env var: INTERNAL_QUERY_TOKEN');
       }
       envVars['QUERY_DB_TOKEN'] = process.env.INTERNAL_QUERY_TOKEN;
-      envVars['QUERY_DB_COMPANY_ID'] = companyId || '';
+      envVars['QUERY_DB_COMPANY_ID'] = companyId;
     }
 
     // Resolve SQL dependencies not already in inputData
@@ -372,7 +393,7 @@ export async function executePythonPreview(
 
     // Load chart theme
     let chartThemeData: Record<string, any> | undefined;
-    if (companyId && companyId !== 'system-override') {
+    if (companyId) {
       try {
         const company = await db.company.findUnique({ where: { id: companyId }, select: { chartTheme: true } });
         if (company?.chartTheme) chartThemeData = resolveTheme(company.chartTheme as any);
