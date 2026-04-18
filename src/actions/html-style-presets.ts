@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { HtmlStyleOverrides, SavedHtmlStylePreset } from "@/lib/html-style-utils";
 import { getHtmlStyleFieldsDescription } from "@/lib/html-style-utils";
-import { getPythonBackendUrl } from "@/lib/python-backend";
+import { pythonFetch } from "@/lib/python-backend";
 
 // ── Auth helper (same pattern as chart-theme.ts) ──
 
@@ -228,9 +228,8 @@ export async function scrapeWebsiteStyleAction(
         }
         // 1. Call Python backend to extract CSS
         // PERF: timeout to prevent hanging on slow target sites
-        const cssResponse = await fetch(`${getPythonBackendUrl()}/scrape-css`, {
+        const cssResponse = await pythonFetch('/scrape-css', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url }),
             signal: AbortSignal.timeout(60_000),
         });

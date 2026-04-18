@@ -16,6 +16,7 @@ from contextlib import redirect_stdout, redirect_stderr
 import os
 import json
 import re
+import hmac
 from chart_to_recharts_converter import matplotlib_to_recharts, plotly_to_recharts, infer_chart_type
 import socket
 import ipaddress
@@ -100,6 +101,47 @@ app.json.sort_keys = False
 CORS(app)  # Allow cross-origin requests from Next.js
 
 VERSION = "1.0.6"  # Fix: auto-unwrap if __name__=="__main__" + file write capture
+
+# --- Internal token auth ------------------------------------------------------
+# The Python backend trusts only Next.js calls carrying X-Internal-Token.
+# /health is exempt so container orchestrators can probe liveness.
+#
+# In production (FLASK_ENV=production or PYTHON_ENV=production) the token env
+# var is MANDATORY — if it's missing we refuse to boot rather than silently
+# accepting every caller. In dev, we fall back to a well-known token matched
+# by src/lib/python-backend.ts so local `docker-compose up` keeps working.
+DEV_DEFAULT_TOKEN = 'dev-python-backend-token-local-only'
+_is_prod_env = (os.environ.get('FLASK_ENV') == 'production'
+                or os.environ.get('PYTHON_ENV') == 'production'
+                or os.environ.get('NODE_ENV') == 'production')
+PYTHON_BACKEND_TOKEN = os.environ.get('PYTHON_BACKEND_TOKEN')
+if not PYTHON_BACKEND_TOKEN:
+    if _is_prod_env:
+        raise RuntimeError(
+            'PYTHON_BACKEND_TOKEN env var is required in production. '
+            'Generate one with: openssl rand -hex 32'
+        )
+    PYTHON_BACKEND_TOKEN = DEV_DEFAULT_TOKEN
+    print('⚠️  [SECURITY] Using dev default PYTHON_BACKEND_TOKEN — do NOT use in production')
+else:
+    print(f'✅ [SECURITY] PYTHON_BACKEND_TOKEN loaded ({len(PYTHON_BACKEND_TOKEN)} chars)')
+
+# Routes that skip token verification (orchestrator liveness probes, CORS preflight).
+_TOKEN_EXEMPT_PATHS = {'/health'}
+
+@app.before_request
+def _require_internal_token():
+    # CORS preflight — Flask-CORS handles the Access-Control-* headers.
+    if request.method == 'OPTIONS':
+        return None
+    if request.path in _TOKEN_EXEMPT_PATHS:
+        return None
+    supplied = request.headers.get('X-Internal-Token', '')
+    # Constant-time compare to resist timing side channels.
+    if not hmac.compare_digest(supplied.encode('utf-8'), PYTHON_BACKEND_TOKEN.encode('utf-8')):
+        _safe_log(f'[SECURITY] 401 — missing/invalid X-Internal-Token for {request.method} {request.path}')
+        return jsonify({'error': 'Unauthorized'}), 401
+    return None
 
 # Data lake: shared folder between Python backend and Next.js.
 # Relative paths are resolved from the project root (one level up from this file).

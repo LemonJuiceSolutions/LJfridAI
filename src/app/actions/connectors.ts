@@ -12,7 +12,7 @@ import { resolveTheme } from '@/lib/chart-theme';
 import { testSharePointConnectionAction } from './sharepoint';
 import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
 import { generateHtmlStyleCss, applyHtmlStyleOverrides } from '@/lib/html-style-utils';
-import { getPythonBackendUrl } from '@/lib/python-backend';
+import { pythonFetch } from '@/lib/python-backend';
 
 /**
  * Convert JavaScript-dependent HTML to static HTML for email embedding.
@@ -1333,9 +1333,8 @@ result = base64.b64encode(img_bytes).decode("utf-8")
 print(f"PNG generated: {len(result)} chars base64")
 `.trim();
 
-                    const renderRes = await fetch(`${getPythonBackendUrl()}/execute`, {
+                    const renderRes = await pythonFetch('/execute', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             code: renderScript,
                             outputType: 'variable',   // camelCase to match Python backend's data.get('outputType')

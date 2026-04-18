@@ -2,7 +2,7 @@
 
 import sql from 'mssql';
 import { db } from '@/lib/db';
-import { getPythonBackendUrl } from '@/lib/python-backend';
+import { pythonFetch } from '@/lib/python-backend';
 import { getAuthenticatedUser } from './auth';
 import { resolveTheme } from '@/lib/chart-theme';
 
@@ -1419,9 +1419,8 @@ export async function executePythonPreviewAction(
                 if (dfTarget) {
                     console.log(`[executePythonPreviewAction] dfTarget explicitly set to '${dfTarget}'`);
                 }
-                const response = await fetch(`${getPythonBackendUrl()}/execute`, {
+                const response = await pythonFetch('/execute', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         code,
                         outputType,

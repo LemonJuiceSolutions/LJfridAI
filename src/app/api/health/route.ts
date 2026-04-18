@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getPythonBackendUrl } from '@/lib/python-backend';
 
 export async function GET() {
   const checks: Record<string, string> = {};
@@ -12,10 +13,12 @@ export async function GET() {
     checks.database = 'unhealthy';
   }
 
-  // Check Python backend
+  // Check Python backend. /health is the ONE token-exempt endpoint on the
+  // Python side, so we can probe it with a plain fetch — no X-Internal-Token
+  // required. This keeps liveness probing working even if the token gets
+  // rotated.
   try {
-    const pythonUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:5005';
-    const res = await fetch(`${pythonUrl}/health`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${getPythonBackendUrl()}/health`, { signal: AbortSignal.timeout(3000) });
     checks.python_backend = res.ok ? 'healthy' : 'unhealthy';
   } catch {
     checks.python_backend = 'unreachable';

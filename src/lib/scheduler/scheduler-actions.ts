@@ -11,7 +11,7 @@
 
 import { db } from '@/lib/db';
 import sql from 'mssql';
-import { getPythonBackendUrl } from '@/lib/python-backend';
+import { pythonFetch } from '@/lib/python-backend';
 import { resolveTheme } from '@/lib/chart-theme';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -408,9 +408,8 @@ export async function executePythonPreview(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000);
       try {
-        const response = await fetch(`${getPythonBackendUrl()}/execute`, {
+        const response = await pythonFetch('/execute', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code, outputType, inputData, env: envVars, chartTheme: chartThemeData, ...(dfTarget ? { dfTable: dfTarget } : {}) }),
           signal: controller.signal,
         });

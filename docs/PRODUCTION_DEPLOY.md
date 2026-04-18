@@ -14,13 +14,18 @@ Deterministic checklist. Follow top-to-bottom, do not skip steps.
 Run on the target host (never commit these):
 
 ```bash
-# 4 independent 32-byte base64 secrets
-for name in NEXTAUTH_SECRET ENCRYPTION_KEY CRON_SECRET INTERNAL_QUERY_TOKEN MCP_INTERNAL_SECRET SCHEDULER_INTERNAL_SECRET; do
+# 7 independent 32-byte base64 secrets
+for name in NEXTAUTH_SECRET ENCRYPTION_KEY CRON_SECRET INTERNAL_QUERY_TOKEN MCP_INTERNAL_SECRET SCHEDULER_INTERNAL_SECRET PYTHON_BACKEND_TOKEN; do
   echo "$name=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")"
 done
 ```
 
 Paste the output into `.env.production`. Use `.env.production.template` as the scaffold.
+
+`PYTHON_BACKEND_TOKEN` must be identical on both the Next.js and Python
+containers — the Flask app uses it to authenticate every inbound call
+(X-Internal-Token header). Mismatches cause every Python call to 401 with
+no user-visible hint; cross-check both services after deploy.
 
 ## 2. Database
 

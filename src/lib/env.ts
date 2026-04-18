@@ -17,6 +17,9 @@ const prodOnlySchema = z.object({
   CRON_SECRET: z.string().min(32, 'CRON_SECRET must be at least 32 characters in production'),
   INTERNAL_QUERY_TOKEN: z.string().min(32, 'INTERNAL_QUERY_TOKEN must be at least 32 characters in production'),
   MCP_INTERNAL_SECRET: z.string().min(32, 'MCP_INTERNAL_SECRET must be at least 32 characters in production'),
+  // Shared secret Next.js sends to the Python backend as X-Internal-Token.
+  // Must match PYTHON_BACKEND_TOKEN on the Python side; mismatches cause 401.
+  PYTHON_BACKEND_TOKEN: z.string().min(32, 'PYTHON_BACKEND_TOKEN must be at least 32 characters in production'),
 });
 
 const envSchema = isProd ? coreSchema.merge(prodOnlySchema) : coreSchema.merge(prodOnlySchema.partial());

@@ -4,7 +4,7 @@ import { access } from 'fs/promises';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDataLakePath } from '@/lib/data-lake';
-import { getPythonBackendUrl } from '@/lib/python-backend';
+import { pythonFetch } from '@/lib/python-backend';
 // join is kept for the EEXXCC path below
 
 export async function POST(request: NextRequest) {
@@ -59,9 +59,8 @@ export async function POST(request: NextRequest) {
 
         // Call Python backend to analyze the Excel file
         // PERF: timeout to prevent hanging serverless function on Python backend stall
-        const response = await fetch(`${getPythonBackendUrl()}/analyze-excel`, {
+        const response = await pythonFetch('/analyze-excel', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filepath }),
             signal: AbortSignal.timeout(120_000), // 2 min for large Excel
         });

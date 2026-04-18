@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getPythonBackendUrl } from '@/lib/python-backend';
+import { pythonFetch } from '@/lib/python-backend';
 
 export const maxDuration = 60;
 
@@ -20,9 +20,8 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.text();
-        const upstream = await fetch(`${getPythonBackendUrl()}/download-excel`, {
+        const upstream = await pythonFetch('/download-excel', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body,
             signal: AbortSignal.timeout(60_000),
         });

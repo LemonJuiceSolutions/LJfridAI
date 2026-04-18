@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { createInterface } from 'readline';
 import { activeSessions } from '@/ai/flows/lead-generator-sessions';
 import type { ToolSession } from '@/ai/flows/lead-generator-sessions';
-import { getPythonBackendUrl } from '@/lib/python-backend';
+import { pythonFetch } from '@/lib/python-backend';
 
 // ===================== TYPES =====================
 
@@ -1024,9 +1024,8 @@ export async function executeToolCall(
 
         case 'scrapeWebsite': {
             try {
-                const response = await fetch(`${getPythonBackendUrl()}/scrape`, {
+                const response = await pythonFetch('/scrape', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         url: args.url,
                         extractType: args.extractType || 'all',
@@ -1626,9 +1625,8 @@ export async function executeToolCall(
             if (!apiKeys.firecrawl) {
                 // Fallback al Python backend locale se Firecrawl non configurato
                 try {
-                    const response = await fetch(`${getPythonBackendUrl()}/scrape`, {
+                    const response = await pythonFetch('/scrape', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ url: args.url, extractType: 'all' }),
                     });
                     if (!response.ok) {

@@ -8,7 +8,7 @@ import { getOpenRouterSettingsAction } from '@/actions/openrouter';
 import { getAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
 import { runClaudeCliSync } from '@/ai/providers/claude-cli-provider';
-import { getPythonBackendUrl } from '@/lib/python-backend';
+import { pythonFetch } from '@/lib/python-backend';
 
 export const maxDuration = 120;
 
@@ -195,9 +195,8 @@ async function searchWeb(query: string, serpApiKey: string): Promise<{ text: str
     // Fallback: localhost scraper
     if (textParts.length === 0) {
         try {
-            const r = await fetch(`${getPythonBackendUrl()}/scrape`, {
+            const r = await pythonFetch('/scrape', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=it`, extractType: 'text' }),
                 signal: AbortSignal.timeout(30_000),
             });
@@ -212,9 +211,8 @@ async function searchWeb(query: string, serpApiKey: string): Promise<{ text: str
 async function scrapePageContent(url: string): Promise<string> {
     // Try localhost scraper first (most reliable for extracting clean text)
     try {
-        const r = await fetch(`${getPythonBackendUrl()}/scrape`, {
+        const r = await pythonFetch('/scrape', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url, extractType: 'text' }),
             signal: AbortSignal.timeout(30_000),
         });
