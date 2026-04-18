@@ -13,8 +13,16 @@ export interface DiscoveredWidget {
     pythonType?: string;
 }
 
-export const CACHE_TTL = 30_000;
+// Fresh window: serve cache without revalidation.
+export const CACHE_TTL = 5 * 60_000;
+// Stale-while-revalidate window: serve stale cache instantly, trigger rebuild.
+// After this, the request blocks until a fresh build completes.
+export const CACHE_SWR = 15 * 60_000;
+
 export const cache = new Map<string, { widgets: DiscoveredWidget[]; ts: number }>();
+// In-flight rebuilds, keyed by companyId. Prevents stampede of concurrent
+// heavy tree scans while a rebuild is already running.
+export const inflight = new Map<string, Promise<DiscoveredWidget[]>>();
 
 /** Invalidate the discovery cache — call after pipeline execution etc. */
 export function invalidateWidgetDiscoveryCache(companyId?: string) {

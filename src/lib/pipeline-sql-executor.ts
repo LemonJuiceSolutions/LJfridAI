@@ -15,8 +15,11 @@ import path from 'path';
 const DATA_LAKE_PATH = process.env.DATA_LAKE_PATH || 'data_lake';
 const LARGE_RESULT_THRESHOLD = 5 * 1024 * 1024; // 5MB — save to file if larger
 
-// Pool cache (reuse connections across pipeline nodes)
+// Pool cache (reuse connections across pipeline nodes).
 const poolCache = new Map<string, sql.ConnectionPool>();
+// Track when each pool was last borrowed — periodic eviction drops idle ones
+// to bound cache growth and reclaim sockets (Azure/AWS close idle TCP).
+const poolLastUsedAt = new Map<string, number>();
 
 /**
  * Close and evict a cached pool. Silent on error — caller has already decided
@@ -25,6 +28,7 @@ const poolCache = new Map<string, sql.ConnectionPool>();
 async function evictPool(connectorId: string): Promise<void> {
   const pool = poolCache.get(connectorId);
   poolCache.delete(connectorId);
+  poolLastUsedAt.delete(connectorId);
   if (pool) {
     try { await pool.close(); } catch { /* ignore */ }
   }
@@ -39,6 +43,7 @@ async function getPool(connectorId: string): Promise<sql.ConnectionPool> {
     if (cached.connected) {
       try {
         await cached.request().query('SELECT 1 AS ok');
+        poolLastUsedAt.set(connectorId, Date.now());
         return cached;
       } catch {
         await evictPool(connectorId);
@@ -77,6 +82,7 @@ async function getPool(connectorId: string): Promise<sql.ConnectionPool> {
   }).connect();
 
   poolCache.set(connectorId, pool);
+  poolLastUsedAt.set(connectorId, Date.now());
   return pool;
 }
 
@@ -111,6 +117,41 @@ export function startPipelineCacheSweep(): void {
   // Run once at startup, then every hour.
   sweep();
   setInterval(sweep, 60 * 60 * 1000).unref();
+}
+
+// Auto-start the sweep on module import. Safe: .unref() lets the process exit,
+// and the globalThis guard prevents HMR from stacking intervals.
+declare global {
+  // eslint-disable-next-line no-var
+  var _pipelineCacheSweepStarted: boolean | undefined;
+}
+if (!globalThis._pipelineCacheSweepStarted) {
+  globalThis._pipelineCacheSweepStarted = true;
+  startPipelineCacheSweep();
+}
+
+/**
+ * Periodic pool eviction: close and forget pools that haven't been used
+ * in a while. Bounds the cache and reclaims sockets held against remote
+ * MSSQL servers (Azure rotates connections; idle pools get killed
+ * server-side and reappear as "connection closed" noise).
+ */
+const POOL_IDLE_MAX_MS = 30 * 60_000;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var _poolEvictionStarted: boolean | undefined;
+}
+if (!globalThis._poolEvictionStarted) {
+  globalThis._poolEvictionStarted = true;
+  setInterval(() => {
+    const cutoff = Date.now() - POOL_IDLE_MAX_MS;
+    for (const [id, ts] of poolLastUsedAt) {
+      if (ts < cutoff) {
+        void evictPool(id);
+      }
+    }
+  }, 10 * 60_000).unref();
 }
 
 // ---------------------------------------------------------------------------
