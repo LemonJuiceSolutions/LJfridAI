@@ -195,6 +195,12 @@ export async function POST(request: NextRequest) {
 // ── Sequential executor ──
 
 async function executeAllSequentially(run: RunAllState, tasks: any[]) {
+  // Breathing room between task invocations. Each task is a heavy pipeline
+  // (SQL → Python → email render/send) that pins CPU; without an explicit
+  // yield + sleep, Next.js cannot schedule page render / API handlers for
+  // the user and the UI appears frozen. Tuneable via env.
+  const DELAY_MS = Math.max(0, Number(process.env.SCHEDULER_RUNALL_DELAY_MS) || 1000);
+
   for (let i = 0; i < run.tasks.length; i++) {
     // Check abort
     if (run.status === 'aborted') break;
@@ -207,6 +213,10 @@ async function executeAllSequentially(run: RunAllState, tasks: any[]) {
     const taskStart = Date.now();
 
     try {
+      // Yield to the event loop BEFORE heavy work so pending HTTP handlers
+      // get a chance to run between tasks.
+      await new Promise(r => setImmediate(r));
+
       // BUG fix: do NOT force-clear concurrency lock — was: (schedulerService as any)
       // .runningTasks?.delete(...) — risked double-execution of legitimately
       // running tasks. Now: respect lock; executeTask returns "skipped" if busy.
@@ -231,6 +241,13 @@ async function executeAllSequentially(run: RunAllState, tasks: any[]) {
 
     // Abort check after task completes
     if ((run.status as string) === 'aborted') break;
+
+    // Sleep between tasks — gives Node's event loop time to serve
+    // other requests (page nav, auth session, widget polling) that were
+    // stuck behind the previous task's SQL/Python/email work.
+    if (DELAY_MS > 0 && i < run.tasks.length - 1) {
+      await new Promise(r => setTimeout(r, DELAY_MS));
+    }
   }
 
   if ((run.status as string) !== 'aborted') {
