@@ -986,12 +986,21 @@ export class SchedulerService {
             };
           });
 
+          // Resolve connectorId for the Python phase: prefer python-specific,
+          // then SQL, then a dep with a connector. Without this, query_db()
+          // is not injected in the Python sandbox (NameError at runtime).
+          let resolvedPyCid = tableDef.pythonConnectorId || tableDef.connectorId || tableDef.sqlConnectorId || '';
+          if (!resolvedPyCid) {
+            for (const d of deps) {
+              if (d.connectorId) { resolvedPyCid = d.connectorId; break; }
+            }
+          }
           const res = await executePythonPreview(
             tableDef.pythonCode,
             tableDef.pythonOutputType || 'table',
             inputData, // PASS DATA HERE
             deps,
-            tableDef.connectorId,
+            resolvedPyCid,
             tableDef.selectedDocuments?.length > 0 ? tableDef.selectedDocuments : undefined,
             dfTarget, // FIX: Explicitly tell Python backend which table to map to 'df'
             companyId, // Pass company for SharePoint token resolution
@@ -2136,12 +2145,22 @@ export class SchedulerService {
     // 2. Execute Python with pre-calculated data (no recursive deps)
     const runType = pythonOutputType || 'table';
 
+    // Resolve connectorId: prefer node's own, then fall back to ANY connector
+    // referenced by an ancestor table. Required for query_db() injection.
+    let resolvedCid: string = pythonConnectorId || '';
+    if (!resolvedCid && Array.isArray(allContext)) {
+      for (const ctx of allContext) {
+        const cid = ctx?.pythonConnectorId || ctx?.connectorId || ctx?.sqlConnectorId;
+        if (cid) { resolvedCid = cid; break; }
+      }
+    }
+
     const result = await executePythonPreview(
       pythonCode,
       runType,
       inputData, // Pre-calculated data from ancestor chain
       [], // No recursive deps needed — data already in inputData
-      pythonConnectorId,
+      resolvedCid || pythonConnectorId,
       selectedDocuments?.length > 0 ? selectedDocuments : undefined,
       undefined, // dfTarget
       companyId, // pass companyId for SharePoint token resolution
