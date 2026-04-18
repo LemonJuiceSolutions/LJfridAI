@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "NODE_OPTIONS=\"--max-old-space-size=$(node -e \"try{console.log(require('./config/system-budget.json').nextHeapMb||6144)}catch{console.log(6144)}\")\" next dev --turbopack -p 9002",
+    "dev:scheduler": "cd scheduler-service && npm run dev",
+    "dev:all": "node scripts/dev-all.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

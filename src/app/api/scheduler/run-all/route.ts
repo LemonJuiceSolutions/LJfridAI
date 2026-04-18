@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { schedulerService } from '@/lib/scheduler/scheduler-service';
+import { getSchedulerClient } from '@/lib/scheduler/scheduler-client';
 
 // ── In-memory run-all state (survives page navigations, lost on server restart) ──
 
@@ -222,7 +222,11 @@ async function executeAllSequentially(run: RunAllState, tasks: any[]) {
       // running tasks. Now: respect lock; executeTask returns "skipped" if busy.
       // BUG fix: pass maxRetriesOverride per-call instead of mutating DB
       // (process crash between set 0 and restore would permanently disable retries).
-      const result = await schedulerService.executeTask(taskStatus.taskId, { maxRetriesOverride: 0 });
+      // Route through the client abstraction: when SCHEDULER_SERVICE_URL is
+      // set, this hits the standalone scheduler-service over HTTP and the
+      // heavy Python/SQL/email work runs in THAT process, leaving Next.js
+      // free to serve pages.
+      const result = await getSchedulerClient().executeTask(taskStatus.taskId, { maxRetriesOverride: 0 });
 
       taskStatus.durationMs = Date.now() - taskStart;
 

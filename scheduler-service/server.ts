@@ -89,6 +89,21 @@ export async function startServer(scheduler: SchedulerService, port: number): Pr
     res.status(202).json({ accepted: true });
   });
 
+  // ── Synchronous execute (awaits completion, returns result) ─────────────────
+  // Used by /api/scheduler/run-all so the main Next.js process can orchestrate
+  // 16 tasks sequentially WITHOUT holding CPU on the app event loop.
+  app.post('/execute/:id', async (req, res) => {
+    try {
+      const maxRetriesOverride = req.body?.maxRetriesOverride;
+      const result = await scheduler.executeTask(req.params.id,
+        typeof maxRetriesOverride === 'number' ? { maxRetriesOverride } : undefined
+      );
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // ── Delete a task from runtime ───────────────────────────────────────────────
   app.delete('/task/:id', async (req, res) => {
     try {

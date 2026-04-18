@@ -7,9 +7,16 @@
  * Start: npx tsx index.ts (or via docker-compose with profile "scheduler")
  */
 
-import 'dotenv/config';
 import path from 'path';
+import { config as dotenvConfig } from 'dotenv';
 import cron from 'node-cron';
+
+// Load env from the repo root .env so this process shares DATABASE_URL,
+// SCHEDULER_INTERNAL_SECRET, PYTHON_BACKEND_URL, INTERNAL_QUERY_TOKEN, etc.
+// with the Next.js app. `import 'dotenv/config'` only loads the scheduler-service
+// local .env (which doesn't exist).
+dotenvConfig({ path: path.resolve(__dirname, '..', '.env') });
+dotenvConfig({ path: path.resolve(__dirname, '..', '.env.local'), override: false });
 
 // Resolve @/ aliases at runtime for tsx (matches tsconfig paths)
 // tsx handles tsconfig paths automatically when running from the scheduler-service dir

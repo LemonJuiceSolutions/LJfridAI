@@ -31,6 +31,10 @@ export interface ISchedulerClient {
   ): Promise<any>;
   waitForAutoRecovery(): Promise<void>;
   readonly autoRecoveryDone: boolean;
+  // Synchronous execution that awaits completion — used by run-all so the
+  // heavy work runs in the scheduler-service process (when configured),
+  // not in the Next.js request handler.
+  executeTask(taskId: string, opts?: { maxRetriesOverride?: number }): Promise<any>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,6 +67,10 @@ class LocalSchedulerClient implements ISchedulerClient {
   }
 
   async waitForAutoRecovery() { await this.svc.waitForAutoRecovery(); }
+
+  async executeTask(taskId: string, opts?: { maxRetriesOverride?: number }) {
+    return this.svc.executeTask(taskId, opts);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,7 +83,12 @@ class RemoteSchedulerClient implements ISchedulerClient {
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
-    this.secret = process.env.SCHEDULER_SERVICE_SECRET || 'change-me-in-production';
+    // Env name was renamed SCHEDULER_SERVICE_SECRET → SCHEDULER_INTERNAL_SECRET
+    // to match the standalone service. Fall back to the old name so existing
+    // deployments keep working until .env is updated.
+    this.secret = process.env.SCHEDULER_INTERNAL_SECRET
+      || process.env.SCHEDULER_SERVICE_SECRET
+      || '';
   }
 
   private async call(method: string, path: string, body?: any): Promise<any> {
@@ -126,6 +139,11 @@ class RemoteSchedulerClient implements ISchedulerClient {
       await new Promise(r => setTimeout(r, pollMs));
       waited += pollMs;
     }
+  }
+
+  async executeTask(taskId: string, opts?: { maxRetriesOverride?: number }) {
+    // Synchronous — awaits completion in the scheduler-service process.
+    return this.call('POST', `/execute/${taskId}`, opts || {});
   }
 }
 
