@@ -907,7 +907,17 @@ export class SchedulerService {
       const hasLogic = (tableDef.isPython && tableDef.pythonCode) || (!tableDef.isPython && tableDef.sqlQuery) || (tableDef.type === 'email') || (tableDef.type === 'sharepoint') || (tableDef.type === 'hubspot');
       if (!hasLogic) continue;
 
-      logger.log(`[AncestorChain] Executing ancestor: ${originalName} (${tableDef.type || (tableDef.isPython ? 'Python' : 'SQL')})`);
+      const _ancestorKind = tableDef.type || (tableDef.isPython ? 'Python' : 'SQL');
+      logger.log(`[AncestorChain] Executing ancestor: ${originalName} (${_ancestorKind})`);
+
+      // PERF instrumentation — reports per-ancestor wall time so slow
+      // schedulers can be diagnosed from the logs without extra tooling.
+      const _ancestorStart = Date.now();
+      const _logDone = (rowCount?: number) => {
+        const dur = Date.now() - _ancestorStart;
+        const rows = typeof rowCount === 'number' ? ` rows=${rowCount}` : '';
+        logger.log(`[AncestorChain] ⏱ ${originalName} (${_ancestorKind}) took ${dur}ms${rows}`);
+      };
 
       try {
         let resultData: any = null;
@@ -1289,9 +1299,23 @@ export class SchedulerService {
           }
         }
 
+        // PERF: emit per-ancestor timing once everything above has finished.
+        // Pull row count from the two shapes we produce:
+        //  - SQL:   resultData = array
+        //  - Python: resultData = { data: array, chartBase64, ... }
+        {
+          const rowsArr = Array.isArray(resultData)
+            ? resultData
+            : (resultData && typeof resultData === 'object' && Array.isArray((resultData as any).data))
+              ? (resultData as any).data
+              : null;
+          _logDone(rowsArr ? rowsArr.length : undefined);
+        }
+
       } catch (e: any) {
         logger.error(`[AncestorChain] Exception executing ${originalName}: ${e.message}`);
         pipelineReport.push({ name: originalName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'error', error: e.message, timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
+        _logDone();
       }
     }
 
