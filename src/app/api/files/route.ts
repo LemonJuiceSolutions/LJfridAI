@@ -21,34 +21,54 @@ export async function GET(request: NextRequest) {
         }
 
         // SECURITY CRITICAL: scope dirs per companyId to prevent cross-tenant file access.
-        // Legacy unscoped files (uploaded before this change) sit under the root —
-        // admin migration script needed to move them under <companyId>/.
-        const ALLOWED_EXTRA_DIRS: Record<string, string> = {
+        const SCOPED_DIRS: Record<string, string> = {
             'excel-etl': join(process.cwd(), 'python-backend', 'EEXXCC', companyId),
             'data_lake': join(getDataLakePath(), companyId),
         };
+        // Legacy (flat) paths from the pre-tenant-scoping era. Listed here so
+        // existing files remain visible; a one-time migration script moves
+        // them under <companyId>/ (scripts/migrate-files-to-company.ts).
+        const LEGACY_DIRS: Record<string, string> = {
+            'excel-etl': join(process.cwd(), 'python-backend', 'EEXXCC'),
+            'data_lake': getDataLakePath(),
+        };
 
-        const uploadDir = ALLOWED_EXTRA_DIRS[folder] || join(process.cwd(), 'public', folder, companyId);
+        const scopedDir = SCOPED_DIRS[folder] || join(process.cwd(), 'public', folder, companyId);
+        const legacyDir = LEGACY_DIRS[folder] || join(process.cwd(), 'public', folder);
 
-        try {
-            const files = await readdir(uploadDir);
+        const readSafe = async (dir: string) => {
+            try { return await readdir(dir); } catch { return []; }
+        };
 
-            const fileInfos = await Promise.all(files.map(async (file) => {
-                const filepath = join(uploadDir, file);
+        const [scopedFiles, legacyFiles] = await Promise.all([readSafe(scopedDir), readSafe(legacyDir)]);
+
+        // Scoped files win over legacy on name collision.
+        const seen = new Set(scopedFiles);
+        const combined = [
+            ...scopedFiles.map(f => ({ name: f, dir: scopedDir, scoped: true })),
+            ...legacyFiles
+                .filter(f => !seen.has(f) && scopedDir !== legacyDir)
+                .map(f => ({ name: f, dir: legacyDir, scoped: false })),
+        ];
+
+        const fileInfos = (await Promise.all(combined.map(async ({ name, dir, scoped }) => {
+            try {
+                const filepath = join(dir, name);
                 const stats = await stat(filepath);
+                if (!stats.isFile()) return null;
                 return {
-                    name: file,
-                    url: `/${folder}/${file}`,
+                    name,
+                    url: `/${folder}/${name}`,
                     size: stats.size,
                     createdAt: stats.birthtime,
+                    legacy: !scoped,
                 };
-            }));
+            } catch {
+                return null;
+            }
+        }))).filter(Boolean);
 
-            return NextResponse.json({ success: true, files: fileInfos });
-        } catch (e) {
-            // Did not exist? return empty
-            return NextResponse.json({ success: true, files: [] });
-        }
+        return NextResponse.json({ success: true, files: fileInfos });
 
     } catch (error) {
         return NextResponse.json({ success: false, error: 'List failed' }, { status: 500 });

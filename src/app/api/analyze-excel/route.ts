@@ -27,22 +27,30 @@ export async function POST(request: NextRequest) {
         }
 
         // SECURITY: scope search dirs per companyId to prevent cross-tenant Excel read.
+        // Legacy flat paths (pre-tenant-scoping) listed AFTER scoped so scoped wins
+        // on collisions. A migration moves legacy files under <companyId>/.
         const { resolve: pathResolve } = await import('path');
-        const searchDirs = [
+        const scopedDirs = [
             join(getDataLakePath(), companyId),
             join(process.cwd(), 'python-backend', 'EEXXCC', companyId),
         ];
+        const legacyDirs = [
+            getDataLakePath(),
+            join(process.cwd(), 'python-backend', 'EEXXCC'),
+        ];
 
         let filepath = '';
-        for (const dir of searchDirs) {
+        for (const dir of scopedDirs) {
             const candidate = join(dir, filename);
-            // Belt-and-braces: reject any resolved path that escapes the scoped base.
             if (!pathResolve(candidate).startsWith(pathResolve(dir))) continue;
-            try {
-                await access(candidate);
-                filepath = candidate;
-                break;
-            } catch {}
+            try { await access(candidate); filepath = candidate; break; } catch {}
+        }
+        if (!filepath) {
+            for (const dir of legacyDirs) {
+                const candidate = join(dir, filename);
+                if (!pathResolve(candidate).startsWith(pathResolve(dir))) continue;
+                try { await access(candidate); filepath = candidate; break; } catch {}
+            }
         }
 
         if (!filepath) {

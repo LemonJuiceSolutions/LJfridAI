@@ -227,18 +227,33 @@ export class SchedulerService {
         return;
       }
 
-      logger.log(`🔄 Auto-recovering ${allMissed.length} missed tasks...`);
+      // Cap concurrency so auto-recovery cannot fork-bomb the Python backend
+      // and saturate CPU during startup. 2 parallel is a reasonable floor —
+      // heavy SQL/Python tasks already hold pool connections per execution.
+      const MAX_CONCURRENCY = Math.max(1, Number(process.env.SCHEDULER_RECOVERY_CONCURRENCY) || 2);
+      logger.log(`🔄 Auto-recovering ${allMissed.length} missed tasks (max ${MAX_CONCURRENCY} parallel)...`);
 
-      // Execute all missed tasks concurrently (with the per-task concurrency guard)
-      const results = await Promise.allSettled(
-        allMissed.map(async (missed) => {
-          logger.log(`🔄 Auto-recovering: ${missed.name} (${missed.id}) — ${missed.totalMissed} missed slots`);
-          const result = await this.executeTask(missed.id);
-          // Realign nextRunAt regardless of success/failure
-          await this.realignTaskNextRun(missed.id);
-          return { id: missed.id, name: missed.name, result };
-        })
-      );
+      type Outcome = { status: 'fulfilled'; value: { id: string; name: string; result: { success: boolean; error?: string } } }
+        | { status: 'rejected'; reason: any; name?: string };
+      const results: Outcome[] = [];
+      let cursor = 0;
+
+      async function worker(self: SchedulerService) {
+        while (cursor < allMissed.length) {
+          const missed = allMissed[cursor++];
+          try {
+            logger.log(`🔄 Auto-recovering: ${missed.name} (${missed.id}) — ${missed.totalMissed} missed slots`);
+            const result = await self.executeTask(missed.id);
+            await self.realignTaskNextRun(missed.id);
+            results.push({ status: 'fulfilled', value: { id: missed.id, name: missed.name, result } });
+          } catch (reason: any) {
+            results.push({ status: 'rejected', reason, name: missed.name });
+          }
+        }
+      }
+
+      const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, allMissed.length) }, () => worker(this));
+      await Promise.all(workers);
 
       let recovered = 0;
       let failed = 0;
@@ -249,7 +264,8 @@ export class SchedulerService {
         } else {
           failed++;
           const reason = r.status === 'rejected' ? r.reason?.message : r.value.result.error;
-          logger.error(`❌ Auto-recovery failed: ${r.status === 'fulfilled' ? r.value.name : 'unknown'} — ${reason}`);
+          const name = r.status === 'fulfilled' ? r.value.name : (r.name || 'unknown');
+          logger.error(`❌ Auto-recovery failed: ${name} — ${reason}`);
         }
       }
 

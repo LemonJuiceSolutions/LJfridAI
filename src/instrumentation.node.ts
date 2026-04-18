@@ -10,12 +10,14 @@ export async function registerNode() {
         return;
     }
 
-    console.log('[INSTRUMENTATION] Registering Scheduler Service (Node.js)...');
-    try {
-        const scheduler = SchedulerService.getInstance();
-        await scheduler.init();
-        console.log('[INSTRUMENTATION] Scheduler Service initialized.');
-    } catch (error) {
-        console.error('[INSTRUMENTATION] Failed to initialize Scheduler:', error);
-    }
+    // Fire-and-forget scheduler init so request handlers (pages, APIs) do NOT
+    // wait on task loading, cron registration, and auto-recovery — these can
+    // take tens of seconds with many tasks. registerNode() must return fast,
+    // otherwise Next.js delays serving the first request and the whole app
+    // appears frozen except for the scheduler page.
+    console.log('[INSTRUMENTATION] Scheduler init dispatched asynchronously');
+    const scheduler = SchedulerService.getInstance();
+    scheduler.init()
+        .then(() => console.log('[INSTRUMENTATION] Scheduler Service initialized.'))
+        .catch((error) => console.error('[INSTRUMENTATION] Failed to initialize Scheduler:', error));
 }

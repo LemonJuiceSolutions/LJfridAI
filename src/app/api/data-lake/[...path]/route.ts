@@ -38,16 +38,29 @@ export async function GET(
         // we prepend it so saved widgets keep working. Cross-tenant reads are
         // impossible because the server, not the client, decides the prefix.
         const scopedPath = path[0] === companyId ? path : [companyId, ...path];
-        const filepath = getDataLakePath(...scopedPath);
+        const scopedFile = getDataLakePath(...scopedPath);
 
-        // Prevent path traversal — resolved path must stay inside company's subtree.
+        // Path traversal guard — resolved path must stay inside the data-lake root.
         const { resolve: pathResolve } = await import('path');
-        const companyBase = getDataLakePath(companyId);
-        if (!pathResolve(filepath).startsWith(pathResolve(companyBase))) {
+        const lakeRoot = getDataLakePath();
+        if (!pathResolve(scopedFile).startsWith(pathResolve(lakeRoot))) {
             return new NextResponse('Forbidden', { status: 403 });
         }
 
-        await stat(filepath); // throws if not found
+        // Try scoped first, fall back to legacy flat path (pre-tenant-scoping
+        // uploads live in getDataLakePath() without a companyId prefix).
+        const legacyFile = getDataLakePath(...(path[0] === companyId ? path.slice(1) : path));
+        let filepath = scopedFile;
+        try {
+            await stat(scopedFile);
+        } catch {
+            try {
+                await stat(legacyFile);
+                filepath = legacyFile;
+            } catch {
+                return new NextResponse('Not Found', { status: 404 });
+            }
+        }
         const buffer = await readFile(filepath);
         const ext = extname(filepath).toLowerCase();
         const contentType = MIME_TYPES[ext] || 'application/octet-stream';
