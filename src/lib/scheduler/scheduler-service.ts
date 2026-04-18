@@ -987,13 +987,35 @@ export class SchedulerService {
           });
 
           // Resolve connectorId for the Python phase: prefer python-specific,
-          // then SQL, then a dep with a connector. Without this, query_db()
-          // is not injected in the Python sandbox (NameError at runtime).
+          // then SQL, then a dep with a connector, finally look up each dep's
+          // source node in contextTables (tree-wide) for its connectorId.
+          // Without this, query_db() is not injected in the Python sandbox
+          // (NameError at runtime).
           let resolvedPyCid = tableDef.pythonConnectorId || tableDef.connectorId || tableDef.sqlConnectorId || '';
           if (!resolvedPyCid) {
             for (const d of deps) {
               if (d.connectorId) { resolvedPyCid = d.connectorId; break; }
             }
+          }
+          if (!resolvedPyCid) {
+            // Last resort: scan contextTables for any SQL dep with a connector.
+            for (const d of (tableDef.pipelineDependencies || [])) {
+              const src = contextTables.find(t => t.name === d.tableName);
+              const cid = src?.pythonConnectorId || src?.connectorId || src?.sqlConnectorId;
+              if (cid) { resolvedPyCid = cid; break; }
+            }
+          }
+          if (!resolvedPyCid) {
+            // Still nothing — fall back to any SQL connector in the tree so
+            // query_db() at least gets injected (the sandbox still enforces
+            // companyId on the server side).
+            const anySqlCtx = contextTables.find(t => !t.isPython && (t.connectorId || t.sqlConnectorId));
+            if (anySqlCtx) resolvedPyCid = anySqlCtx.connectorId || anySqlCtx.sqlConnectorId || '';
+          }
+          if (!resolvedPyCid) {
+            logger.warn(`[AncestorChain] ${originalName}: no connectorId resolvable — query_db() will NOT be injected`);
+          } else {
+            logger.log(`[AncestorChain] ${originalName}: resolved connectorId=${resolvedPyCid.slice(0, 10)}...`);
           }
           const res = await executePythonPreview(
             tableDef.pythonCode,
