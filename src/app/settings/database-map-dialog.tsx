@@ -784,8 +784,20 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
     const handleExportExcel = async () => {
         if (!map) return;
         try {
-            const XLSX = await import('xlsx');
-            const wb = XLSX.utils.book_new();
+            const ExcelJS = (await import('exceljs')).default;
+            const wb = new ExcelJS.Workbook();
+
+            const addSheet = (
+                name: string,
+                widths: number[],
+                rows: Record<string, unknown>[],
+            ) => {
+                const ws = wb.addWorksheet(name);
+                if (rows.length === 0) return;
+                const headers = Object.keys(rows[0]);
+                ws.columns = headers.map((h, i) => ({ header: h, key: h, width: widths[i] ?? 15 }));
+                ws.addRows(rows);
+            };
 
             // Sheet 1: Tables
             const tablesData = map.tables.map(t => ({
@@ -800,16 +812,10 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                 'Descrizione': t.description || '',
                 'Descrizione Utente': t.userDescription || '',
             }));
-            const wsTabelle = XLSX.utils.json_to_sheet(tablesData);
-            // Auto-size columns
-            wsTabelle['!cols'] = [
-                { wch: 12 }, { wch: 30 }, { wch: 40 }, { wch: 10 }, { wch: 8 },
-                { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 50 }, { wch: 50 },
-            ];
-            XLSX.utils.book_append_sheet(wb, wsTabelle, 'Tabelle');
+            addSheet('Tabelle', [12, 30, 40, 10, 8, 20, 12, 12, 50, 50], tablesData);
 
             // Sheet 2: Columns
-            const columnsData: any[] = [];
+            const columnsData: Record<string, unknown>[] = [];
             for (const t of map.tables) {
                 for (const c of t.columns) {
                     columnsData.push({
@@ -830,13 +836,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                     });
                 }
             }
-            const wsColonne = XLSX.utils.json_to_sheet(columnsData);
-            wsColonne['!cols'] = [
-                { wch: 12 }, { wch: 30 }, { wch: 30 }, { wch: 18 }, { wch: 10 },
-                { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 40 }, { wch: 20 },
-                { wch: 50 }, { wch: 50 },
-            ];
-            XLSX.utils.book_append_sheet(wb, wsColonne, 'Colonne');
+            addSheet('Colonne', [12, 30, 30, 18, 10, 8, 10, 10, 40, 20, 50, 50], columnsData);
 
             // Sheet 3: Relations
             const relsData = map.relationships.map(r => ({
@@ -852,12 +852,7 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                 'Metodo': r.inferenceMethod || 'formal_fk',
                 'Motivazione': r.reason || '',
             }));
-            const wsRelazioni = XLSX.utils.json_to_sheet(relsData);
-            wsRelazioni['!cols'] = [
-                { wch: 12 }, { wch: 30 }, { wch: 25 }, { wch: 12 }, { wch: 30 },
-                { wch: 25 }, { wch: 30 }, { wch: 8 }, { wch: 12 }, { wch: 15 }, { wch: 50 },
-            ];
-            XLSX.utils.book_append_sheet(wb, wsRelazioni, 'Relazioni');
+            addSheet('Relazioni', [12, 30, 25, 12, 30, 25, 30, 8, 12, 15, 50], relsData);
 
             // Sheet 4: Summary
             const summaryData = [
@@ -872,12 +867,10 @@ export function DatabaseMapDialog({ connectorId, connectorName, open, onOpenChan
                 { 'Metrica': 'Generato il', 'Valore': map.generatedAt ? new Date(map.generatedAt).toLocaleString('it-IT') : '' },
                 { 'Metrica': 'Descrizioni AI il', 'Valore': map.descriptionsGeneratedAt ? new Date(map.descriptionsGeneratedAt).toLocaleString('it-IT') : '' },
             ];
-            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-            wsSummary['!cols'] = [{ wch: 25 }, { wch: 40 }];
-            XLSX.utils.book_append_sheet(wb, wsSummary, 'Riepilogo');
+            addSheet('Riepilogo', [25, 40], summaryData);
 
             // Generate and download
-            const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx', compression: true });
+            const buffer = await wb.xlsx.writeBuffer();
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');

@@ -168,6 +168,16 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        const { rateLimit } = await import('@/lib/rate-limit');
+        const uid = user.id || user.companyId;
+        const rl = await rateLimit(`update-commessa:${uid}`, 60, 60_000);
+        if (!rl.allowed) {
+            return NextResponse.json(
+                { success: false, error: 'Rate limit superato. Riprova tra poco.' },
+                { status: 429, headers: corsHeaders(req) }
+            );
+        }
+
         const body = await req.json();
 
         // ── Proxy mode: client sends {query, connectorId?} — execute directly with COMMIT ──

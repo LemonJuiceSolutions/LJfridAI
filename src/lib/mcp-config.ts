@@ -35,7 +35,13 @@ export async function createMcpConfig(ctx: McpContext): Promise<McpConfigResult>
     const tmpDir = await mkdtemp(join(tmpdir(), 'fridai-mcp-'));
 
     const baseUrl = ctx.baseUrl || process.env.NEXTAUTH_URL || 'http://localhost:9002';
-    const mcpSecret = process.env.MCP_INTERNAL_SECRET || 'fridai-mcp-local';
+    const mcpSecret = process.env.MCP_INTERNAL_SECRET;
+    if (!mcpSecret) {
+        throw new Error(
+            'MCP_INTERNAL_SECRET env var not set. Generate with: ' +
+            `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
+        );
+    }
 
     // Write context file
     const contextPath = join(tmpDir, 'context.json');

@@ -1,8 +1,13 @@
 
+import path from 'path';
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // Pin the file-tracing root to this project. Without this Next walks
+  // upward, finds a stray /Users/<user>/package-lock.json and tries to trace
+  // the entire home directory — which makes `next build` hang for 10+ minutes.
+  outputFileTracingRoot: path.join(__dirname),
   /* config options here */
   typescript: {
     // Re-enabled 2026-04-17: 70 implicit-any errors swept, build passes.
