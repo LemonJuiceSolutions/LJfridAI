@@ -80,6 +80,8 @@ class LocalSchedulerClient implements ISchedulerClient {
 class RemoteSchedulerClient implements ISchedulerClient {
   private baseUrl: string;
   private secret: string;
+  private reachable: boolean | null = null;
+  private lastReachabilityCheck = 0;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -91,6 +93,43 @@ class RemoteSchedulerClient implements ISchedulerClient {
       || '';
   }
 
+  /**
+   * Quick health-probe with 1s timeout. Cached for 5s to avoid hammering
+   * /health on every call. If the service is unreachable we fall back to
+   * the local in-process scheduler instead of surfacing "fetch failed"
+   * from dozens of concurrent API handlers.
+   */
+  private async isReachable(): Promise<boolean> {
+    const now = Date.now();
+    if (this.reachable !== null && now - this.lastReachabilityCheck < 5_000) {
+      return this.reachable;
+    }
+    try {
+      const res = await fetch(`${this.baseUrl}/health`, {
+        signal: AbortSignal.timeout(1_000),
+      });
+      this.reachable = res.ok;
+    } catch {
+      this.reachable = false;
+    }
+    this.lastReachabilityCheck = now;
+    return this.reachable;
+  }
+
+  private async callOrFallback<T>(method: string, path: string, body: any, localFn: () => Promise<T>): Promise<T> {
+    if (!(await this.isReachable())) {
+      console.warn(`[scheduler-client] Remote ${this.baseUrl} unreachable — falling back to in-process scheduler. Start scheduler-service (port 3001) or unset SCHEDULER_SERVICE_URL to silence.`);
+      return localFn();
+    }
+    try {
+      return await this.call(method, path, body) as T;
+    } catch (err: any) {
+      console.warn(`[scheduler-client] Remote call ${method} ${path} failed: ${err.message} — falling back to local`);
+      this.reachable = false; // force recheck next time
+      return localFn();
+    }
+  }
+
   private async call(method: string, path: string, body?: any): Promise<any> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
@@ -99,6 +138,7 @@ class RemoteSchedulerClient implements ISchedulerClient {
         'X-Scheduler-Secret': this.secret,
       },
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(300_000),
     });
     if (!res.ok) {
       const err = await res.text().catch(() => res.statusText);
@@ -107,27 +147,60 @@ class RemoteSchedulerClient implements ISchedulerClient {
     return res.json().catch(() => null);
   }
 
+  private local() {
+    // Lazy import to keep module graph clean; singleton is already spun up
+    // by instrumentation unless SCHEDULER_SERVICE_URL is set, in which case
+    // we lazy-init here on fallback.
+    const { schedulerService } = require('./scheduler-service');
+    return schedulerService;
+  }
+
   get autoRecoveryDone(): boolean {
     // Best-effort synchronous check — use waitForAutoRecovery() for async guarantee
     return false;
   }
 
-  async rescheduleTask(taskId: string) { await this.call('POST', `/reschedule/${taskId}`); }
-  async triggerTask(taskId: string) { await this.call('POST', `/trigger/${taskId}`); }
-  async deleteTask(taskId: string) { await this.call('DELETE', `/task/${taskId}`); }
-  async reload() { await this.call('POST', '/reload'); }
+  async rescheduleTask(taskId: string) {
+    await this.callOrFallback('POST', `/reschedule/${taskId}`, undefined, async () => {
+      await this.local().rescheduleTask(taskId); return null;
+    });
+  }
+  async triggerTask(taskId: string) {
+    await this.callOrFallback('POST', `/trigger/${taskId}`, undefined, async () => {
+      this.local().triggerTask(taskId).catch(console.error); return null;
+    });
+  }
+  async deleteTask(taskId: string) {
+    await this.callOrFallback('DELETE', `/task/${taskId}`, undefined, async () => {
+      await this.local().deleteTask(taskId); return null;
+    });
+  }
+  async reload() {
+    await this.callOrFallback('POST', '/reload', undefined, async () => {
+      await this.local().reload(); return null;
+    });
+  }
 
   async getMissedTasks(companyId?: string) {
     const qs = companyId ? `?companyId=${encodeURIComponent(companyId)}` : '';
-    return this.call('GET', `/missed-tasks${qs}`);
+    return this.callOrFallback('GET', `/missed-tasks${qs}`, undefined, async () => {
+      await this.local().waitForAutoRecovery();
+      return { recovering: false, missedTasks: await this.local().getMissedTasks(companyId) };
+    });
   }
 
   async processMissedTasks(executeIds: string[], skipIds: string[], executeAll = false, missedCounts?: Map<string, number>) {
     const counts = missedCounts ? Object.fromEntries(missedCounts) : undefined;
-    return this.call('POST', '/missed-tasks', { executeIds, skipIds, executeAll, missedCounts: counts });
+    return this.callOrFallback('POST', '/missed-tasks', { executeIds, skipIds, executeAll, missedCounts: counts }, async () => {
+      return this.local().processMissedTasks(executeIds, skipIds, executeAll, missedCounts);
+    });
   }
 
   async waitForAutoRecovery() {
+    if (!(await this.isReachable())) {
+      await this.local().waitForAutoRecovery();
+      return;
+    }
     const maxWaitMs = 15_000;
     const pollMs = 500;
     let waited = 0;
@@ -142,8 +215,12 @@ class RemoteSchedulerClient implements ISchedulerClient {
   }
 
   async executeTask(taskId: string, opts?: { maxRetriesOverride?: number }) {
-    // Synchronous — awaits completion in the scheduler-service process.
-    return this.call('POST', `/execute/${taskId}`, opts || {});
+    // Synchronous — awaits completion in the scheduler-service process
+    // when reachable, otherwise falls back to in-process execution so
+    // run-all and retries don't fail with "fetch failed" during dev.
+    return this.callOrFallback('POST', `/execute/${taskId}`, opts || {}, async () => {
+      return this.local().executeTask(taskId, opts);
+    });
   }
 }
 
