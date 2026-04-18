@@ -248,13 +248,24 @@ async function executePythonNode(node: Node, context: ExecutionContext): Promise
   // Convert pythonOutputType to valid type
   const outputType: PythonOutputType = node.pythonOutputType || 'table';
 
+  // Resolve connectorId: prefer the node's own, then inherit from any SQL
+  // dependency. Required for query_db() / execute_db() injection in the
+  // Python sandbox — without it the script sees NameError: 'query_db' not
+  // defined.
+  let resolvedConnectorId = node.pythonConnectorId || node.sqlConnectorId || '';
+  if (!resolvedConnectorId) {
+    for (const dep of dependencies) {
+      if (dep.connectorId) { resolvedConnectorId = dep.connectorId; break; }
+    }
+  }
+
   // Execute Python script
   const result = await executePythonPreviewAction(
     node.pythonCode,
     outputType,
     inputData,
     dependencies,
-    node.pythonConnectorId,
+    resolvedConnectorId || undefined,
     undefined,
     node.selectedDocuments?.length ? node.selectedDocuments : undefined
   );
