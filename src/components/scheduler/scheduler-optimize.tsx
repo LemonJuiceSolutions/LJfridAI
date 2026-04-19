@@ -41,6 +41,7 @@ interface OpenRouterModel {
     id: string;
     name: string;
     context_length?: number;
+    pricing?: { prompt: string; completion: string };
 }
 
 const SUGGESTED_OPENROUTER_MODELS = [
@@ -172,7 +173,7 @@ export function SchedulerOptimize() {
         return () => { cancelled = true; };
     }, []);
 
-    const modelOptions = useMemo(() => {
+    const modelOptions = useMemo<OpenRouterModel[]>(() => {
         if (provider === 'claude-cli') return CLAUDE_CLI_MODELS;
         if (availableOpenRouterModels.length === 0) {
             return SUGGESTED_OPENROUTER_MODELS.map(id => ({ id, name: id }));
@@ -263,32 +264,24 @@ export function SchedulerOptimize() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    {/* Provider + Model picker */}
+                    {/* Model picker. Provider is FIXED to whatever is saved in
+                        /settings (same as the rest of the app's agents) —
+                        here the user only picks the model. */}
                     <div className="rounded-md border border-slate-200 dark:border-zinc-800 p-3 bg-slate-50/50 dark:bg-zinc-900/40">
                         <div className="flex flex-wrap items-end gap-3">
                             <div className="flex flex-col gap-1">
                                 <Label className="text-xs">Provider</Label>
-                                <div className="inline-flex h-9 rounded-md border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-0.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => setProvider('openrouter')}
-                                        className={`px-3 text-xs rounded flex items-center gap-1.5 transition ${provider === 'openrouter' ? 'bg-purple-600 text-white' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
-                                    >
-                                        <Bot className="w-3.5 h-3.5" />
-                                        OpenRouter
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setProvider('claude-cli')}
-                                        className={`px-3 text-xs rounded flex items-center gap-1.5 transition ${provider === 'claude-cli' ? 'bg-orange-600 text-white' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
-                                    >
-                                        <Bot className="w-3.5 h-3.5" />
-                                        Claude CLI
-                                    </button>
-                                </div>
+                                <Badge
+                                    variant="outline"
+                                    className={`gap-1.5 h-9 px-3 font-normal ${provider === 'claude-cli' ? 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300' : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300'}`}
+                                    title="Cambiabile solo in Impostazioni"
+                                >
+                                    <Bot className="w-3.5 h-3.5" />
+                                    {provider === 'claude-cli' ? 'Claude CLI' : 'OpenRouter'}
+                                </Badge>
                             </div>
                             <div className="flex-1 min-w-[260px] flex flex-col gap-1">
-                                <Label className="text-xs">Modello AI</Label>
+                                <Label className="text-xs">Modello</Label>
                                 {showCustom ? (
                                     <Input
                                         value={customModel}
@@ -302,11 +295,19 @@ export function SchedulerOptimize() {
                                             <SelectValue placeholder={loadingDefault ? 'Carico...' : 'Scegli modello'} />
                                         </SelectTrigger>
                                         <SelectContent className="max-h-80">
-                                            {modelOptions.map(m => (
-                                                <SelectItem key={m.id} value={m.id} className="font-mono text-xs">
-                                                    {m.name || m.id}
-                                                </SelectItem>
-                                            ))}
+                                            {modelOptions.map(m => {
+                                                const cost = m.pricing
+                                                    ? `$${(parseFloat(m.pricing.prompt) * 1_000_000).toFixed(2)}/M`
+                                                    : null;
+                                                return (
+                                                    <SelectItem key={m.id} value={m.id} className="text-xs">
+                                                        <div className="flex items-center justify-between gap-3 w-full">
+                                                            <span className="font-mono truncate">{m.name || m.id}</span>
+                                                            {cost && <span className="text-[10px] text-muted-foreground shrink-0">{cost}</span>}
+                                                        </div>
+                                                    </SelectItem>
+                                                );
+                                            })}
                                         </SelectContent>
                                     </Select>
                                 )}
@@ -321,22 +322,18 @@ export function SchedulerOptimize() {
                             </Button>
                         </div>
                         <div className="text-xs text-slate-500 mt-2">
-                            Default da <strong>Impostazioni</strong> ({provider === 'claude-cli' ? `Claude CLI / ${defaultClaudeCliModel}` : `OpenRouter / ${defaultOpenRouterModel || '-'}`}).
-                            Cambio qui vale solo per questa sessione.
-                            {provider === 'openrouter' && (
+                            {provider === 'claude-cli' ? (
+                                <>Provider preso da <strong>Impostazioni</strong>. Richiede <code>claude</code> CLI installato sul server.</>
+                            ) : (
                                 <>
-                                    {' '}Chiave API:{' '}
+                                    Provider preso da <strong>Impostazioni</strong>. Chiave API:{' '}
                                     {apiKey ? (
                                         <span className="text-emerald-600">configurata</span>
                                     ) : (
                                         <span className="text-rose-600">mancante — aggiungila nelle Impostazioni</span>
-                                    )}
+                                    )}.
                                 </>
                             )}
-                            {provider === 'claude-cli' && (
-                                <> Richiede <code>claude</code> CLI installato sul server.</>
-                            )}
-                            .
                         </div>
                     </div>
                     {loadingList ? (
