@@ -237,7 +237,11 @@ export function SchedulerOptimize() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ provider, model: effectiveModel }),
-                signal: AbortSignal.timeout(15 * 60 * 1000),
+                // Matches maxDuration on the route (25 min). The slowest known
+                // tasks (FatturatoB2C, Situazione Timesheet) can hit 6-7 min
+                // each; with parallel orig+opt we still need headroom if the
+                // source DB is under load.
+                signal: AbortSignal.timeout(25 * 60 * 1000),
             });
             if (!res.ok) {
                 // Try to read the server's error message — may be text or JSON.
@@ -263,8 +267,8 @@ export function SchedulerOptimize() {
                 e?.name === 'AbortError' ||
                 rawMsg.toLowerCase().includes('abort');
             const hint = isAbort
-                ? elapsedSec >= 15 * 60
-                    ? 'timeout 15 min superato'
+                ? elapsedSec >= 25 * 60
+                    ? 'timeout 25 min superato'
                     : 'connessione chiusa prima del completamento (spesso: Next.js dev ha fatto hot-reload, oppure la pagina ha perso focus a lungo). Riprova senza toccare il codice.'
                 : '';
             toast({

@@ -28,7 +28,10 @@ import crypto from 'crypto';
 
 type Provider = 'openrouter' | 'claude-cli';
 
-export const maxDuration = 900; // 15 min — long enough for the slowest query plus the optimized one
+// 25 min — the slowest task in our corpus (FatturatoB2C, 6 min) can run
+// even longer under load; with parallel orig+opt exec the bottleneck is
+// now max(orig, opt) per node * number of SQL nodes plus AI round-trips.
+export const maxDuration = 1500;
 
 const SYSTEM_PROMPT = `Sei un esperto SQL Server (T-SQL) e ottimizzazione query.
 Riceverai una query SQL che gira su un database MSSQL e una statistica di esecuzione.
@@ -314,12 +317,17 @@ Proponi versione ottimizzata.`;
             continue;
         }
 
-        log(`node ${node.name} — running original query`);
-        const orig = await timedExec(node.sqlQuery, connectorId);
-        log(`node ${node.name} — original done in ${orig.ms}ms, rows=${orig.data?.length ?? 'null'}, error=${orig.error || 'none'}`);
-        log(`node ${node.name} — running optimized query`);
-        const opt = await timedExec(optimizedSql, connectorId);
-        log(`node ${node.name} — optimized done in ${opt.ms}ms, rows=${opt.data?.length ?? 'null'}, error=${opt.error || 'none'}`);
+        // Run original and optimized in parallel — halves total wall time
+        // when both hit different connection pools (they do, since
+        // executeSqlPreviewAction opens a fresh pool per call). If one
+        // errors we still report the other.
+        log(`node ${node.name} — running original + optimized in parallel`);
+        const [orig, opt] = await Promise.all([
+            timedExec(node.sqlQuery, connectorId),
+            timedExec(optimizedSql, connectorId),
+        ]);
+        log(`node ${node.name} — original ${orig.ms}ms rows=${orig.data?.length ?? 'null'} err=${orig.error || 'none'}`);
+        log(`node ${node.name} — optimized ${opt.ms}ms rows=${opt.data?.length ?? 'null'} err=${opt.error || 'none'}`);
 
         const origHash = hashRows(orig.data);
         const optHash = hashRows(opt.data);
