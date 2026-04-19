@@ -1,4 +1,4 @@
-import { withAuth } from 'next-auth/middleware';
+import { getToken } from 'next-auth/jwt';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
@@ -36,33 +36,44 @@ function getIp(req: NextRequest): string {
 }
 
 // ─── Middleware ───────────────────────────────────────────────────────────
+//
+// Replaced next-auth/middleware's withAuth() because its default unauthorised
+// behaviour is to 307-redirect every request to /api/auth/signin — including
+// /api/* requests. Browser fetch() follows the redirect, lands on the signin
+// HTML page, and `await res.json()` then throws SyntaxError ("string did not
+// match the expected pattern") in components like sidebar-nav that poll
+// JSON endpoints. We now branch:
+//   - /api/* without a valid session → 401 JSON
+//   - page route without a valid session → 307 redirect to signin
+// Public routes are excluded via the matcher below.
 
-export default withAuth(
-    function middleware(req) {
-        const path = req.nextUrl.pathname;
+export default async function middleware(req: NextRequest) {
+    const path = req.nextUrl.pathname;
 
-        // Baseline /api/* rate limit (defense-in-depth; per-route limits still run
-        // inside handlers and are more accurate because they key on user id).
-        if (path.startsWith('/api/')) {
-            const ip = getIp(req);
-            if (!mwRateLimit(`mw:${ip}`)) {
-                return new NextResponse(
-                    JSON.stringify({ error: 'Too many requests' }),
-                    { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '60' } },
-                );
-            }
+    // Baseline /api/* rate limit (defense-in-depth; per-route limits still run
+    // inside handlers and are more accurate because they key on user id).
+    if (path.startsWith('/api/')) {
+        const ip = getIp(req);
+        if (!mwRateLimit(`mw:${ip}`)) {
+            return NextResponse.json(
+                { error: 'Too many requests' },
+                { status: 429, headers: { 'Retry-After': '60' } },
+            );
         }
+    }
 
-        return NextResponse.next();
-    },
-    {
-        callbacks: {
-            // next-auth's default: authorized means "has a token". Public routes are
-            // excluded by the matcher below, not here.
-            authorized: ({ token }) => !!token,
-        },
-    },
-);
+    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    if (!token) {
+        if (path.startsWith('/api/')) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const signInUrl = new URL('/api/auth/signin', req.url);
+        signInUrl.searchParams.set('callbackUrl', req.url);
+        return NextResponse.redirect(signInUrl);
+    }
+
+    return NextResponse.next();
+}
 
 export const config = {
     matcher: [
