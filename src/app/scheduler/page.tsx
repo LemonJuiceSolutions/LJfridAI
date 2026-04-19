@@ -34,6 +34,8 @@ import { TaskExecutions } from '@/components/scheduler/task-executions';
 import { SchedulerExecutionLog } from '@/components/scheduler/scheduler-execution-log';
 import { SchedulerUpcoming } from '@/components/scheduler/scheduler-upcoming';
 import { MissedTasksPanel } from '@/components/scheduler/missed-tasks-panel';
+import { SchedulerOptimize } from '@/components/scheduler/scheduler-optimize';
+import { Sparkles } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface ScheduledTask {
@@ -677,6 +679,10 @@ export default function SchedulerPage() {
             <CalendarClock className="w-4 h-4 mr-2" />
             Prossimi Invii
           </TabsTrigger>
+          <TabsTrigger value="optimize">
+            <Sparkles className="w-4 h-4 mr-2" />
+            Ottimizzazione
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="tasks">
@@ -878,6 +884,10 @@ export default function SchedulerPage() {
 
         <TabsContent value="upcoming">
           <SchedulerUpcoming />
+        </TabsContent>
+
+        <TabsContent value="optimize">
+          <SchedulerOptimize />
         </TabsContent>
       </Tabs>
 
