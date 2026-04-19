@@ -22,8 +22,11 @@ import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { generateText } from 'ai';
 import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
+import { runClaudeCliSync } from '@/ai/providers/claude-cli-provider';
 import { executeSqlPreviewAction } from '@/app/actions/sql';
 import crypto from 'crypto';
+
+type Provider = 'openrouter' | 'claude-cli';
 
 export const maxDuration = 900; // 15 min — long enough for the slowest query plus the optimized one
 
@@ -115,6 +118,40 @@ async function getOpenRouterCreds(userId: string): Promise<{ apiKey: string; mod
     return { apiKey, model };
 }
 
+async function getClaudeCliDefaultModel(userId: string): Promise<string> {
+    const u = await db.user.findUnique({
+        where: { id: userId },
+        select: { claudeCliModel: true },
+    });
+    return u?.claudeCliModel || 'claude-sonnet-4-6';
+}
+
+/** Run the optimizer prompt against either provider, return raw text. */
+async function runOptimizerPrompt(opts: {
+    provider: Provider;
+    model: string;
+    apiKey?: string;
+    userPrompt: string;
+}): Promise<string> {
+    if (opts.provider === 'claude-cli') {
+        const res = await runClaudeCliSync({
+            userPrompt: opts.userPrompt,
+            systemPrompt: SYSTEM_PROMPT,
+            model: opts.model,
+        });
+        return res.text;
+    }
+    if (!opts.apiKey) throw new Error('OpenRouter API key missing');
+    const ai = await generateText({
+        model: getOpenRouterModel(opts.apiKey, opts.model),
+        system: SYSTEM_PROMPT,
+        prompt: opts.userPrompt,
+        temperature: 0.1,
+        maxOutputTokens: 4000,
+    });
+    return ai.text;
+}
+
 async function timedExec(query: string, connectorId: string) {
     const start = Date.now();
     const res = await executeSqlPreviewAction(query, connectorId, []);
@@ -129,6 +166,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ taskId
     if (!user?.companyId || !user.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Per-call provider + model override from the UI picker. Falls back to
+    // the user's saved openRouterModel / claudeCliModel if absent.
+    const body = await request.json().catch(() => ({})) as { provider?: string; model?: string };
+    const requestModel = typeof body?.model === 'string' && body.model.trim() ? body.model.trim() : null;
+    const requestProvider: Provider = body?.provider === 'claude-cli' ? 'claude-cli' : 'openrouter';
 
     const task = await db.scheduledTask.findFirst({
         where: { id: taskId, companyId: user.companyId },
@@ -149,12 +192,21 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ taskId
         return NextResponse.json({ error: 'No SQL nodes in this task' }, { status: 400 });
     }
 
-    const creds = await getOpenRouterCreds(user.id);
-    if (!creds) {
-        return NextResponse.json(
-            { error: 'OpenRouter API key not configured for this user. Add it in Settings.' },
-            { status: 400 },
-        );
+    // Per-provider credentials. OpenRouter needs an API key; Claude CLI runs
+    // locally on the server (no key, but the binary must exist).
+    let creds: { apiKey: string; model: string } | null = null;
+    let effectiveModel: string;
+    if (requestProvider === 'claude-cli') {
+        effectiveModel = requestModel || (await getClaudeCliDefaultModel(user.id));
+    } else {
+        creds = await getOpenRouterCreds(user.id);
+        if (!creds) {
+            return NextResponse.json(
+                { error: 'OpenRouter API key not configured for this user. Add it in Settings.' },
+                { status: 400 },
+            );
+        }
+        effectiveModel = requestModel || creds.model;
     }
 
     // Pull recent execution stats so the AI knows what we are trying to beat.
@@ -190,14 +242,13 @@ Proponi versione ottimizzata.`;
         let aiNotes: string[] = [];
         let aiError: string | null = null;
         try {
-            const ai = await generateText({
-                model: getOpenRouterModel(creds.apiKey, creds.model),
-                system: SYSTEM_PROMPT,
-                prompt: userPrompt,
-                temperature: 0.1,
-                maxOutputTokens: 4000,
+            const rawText = await runOptimizerPrompt({
+                provider: requestProvider,
+                model: effectiveModel,
+                apiKey: creds?.apiKey,
+                userPrompt,
             });
-            const text = ai.text.trim()
+            const text = rawText.trim()
                 .replace(/^```(?:json)?/, '')
                 .replace(/```$/, '')
                 .trim();
@@ -296,6 +347,8 @@ Proponi versione ottimizzata.`;
         treeId: cfg.treeId,
         sqlNodeCount: sqlNodes.length,
         avgRecentMs,
+        provider: requestProvider,
+        model: effectiveModel,
         reports,
     });
 }

@@ -10,8 +10,8 @@
  * passed (same canonical row hash).
  */
 
-import { useEffect, useState } from 'react';
-import { Loader2, Wand2, Play, AlertTriangle, CheckCircle2, XCircle, Sparkles } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { Loader2, Wand2, Play, AlertTriangle, CheckCircle2, XCircle, Sparkles, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +23,43 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
+import { useOpenRouterSettings } from '@/hooks/use-openrouter';
+import { fetchOpenRouterModelsAction } from '@/app/actions/openrouter';
+import { getAiProviderAction, type AiProvider } from '@/actions/ai-settings';
+
+interface OpenRouterModel {
+    id: string;
+    name: string;
+    context_length?: number;
+}
+
+const SUGGESTED_OPENROUTER_MODELS = [
+    'anthropic/claude-sonnet-4',
+    'anthropic/claude-opus-4',
+    'openai/gpt-4o',
+    'openai/gpt-4o-mini',
+    'google/gemini-2.0-flash-001',
+    'deepseek/deepseek-chat',
+];
+
+const CLAUDE_CLI_MODELS: OpenRouterModel[] = [
+    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+    { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+    { id: 'sonnet', name: 'sonnet (latest)' },
+    { id: 'opus', name: 'opus (latest)' },
+    { id: 'haiku', name: 'haiku (latest)' },
+];
 
 interface TaskRow {
     id: string;
@@ -59,6 +95,8 @@ interface AnalyzeResponse {
     taskName: string;
     sqlNodeCount: number;
     avgRecentMs: number | null;
+    provider?: string;
+    model?: string;
     reports: NodeReport[];
 }
 
@@ -89,6 +127,63 @@ export function SchedulerOptimize() {
     const [report, setReport] = useState<AnalyzeResponse | null>(null);
     const [applying, setApplying] = useState<string | null>(null);
 
+    // AI provider + model picker. Mirrors the same pattern as
+    // <agent-chat>: read the user's saved provider from /settings, default
+    // model accordingly, allow per-session override here. Switch the
+    // provider locally without persisting.
+    const { apiKey, model: defaultOpenRouterModel, isLoading: loadingDefault } = useOpenRouterSettings();
+    const [provider, setProvider] = useState<AiProvider>('openrouter');
+    const [defaultClaudeCliModel, setDefaultClaudeCliModel] = useState<string>('claude-sonnet-4-6');
+    const [providerLoaded, setProviderLoaded] = useState(false);
+    const [model, setModel] = useState<string>('');
+    const [availableOpenRouterModels, setAvailableOpenRouterModels] = useState<OpenRouterModel[]>([]);
+    const [customModel, setCustomModel] = useState<string>('');
+    const [showCustom, setShowCustom] = useState(false);
+
+    const defaultModelForProvider = provider === 'claude-cli'
+        ? defaultClaudeCliModel
+        : defaultOpenRouterModel || 'anthropic/claude-sonnet-4';
+    const effectiveModel = (showCustom ? customModel.trim() : model) || defaultModelForProvider;
+
+    // Load saved provider once.
+    useEffect(() => {
+        getAiProviderAction().then(res => {
+            if (res.error) return;
+            setProvider(res.provider);
+            if (res.claudeCliModel) setDefaultClaudeCliModel(res.claudeCliModel);
+            setProviderLoaded(true);
+        }).catch(() => setProviderLoaded(true));
+    }, []);
+
+    // Whenever provider changes, reset model picker to the provider's default.
+    useEffect(() => {
+        if (!providerLoaded) return;
+        setModel(provider === 'claude-cli' ? defaultClaudeCliModel : defaultOpenRouterModel || '');
+        setShowCustom(false);
+    }, [provider, providerLoaded, defaultClaudeCliModel, defaultOpenRouterModel]);
+
+    // Fetch OpenRouter models (only useful when provider==openrouter).
+    useEffect(() => {
+        let cancelled = false;
+        fetchOpenRouterModelsAction().then(res => {
+            if (cancelled) return;
+            if (res.data) setAvailableOpenRouterModels(res.data);
+        }).catch(() => { /* keep suggested fallback */ });
+        return () => { cancelled = true; };
+    }, []);
+
+    const modelOptions = useMemo(() => {
+        if (provider === 'claude-cli') return CLAUDE_CLI_MODELS;
+        if (availableOpenRouterModels.length === 0) {
+            return SUGGESTED_OPENROUTER_MODELS.map(id => ({ id, name: id }));
+        }
+        const suggested = SUGGESTED_OPENROUTER_MODELS
+            .map(id => availableOpenRouterModels.find(m => m.id === id))
+            .filter(Boolean) as OpenRouterModel[];
+        const rest = availableOpenRouterModels.filter(m => !SUGGESTED_OPENROUTER_MODELS.includes(m.id));
+        return [...suggested, ...rest];
+    }, [provider, availableOpenRouterModels]);
+
     useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -111,9 +206,11 @@ export function SchedulerOptimize() {
         setAnalyzing(taskId);
         setReport(null);
         try {
-            toast({ title: 'Analisi avviata', description: 'Esecuzione query originale + ottimizzata in corso. Può richiedere qualche minuto.' });
+            toast({ title: 'Analisi avviata', description: `${provider} · ${effectiveModel}. Esecuzione query originale + ottimizzata in corso.` });
             const res = await fetch(`/api/scheduler/optimize/${taskId}`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, model: effectiveModel }),
                 signal: AbortSignal.timeout(15 * 60 * 1000),
             });
             if (!res.ok) {
@@ -165,7 +262,83 @@ export function SchedulerOptimize() {
                         Il bottone <strong>Applica</strong> è abilitato solo se i risultati coincidono.
                     </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                    {/* Provider + Model picker */}
+                    <div className="rounded-md border border-slate-200 dark:border-zinc-800 p-3 bg-slate-50/50 dark:bg-zinc-900/40">
+                        <div className="flex flex-wrap items-end gap-3">
+                            <div className="flex flex-col gap-1">
+                                <Label className="text-xs">Provider</Label>
+                                <div className="inline-flex h-9 rounded-md border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-0.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setProvider('openrouter')}
+                                        className={`px-3 text-xs rounded flex items-center gap-1.5 transition ${provider === 'openrouter' ? 'bg-purple-600 text-white' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
+                                    >
+                                        <Bot className="w-3.5 h-3.5" />
+                                        OpenRouter
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setProvider('claude-cli')}
+                                        className={`px-3 text-xs rounded flex items-center gap-1.5 transition ${provider === 'claude-cli' ? 'bg-orange-600 text-white' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
+                                    >
+                                        <Bot className="w-3.5 h-3.5" />
+                                        Claude CLI
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex-1 min-w-[260px] flex flex-col gap-1">
+                                <Label className="text-xs">Modello AI</Label>
+                                {showCustom ? (
+                                    <Input
+                                        value={customModel}
+                                        onChange={e => setCustomModel(e.target.value)}
+                                        placeholder={provider === 'claude-cli' ? 'es. claude-sonnet-4-6' : 'es. anthropic/claude-opus-4'}
+                                        className="h-9 font-mono text-xs"
+                                    />
+                                ) : (
+                                    <Select value={model} onValueChange={setModel} disabled={loadingDefault && provider === 'openrouter'}>
+                                        <SelectTrigger className="h-9">
+                                            <SelectValue placeholder={loadingDefault ? 'Carico...' : 'Scegli modello'} />
+                                        </SelectTrigger>
+                                        <SelectContent className="max-h-80">
+                                            {modelOptions.map(m => (
+                                                <SelectItem key={m.id} value={m.id} className="font-mono text-xs">
+                                                    {m.name || m.id}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                            </div>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setShowCustom(v => !v)}
+                                className="h-9 text-xs"
+                            >
+                                {showCustom ? 'Lista' : 'Custom'}
+                            </Button>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-2">
+                            Default da <strong>Impostazioni</strong> ({provider === 'claude-cli' ? `Claude CLI / ${defaultClaudeCliModel}` : `OpenRouter / ${defaultOpenRouterModel || '-'}`}).
+                            Cambio qui vale solo per questa sessione.
+                            {provider === 'openrouter' && (
+                                <>
+                                    {' '}Chiave API:{' '}
+                                    {apiKey ? (
+                                        <span className="text-emerald-600">configurata</span>
+                                    ) : (
+                                        <span className="text-rose-600">mancante — aggiungila nelle Impostazioni</span>
+                                    )}
+                                </>
+                            )}
+                            {provider === 'claude-cli' && (
+                                <> Richiede <code>claude</code> CLI installato sul server.</>
+                            )}
+                            .
+                        </div>
+                    </div>
                     {loadingList ? (
                         <div className="flex items-center justify-center py-12">
                             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -238,8 +411,14 @@ export function SchedulerOptimize() {
                 <Card>
                     <CardHeader>
                         <CardTitle>Risultati analisi — {report.taskName}</CardTitle>
-                        <CardDescription>
-                            {report.sqlNodeCount} nodo/i SQL trovati. Avg task recente: {fmtMs(report.avgRecentMs)}.
+                        <CardDescription className="flex flex-wrap items-center gap-2">
+                            <span>{report.sqlNodeCount} nodo/i SQL · avg task: {fmtMs(report.avgRecentMs)}</span>
+                            {report.model && (
+                                <Badge variant="outline" className="font-mono text-xs gap-1.5">
+                                    <Bot className="w-3 h-3" />
+                                    {report.provider || 'openrouter'} · {report.model}
+                                </Badge>
+                            )}
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
