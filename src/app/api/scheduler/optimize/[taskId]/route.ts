@@ -161,9 +161,13 @@ async function timedExec(query: string, connectorId: string) {
 
 export async function POST(request: NextRequest, ctx: { params: Promise<{ taskId: string }> }) {
     const { taskId } = await ctx.params;
+    const t0 = Date.now();
+    const log = (msg: string) => console.log(`[optimize/${taskId}] +${((Date.now() - t0) / 1000).toFixed(1)}s ${msg}`);
+
     const session = await getServerSession(authOptions);
     const user = session?.user as { id?: string; email?: string; companyId?: string } | undefined;
     if (!user?.companyId || !user.id) {
+        log('401 unauthorized');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -173,21 +177,23 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ taskId
     const requestModel = typeof body?.model === 'string' && body.model.trim() ? body.model.trim() : null;
     const requestProvider: Provider = body?.provider === 'claude-cli' ? 'claude-cli' : 'openrouter';
 
+    log(`start provider=${requestProvider} model=${requestModel || '(default)'}`);
     const task = await db.scheduledTask.findFirst({
         where: { id: taskId, companyId: user.companyId },
     });
-    if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    if (!task) { log('404 task not found'); return NextResponse.json({ error: 'Task not found' }, { status: 404 }); }
 
     const cfg: any = task.config || {};
-    if (!cfg.treeId) return NextResponse.json({ error: 'Task has no associated tree' }, { status: 400 });
+    if (!cfg.treeId) { log('400 no treeId'); return NextResponse.json({ error: 'Task has no associated tree' }, { status: 400 }); }
 
     const tree = await db.tree.findFirst({
         where: { id: cfg.treeId, companyId: user.companyId },
     });
-    if (!tree) return NextResponse.json({ error: 'Tree not found' }, { status: 404 });
+    if (!tree) { log('404 tree not found'); return NextResponse.json({ error: 'Tree not found' }, { status: 404 }); }
 
     const treeJson = JSON.parse(tree.jsonDecisionTree);
     const sqlNodes = flattenSqlNodes(treeJson);
+    log(`sqlNodes=${sqlNodes.length}`);
     if (sqlNodes.length === 0) {
         return NextResponse.json({ error: 'No SQL nodes in this task' }, { status: 400 });
     }
@@ -224,6 +230,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ taskId
     const reports: any[] = [];
 
     for (const node of sqlNodes) {
+        log(`node ${node.name} — asking AI`);
         const userPrompt = `STATISTICA TASK:
 - avg recent task duration: ${avgRecentMs ? `${(avgRecentMs / 1000).toFixed(1)}s` : 'unknown'}
 - node name: ${node.name}
@@ -248,6 +255,7 @@ Proponi versione ottimizzata.`;
                 apiKey: creds?.apiKey,
                 userPrompt,
             });
+            log(`node ${node.name} — AI responded (${rawText.length} chars)`);
             const text = rawText.trim()
                 .replace(/^```(?:json)?/, '')
                 .replace(/```$/, '')
@@ -306,8 +314,12 @@ Proponi versione ottimizzata.`;
             continue;
         }
 
+        log(`node ${node.name} — running original query`);
         const orig = await timedExec(node.sqlQuery, connectorId);
+        log(`node ${node.name} — original done in ${orig.ms}ms, rows=${orig.data?.length ?? 'null'}, error=${orig.error || 'none'}`);
+        log(`node ${node.name} — running optimized query`);
         const opt = await timedExec(optimizedSql, connectorId);
+        log(`node ${node.name} — optimized done in ${opt.ms}ms, rows=${opt.data?.length ?? 'null'}, error=${opt.error || 'none'}`);
 
         const origHash = hashRows(orig.data);
         const optHash = hashRows(opt.data);
@@ -341,6 +353,7 @@ Proponi versione ottimizzata.`;
         });
     }
 
+    log(`done — returning ${reports.length} report(s)`);
     return NextResponse.json({
         taskId,
         taskName: task.name,

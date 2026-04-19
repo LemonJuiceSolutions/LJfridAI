@@ -230,6 +230,7 @@ export function SchedulerOptimize() {
         setAnalyzing(taskId);
         setReport(null);
         setAnalyzeStart(Date.now());
+        const startedAt = Date.now();
         try {
             toast({ title: 'Analisi avviata', description: `${provider} · ${effectiveModel}. Esecuzione query originale + ottimizzata in corso.` });
             const res = await fetch(`/api/scheduler/optimize/${taskId}`, {
@@ -239,14 +240,38 @@ export function SchedulerOptimize() {
                 signal: AbortSignal.timeout(15 * 60 * 1000),
             });
             if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err.error || `HTTP ${res.status}`);
+                // Try to read the server's error message — may be text or JSON.
+                let detail = `HTTP ${res.status}`;
+                try {
+                    const clone = res.clone();
+                    const j = await clone.json();
+                    detail = j.error || detail;
+                } catch {
+                    try { detail = (await res.text()).slice(0, 300) || detail; } catch { /* nothing */ }
+                }
+                throw new Error(detail);
             }
             const data: AnalyzeResponse = await res.json();
             setReport(data);
             toast({ title: 'Analisi completata', description: `${data.reports.length} nodo/i analizzati.` });
         } catch (e: any) {
-            toast({ title: 'Analisi fallita', description: e.message, variant: 'destructive' });
+            const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+            const rawMsg = String(e?.message || e);
+            // Detect the common AbortError so we can give a useful hint
+            // instead of the opaque "Fetch is aborted".
+            const isAbort =
+                e?.name === 'AbortError' ||
+                rawMsg.toLowerCase().includes('abort');
+            const hint = isAbort
+                ? elapsedSec >= 15 * 60
+                    ? 'timeout 15 min superato'
+                    : 'connessione chiusa prima del completamento (spesso: Next.js dev ha fatto hot-reload, oppure la pagina ha perso focus a lungo). Riprova senza toccare il codice.'
+                : '';
+            toast({
+                title: `Analisi fallita dopo ${elapsedSec}s`,
+                description: hint ? `${rawMsg} — ${hint}` : rawMsg,
+                variant: 'destructive',
+            });
         } finally {
             setAnalyzing(null);
             setAnalyzeStart(null);
