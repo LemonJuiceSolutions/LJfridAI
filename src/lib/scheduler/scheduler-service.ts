@@ -1117,6 +1117,7 @@ export class SchedulerService {
             effectiveQuery,
             tableDef.connectorId,
             deps,
+            companyId, // tenant scope so nodes without explicit connectorId still resolve
           );
           if (res.error) {
             logger.error(`[AncestorChain] Error executing SQL node ${originalName}: ${res.error}`);
@@ -2107,7 +2108,7 @@ export class SchedulerService {
     logger.log(`[SqlNode] Built ${dependencies.length} data-only deps from ancestor results: ${dependencies.map(d => `${d.tableName}(${d.data.length} rows)`).join(', ')}`);
 
     // 3. Execute Query with pre-calculated data deps
-    const result = await executeSqlPreview(query, connectorIdSql, dependencies);
+    const result = await executeSqlPreview(query, connectorIdSql, dependencies, sqlCompanyId);
     if (result.error) throw new Error(result.error);
 
     const data = result.data; // Array of rows

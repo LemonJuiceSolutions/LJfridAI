@@ -90,6 +90,7 @@ export async function executeSqlPreview(
   query: string,
   connectorId: string,
   pipelineDependencies: SqlPreviewDep[] = [],
+  overrideCompanyId?: string,
 ): Promise<{ data: any[] | null; error: string | null }> {
   let pool: sql.ConnectionPool | null = null;
   let transaction: sql.Transaction | null = null;
@@ -98,8 +99,11 @@ export async function executeSqlPreview(
   try {
     // Resolve company from connector. MUST end up with a concrete companyId —
     // falling back to an undefined Prisma filter would read connectors across
-    // every tenant in the database.
-    let companyId: string | null = null;
+    // every tenant in the database. The caller (scheduler executor) can also
+    // pass `overrideCompanyId` when it has already proven the task's tenant
+    // — that lets ancestor SQL nodes without an explicit connector still
+    // reach a company-scoped fallback connector instead of failing closed.
+    let companyId: string | null = overrideCompanyId ?? null;
     let connector: any = null;
 
     if (connectorId) {
