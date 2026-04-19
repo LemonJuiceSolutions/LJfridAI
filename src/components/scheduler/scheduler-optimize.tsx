@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useState, useMemo } from 'react';
-import { Loader2, Wand2, Play, AlertTriangle, CheckCircle2, XCircle, Sparkles, Bot } from 'lucide-react';
+import { Loader2, Wand2, Play, AlertTriangle, CheckCircle2, XCircle, Sparkles, Bot, ChevronsUpDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,15 +24,22 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+// Label/Input/Select no longer used since the picker switched to the
+// Popover + Command layout (same as the Super Agent header).
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from '@/components/ui/command';
 import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import { fetchOpenRouterModelsAction } from '@/app/actions/openrouter';
 import { getAiProviderAction, type AiProvider } from '@/actions/ai-settings';
@@ -140,6 +147,22 @@ export function SchedulerOptimize() {
     const [availableOpenRouterModels, setAvailableOpenRouterModels] = useState<OpenRouterModel[]>([]);
     const [customModel, setCustomModel] = useState<string>('');
     const [showCustom, setShowCustom] = useState(false);
+    const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+    const [analyzeStart, setAnalyzeStart] = useState<number | null>(null);
+    const [analyzeTick, setAnalyzeTick] = useState(0);
+
+    // Tick every second while an analysis is in flight so the UI shows
+    // elapsed time. Otherwise users can't tell if the 5-min wait is
+    // actually progressing or has hung.
+    useEffect(() => {
+        if (!analyzeStart) return;
+        const id = setInterval(() => setAnalyzeTick(t => t + 1), 1000);
+        return () => clearInterval(id);
+    }, [analyzeStart]);
+
+    // analyzeTick re-render dependency so the seconds display refreshes
+    void analyzeTick;
+    const analyzeElapsedSec = analyzeStart ? Math.floor((Date.now() - analyzeStart) / 1000) : 0;
 
     const defaultModelForProvider = provider === 'claude-cli'
         ? defaultClaudeCliModel
@@ -206,6 +229,7 @@ export function SchedulerOptimize() {
     const analyze = async (taskId: string) => {
         setAnalyzing(taskId);
         setReport(null);
+        setAnalyzeStart(Date.now());
         try {
             toast({ title: 'Analisi avviata', description: `${provider} · ${effectiveModel}. Esecuzione query originale + ottimizzata in corso.` });
             const res = await fetch(`/api/scheduler/optimize/${taskId}`, {
@@ -225,6 +249,7 @@ export function SchedulerOptimize() {
             toast({ title: 'Analisi fallita', description: e.message, variant: 'destructive' });
         } finally {
             setAnalyzing(null);
+            setAnalyzeStart(null);
         }
     };
 
@@ -248,94 +273,142 @@ export function SchedulerOptimize() {
         }
     };
 
+    const selectedModelLabel = useMemo(() => {
+        const found = modelOptions.find(m => m.id === (showCustom ? customModel : model));
+        if (found) return found.name || found.id;
+        const v = showCustom ? customModel : model;
+        return v.split('/').pop() || v;
+    }, [model, customModel, showCustom, modelOptions]);
+
     return (
         <div className="space-y-4">
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-purple-500" />
-                        Ottimizzazione algoritmo
-                    </CardTitle>
-                    <CardDescription>
-                        Per ogni task, l&apos;AI propone una versione ottimizzata della query SQL,
-                        esegue ENTRAMBE le versioni sul DB sorgente, confronta i risultati
-                        (stesso row-count + stesso hash canonico) e mostra i tempi prima/dopo.
-                        Il bottone <strong>Applica</strong> è abilitato solo se i risultati coincidono.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {/* Model picker. Provider is FIXED to whatever is saved in
-                        /settings (same as the rest of the app's agents) —
-                        here the user only picks the model. */}
-                    <div className="rounded-md border border-slate-200 dark:border-zinc-800 p-3 bg-slate-50/50 dark:bg-zinc-900/40">
-                        <div className="flex flex-wrap items-end gap-3">
-                            <div className="flex flex-col gap-1">
-                                <Label className="text-xs">Provider</Label>
-                                <Badge
-                                    variant="outline"
-                                    className={`gap-1.5 h-9 px-3 font-normal ${provider === 'claude-cli' ? 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300' : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300'}`}
-                                    title="Cambiabile solo in Impostazioni"
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                            <CardTitle className="flex items-center gap-2">
+                                <Sparkles className="w-5 h-5 text-purple-500" />
+                                Ottimizzazione algoritmo
+                            </CardTitle>
+                            <CardDescription className="mt-1">
+                                Per ogni task, l&apos;AI propone una versione ottimizzata della query SQL,
+                                esegue ENTRAMBE le versioni sul DB sorgente, confronta i risultati
+                                (stesso row-count + stesso hash canonico) e mostra i tempi prima/dopo.
+                                Il bottone <strong>Applica</strong> è abilitato solo se i risultati coincidono.
+                            </CardDescription>
+                            {/* Provider pill + model popover — same layout as FridAI Super Agent header */}
+                            <div className="flex items-center gap-1 mt-2">
+                                <span
+                                    className={cn(
+                                        'px-1.5 py-0.5 rounded text-[9px] font-medium border',
+                                        provider === 'claude-cli'
+                                            ? 'bg-orange-500/10 border-orange-500/30 text-orange-600 dark:text-orange-300'
+                                            : 'bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-300',
+                                    )}
+                                    title="Provider definito in Impostazioni"
                                 >
-                                    <Bot className="w-3.5 h-3.5" />
-                                    {provider === 'claude-cli' ? 'Claude CLI' : 'OpenRouter'}
-                                </Badge>
+                                    {provider === 'claude-cli' ? '🤖 CLI' : '🌐 OR'}
+                                </span>
+                                <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen} modal={false}>
+                                    <PopoverTrigger asChild>
+                                        <button
+                                            type="button"
+                                            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                                        >
+                                            <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                                            <span className="truncate max-w-[220px]">{selectedModelLabel}</span>
+                                            <ChevronsUpDown className="h-2.5 w-2.5 shrink-0 opacity-50" />
+                                        </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent
+                                        className="w-[420px] p-0 z-[100]"
+                                        align="start"
+                                        sideOffset={8}
+                                        onOpenAutoFocus={(e) => e.preventDefault()}
+                                    >
+                                        <Command>
+                                            <CommandInput placeholder="Cerca modello..." />
+                                            <CommandList className="max-h-[300px]">
+                                                <CommandEmpty>Nessun modello trovato.</CommandEmpty>
+                                                <CommandGroup heading={provider === 'claude-cli' ? 'Modelli Claude' : 'Modelli OpenRouter'}>
+                                                    {modelOptions.map(m => {
+                                                        const active = !showCustom && model === m.id;
+                                                        return (
+                                                            <CommandItem
+                                                                key={m.id}
+                                                                value={`${m.id} ${m.name}`}
+                                                                onSelect={() => {
+                                                                    setShowCustom(false);
+                                                                    setModel(m.id);
+                                                                    setModelSelectorOpen(false);
+                                                                }}
+                                                                className="flex items-center justify-between text-xs cursor-pointer"
+                                                            >
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    <Check className={cn('h-3 w-3 shrink-0', active ? 'opacity-100' : 'opacity-0')} />
+                                                                    <span className="truncate">{m.name}</span>
+                                                                </div>
+                                                                {m.pricing && (
+                                                                    <span className="text-[10px] text-muted-foreground shrink-0 ml-2">
+                                                                        ${(parseFloat(m.pricing.prompt) * 1_000_000).toFixed(2)}/M
+                                                                    </span>
+                                                                )}
+                                                            </CommandItem>
+                                                        );
+                                                    })}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                        {/* Custom model input — out of cmdk filtering */}
+                                        <div className="border-t p-2 flex gap-1.5 items-center">
+                                            <input
+                                                type="text"
+                                                placeholder={provider === 'claude-cli' ? 'ID modello (es. claude-opus-4-6)' : 'ID modello (es. anthropic/claude-opus-4)'}
+                                                value={customModel}
+                                                onChange={e => setCustomModel(e.target.value)}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter' && customModel.trim()) {
+                                                        setShowCustom(true);
+                                                        setModelSelectorOpen(false);
+                                                    }
+                                                }}
+                                                className="flex-1 text-xs bg-transparent border border-input rounded px-2 py-1 outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+                                            />
+                                            <button
+                                                type="button"
+                                                disabled={!customModel.trim()}
+                                                onClick={() => {
+                                                    if (!customModel.trim()) return;
+                                                    setShowCustom(true);
+                                                    setModelSelectorOpen(false);
+                                                }}
+                                                className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground disabled:opacity-40 hover:bg-primary/90 transition-colors shrink-0"
+                                            >
+                                                Usa
+                                            </button>
+                                        </div>
+                                        <div className="border-t px-2 py-1.5 text-[10px] text-muted-foreground">
+                                            {provider === 'openrouter' ? (
+                                                <>
+                                                    API key:{' '}
+                                                    {apiKey ? (
+                                                        <span className="text-emerald-600">configurata</span>
+                                                    ) : (
+                                                        <span className="text-rose-600">mancante — aggiungila nelle Impostazioni</span>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <>Richiede <code>claude</code> CLI sul server</>
+                                            )}
+                                            {loadingDefault && <> · caricamento default…</>}
+                                        </div>
+                                    </PopoverContent>
+                                </Popover>
                             </div>
-                            <div className="flex-1 min-w-[260px] flex flex-col gap-1">
-                                <Label className="text-xs">Modello</Label>
-                                {showCustom ? (
-                                    <Input
-                                        value={customModel}
-                                        onChange={e => setCustomModel(e.target.value)}
-                                        placeholder={provider === 'claude-cli' ? 'es. claude-sonnet-4-6' : 'es. anthropic/claude-opus-4'}
-                                        className="h-9 font-mono text-xs"
-                                    />
-                                ) : (
-                                    <Select value={model} onValueChange={setModel} disabled={loadingDefault && provider === 'openrouter'}>
-                                        <SelectTrigger className="h-9">
-                                            <SelectValue placeholder={loadingDefault ? 'Carico...' : 'Scegli modello'} />
-                                        </SelectTrigger>
-                                        <SelectContent className="max-h-80">
-                                            {modelOptions.map(m => {
-                                                const cost = m.pricing
-                                                    ? `$${(parseFloat(m.pricing.prompt) * 1_000_000).toFixed(2)}/M`
-                                                    : null;
-                                                return (
-                                                    <SelectItem key={m.id} value={m.id} className="text-xs">
-                                                        <div className="flex items-center justify-between gap-3 w-full">
-                                                            <span className="font-mono truncate">{m.name || m.id}</span>
-                                                            {cost && <span className="text-[10px] text-muted-foreground shrink-0">{cost}</span>}
-                                                        </div>
-                                                    </SelectItem>
-                                                );
-                                            })}
-                                        </SelectContent>
-                                    </Select>
-                                )}
-                            </div>
-                            <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setShowCustom(v => !v)}
-                                className="h-9 text-xs"
-                            >
-                                {showCustom ? 'Lista' : 'Custom'}
-                            </Button>
-                        </div>
-                        <div className="text-xs text-slate-500 mt-2">
-                            {provider === 'claude-cli' ? (
-                                <>Provider preso da <strong>Impostazioni</strong>. Richiede <code>claude</code> CLI installato sul server.</>
-                            ) : (
-                                <>
-                                    Provider preso da <strong>Impostazioni</strong>. Chiave API:{' '}
-                                    {apiKey ? (
-                                        <span className="text-emerald-600">configurata</span>
-                                    ) : (
-                                        <span className="text-rose-600">mancante — aggiungila nelle Impostazioni</span>
-                                    )}.
-                                </>
-                            )}
                         </div>
                     </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
                     {loadingList ? (
                         <div className="flex items-center justify-center py-12">
                             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -393,7 +466,9 @@ export function SchedulerOptimize() {
                                                 ) : (
                                                     <Wand2 className="w-3.5 h-3.5 mr-1.5" />
                                                 )}
-                                                Analizza
+                                                {analyzing === t.id
+                                                    ? `${analyzeElapsedSec}s…`
+                                                    : 'Analizza'}
                                             </Button>
                                         </TableCell>
                                     </TableRow>
