@@ -12,6 +12,7 @@ import { FailedTasksDialog } from '@/components/layout/failed-tasks-dialog';
 import { ConnectorAlertBanner } from '@/components/layout/connector-alert-banner';
 import { Inter } from 'next/font/google';
 import { CookieConsent } from '@/components/cookie-consent';
+import { FetchDiagnostic } from '@/components/fetch-diagnostic';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -33,6 +34,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={inter.variable}>
       <body suppressHydrationWarning className={`${inter.className} antialiased bg-background text-foreground selection:bg-primary/30`}>
         <LayoutProvider>
+          <FetchDiagnostic />
           <AuthProvider>
             <ChartThemeProvider>
               <div className="flex min-h-screen">

@@ -102,6 +102,89 @@ function escapeSqlValue(value: string | number | boolean | null): string {
 }
 
 /**
+ * Convert Italian-formatted numeric strings to JS numbers when the value is
+ * unambiguously numeric (no letters, matches `1.234,56` / `123,45` / `123.45`
+ * / `123`). Leaves any other string untouched so addresses/codes like
+ * "Via Roma, 10" or "1.234 pezzi" are preserved.
+ */
+const IT_NUMBER_RE = /^-?\d{1,3}(\.\d{3})+,\d+$/; // 1.234.567,89
+const IT_SIMPLE_DECIMAL_RE = /^-?\d+,\d+$/;       // 123,45
+const PLAIN_DECIMAL_RE = /^-?\d+(\.\d+)?$/;       // 123 or 123.45
+function normalizeNumericValues(data: Record<string, string | number | boolean | null>) {
+    const out: Record<string, string | number | boolean | null> = {};
+    for (const [k, v] of Object.entries(data)) {
+        if (typeof v === 'string') {
+            const t = v.trim();
+            if (IT_NUMBER_RE.test(t)) {
+                const n = parseFloat(t.replace(/\./g, '').replace(',', '.'));
+                out[k] = Number.isFinite(n) ? n : v;
+            } else if (IT_SIMPLE_DECIMAL_RE.test(t)) {
+                const n = parseFloat(t.replace(',', '.'));
+                out[k] = Number.isFinite(n) ? n : v;
+            } else if (PLAIN_DECIMAL_RE.test(t)) {
+                const n = parseFloat(t);
+                out[k] = Number.isFinite(n) ? n : v;
+            } else {
+                out[k] = v;
+            }
+        } else {
+            out[k] = v;
+        }
+    }
+    return out;
+}
+
+/**
+ * Compare a value we sent with a value the DB returned after the write.
+ * Lenient on number/string coercion and trailing whitespace so DECIMAL(18,2)
+ * round-trips don't falsely report mismatch.
+ */
+function valuesMatch(expected: any, actual: any): boolean {
+    if (expected === null || expected === undefined) return actual === null || actual === undefined;
+    if (actual === null || actual === undefined) return false;
+    const en = typeof expected === 'number' ? expected : parseFloat(String(expected).replace(/\./g, '').replace(',', '.'));
+    const an = typeof actual === 'number' ? actual : parseFloat(String(actual).replace(/\./g, '').replace(',', '.'));
+    if (Number.isFinite(en) && Number.isFinite(an)) return Math.abs(en - an) < 0.01;
+    if (typeof expected === 'boolean') return Boolean(actual) === expected;
+    if (actual instanceof Date) return String(expected).trim() === actual.toISOString().slice(0, 10) || String(expected).trim() === String(actual).trim();
+    return String(expected).trim() === String(actual).trim();
+}
+
+/**
+ * Read back the row we just wrote and confirm every non-PK column matches.
+ * Returns {verified, actual, mismatches}. `verified:false` means the write
+ * reported success but the persisted state does not match the request.
+ */
+async function verifyWrite(
+    pool: sql.ConnectionPool,
+    table: string,
+    data: Record<string, string | number | boolean | null>,
+    primaryKeys: string[],
+): Promise<{ verified: boolean; actual?: Record<string, any>; mismatches?: string[] }> {
+    const nonPk = Object.keys(data).filter(k => !primaryKeys.includes(k));
+    if (nonPk.length === 0) return { verified: true };
+    const cols = nonPk.map(c => `[${c}]`).join(', ');
+    const where = primaryKeys.map(k => `[${k}] = ${escapeSqlValue(data[k])}`).join(' AND ');
+    const q = `SELECT TOP 1 ${cols} FROM ${table} WHERE ${where}`;
+    const res = await pool.request().query(q);
+    if (!res.recordset || res.recordset.length === 0) {
+        return { verified: false, mismatches: ['Riga non trovata dopo il write'] };
+    }
+    const actual = res.recordset[0];
+    const mismatches: string[] = [];
+    for (const c of nonPk) {
+        if (!valuesMatch(data[c], actual[c])) {
+            mismatches.push(`${c}: atteso=${JSON.stringify(data[c])} trovato=${JSON.stringify(actual[c])}`);
+        }
+    }
+    return {
+        verified: mismatches.length === 0,
+        actual,
+        mismatches: mismatches.length ? mismatches : undefined,
+    };
+}
+
+/**
  * Build SQL with escaped literals. Safe because:
  *   - table validated by TABLE_RE
  *   - column names validated by IDENTIFIER_RE (no `]` allowed) and bracket-quoted
@@ -259,7 +342,10 @@ export async function POST(req: NextRequest) {
                 );
             }
 
-            const { operation, table, data, primaryKeys } = parsed.data;
+            const { operation, table, primaryKeys } = parsed.data;
+            // Normalize Italian numeric strings ("809.090,91" → 809090.91) before
+            // building SQL — avoids silent decimal-cast failures on SQL Server.
+            const data = normalizeNumericValues(parsed.data.data);
             const { connectorId, error: connError } = await resolveConnectorId(parsed.data.connectorId, user.companyId, req);
             if (connError) return connError;
 
@@ -275,17 +361,62 @@ export async function POST(req: NextRequest) {
             const rowsAffected = result.rowsAffected?.[0] || 0;
             console.log(`[update-commessa] ${operation} ${table} by user=${user.id}: ${rowsAffected} rows`);
 
-
-
             if (rowsAffected === 0 && operation !== 'insert') {
                 return NextResponse.json(
-                    { success: false, rowsAffected: 0, message: `Nessuna riga trovata per ${operation}` },
+                    { success: false, verified: false, rowsAffected: 0, message: `Nessuna riga trovata per ${operation}` },
+                    { headers: corsHeaders(req) }
+                );
+            }
+
+            // Write-then-verify: read the row back and compare values.
+            // delete → confirm the row is gone. update/insert → confirm values match.
+            let verified = true;
+            let actual: Record<string, any> | undefined;
+            let mismatches: string[] | undefined;
+            try {
+                if (operation === 'delete') {
+                    const cols = primaryKeys.map(c => `[${c}]`).join(', ');
+                    const where = primaryKeys.map(k => `[${k}] = ${escapeSqlValue(data[k])}`).join(' AND ');
+                    const check = await pool.request().query(`SELECT TOP 1 ${cols} FROM ${table} WHERE ${where}`);
+                    if (check.recordset && check.recordset.length > 0) {
+                        verified = false;
+                        mismatches = ['Riga ancora presente dopo DELETE'];
+                    }
+                } else if (operation === 'update' || (operation === 'insert' && primaryKeys.length > 0 && primaryKeys.every(pk => pk in data))) {
+                    const v = await verifyWrite(pool, table, data, primaryKeys);
+                    verified = v.verified;
+                    actual = v.actual;
+                    mismatches = v.mismatches;
+                }
+            } catch (verifyErr: any) {
+                console.warn(`[update-commessa] verify read-back failed: ${verifyErr.message}`);
+                verified = false;
+                mismatches = [`Verifica fallita: ${verifyErr.message}`];
+            }
+
+            if (!verified) {
+                console.warn(`[update-commessa] ${operation} ${table} NOT VERIFIED:`, mismatches);
+                return NextResponse.json(
+                    {
+                        success: false,
+                        verified: false,
+                        rowsAffected,
+                        actual,
+                        mismatches,
+                        message: `Scrittura non verificata: ${mismatches?.[0] || 'valore persistito diverso da quello inviato'}`,
+                    },
                     { headers: corsHeaders(req) }
                 );
             }
 
             return NextResponse.json(
-                { success: true, rowsAffected, message: `${rowsAffected} righe ${operation === 'delete' ? 'eliminate' : operation === 'insert' ? 'inserite' : 'aggiornate'}` },
+                {
+                    success: true,
+                    verified: true,
+                    rowsAffected,
+                    actual,
+                    message: `${rowsAffected} righe ${operation === 'delete' ? 'eliminate' : operation === 'insert' ? 'inserite' : 'aggiornate'} e verificate`,
+                },
                 { headers: corsHeaders(req) }
             );
         }

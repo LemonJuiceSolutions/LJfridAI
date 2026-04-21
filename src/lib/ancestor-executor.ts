@@ -122,12 +122,28 @@ async function executeNode(node: Node, context: ExecutionContext): Promise<NodeE
       }
     }
 
-    // For the client response: strip large data, only send metadata
-    const clientData = isLargeResultRef(result)
-      ? { __large: true, rowCount: result.rowCount, sizeBytes: result.sizeBytes }
-      : (Array.isArray(result) && JSON.stringify(result).length > 5_000_000)
-        ? { __large: true, rowCount: result.length, sizeBytes: JSON.stringify(result).length }
-        : result;
+    // For the client response: strip large data, only send metadata.
+    // PERF: was calling JSON.stringify(result) twice for every array result
+    // — on a 15-node chain with multi-MB DataFrames that's ~150MB of string
+    // work per task execution, plus GC pressure. Stringify once, reuse.
+    let clientData: any;
+    if (isLargeResultRef(result)) {
+      clientData = { __large: true, rowCount: result.rowCount, sizeBytes: result.sizeBytes };
+    } else if (Array.isArray(result)) {
+      // Cheap approximation of serialized size: row count * 512 bytes.
+      // Only pay the real stringify cost when we're close to the 5MB threshold.
+      const approxBytes = result.length * 512;
+      if (approxBytes > 5_000_000) {
+        const serialized = JSON.stringify(result);
+        clientData = serialized.length > 5_000_000
+          ? { __large: true, rowCount: result.length, sizeBytes: serialized.length }
+          : result;
+      } else {
+        clientData = result;
+      }
+    } else {
+      clientData = result;
+    }
 
     return {
       nodeId: node.id,
@@ -662,17 +678,53 @@ export async function executeChain(
     executionId,
   };
 
-  // Execute nodes in order
+  // Level-parallel execution: nodes at the same topological depth are
+  // independent (no edge between them) and can run concurrently. We still
+  // wait for each level to fully settle before starting the next one so
+  // dependent nodes always read resolved results from context.results.
+  //
+  // Bounded by ANCESTOR_CHAIN_CONCURRENCY to avoid hammering the source
+  // MSSQL pool — each executeSqlNode opens its own ConnectionPool, so
+  // unbounded fan-out would exhaust sockets on wide trees.
+  //
+  // Falls back to strict serial when stopOnError is set: parallel + abort
+  // would leave in-flight nodes hanging past the "stop" point.
+  const CONCURRENCY = Math.max(1, Number(process.env.ANCESTOR_CHAIN_CONCURRENCY) || 4);
+
+  const byDepth = new Map<number, Node[]>();
+  for (const n of sortedNodes) {
+    const d = n.depth ?? 0;
+    const bucket = byDepth.get(d);
+    if (bucket) bucket.push(n);
+    else byDepth.set(d, [n]);
+  }
+  const depthLevels = Array.from(byDepth.keys()).sort((a, b) => a - b);
+
   try {
-    for (const node of sortedNodes) {
-      const result = await executeNode(node, context);
-      results.push(result);
-
-      if (!result.success) {
-        errors.push(`Node ${node.name || node.id}: ${result.error}`);
-
-        if (stopOnError) {
-          break;
+    if (stopOnError || CONCURRENCY === 1) {
+      // Preserve original sequential semantics.
+      for (const node of sortedNodes) {
+        const result = await executeNode(node, context);
+        results.push(result);
+        if (!result.success) {
+          errors.push(`Node ${node.name || node.id}: ${result.error}`);
+          if (stopOnError) break;
+        }
+      }
+    } else {
+      for (const depth of depthLevels) {
+        const batch = byDepth.get(depth)!;
+        for (let i = 0; i < batch.length; i += CONCURRENCY) {
+          const chunk = batch.slice(i, i + CONCURRENCY);
+          const chunkResults = await Promise.all(
+            chunk.map(n => executeNode(n, context)),
+          );
+          for (let j = 0; j < chunk.length; j++) {
+            const node = chunk[j];
+            const r = chunkResults[j];
+            results.push(r);
+            if (!r.success) errors.push(`Node ${node.name || node.id}: ${r.error}`);
+          }
         }
       }
     }

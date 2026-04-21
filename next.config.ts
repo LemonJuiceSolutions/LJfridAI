@@ -35,7 +35,7 @@ const nextConfig: NextConfig = {
       }
     ],
   },
-  serverExternalPackages: ['mssql'],
+  serverExternalPackages: ['mssql', 'duckdb', 'duckdb-async'],
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb',

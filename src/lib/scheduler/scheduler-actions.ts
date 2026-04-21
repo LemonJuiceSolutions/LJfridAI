@@ -597,14 +597,16 @@ export async function saveAncestorPreviews(
     }
 
     try {
-      await db.nodePreviewCache.upsert({
-        where: { treeId_nodeId: { treeId, nodeId: preview.nodeId } },
-        create: { treeId, nodeId: preview.nodeId, data: cacheData },
-        update: { data: cacheData, updatedAt: new Date() },
-      });
+      // Route through the hybrid preview-cache layer: heavy fields (row
+      // arrays, HTML, chart, base64, plotly JSON) are offloaded to DuckDB,
+      // Postgres only stores lightweight metadata + pointer markers. This
+      // prevents multi-MB UPDATEs from blocking the main DB during scheduler
+      // runs.
+      const { saveNodePreview } = await import('@/lib/preview-cache');
+      await saveNodePreview(treeId, preview.nodeId, cacheData);
       savedCount++;
     } catch (e: any) {
-      console.error(`[saveAncestorPreviews] Failed to upsert nodeId=${preview.nodeId}:`, e.message);
+      console.error(`[saveAncestorPreviews] Failed to save preview for nodeId=${preview.nodeId}:`, e.message);
     }
   }
 

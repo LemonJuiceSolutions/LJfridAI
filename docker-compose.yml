@@ -46,6 +46,8 @@ services:
       - app_next_cache:/app/.next
       # Shared data lake (also accessible by python-backend)
       - ./data_lake:/data_lake:delegated
+      # Preview cache DuckDB file + legacy .json.gz files (shared with scheduler)
+      - preview_cache_data:/app/data/preview-cache
     networks:
       - app-network
     # healthcheck:
@@ -153,6 +155,9 @@ services:
         condition: service_healthy
     volumes:
       - ./data_lake:/data_lake:delegated
+      # Must mount the same preview-cache volume as the `app` service so
+      # DuckDB blobs written here are readable by Next.js widget handlers.
+      - preview_cache_data:/app/data/preview-cache
     networks:
       - app-network
     healthcheck:
@@ -172,6 +177,8 @@ volumes:
     name: rulesage-node-modules
   app_next_cache:
     name: rulesage-next-cache
+  preview_cache_data:
+    name: rulesage-preview-cache
 
 # ============================================================================
 # Network

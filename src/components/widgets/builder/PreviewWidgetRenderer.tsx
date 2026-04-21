@@ -214,21 +214,34 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
     useEffect(() => {
         if (!isHtmlWidget) return; // Only HTML widgets have iframes with saveToDb
 
-        const triggerReExecution = () => {
-            console.log('[PreviewWidget] DB write success - triggering re-execution...');
-            toast({ title: 'Salvato nel DB!', description: 'Ri-esecuzione per aggiornare grafico e tabella...' });
+        const triggerReExecution = (detail?: { rowsAffected?: number; actual?: Record<string, any> }) => {
+            console.log('[PreviewWidget] DB write verified - triggering re-execution...', detail);
+            // Show the persisted value so the user has proof the DB now holds
+            // what they typed — not just a "saved" flash that could be lying.
+            const actualPreview = detail?.actual
+                ? Object.entries(detail.actual).slice(0, 3).map(([k, v]) => `${k}=${v}`).join(', ')
+                : '';
+            toast({
+                title: 'Salvato e verificato nel DB',
+                description: actualPreview
+                    ? `Valore persistito: ${actualPreview}. Ri-esecuzione pipeline…`
+                    : 'Ri-esecuzione per aggiornare grafico e tabella…',
+            });
             setTimeout(() => setShowExecutionDialog(true), 500);
         };
 
         // Primary: CustomEvent dispatched directly on parent window by the polyfill
-        const customHandler = () => triggerReExecution();
+        const customHandler = (e: Event) => {
+            const detail = (e as CustomEvent).detail as { rowsAffected?: number; actual?: Record<string, any> } | undefined;
+            triggerReExecution(detail);
+        };
         window.addEventListener('iframe-db-write-success', customHandler);
 
         // Fallback: postMessage (in case CustomEvent doesn't work)
         const msgHandler = (e: MessageEvent) => {
             if (e.data?.type === 'iframe-db-write-success') {
                 if (!iframeRef.current || e.source !== iframeRef.current.contentWindow) return;
-                triggerReExecution();
+                triggerReExecution(e.data);
             }
         };
         window.addEventListener('message', msgHandler);
@@ -280,10 +293,18 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
         URL.revokeObjectURL(url);
     }, [previewData, activeStyle, resultName]);
 
-    const handleExecutionSuccess = () => {
-        // Invalidate cache and notify ALL widgets sharing this treeId to refresh
+    const handleExecutionSuccess = async () => {
+        // Invalidate every cache layer BEFORE reloading so loadPreview hits
+        // fresh server state. Previously the preload-cache invalidation ran as
+        // a floating promise while loadPreview fired immediately — step 0 of
+        // loadPreview returned the stale preloaded entry and the UI kept
+        // showing the pre-save HTML even though the server had new data.
         invalidateAndNotifyWidgets(treeId);
-        loadPreview(false);
+        try {
+            const { invalidatePreloadedWidgetData } = await import('@/lib/widget-preload-cache');
+            invalidatePreloadedWidgetData(treeId);
+        } catch { /* best-effort */ }
+        await loadPreview(false);
 
         // If triggered by page-level queue, auto-close dialog and advance queue
         if (isQueuedRef.current) {

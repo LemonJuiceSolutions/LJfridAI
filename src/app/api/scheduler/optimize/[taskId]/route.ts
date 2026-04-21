@@ -25,6 +25,17 @@ import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
 import { runClaudeCliSync } from '@/ai/providers/claude-cli-provider';
 import { executeSqlPreviewAction } from '@/app/actions/sql';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+
+// Write optimize-route progress to a tailable log file so we can debug
+// timeouts/aborts without rummaging through the Next.js dev terminal.
+const OPTIMIZE_LOG_PATH = path.join(process.cwd(), 'optimize-debug.log');
+function fileLog(line: string) {
+    try {
+        fs.appendFileSync(OPTIMIZE_LOG_PATH, `${new Date().toISOString()} ${line}\n`);
+    } catch { /* non-fatal: logging must never break the route */ }
+}
 
 type Provider = 'openrouter' | 'claude-cli';
 
@@ -64,6 +75,30 @@ interface SqlNode {
     nodePath: string;
     sqlQuery: string;
     connectorId?: string;
+}
+
+/** Resolve a stored nodePath like `root.options['A'].options['B'][0]` to the
+ *  subtree it refers to. Returns null if the path can't be walked (stale
+ *  path, tree mutated since the task was created, etc.). Used so the
+ *  optimiser only analyses the SQL under the node the task actually runs,
+ *  not every SQL query in the entire tree. */
+function resolveNodePath(treeJson: any, nodePath: string): any | null {
+    if (!nodePath || typeof nodePath !== 'string') return null;
+    const stripped = nodePath.replace(/^root/, '');
+    const tokens = Array.from(stripped.matchAll(/\.options\['([^']+)'\]|\[(\d+)\]/g));
+    let cursor: any = treeJson;
+    for (const m of tokens) {
+        if (cursor == null) return null;
+        if (m[1] !== undefined) {
+            if (!cursor.options || typeof cursor.options !== 'object') return null;
+            cursor = cursor.options[m[1]];
+        } else if (m[2] !== undefined) {
+            const idx = parseInt(m[2], 10);
+            if (!Array.isArray(cursor)) return null;
+            cursor = cursor[idx];
+        }
+    }
+    return cursor ?? null;
 }
 
 function flattenSqlNodes(treeJson: any, path: string[] = [], out: SqlNode[] = []): SqlNode[] {
@@ -165,7 +200,13 @@ async function timedExec(query: string, connectorId: string) {
 export async function POST(request: NextRequest, ctx: { params: Promise<{ taskId: string }> }) {
     const { taskId } = await ctx.params;
     const t0 = Date.now();
-    const log = (msg: string) => console.log(`[optimize/${taskId}] +${((Date.now() - t0) / 1000).toFixed(1)}s ${msg}`);
+    const log = (msg: string) => {
+        const line = `[optimize/${taskId}] +${((Date.now() - t0) / 1000).toFixed(1)}s ${msg}`;
+        console.log(line);
+        fileLog(line);
+    };
+
+    try {
 
     const session = await getServerSession(authOptions);
     const user = session?.user as { id?: string; email?: string; companyId?: string } | undefined;
@@ -195,8 +236,27 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ taskId
     if (!tree) { log('404 tree not found'); return NextResponse.json({ error: 'Tree not found' }, { status: 404 }); }
 
     const treeJson = JSON.parse(tree.jsonDecisionTree);
-    const sqlNodes = flattenSqlNodes(treeJson);
-    log(`sqlNodes=${sqlNodes.length}`);
+
+    // Scope the optimiser to the task's target node when we have a nodePath.
+    // Without this the analyser walks the entire tree (dozens of SQL queries)
+    // instead of the one the scheduled task actually executes — turning a
+    // 1.8 min task into a 20+ min analysis run, which trips dev-server HMR,
+    // MSSQL pool socket timeouts, and browser fetch "Load failed".
+    let scope: 'node' | 'tree' = 'tree';
+    let rootForFlatten: any = treeJson;
+    let scopeRootPath: string[] = [];
+    if (typeof cfg.nodePath === 'string' && cfg.nodePath.length > 0) {
+        const subtree = resolveNodePath(treeJson, cfg.nodePath);
+        if (subtree) {
+            rootForFlatten = subtree;
+            scopeRootPath = [cfg.nodePath];
+            scope = 'node';
+        } else {
+            log(`nodePath=${cfg.nodePath} not resolvable — falling back to full tree`);
+        }
+    }
+    const sqlNodes = flattenSqlNodes(rootForFlatten, scopeRootPath);
+    log(`sqlNodes=${sqlNodes.length} scope=${scope} nodePath=${cfg.nodePath || '(none)'}`);
     if (sqlNodes.length === 0) {
         return NextResponse.json({ error: 'No SQL nodes in this task' }, { status: 400 });
     }
@@ -370,6 +430,14 @@ Proponi versione ottimizzata.`;
         avgRecentMs,
         provider: requestProvider,
         model: effectiveModel,
+        scope,
+        nodePath: cfg.nodePath || null,
         reports,
     });
+
+    } catch (err: any) {
+        const msg = err?.message || String(err);
+        log(`FATAL ${err?.name || 'Error'}: ${msg}\n${err?.stack || ''}`);
+        return NextResponse.json({ error: `Optimize failed: ${msg}` }, { status: 500 });
+    }
 }

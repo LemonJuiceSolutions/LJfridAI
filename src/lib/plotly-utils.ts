@@ -45,7 +45,24 @@ export function applyPlotlyOverrides(
 ): any {
   if (!originalFigure) return originalFigure;
 
-  const fig = JSON.parse(JSON.stringify(originalFigure));
+  // plotlyJson can arrive as a pre-serialized JSON string (from DuckDB blob
+  // storage) or as an already-parsed object. JSON.stringify on a string
+  // would wrap it in quotes and JSON.parse would return the inner string,
+  // leaving `fig` as a primitive — then `fig.layout = layout` throws
+  // "Attempted to assign to readonly property" in strict mode.
+  let fig: any;
+  if (typeof originalFigure === 'string') {
+    try {
+      fig = JSON.parse(originalFigure);
+    } catch {
+      return originalFigure;
+    }
+  } else {
+    fig = JSON.parse(JSON.stringify(originalFigure));
+  }
+
+  if (!fig || typeof fig !== 'object') return originalFigure;
+
   const layout = fig.layout || {};
 
   if (overrides.paper_bgcolor !== undefined) layout.paper_bgcolor = overrides.paper_bgcolor;

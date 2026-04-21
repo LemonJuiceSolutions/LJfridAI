@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/command';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { fetchWithRetry } from '@/lib/client-fetch-retry';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
 import { fetchOpenRouterModelsAction } from '@/app/actions/openrouter';
 import { getAiProviderAction, type AiProvider } from '@/actions/ai-settings';
@@ -105,6 +106,8 @@ interface AnalyzeResponse {
     avgRecentMs: number | null;
     provider?: string;
     model?: string;
+    scope?: 'node' | 'tree';
+    nodePath?: string | null;
     reports: NodeReport[];
 }
 
@@ -213,7 +216,7 @@ export function SchedulerOptimize() {
         (async () => {
             setLoadingList(true);
             try {
-                const res = await fetch('/api/scheduler/optimize/list');
+                const res = await fetchWithRetry('/api/scheduler/optimize/list', {}, { retries: 2 });
                 if (!res.ok) throw new Error(`List failed: ${res.status}`);
                 const data = await res.json();
                 if (!cancelled) setTasks(data.tasks || []);
@@ -233,7 +236,7 @@ export function SchedulerOptimize() {
         const startedAt = Date.now();
         try {
             toast({ title: 'Analisi avviata', description: `${provider} · ${effectiveModel}. Esecuzione query originale + ottimizzata in corso.` });
-            const res = await fetch(`/api/scheduler/optimize/${taskId}`, {
+            const res = await fetchWithRetry(`/api/scheduler/optimize/${taskId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ provider, model: effectiveModel }),
@@ -242,6 +245,13 @@ export function SchedulerOptimize() {
                 // each; with parallel orig+opt we still need headroom if the
                 // source DB is under load.
                 signal: AbortSignal.timeout(25 * 60 * 1000),
+            }, {
+                retries: 2,
+                baseDelayMs: 1500,
+                onRetry: (attempt, err) => toast({
+                    title: `Connessione persa, riprovo (${attempt}/2)`,
+                    description: String((err as Error).message || err),
+                }),
             });
             if (!res.ok) {
                 // Try to read the server's error message — may be text or JSON.
@@ -285,11 +295,11 @@ export function SchedulerOptimize() {
     const apply = async (taskId: string, nodeId: string, optimizedSql: string) => {
         setApplying(nodeId);
         try {
-            const res = await fetch(`/api/scheduler/optimize/${taskId}/apply`, {
+            const res = await fetchWithRetry(`/api/scheduler/optimize/${taskId}/apply`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ nodeId, optimizedSql }),
-            });
+            }, { retries: 2 });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
                 throw new Error(err.error || `HTTP ${res.status}`);
@@ -514,6 +524,11 @@ export function SchedulerOptimize() {
                         <CardTitle>Risultati analisi — {report.taskName}</CardTitle>
                         <CardDescription className="flex flex-wrap items-center gap-2">
                             <span>{report.sqlNodeCount} nodo/i SQL · avg task: {fmtMs(report.avgRecentMs)}</span>
+                            {report.scope === 'tree' && (
+                                <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">
+                                    scope: tree intero (nodePath non risolto)
+                                </Badge>
+                            )}
                             {report.model && (
                                 <Badge variant="outline" className="font-mono text-xs gap-1.5">
                                     <Bot className="w-3 h-3" />

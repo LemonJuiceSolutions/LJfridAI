@@ -302,13 +302,52 @@ Se vedi dati hardcoded nel codice esistente e l'utente chiede di sistemarli, SOS
 - Se df vuoto -> USA query_db(). NON dire "collega nodo upstream".
 - NO token API hardcoded nel codice. Usa SEMPRE os.environ.get() con il token dal connettore.
 
-## OUTPUT TYPE (scegli SEMPRE quello giusto per pyTestCode):
-- result = df (DataFrame) -> outputType='table'
-- result = "<html>..." (stringa HTML) -> outputType='html'
-- fig.show() (Plotly) -> outputType='chart' (convertito in Recharts)
-- result = {...} (dict) -> outputType='variable'
-Ordine priorita' variabili: result -> output -> df -> data. Per NaN: usa pd.isna(val).
+## OUTPUT TYPE — CONVENZIONE OBBLIGATORIA (backend python-backend/app.py):
+Il backend cerca UNA variabile specifica nel namespace dopo l'esecuzione. Se non la trovi, il box torna VUOTO (0 righe / 0 car / no grafico). NON importa se \`fig.show()\` e' chiamato — il backend lo rimuove e ispeziona il namespace.
+
+### outputType='table' — backend cerca: result, output, df, data, df_result, final_df, merged, table
+\`\`\`python
+result = df_finale  # DataFrame — NON print, NON fig.show
+\`\`\`
+
+### outputType='chart' — backend cerca: fig, chart, result, output (Plotly viene convertito in Recharts)
+\`\`\`python
+fig = go.Figure(...)   # Plotly figure — il nome della variabile DEVE essere 'fig'
+# NO fig.show() necessario (viene rimosso). Basta assegnare a 'fig'.
+\`\`\`
+
+### outputType='html' — backend cerca: html_result, html, result, output (o qualsiasi stringa con < >)
+\`\`\`python
+html_result = "<div>...</div>"        # stringa HTML — il nome DEVE essere 'html_result'
+# Se il tuo output e' un grafico Plotly ma il nodo e' outputType='html':
+html_result = fig.to_html(full_html=True, include_plotlyjs='cdn')
+\`\`\`
+
+### outputType='variable' — backend cerca: result, output (dict/list/valore serializzabile)
+\`\`\`python
+result = {"totale": 1234, "items": [...]}
+\`\`\`
+
+## PROACTIVE SELF-CHECK — PRIMA di concludere ogni script:
+Aggiungi in fondo DIAGNOSTICA che stampi la variabile di output attesa. Se l'output e' vuoto la vedi subito:
+\`\`\`python
+# Self-check (metti alla fine, il backend ignora lo stdout quando c'e' la variabile giusta)
+if 'result' in dir(): print(f"[CHECK] result type={type(result).__name__} size={len(result) if hasattr(result,'__len__') else 'N/A'}")
+if 'fig'    in dir(): print(f"[CHECK] fig traces={len(fig.data) if hasattr(fig,'data') else 0}")
+if 'html_result' in dir(): print(f"[CHECK] html_result chars={len(html_result)}")
+\`\`\`
+
+## DEBUG LOG "dati: 0 righe, html: 0 car, grafico: no" — DIAGNOSI:
+Significato: backend non ha trovato la variabile attesa per l'outputType. NON rigenerare codice uguale.
+Azione OBBLIGATORIA:
+1. Controlla outputType del nodo (vedi Usa Dati Da / tab del nodo).
+2. Verifica che il nome della variabile assegnata corrisponda all'outputType (tabella sopra).
+3. Se hai un Plotly \`fig\` ma outputType='html' → aggiungi \`html_result = fig.to_html(full_html=True, include_plotlyjs='cdn')\`.
+4. Se hai \`df\` ma outputType='table' → aggiungi \`result = df\` alla fine.
+5. Se il codice filtra/merge/groupby e svuota i dati → stampa \`print(df.shape)\` dopo ogni step per isolare il filtro rotto.
+
 Se l'utente chiede filtri/dashboard interattive -> e' HTML, NON table.
+Per NaN: usa pd.isna(val).
 
 ## HTML GENERATION — INTERFACCE REACT-LIKE:
 PRIMA di generare HTML, chiama il tool \`getStyleGuide\` per ottenere template e classi CSS della piattaforma.

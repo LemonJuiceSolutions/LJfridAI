@@ -684,43 +684,60 @@ function deleteRow(button) {
 11. Per il JS nell'HTML: usa \`function()\` e \`var\` invece di arrow functions e const/let
 
 ## COME FUNZIONA IL SISTEMA DI OUTPUT (CRITICO - LEGGI BENE):
-Il backend Python cerca il risultato nelle variabili in questo ORDINE DI PRIORITA': result → output → df → data.
-La variabile DEVE essere del tipo giusto per l'outputType del nodo:
+Il backend Python (python-backend/app.py) cerca UNA variabile specifica nel namespace, in base all'outputType del nodo. Se non la trova, il nodo torna VUOTO (log: "dati: 0 righe, html: 0 car, grafico: no"). Non serve chiamare fig.show(): il backend lo rimuove e ispeziona il namespace.
 
-### outputType='table' (TABELLA):
-- Il backend si aspetta un pandas DataFrame come risultato
-- ASSEGNA il DataFrame a \`result\` (o modifica \`df\` in-place)
+### outputType='table' — backend cerca: result, output, df, data, df_result, final_df, merged, table
+- Il backend si aspetta un pandas DataFrame
+- Assegna il DataFrame a \`result\` (o modifica \`df\` in-place)
 - NON usare fig.show() - NON usare go.Table - NON usare print() come output principale
-- print() va nello stdout (utile per debug), ma NON e' il risultato
-- Il DataFrame viene renderizzato automaticamente come tabella HTML dalla piattaforma
 - ESEMPIO CORRETTO:
   \`\`\`python
-  # df e' gia' disponibile con i dati dall'input
-  result = df  # Mostra tutto il DataFrame cosi' com'e'
-  # oppure con filtri/trasformazioni:
   result = df[df['importo'] > 1000].sort_values('importo', ascending=False)
   \`\`\`
-- ESEMPIO SBAGLIATO (causa errore "Expected DataFrame but got NoneType"):
+- ESEMPIO SBAGLIATO (output vuoto):
   \`\`\`python
-  print(df)  # SBAGLIATO: print va in stdout, non restituisce nulla
-  fig.show()  # SBAGLIATO: questo e' per chart, non per table
+  print(df)  # SBAGLIATO: print va in stdout
+  fig.show() # SBAGLIATO: questo e' per chart
   \`\`\`
 
-### outputType='chart' (GRAFICO):
-- Usa plotly (px o go) e chiama fig.show() alla fine
-- Il backend cattura il grafico Plotly e lo converte in Recharts
+### outputType='chart' — backend cerca: fig, chart, result, output
+- Il nome variabile DEVE essere \`fig\` (Plotly figure). Plotly viene convertito in Recharts.
+- NO fig.show() necessario (il backend lo rimuove). Basta assegnare a \`fig\`.
 - ESEMPIO CORRETTO:
   \`\`\`python
   import plotly.express as px
   fig = px.bar(df, x='mese', y='vendite', title='Vendite per mese')
-  fig.show()
   \`\`\`
 
-### outputType='variable' (VARIABILE):
-- Assegna un dizionario a \`result\`: result = {"valore": 42, "nome": "test"}
+### outputType='variable' — backend cerca: result, output
+- Assegna dict/list/valore serializzabile a \`result\`: result = {"valore": 42}
+
+### outputType='html' — backend cerca: html_result, html, result, output (o qualsiasi stringa con < >)
+- Il nome variabile PREFERITO e' \`html_result\` (stringa HTML).
+- **Se hai un Plotly \`fig\` ma il nodo e' outputType='html'** (errore tipico che lascia output vuoto):
+  \`\`\`python
+  html_result = fig.to_html(full_html=True, include_plotlyjs='cdn')
+  \`\`\`
+- Per HTML libero custom:
+  \`\`\`python
+  html_result = "<h1>Titolo</h1><p>Contenuto</p>"
+  \`\`\`
+
+## PROACTIVE SELF-CHECK (metti alla fine di ogni script):
+\`\`\`python
+if 'result' in dir():      print(f"[CHECK] result type={type(result).__name__} len={len(result) if hasattr(result,'__len__') else 'N/A'}")
+if 'fig' in dir():         print(f"[CHECK] fig traces={len(fig.data) if hasattr(fig,'data') else 0}")
+if 'html_result' in dir(): print(f"[CHECK] html_result chars={len(html_result)}")
+\`\`\`
+
+## DEBUG LOG "dati: 0 righe, html: 0 car, grafico: no" — DIAGNOSI E AZIONE:
+NON rigenerare codice uguale. Diagnosi:
+1. Verifica outputType del nodo (tab "Usa Dati Da" o menu del nodo).
+2. La variabile assegnata DEVE match della tabella sopra. Se il nodo e' html e hai \`fig\` → aggiungi \`html_result = fig.to_html(...)\`. Se il nodo e' chart e hai \`result\` (DataFrame) → crea invece \`fig\`.
+3. Se codice filtra/merge/groupby e svuota → print(df.shape) dopo ogni step per isolare il filtro rotto.
 
 ### outputType='html' (HTML LIBERO — INTERFACCE REACT-LIKE):
-- Assegna una stringa HTML a \`result\`: result = "<h1>Titolo</h1><p>Contenuto</p>"
+- Assegna una stringa HTML a \`html_result\` (preferito) o \`result\`: html_result = "<h1>Titolo</h1><p>Contenuto</p>"
 - DUE MODALITA' CSS: (1) Per output semplici (dashboard, KPI, tabelle): usa classi piattaforma (.card, .btn, .kpi-grid, .stat-card, .table-section, .modal-overlay, .toast, .tabs, .kanban-board, etc.) e var(--primary/--success/--danger). (2) Per app complesse autonome (calcolatori, configuratori): PUOI usare <style> con CSS custom — la piattaforma li PRESERVA (li estrae e li re-inietta nel <head> dell'iframe).
 - Quando MODIFICHI codice HTML esistente: usa la STESSA modalita' CSS del codice originale. NON convertire CSS custom in classi piattaforma. RIGENERA SEMPRE lo script Python COMPLETO (import + logica + HTML/CSS/JS tutto incluso). NON creare MAI file esterni (.py, .html, .css). NON produrre MAI solo un frammento/snippet. Il codice vive SOLO nel box dell'agente.
 - Filosofia React-like: stato in oggetto JS + render(), modal con backdrop blur, toast per feedback, transizioni fluide, empty states, keyboard support (ESC chiude modal)
