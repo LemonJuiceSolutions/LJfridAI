@@ -66,8 +66,9 @@ export async function OPTIONS(req: NextRequest) {
     return NextResponse.json({}, { headers: corsHeaders(req) });
 }
 
-async function getPool(connectorId: string): Promise<{ pool: sql.ConnectionPool; error?: string }> {
-    const connector = await db.connector.findUnique({ where: { id: connectorId } });
+async function getPool(connectorId: string, companyId: string): Promise<{ pool: sql.ConnectionPool; error?: string }> {
+    // SECURITY: Always scope connector lookup by companyId to prevent cross-tenant access (C-02)
+    const connector = await db.connector.findFirst({ where: { id: connectorId, companyId } });
     if (!connector || connector.type !== 'SQL') {
         return { pool: null as any, error: `Connettore SQL non trovato (id=${connectorId})` };
     }
@@ -306,7 +307,7 @@ export async function POST(req: NextRequest) {
                 connectorId = connector.id;
             }
 
-            const { pool: p, error } = await getPool(connectorId);
+            const { pool: p, error } = await getPool(connectorId, user.companyId);
             if (error) return NextResponse.json({ success: false, message: error }, { status: 400, headers: corsHeaders(req) });
             pool = p;
 
@@ -349,7 +350,7 @@ export async function POST(req: NextRequest) {
             const { connectorId, error: connError } = await resolveConnectorId(parsed.data.connectorId, user.companyId, req);
             if (connError) return connError;
 
-            const { pool: p, error } = await getPool(connectorId!);
+            const { pool: p, error } = await getPool(connectorId!, user.companyId);
             if (error) return NextResponse.json({ success: false, message: error }, { status: 400, headers: corsHeaders(req) });
             pool = p;
 
@@ -434,7 +435,7 @@ export async function POST(req: NextRequest) {
         const { connectorId, error: connError } = await resolveConnectorId(parsed.data.connectorId, user.companyId, req);
         if (connError) return connError;
 
-        const { pool: p, error } = await getPool(connectorId!);
+        const { pool: p, error } = await getPool(connectorId!, user.companyId);
         if (error) return NextResponse.json({ success: false, message: error }, { status: 400, headers: corsHeaders(req) });
         pool = p;
 

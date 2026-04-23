@@ -98,7 +98,7 @@ def _safe_log(msg: str):
 
 app = Flask(__name__)
 app.json.sort_keys = False
-CORS(app)  # Allow cross-origin requests from Next.js
+CORS(app, origins=[os.environ.get('ALLOWED_ORIGIN', 'http://localhost:9002')])
 
 VERSION = "1.0.6"  # Fix: auto-unwrap if __name__=="__main__" + file write capture
 

@@ -20,6 +20,7 @@ import "server-only";
 export const PII_FIELDS_BY_MODEL: Record<string, readonly string[]> = {
     Lead: ["phone", "linkedinUrl", "notes"],
     Connector: ["config"],
+    User: ["openRouterApiKey"],
     WhatsAppContact: ["notes"],
 };
 

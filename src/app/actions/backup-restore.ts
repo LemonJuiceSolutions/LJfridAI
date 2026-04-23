@@ -31,13 +31,28 @@ export async function exportSettingsAction() {
             }
         });
 
+        // Redact sensitive fields from connector configs before export
+        const REDACTED = '****';
+        const SENSITIVE_KEYS = ['password', 'pwd', 'secret', 'apiKey', 'api_key', 'token', 'connectionString'];
+        function redactConfig(config: Record<string, any>): Record<string, any> {
+            const redacted: Record<string, any> = {};
+            for (const [key, value] of Object.entries(config)) {
+                if (SENSITIVE_KEYS.some(sk => key.toLowerCase().includes(sk.toLowerCase()))) {
+                    redacted[key] = REDACTED;
+                } else {
+                    redacted[key] = value;
+                }
+            }
+            return redacted;
+        }
+
         const backupData: BackupData = {
             version: '1.0',
             exportDate: new Date().toISOString(),
             connectors: connectors.map((c: any) => ({
                 name: c.name,
                 type: c.type,
-                config: JSON.parse(c.config)
+                config: redactConfig(JSON.parse(c.config))
             }))
         };
 

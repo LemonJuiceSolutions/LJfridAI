@@ -34,7 +34,7 @@ async function evictPool(connectorId: string): Promise<void> {
   }
 }
 
-async function getPool(connectorId: string): Promise<sql.ConnectionPool> {
+async function getPool(connectorId: string, companyId?: string): Promise<sql.ConnectionPool> {
   if (poolCache.has(connectorId)) {
     const cached = poolCache.get(connectorId)!;
     // Validate on borrow — a disconnected or poisoned pool (e.g. connector
@@ -53,10 +53,16 @@ async function getPool(connectorId: string): Promise<sql.ConnectionPool> {
     }
   }
 
-  const connector = await db.connector.findUnique({
-    where: { id: connectorId },
-    select: { config: true },
-  });
+  // SECURITY: scope connector lookup by companyId when available to prevent cross-tenant access (C-02)
+  const connector = companyId
+    ? await db.connector.findFirst({
+        where: { id: connectorId, companyId },
+        select: { config: true },
+      })
+    : await db.connector.findUnique({
+        where: { id: connectorId },
+        select: { config: true },
+      });
   if (!connector) throw new Error(`Connector ${connectorId} not found`);
 
   const config =
@@ -240,12 +246,13 @@ export async function executePipelineSql(
   executionId: string,
   nodeName: string,
   dependencies?: { tableName: string; data?: any }[],
+  companyId?: string,
 ): Promise<{ data: any[] | LargeResultRef; error: string | null }> {
   let pool: sql.ConnectionPool;
   const createdTempTables: string[] = [];
 
   try {
-    pool = await getPool(connectorId);
+    pool = await getPool(connectorId, companyId);
 
     let finalQuery = query;
 

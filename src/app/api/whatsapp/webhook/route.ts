@@ -115,14 +115,14 @@ export async function POST(request: NextRequest) {
     // SECURITY CRITICAL: verify Meta HMAC signature against App Secret.
     // Without this, anyone who knows the URL can forge events.
     const appSecret = conf.appSecret || process.env.WHATSAPP_APP_SECRET || '';
-    if (appSecret) {
-        const sigHeader = request.headers.get('x-hub-signature-256');
-        if (!verifyMetaSignature(rawBody, sigHeader, appSecret)) {
-            console.warn('[WhatsApp Webhook] Invalid HMAC signature — rejecting');
-            return new NextResponse('Forbidden', { status: 403 });
-        }
-    } else {
-        console.warn('[WhatsApp Webhook] No appSecret configured — signature check disabled (set conf.appSecret or WHATSAPP_APP_SECRET)');
+    if (!appSecret) {
+        console.error('[WhatsApp Webhook] CRITICAL: No appSecret configured — rejecting request. Set conf.appSecret or WHATSAPP_APP_SECRET to enable HMAC verification.');
+        return new NextResponse('Internal Server Error', { status: 500 });
+    }
+    const sigHeader = request.headers.get('x-hub-signature-256');
+    if (!verifyMetaSignature(rawBody, sigHeader, appSecret)) {
+        console.warn('[WhatsApp Webhook] Invalid HMAC signature — rejecting');
+        return new NextResponse('Forbidden', { status: 403 });
     }
 
     const { accessToken } = conf;

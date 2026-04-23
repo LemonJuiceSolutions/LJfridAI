@@ -12,7 +12,7 @@ services:
       - "9002:9002"
     environment:
       - NODE_ENV=development
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/rulesagedb
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-rulesagedb}
       - NEXTAUTH_URL=http://localhost:9002
       - PYTHON_BACKEND_URL=http://python-backend:5005
       - DATA_LAKE_PATH=/data_lake
@@ -70,7 +70,7 @@ services:
       - "5005:5005"
     environment:
       - FLASK_ENV=development
-      - FLASK_DEBUG=1
+      - FLASK_DEBUG=${FLASK_DEBUG:-0}
       - PYTHONUNBUFFERED=1
       - DATA_LAKE_PATH=/data_lake
       # Gunicorn settings (override Dockerfile defaults via env)
@@ -108,17 +108,17 @@ services:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: rulesagedb
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-rulesagedb}
     volumes:
       - db_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d rulesagedb"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-rulesagedb}"]
       interval: 10s
       timeout: 5s
       start_period: 10s
@@ -137,9 +137,9 @@ services:
       dockerfile: scheduler-service/Dockerfile
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/rulesagedb
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-rulesagedb}
       - PYTHON_BACKEND_URL=http://python-backend:5005
       - SCHEDULER_PORT=3001
       - DATA_LAKE_PATH=/data_lake
