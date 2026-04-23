@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, AGENT2.0]
+    branches: [main, ottimizzazione]
   pull_request:
-    branches: [main, AGENT2.0]
+    branches: [main]
 
 # Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
@@ -20,6 +20,25 @@ env:
   NEXTAUTH_URL: http://localhost:9002
 
 jobs:
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci --prefer-offline --no-fund
+
+      - name: npm audit (high + critical)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
   quality:
     name: Lint + Typecheck + Test
     runs-on: ubuntu-latest

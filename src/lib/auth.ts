@@ -4,6 +4,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { db, dbRaw } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { rateLimit } from "@/lib/rate-limit";
+import { verifyToken } from "@/lib/totp";
 
 export const authOptions: NextAuthOptions = {
     // Use raw client — PrismaAdapter inspects internal Prisma state that the
@@ -15,7 +16,8 @@ export const authOptions: NextAuthOptions = {
             name: "credentials",
             credentials: {
                 email: { label: "Email", type: "email" },
-                password: { label: "Password", type: "password" }
+                password: { label: "Password", type: "password" },
+                mfaToken: { label: "MFA Token", type: "text" }
             },
             async authorize(credentials) {
                 if (!credentials?.email || !credentials?.password) {
@@ -48,6 +50,17 @@ export const authOptions: NextAuthOptions = {
 
                 if (!isPasswordValid) {
                     throw new Error("Credenziali non valide");
+                }
+
+                // NIS2 Art. 21(2)(j): Multi-factor authentication
+                if (user.mfaEnabled) {
+                    const mfaToken = credentials.mfaToken;
+                    if (!mfaToken) {
+                        throw new Error("MFA_REQUIRED");
+                    }
+                    if (!user.mfaSecret || !verifyToken(user.mfaSecret, mfaToken)) {
+                        return null;
+                    }
                 }
 
                 // TODO: Implement email verification flow (NIS2 Art. 21(2)(a))

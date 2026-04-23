@@ -80,6 +80,9 @@ model User {
   claudeCliModel       String?         @default("claude-sonnet-4-6")
   sqlAgentModel        String?
   pythonAgentModel     String?
+  mfaSecret            String?
+  mfaEnabled           Boolean         @default(false)
+  mfaVerifiedAt        DateTime?
   roleId               String?
   accounts             Account[]
   pageLayouts          PageLayout[]
