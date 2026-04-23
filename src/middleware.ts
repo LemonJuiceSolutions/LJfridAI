@@ -35,6 +35,50 @@ function getIp(req: NextRequest): string {
     return req.headers.get('x-real-ip') || 'unknown';
 }
 
+// ─── CSP nonce generation ────────────────────────────────────────────────
+// Generate a per-request nonce for script-src. This replaces 'unsafe-inline'
+// and 'unsafe-eval' in production, neutralizing XSS via injected scripts.
+// Next.js 15 automatically reads the nonce from the CSP header and injects
+// it into its own inline scripts (hydration, chunks, etc.).
+
+function generateNonce(): string {
+    // crypto.randomUUID() is available in Edge runtime
+    return Buffer.from(crypto.randomUUID()).toString('base64');
+}
+
+function buildCspHeader(nonce: string, isProd: boolean): string {
+    // Dev needs ws:// for Turbopack HMR and http:// for the Python backend
+    // on localhost:5005. Production keeps things tight.
+    const connectSrc = isProd
+        ? "'self' https: wss:"
+        : "'self' https: http: ws: wss:";
+
+    // In dev, keep 'unsafe-eval' for Next.js HMR / Turbopack and
+    // 'unsafe-inline' as fallback so dev tools work without friction.
+    // In prod, use nonce + strict-dynamic which is the gold standard.
+    const scriptSrc = isProd
+        ? `'self' 'nonce-${nonce}' 'strict-dynamic' blob:`
+        : `'self' 'unsafe-inline' 'unsafe-eval' blob:`;
+
+    return [
+        "default-src 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+        "img-src 'self' data: blob: https:",
+        "font-src 'self' data: https://fonts.gstatic.com",
+        // 'unsafe-inline' for styles is required by Tailwind runtime + Radix
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        `script-src ${scriptSrc}`,
+        `connect-src ${connectSrc}`,
+        "frame-src 'self' blob:",
+        "worker-src 'self' blob:",
+        "media-src 'self' blob: data:",
+        "manifest-src 'self'",
+    ].join('; ');
+}
+
 // ─── Middleware ───────────────────────────────────────────────────────────
 //
 // Replaced next-auth/middleware's withAuth() because its default unauthorised
@@ -72,7 +116,28 @@ export default async function middleware(req: NextRequest) {
         return NextResponse.redirect(signInUrl);
     }
 
-    return NextResponse.next();
+    // ── Nonce-based CSP ──────────────────────────────────────────────────
+    const isProd = process.env.NODE_ENV === 'production';
+    const nonce = generateNonce();
+    const csp = buildCspHeader(nonce, isProd);
+
+    // Clone request headers and attach the nonce so server components can
+    // read it via headers().get('x-nonce') if needed.
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set('x-nonce', nonce);
+
+    const response = NextResponse.next({
+        request: { headers: requestHeaders },
+    });
+
+    // Set CSP on the response. In dev use Report-Only so we don't break
+    // iframe widgets / sandbox edge cases during development.
+    response.headers.set(
+        isProd ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only',
+        csp,
+    );
+
+    return response;
 }
 
 export const config = {

@@ -13,7 +13,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { executeSqlPreviewAction } from '@/app/actions';
 import { rateLimit } from '@/lib/rate-limit';
-import fs from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 
@@ -28,39 +28,38 @@ const CACHE_DIR = path.join(process.cwd(), DATA_LAKE_PATH, 'pipeline-cache', '_a
 const LARGE_THRESHOLD = 5 * 1024 * 1024; // 5 MB
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-function ensureCacheDir() {
-    if (!fs.existsSync(CACHE_DIR)) {
-        fs.mkdirSync(CACHE_DIR, { recursive: true });
-    }
+async function ensureCacheDir() {
+    await fs.mkdir(CACHE_DIR, { recursive: true });
 }
 
 /** Remove cached files older than CACHE_TTL_MS (best-effort). */
-function cleanupStaleCache() {
+async function cleanupStaleCache() {
     try {
-        if (!fs.existsSync(CACHE_DIR)) return;
+        const files = await fs.readdir(CACHE_DIR).catch(() => [] as string[]);
         const now = Date.now();
-        for (const file of fs.readdirSync(CACHE_DIR)) {
+        await Promise.all(files.map(async (file) => {
             const fp = path.join(CACHE_DIR, file);
-            const stat = fs.statSync(fp);
+            const stat = await fs.stat(fp);
             if (now - stat.mtimeMs > CACHE_TTL_MS) {
-                fs.unlinkSync(fp);
+                await fs.unlink(fp);
             }
-        }
+        }));
     } catch { /* best effort */ }
 }
 
-/** Save large data to disk and return a lightweight reference. */
-function cacheLargeResult(data: any[]): {
+/** Save large data to disk and return a lightweight reference.
+ *  Accepts an optional pre-serialized JSON string to avoid double-stringify. */
+async function cacheLargeResult(data: any[], preSerializedJson?: string): Promise<{
     __pipelineCacheRef: true;
     refId: string;
     rowCount: number;
     sizeBytes: number;
-} {
-    ensureCacheDir();
+}> {
+    await ensureCacheDir();
     const refId = randomUUID();
     const filePath = path.join(CACHE_DIR, `${refId}.json`);
-    const json = JSON.stringify(data);
-    fs.writeFileSync(filePath, json, 'utf-8');
+    const json = preSerializedJson ?? JSON.stringify(data);
+    await fs.writeFile(filePath, json, 'utf-8');
     console.log(
         `[execute-sql] Cached large result: ${data.length} rows, ` +
         `${(json.length / 1024 / 1024).toFixed(1)}MB -> ${filePath}`,
@@ -74,11 +73,15 @@ function cacheLargeResult(data: any[]): {
 }
 
 /** Resolve a cache reference back to the original data array. */
-function resolveCacheRef(ref: any): any[] | null {
+async function resolveCacheRef(ref: any): Promise<any[] | null> {
     if (!ref?.__pipelineCacheRef || !ref?.refId) return null;
     const filePath = path.join(CACHE_DIR, `${ref.refId}.json`);
-    if (!fs.existsSync(filePath)) return null;
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    try {
+        const content = await fs.readFile(filePath, 'utf-8');
+        return JSON.parse(content);
+    } catch {
+        return null;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +103,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Opportunistic cleanup of old cached files
-        cleanupStaleCache();
+        await cleanupStaleCache();
 
         const body = await req.json();
         const { query, connectorId, dependencies } = body;
@@ -110,9 +113,9 @@ export async function POST(req: NextRequest) {
         }
 
         // Resolve any cached large-result refs in incoming dependencies
-        const resolvedDeps = (dependencies || []).map((dep: any) => {
+        const resolvedDeps = await Promise.all((dependencies || []).map(async (dep: any) => {
             if (dep.data?.__pipelineCacheRef) {
-                const resolved = resolveCacheRef(dep.data);
+                const resolved = await resolveCacheRef(dep.data);
                 if (resolved) {
                     console.log(
                         `[execute-sql] Resolved cache ref for dep "${dep.tableName}": ${resolved.length} rows`,
@@ -121,24 +124,25 @@ export async function POST(req: NextRequest) {
                 }
             }
             return dep;
-        });
+        }));
 
         const result = await executeSqlPreviewAction(query, connectorId || '', resolvedDeps);
 
         // If result data is too large for a JSON response (~10 MB browser limit),
         // cache it on disk and return a lightweight reference instead.
+        // Stringify once and reuse for both size check and disk write.
         if (result.data && Array.isArray(result.data)) {
             try {
-                const jsonSize = JSON.stringify(result.data).length;
-                if (jsonSize > LARGE_THRESHOLD) {
-                    const ref = cacheLargeResult(result.data);
+                const serialized = JSON.stringify(result.data);
+                if (serialized.length > LARGE_THRESHOLD) {
+                    const ref = await cacheLargeResult(result.data, serialized);
                     return NextResponse.json({ ...result, data: ref });
                 }
             } catch {
                 // If stringify itself fails, the data is definitely too large
                 return NextResponse.json({
                     ...result,
-                    data: cacheLargeResult(result.data),
+                    data: await cacheLargeResult(result.data),
                 });
             }
         }

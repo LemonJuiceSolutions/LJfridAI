@@ -1185,61 +1185,92 @@ export async function POST(request: NextRequest) {
         // ─── OpenRouter path (existing) ────────────────────────────────────
         const aiModel = getOpenRouterModel(apiKey!, model!);
 
-        const result = streamText({
-            model: aiModel,
-            system: systemPrompt,
-            messages: [{ role: 'user' as const, content: userPrompt }],
-            tools,
-            // Propagate client disconnect so the LLM call and any in-flight
-            // tool calls (SQL, Python) cancel instead of burning tokens.
-            abortSignal: request.signal,
-            // Allow up to 25 tool-call round-trips for deeper agentic exploration
-            stopWhen: stepCountIs(25),
-            maxRetries: 2,
-            temperature: 0.3,
-            onStepFinish: ({ text, toolCalls }) => {
-                console.log('[chat-stream] Step finished - toolCalls:', toolCalls?.length || 0, 'textLen:', text?.length || 0);
-            },
-            onFinish: async ({ text, usage }) => {
-                console.log('[chat-stream] === FINISHED === textLen:', text?.length, 'usage:', JSON.stringify(usage));
-                // Cache usage for client-side cost tracking
-                if (usage && nodeId) {
-                    setAgentUsageCache(nodeId, {
-                        inputTokens: usage.inputTokens || 0,
-                        outputTokens: usage.outputTokens || 0,
-                    });
-                }
-                try {
-                    const updatedHistory = [
-                        ...conversationHistory,
-                        { role: 'user', content: userMessage, timestamp: Date.now(), scriptSnapshot: script },
-                        {
-                            role: 'assistant',
-                            content: text,
-                            timestamp: Date.now(),
-                            consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined,
-                        },
-                    ];
+        // Compose a 90-second timeout with the client-disconnect signal so
+        // the stream cannot hang indefinitely (H-09).
+        const timeoutController = new AbortController();
+        const timeoutId = setTimeout(() => timeoutController.abort(), 90_000);
 
-                    if (conversation) {
-                        await db.agentConversation.update({
-                            where: { id: conversation.id },
-                            data: { script, tableSchema, inputTables, messages: updatedHistory, updatedAt: new Date() },
-                        });
-                    } else {
-                        await db.agentConversation.create({
-                            data: { nodeId, agentType, script, tableSchema, inputTables, messages: updatedHistory, companyId },
+        // Abort if either the client disconnects or the timeout fires.
+        const composedSignal = (() => {
+            if (typeof AbortSignal.any === 'function') {
+                return AbortSignal.any([request.signal, timeoutController.signal]);
+            }
+            // Fallback for Node <20: forward request abort to timeout controller
+            const onClientAbort = () => timeoutController.abort();
+            request.signal.addEventListener('abort', onClientAbort, { once: true });
+            return timeoutController.signal;
+        })();
+
+        try {
+            const result = streamText({
+                model: aiModel,
+                system: systemPrompt,
+                messages: [{ role: 'user' as const, content: userPrompt }],
+                tools,
+                // Propagate client disconnect AND 90s timeout so the LLM call
+                // and any in-flight tool calls cancel instead of burning tokens.
+                abortSignal: composedSignal,
+                // Allow up to 25 tool-call round-trips for deeper agentic exploration
+                stopWhen: stepCountIs(25),
+                maxRetries: 2,
+                temperature: 0.3,
+                onStepFinish: ({ text, toolCalls }) => {
+                    console.log('[chat-stream] Step finished - toolCalls:', toolCalls?.length || 0, 'textLen:', text?.length || 0);
+                },
+                onFinish: async ({ text, usage }) => {
+                    clearTimeout(timeoutId);
+                    console.log('[chat-stream] === FINISHED === textLen:', text?.length, 'usage:', JSON.stringify(usage));
+                    // Cache usage for client-side cost tracking
+                    if (usage && nodeId) {
+                        setAgentUsageCache(nodeId, {
+                            inputTokens: usage.inputTokens || 0,
+                            outputTokens: usage.outputTokens || 0,
                         });
                     }
-                    console.log('[chat-stream] Conversation saved');
-                } catch (e) {
-                    console.error('[chat-stream] Failed to save conversation:', e);
-                }
-            },
-        });
+                    try {
+                        const updatedHistory = [
+                            ...conversationHistory,
+                            { role: 'user', content: userMessage, timestamp: Date.now(), scriptSnapshot: script },
+                            {
+                                role: 'assistant',
+                                content: text,
+                                timestamp: Date.now(),
+                                consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined,
+                            },
+                        ];
 
-        console.log('[chat-stream] Returning UIMessageStreamResponse');
-        return result.toUIMessageStreamResponse();
+                        if (conversation) {
+                            await db.agentConversation.update({
+                                where: { id: conversation.id },
+                                data: { script, tableSchema, inputTables, messages: updatedHistory, updatedAt: new Date() },
+                            });
+                        } else {
+                            await db.agentConversation.create({
+                                data: { nodeId, agentType, script, tableSchema, inputTables, messages: updatedHistory, companyId },
+                            });
+                        }
+                        console.log('[chat-stream] Conversation saved');
+                    } catch (e) {
+                        console.error('[chat-stream] Failed to save conversation:', e);
+                    }
+                },
+            });
+
+            console.log('[chat-stream] Returning UIMessageStreamResponse');
+            return result.toUIMessageStreamResponse();
+        } catch (error: any) {
+            clearTimeout(timeoutId);
+            // Handle abort (timeout or client disconnect) gracefully
+            if (error?.name === 'AbortError' || composedSignal.aborted) {
+                const isTimeout = timeoutController.signal.aborted && !request.signal.aborted;
+                const message = isTimeout
+                    ? 'La richiesta AI ha superato il tempo limite di 90 secondi. Riprova con una domanda più semplice.'
+                    : 'Richiesta annullata.';
+                console.warn(`[chat-stream] Aborted: ${isTimeout ? 'timeout' : 'client disconnect'}`);
+                return new Response(JSON.stringify({ error: message }), { status: isTimeout ? 504 : 499 });
+            }
+            throw error;
+        }
     } catch (error: any) {
         console.error('[chat-stream] FATAL Error:', error?.message, error?.stack?.substring(0, 500));
         return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), { status: 500 });

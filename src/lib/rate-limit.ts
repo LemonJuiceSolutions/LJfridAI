@@ -28,6 +28,26 @@ const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, '');
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const useUpstash = !!(UPSTASH_URL && UPSTASH_TOKEN);
 
+// ── Production safety warning ──
+// In production with multiple instances (e.g. Vercel serverless), the in-memory
+// rate limiter is per-isolate and trivially bypassed by distributing requests
+// across instances. Upstash Redis is required for accurate cross-instance limits.
+if (process.env.NODE_ENV === 'production' && !useUpstash) {
+    console.warn(
+        '\n' +
+        '╔══════════════════════════════════════════════════════════════════╗\n' +
+        '║  CRITICAL: In-memory rate limiter active in PRODUCTION         ║\n' +
+        '║                                                                ║\n' +
+        '║  UPSTASH_REDIS_REST_URL and/or UPSTASH_REDIS_REST_TOKEN are    ║\n' +
+        '║  not set. Rate limiting falls back to in-memory, which is      ║\n' +
+        '║  per-instance only and BYPASSED in multi-instance deployments   ║\n' +
+        '║  (Vercel serverless, horizontal scaling).                       ║\n' +
+        '║                                                                ║\n' +
+        '║  Set both env vars to enable distributed rate limiting.        ║\n' +
+        '╚══════════════════════════════════════════════════════════════════╝\n'
+    );
+}
+
 export interface RateLimitResult {
     allowed: boolean;
     remaining: number;

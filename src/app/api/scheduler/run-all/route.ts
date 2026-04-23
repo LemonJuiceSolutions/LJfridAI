@@ -3,7 +3,10 @@
  *
  * POST — Starts sequential execution of ALL tasks. Returns immediately (202).
  *        Stores a run-all session in a global so GET can report live progress.
- * GET  — Returns current run-all progress (persists across page navigations).
+ *        Also persists run state to DB via ScheduledTaskExecution.result JSON
+ *        so state survives cold starts and works across multiple instances.
+ * GET  — Returns current run-all progress. Checks in-memory first (hot path),
+ *        then falls back to reconstructing state from the DB (cold-start recovery).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -12,7 +15,7 @@ import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getSchedulerClient } from '@/lib/scheduler/scheduler-client';
 
-// ── In-memory run-all state (survives page navigations, lost on server restart) ──
+// ── Types ──
 
 export interface RunAllTaskStatus {
   taskId: string;
@@ -39,8 +42,103 @@ interface RunAllState {
   startedBy: string;
 }
 
+// ── In-memory cache for real-time progress during active runs ──
 // SECURITY CRITICAL: per-company runs (was singleton — leaked state cross-tenant)
+// NOTE: This map is the hot-path for live polling. On cold start / multi-instance,
+// GET falls back to reconstructing state from ScheduledTaskExecution records.
 const runs = new Map<string, RunAllState>();
+
+// ── DB persistence helpers ──
+
+/**
+ * Persist the current run-all state snapshot to DB.
+ * Uses upsert on a sentinel ScheduledTaskExecution keyed by `runId` so we
+ * don't need schema changes. The full RunAllState is stored in `result` JSON.
+ */
+async function persistRunState(run: RunAllState, companyId: string): Promise<void> {
+  try {
+    // We store the run state as the `result` JSON on a sentinel execution row.
+    // The `id` is deterministic from the runId so upserts work correctly.
+    const sentinelId = `runall-${run.id}`;
+    // Find any ScheduledTask in this company to anchor the execution record.
+    // If none exists (shouldn't happen — we just queried tasks), skip persistence.
+    const anyTask = await db.scheduledTask.findFirst({
+      where: { companyId },
+      select: { id: true },
+    });
+    if (!anyTask) return;
+
+    await db.scheduledTaskExecution.upsert({
+      where: { id: sentinelId },
+      create: {
+        id: sentinelId,
+        taskId: anyTask.id,
+        status: `run-all:${run.status}`,
+        startedAt: new Date(run.startedAt),
+        completedAt: run.completedAt ? new Date(run.completedAt) : null,
+        result: {
+          _isRunAll: true,
+          companyId,
+          runAllState: run,
+        } as any,
+      },
+      update: {
+        status: `run-all:${run.status}`,
+        completedAt: run.completedAt ? new Date(run.completedAt) : null,
+        result: {
+          _isRunAll: true,
+          companyId,
+          runAllState: run,
+        } as any,
+      },
+    });
+  } catch (err) {
+    console.error('[run-all] Failed to persist run state to DB:', err);
+  }
+}
+
+/**
+ * Reconstruct run-all state from DB for a given company (cold-start recovery).
+ * Returns the most recent run-all record, or null if none found.
+ */
+async function recoverRunStateFromDb(companyId: string): Promise<RunAllState | null> {
+  try {
+    // Find the most recent run-all sentinel execution for this company.
+    const recent = await db.scheduledTaskExecution.findFirst({
+      where: {
+        status: { startsWith: 'run-all:' },
+        result: { path: ['_isRunAll'], equals: true },
+      },
+      orderBy: { startedAt: 'desc' },
+    });
+    if (!recent?.result) return null;
+
+    const payload = recent.result as any;
+    if (payload.companyId !== companyId) return null;
+
+    const state = payload.runAllState as RunAllState | undefined;
+    if (!state) return null;
+
+    // If the DB says "running" but we have no in-memory state, the process
+    // crashed mid-run. Mark it as aborted so the UI doesn't show a phantom run.
+    if (state.status === 'running') {
+      state.status = 'aborted';
+      state.completedAt = state.completedAt || new Date().toISOString();
+      for (const t of state.tasks) {
+        if (t.status === 'pending' || t.status === 'running') {
+          t.status = 'skipped';
+        }
+      }
+      // Persist the corrected state back to DB
+      await persistRunState(state, companyId);
+    }
+
+    return state;
+  } catch (err) {
+    console.error('[run-all] Failed to recover run state from DB:', err);
+    return null;
+  }
+}
 
 // ============================================
 // GET: Poll current run-all progress
@@ -53,9 +151,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const currentRun = runs.get(companyId);
+  // Hot path: check in-memory cache first (active runs on this instance)
+  let currentRun = runs.get(companyId);
+
+  // Cold-start recovery: if nothing in memory, try to reconstruct from DB
   if (!currentRun) {
-    return NextResponse.json({ active: false });
+    const recovered = await recoverRunStateFromDb(companyId);
+    if (!recovered) {
+      return NextResponse.json({ active: false });
+    }
+    // Cache the recovered state in memory for subsequent polls
+    runs.set(companyId, recovered);
+    currentRun = recovered;
   }
 
   return NextResponse.json({
@@ -87,6 +194,8 @@ export async function POST(request: NextRequest) {
       for (const t of currentRun.tasks) {
         if (t.status === 'pending') t.status = 'skipped';
       }
+      // Persist aborted state to DB
+      await persistRunState(currentRun, sessionCompanyId);
       return NextResponse.json({ aborted: true });
     }
     return NextResponse.json({ aborted: false, reason: 'No active run' });
@@ -163,8 +272,9 @@ export async function POST(request: NextRequest) {
       };
     }),
   };
-  // Persist per-company state (was singleton — leaked cross-tenant)
+  // Persist per-company state in memory (hot path) and DB (cold-start recovery)
   runs.set(sessionCompanyId, currentRun);
+  await persistRunState(currentRun, sessionCompanyId);
 
   // Enrich with tree names
   const treeIds = [...new Set(tasks.map((t: any) => (t.config as any)?.treeId).filter(Boolean))];
@@ -181,11 +291,12 @@ export async function POST(request: NextRequest) {
   }
 
   // Fire-and-forget: execute all tasks sequentially in background
-  executeAllSequentially(currentRun, tasks).catch(err => {
+  executeAllSequentially(currentRun, tasks, sessionCompanyId).catch(err => {
     console.error('[run-all] Fatal error:', err);
     if (currentRun?.id === runId) {
       currentRun.status = 'aborted';
       currentRun.completedAt = new Date().toISOString();
+      persistRunState(currentRun, sessionCompanyId).catch(() => {});
     }
   });
 
@@ -194,7 +305,7 @@ export async function POST(request: NextRequest) {
 
 // ── Sequential executor ──
 
-async function executeAllSequentially(run: RunAllState, tasks: any[]) {
+async function executeAllSequentially(run: RunAllState, tasks: any[], companyId: string) {
   // Two tuning knobs:
   //  - DELAY_MS: breathing room between tasks so Next.js can serve UI
   //    while a local scheduler pins CPU. With the standalone
@@ -246,6 +357,8 @@ async function executeAllSequentially(run: RunAllState, tasks: any[]) {
       taskStatus.error = err.message;
       taskStatus.durationMs = Date.now() - taskStart;
     }
+    // Persist progress to DB after each task so state survives crashes
+    await persistRunState(run, companyId);
   };
 
   // Worker-pool pattern: N workers drain a shared cursor. Each worker picks
@@ -271,4 +384,6 @@ async function executeAllSequentially(run: RunAllState, tasks: any[]) {
     run.status = 'completed';
   }
   run.completedAt = new Date().toISOString();
+  // Persist final state to DB
+  await persistRunState(run, companyId);
 }

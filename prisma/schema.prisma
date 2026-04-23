@@ -155,6 +155,7 @@ model Tree {
 
   @@index([companyId])
   @@index([type])
+  @@index([companyId, type])
 }
 
 model NodePreviewCache {
@@ -443,6 +444,7 @@ model AgentConversation {
   @@unique([nodeId, agentType])
   @@index([nodeId])
   @@index([companyId])
+  @@index([companyId, updatedAt])
 }
 
 model KnowledgeBaseEntry {
@@ -469,6 +471,7 @@ model SuperAgentConversation {
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
+  @@index([companyId, updatedAt])
 }
 
 model ScheduledTask {
@@ -522,6 +525,7 @@ model ScheduledTaskExecution {
   @@index([taskId])
   @@index([status])
   @@index([startedAt])
+  @@index([taskId, status])
 }
 
 model LeadSearch {
@@ -588,6 +592,7 @@ model Lead {
   @@index([searchId])
   @@index([email])
   @@index([companyName])
+  @@index([companyId, searchId])
 }
 
 model WhatsAppSession {
