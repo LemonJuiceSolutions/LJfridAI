@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 import { mockSalesData } from '@/lib/data';
+import { logAiDecision, startAiTimer } from '@/lib/ai-audit';
 
 // Define schemas for tool inputs and outputs
 const AggregatedSalesSchema = z.array(z.object({
@@ -93,6 +94,8 @@ const ReportDataSchema = z.object({
 export type ReportData = z.infer<typeof ReportDataSchema>;
 
 async function reportFlow(): Promise<ReportData> {
+  const timer = startAiTimer();
+
   // Step 1: Get raw data
   const rawData = await getRawSalesData();
 
@@ -108,12 +111,28 @@ async function reportFlow(): Promise<ReportData> {
     rows: aggregatedSales.map(item => [item.product, item.total_sales] as [string, number]),
   };
 
-  return {
+  const result = {
     bestProduct: analysis.bestProduct,
     worstProduct: analysis.worstProduct,
     table: table,
     chartData: analysis.chartData,
   };
+
+  try {
+    logAiDecision({
+      timestamp: new Date().toISOString(),
+      userId: 'unknown',
+      companyId: 'unknown',
+      flowName: 'report',
+      model: 'local-aggregation',
+      durationMs: timer.durationMs(),
+      inputSummary: `Sales report generation (${rawData.length} raw records)`,
+      outputSummary: `Best: ${result.bestProduct}, Worst: ${result.worstProduct}, ${aggregatedSales.length} products`,
+      action: 'generated',
+    });
+  } catch (_) { /* never break the flow */ }
+
+  return result;
 }
 
 export async function runReport(): Promise<ReportData> {

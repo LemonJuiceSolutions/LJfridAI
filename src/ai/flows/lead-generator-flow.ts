@@ -7,6 +7,7 @@ import { createInterface } from 'readline';
 import { activeSessions } from '@/ai/flows/lead-generator-sessions';
 import type { ToolSession } from '@/ai/flows/lead-generator-sessions';
 import { pythonFetch } from '@/lib/python-backend';
+import { logAiDecision, startAiTimer } from '@/lib/ai-audit';
 
 // ===================== TYPES =====================
 
@@ -2335,6 +2336,7 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
         if (input.onProgress) input.onProgress(evt);
         if (evt.message) activityLog.push(evt.message);
     };
+    const _auditTimer = startAiTimer();
     const MAX_TOOL_ROUNDS = 150;
     let lastError = '';
     let accumulatedCost = 0;
@@ -2675,8 +2677,23 @@ export async function leadGeneratorFlow(input: LeadGeneratorInput): Promise<Lead
             }
 
             // Return the final text response with cost info
+            const _responseText = message.content || 'Nessuna risposta.';
+            try {
+              logAiDecision({
+                timestamp: new Date().toISOString(),
+                userId: 'unknown',
+                companyId: input.companyId,
+                flowName: 'lead-generator',
+                model: modelName,
+                durationMs: _auditTimer.durationMs(),
+                inputSummary: openaiMessages.find(m => m.role === 'user')?.content as string || '',
+                outputSummary: _responseText,
+                action: 'generated',
+                metadata: { totalLeadsFound, totalLeadsWithEmail, totalToolCallsMade, cost: accumulatedCost },
+              });
+            } catch (_) { /* never break the flow */ }
             return {
-                text: message.content || 'Nessuna risposta.',
+                text: _responseText,
                 cost: accumulatedCost,
                 totalTokens: accumulatedTokens,
             };
