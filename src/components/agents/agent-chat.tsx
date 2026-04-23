@@ -1934,7 +1934,10 @@ export function AgentChat({
                         <ConsultedNodesSection nodes={m.consultedNodes} />
                       )}
                       {m.role === 'assistant' ? (
-                        <RichContent content={text} charts={charts} onApplyCode={onScriptUpdate} />
+                        <>
+                          <RichContent content={text} charts={charts} onApplyCode={onScriptUpdate} />
+                          <span className="block mt-1.5 text-[10px] text-muted-foreground/70 italic select-none">Generato da AI — AI Act Art. 52</span>
+                        </>
                       ) : (
                         m.content
                       )}

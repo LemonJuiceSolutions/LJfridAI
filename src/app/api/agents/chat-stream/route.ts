@@ -8,6 +8,7 @@ import { getAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
 import { streamFromClaudeCli } from '@/ai/providers/claude-cli-provider';
 import { createMcpConfig } from '@/lib/mcp-config';
+import { logAiDecision } from '@/lib/ai-audit';
 import { createSqlAgentTools, doTestSqlQuery } from '@/ai/tools/sql-agent-tools';
 import { createPythonAgentTools } from '@/ai/tools/python-agent-tools';
 import type { ConsultedNodeType } from '@/ai/schemas/agent-schema';
@@ -903,6 +904,7 @@ function extractSiblingTableHints(nodeQueries?: Record<string, { query: string; 
 // ─── POST Handler ───────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+    const requestStartMs = Date.now();
     try {
         console.log('[chat-stream] === REQUEST START ===');
 
@@ -1167,6 +1169,21 @@ export async function POST(request: NextRequest) {
                                 data: { nodeId, agentType, script, tableSchema, inputTables, messages: updatedHistory, companyId, claudeCliSessionId: info.sessionId },
                             });
                         }
+                        // AI Act Art. 12 — audit log (Claude CLI path)
+                        logAiDecision({
+                            timestamp: new Date().toISOString(),
+                            userId: user!.id,
+                            companyId,
+                            flowName: agentType === 'python' ? 'python-agent' : 'sql-agent',
+                            model: model || 'unknown',
+                            promptTokens: info.inputTokens,
+                            completionTokens: info.outputTokens,
+                            durationMs: Date.now() - requestStartMs,
+                            inputSummary: userMessage,
+                            outputSummary: info.fullText || '',
+                            action: 'generated',
+                            metadata: { nodeId, connectorId, provider: 'claude-cli' },
+                        });
                         console.log('[chat-stream] Claude CLI conversation saved, sessionId:', info.sessionId);
                     } catch (e) {
                         console.error('[chat-stream] Failed to save Claude CLI conversation:', e);
@@ -1227,6 +1244,21 @@ export async function POST(request: NextRequest) {
                             outputTokens: usage.outputTokens || 0,
                         });
                     }
+                    // AI Act Art. 12 — audit log
+                    logAiDecision({
+                        timestamp: new Date().toISOString(),
+                        userId: user!.id,
+                        companyId,
+                        flowName: agentType === 'python' ? 'python-agent' : 'sql-agent',
+                        model: model || 'unknown',
+                        promptTokens: usage?.inputTokens,
+                        completionTokens: usage?.outputTokens,
+                        durationMs: Date.now() - requestStartMs,
+                        inputSummary: userMessage,
+                        outputSummary: text || '',
+                        action: 'generated',
+                        metadata: { nodeId, connectorId },
+                    });
                     try {
                         const updatedHistory = [
                             ...conversationHistory,

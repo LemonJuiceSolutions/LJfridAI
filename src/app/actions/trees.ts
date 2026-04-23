@@ -302,9 +302,16 @@ export async function getTreesAction(ids?: string[], type?: string, lightweight?
         const whereClause: any = { companyId: user.companyId };
         if (type) whereClause.type = type;
 
+        // lightweight: only metadata (list views, pipeline page)
+        // default: exclude questionsScript which is only needed for single-tree views
+        //          and can be large; jsonDecisionTree is still needed by some callers
         const selectClause = lightweight ? {
             id: true, name: true, description: true, type: true, createdAt: true, companyId: true,
-        } : undefined;
+        } : {
+            id: true, name: true, description: true, type: true, createdAt: true, companyId: true,
+            jsonDecisionTree: true, naturalLanguageDecisionTree: true,
+            // questionsScript excluded — only used on individual tree detail views
+        };
 
         let treesData;
 
@@ -312,13 +319,13 @@ export async function getTreesAction(ids?: string[], type?: string, lightweight?
             treesData = await db.tree.findMany({
                 where: { id: { in: ids }, companyId: user.companyId },
                 orderBy: { createdAt: 'desc' },
-                ...(selectClause && { select: selectClause }),
+                select: selectClause,
             });
         } else {
             treesData = await db.tree.findMany({
                 where: whereClause,
                 orderBy: { createdAt: 'desc' },
-                ...(selectClause && { select: selectClause }),
+                select: selectClause,
             });
         }
 
@@ -711,12 +718,20 @@ export async function executeConsolidationAction(
 }
 
 export async function searchTreesAction(query: string, openRouterConfig?: { apiKey: string, model: string }, claudeCliConfig?: { model: string }): Promise<string> {
-    const treesResult = await getTreesAction();
-    if (treesResult.error || !treesResult.data) {
+    // Query only the fields needed for search — excludes jsonDecisionTree and questionsScript
+    // which can be 100KB-1MB each and are not used for search ranking/display.
+    const user = await getAuthenticatedUser();
+    const treesData = await db.tree.findMany({
+        where: { companyId: user.companyId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, name: true, description: true, naturalLanguageDecisionTree: true },
+    });
+
+    if (!treesData || treesData.length === 0) {
         return 'Errore: Impossibile accedere al database degli alberi decisionali.';
     }
 
-    const searchableTrees = treesResult.data.map(t => ({
+    const searchableTrees = treesData.map((t: { id: string; name: string; description: string | null; naturalLanguageDecisionTree: string }) => ({
         id: t.id,
         name: t.name,
         description: t.description,
@@ -767,21 +782,23 @@ Alberi disponibili:
     if (claudeCliConfig) {
         const queryLower = query.toLowerCase();
         const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+        type ST = typeof searchableTrees[number];
+        type STM = ST & { matchCount: number };
         const matchedTrees = searchableTrees
-            .map(t => {
+            .map((t: ST) => {
                 const searchText = `${t.name} ${t.description || ''} ${t.content || ''}`.toLowerCase();
                 const matchCount = queryWords.filter(w => searchText.includes(w)).length;
                 return { ...t, matchCount };
             })
-            .filter(t => t.matchCount > 0)
-            .sort((a, b) => b.matchCount - a.matchCount)
+            .filter((t: STM) => t.matchCount > 0)
+            .sort((a: STM, b: STM) => b.matchCount - a.matchCount)
             .slice(0, 5);
 
         if (matchedTrees.length === 0) {
             return 'Nessun risultato trovato.';
         }
 
-        return JSON.stringify(matchedTrees.map(t => ({
+        return JSON.stringify(matchedTrees.map((t: STM) => ({
             name: t.name,
             sourceId: t.id,
             reason: `Corrispondenza per ${t.matchCount} parole chiave`,

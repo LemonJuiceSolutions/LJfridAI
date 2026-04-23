@@ -1,53 +1,119 @@
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+import pino, { type Logger as PinoLogger } from 'pino';
 
-const LOG_LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+/**
+ * Structured logger powered by Pino.
+ *
+ * - Production: JSON output with timestamp and level
+ * - Development: pretty-printed via pino-pretty (optional dep)
+ * - PII fields are automatically redacted in all environments
+ *
+ * The exported `logger` preserves the call signature
+ *   logger.info(message, context?)
+ * so that existing callers continue to work unchanged.
+ */
 
-const currentLevel = (process.env.LOG_LEVEL as LogLevel) || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+const redactPaths = [
+  'email',
+  'password',
+  'token',
+  'apiKey',
+  'secret',
+  'authorization',
+  '*.email',
+  '*.password',
+  '*.token',
+  '*.apiKey',
+];
 
-function shouldLog(level: LogLevel): boolean {
-  return LOG_LEVELS[level] >= LOG_LEVELS[currentLevel];
+const isProduction = process.env.NODE_ENV === 'production';
+const level = process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug');
+
+const pinoInstance: PinoLogger = pino({
+  level,
+  redact: {
+    paths: redactPaths,
+    censor: '[REDACTED]',
+  },
+  ...(isProduction
+    ? {
+        timestamp: pino.stdTimeFunctions.isoTime,
+      }
+    : (() => {
+        // Use pino-pretty in dev if available, otherwise fall back to default JSON
+        try {
+          require.resolve('pino-pretty');
+          return {
+            transport: {
+              target: 'pino-pretty',
+              options: {
+                colorize: true,
+                translateTime: 'SYS:yyyy-mm-dd HH:MM:ss.l',
+                ignore: 'pid,hostname',
+              },
+            },
+          };
+        } catch {
+          return { timestamp: pino.stdTimeFunctions.isoTime };
+        }
+      })()),
+});
+
+// ---------------------------------------------------------------------------
+// Typed wrapper that keeps the (message, context?) call signature expected by
+// every caller in the codebase while delegating to Pino internally.
+// ---------------------------------------------------------------------------
+
+export interface AppLogger {
+  debug(message: string, context?: Record<string, unknown>): void;
+  info(message: string, context?: Record<string, unknown>): void;
+  warn(message: string, context?: Record<string, unknown>): void;
+  error(message: string, context?: Record<string, unknown>): void;
+  /** Create a child logger with additional bound context (e.g. requestId). */
+  child(bindings: Record<string, unknown>): AppLogger;
 }
 
-function formatMessage(level: LogLevel, message: string, context?: Record<string, unknown>) {
-  const timestamp = new Date().toISOString();
+function wrapPino(p: PinoLogger): AppLogger {
+  const makeMethod =
+    (lvl: 'debug' | 'info' | 'warn' | 'error') =>
+    (message: string, context?: Record<string, unknown>): void => {
+      if (context) {
+        p[lvl](context, message);
+      } else {
+        p[lvl](message);
+      }
+    };
 
-  if (process.env.NODE_ENV === 'production') {
-    return JSON.stringify({ timestamp, level, message, ...context });
-  }
-
-  const contextStr = context ? ' ' + JSON.stringify(context) : '';
-  return `[${timestamp}] ${level.toUpperCase()}: ${message}${contextStr}`;
+  return {
+    debug: makeMethod('debug'),
+    info: makeMethod('info'),
+    warn: makeMethod('warn'),
+    error: makeMethod('error'),
+    child(bindings: Record<string, unknown>): AppLogger {
+      return wrapPino(p.child(bindings));
+    },
+  };
 }
 
 /**
- * Simple structured log function for use in contexts where the full logger
- * object is not needed. Outputs JSON in production, human-readable in dev.
+ * Application logger.
+ *
+ * Usage:
+ *   import { logger } from '@/lib/logger';
+ *   logger.info('request handled', { userId: '123', latencyMs: 42 });
+ *
+ *   const reqLogger = logger.child({ requestId: 'abc-123' });
+ *   reqLogger.error('database timeout', { query: 'SELECT ...' });
  */
-export function log(level: 'info' | 'warn' | 'error', message: string, context?: Record<string, unknown>) {
-  const entry = {
-    timestamp: new Date().toISOString(),
-    level,
-    message,
-    ...context,
-  };
-  if (process.env.NODE_ENV === 'production') {
-    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](JSON.stringify(entry));
-  } else {
-    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](`[${level.toUpperCase()}] ${message}`, context || '');
-  }
-}
+export const logger: AppLogger = wrapPino(pinoInstance);
 
-export const logger = {
-  debug: (message: string, context?: Record<string, unknown>) => {
-    if (shouldLog('debug')) console.debug(formatMessage('debug', message, context));
-  },
-  info: (message: string, context?: Record<string, unknown>) => {
-    if (shouldLog('info')) console.info(formatMessage('info', message, context));
-  },
-  warn: (message: string, context?: Record<string, unknown>) => {
-    if (shouldLog('warn')) console.warn(formatMessage('warn', message, context));
-  },
-  error: (message: string, context?: Record<string, unknown>) => {
-    if (shouldLog('error')) console.error(formatMessage('error', message, context));
-  },
-};
+/**
+ * Convenience `log()` function for callers that previously used the simple
+ * `log(level, message, context)` signature. Preserves backward compatibility.
+ */
+export function log(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  context?: Record<string, unknown>,
+) {
+  logger[level](message, context);
+}

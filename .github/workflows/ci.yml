@@ -20,8 +20,8 @@ env:
   NEXTAUTH_URL: http://localhost:9002
 
 jobs:
-  audit:
-    name: Security audit
+  security:
+    name: Dependency security scan (NIS2 Art. 21(2)d)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -37,7 +37,18 @@ jobs:
 
       - name: npm audit (high + critical)
         run: npm audit --audit-level=high
-        continue-on-error: true
+
+      - name: Check lock file for known CVEs
+        run: |
+          echo "=== Lock File CVE Check ==="
+          npm audit --json > audit-report.json 2>/dev/null || true
+          CRITICAL=$(node -e "import{readFile}from'fs/promises';const r=JSON.parse(await readFile('audit-report.json','utf8'));console.log(r.metadata?.vulnerabilities?.critical??0)" --input-type=module)
+          HIGH=$(node -e "import{readFile}from'fs/promises';const r=JSON.parse(await readFile('audit-report.json','utf8'));console.log(r.metadata?.vulnerabilities?.high??0)" --input-type=module)
+          echo "Critical: $CRITICAL | High: $HIGH"
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "::error::Found $CRITICAL critical and $HIGH high vulnerabilities in lock file"
+            exit 1
+          fi
 
   quality:
     name: Lint + Typecheck + Test
@@ -88,3 +99,14 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Bundle size check
+        run: |
+          echo "=== Bundle Size Check ==="
+          du -sh .next/static/chunks/ 2>/dev/null || true
+          du -sh .next/server/ 2>/dev/null || true
+          TOTAL=$(find .next/static -name '*.js' -exec cat {} + 2>/dev/null | wc -c)
+          echo "Total JS bundle: $((TOTAL / 1024))KB"
+          if [ "$TOTAL" -gt 5242880 ]; then
+            echo "::warning::JS bundle exceeds 5MB budget ($((TOTAL / 1024))KB)"
+          fi
