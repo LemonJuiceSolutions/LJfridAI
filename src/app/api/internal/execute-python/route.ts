@@ -7,14 +7,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { executePythonPreviewAction } from '@/app/actions';
+import { rateLimit } from '@/lib/rate-limit';
 
 export const maxDuration = 300; // 5 minutes
 
 export async function POST(req: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
-        if (!(session?.user as any)?.companyId) {
+        const sessionUser = session?.user as any;
+        if (!sessionUser?.companyId) {
             return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+        }
+
+        // Rate limit: max 30 Python executions per minute per user
+        const rl = await rateLimit(`exec-python:${sessionUser.id}`, 30, 60_000);
+        if (!rl.allowed) {
+            return NextResponse.json(
+                { success: false, error: 'Troppe esecuzioni. Riprova tra poco.' },
+                { status: 429 }
+            );
         }
 
         const body = await req.json();

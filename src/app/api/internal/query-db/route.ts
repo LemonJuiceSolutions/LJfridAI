@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import sql from 'mssql';
 import { rejectDangerousSql } from '@/lib/sql-guard';
+import { timingSafeEqual } from 'node:crypto';
 
 export async function POST(req: NextRequest) {
     let pool: sql.ConnectionPool | null = null;
@@ -35,7 +36,10 @@ export async function POST(req: NextRequest) {
             );
         }
         const expectedToken = process.env.INTERNAL_QUERY_TOKEN;
-        if (internalToken !== expectedToken) {
+        // Use timing-safe comparison to prevent timing attacks
+        const a = Buffer.from(String(internalToken || ''));
+        const b = Buffer.from(String(expectedToken));
+        if (a.length !== b.length || !timingSafeEqual(a, b)) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
                 { status: 401 }

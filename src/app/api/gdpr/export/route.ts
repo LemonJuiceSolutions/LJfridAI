@@ -55,11 +55,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Utente non trovato' }, { status: 404 });
     }
 
-    // Fetch all company-scoped conversations and company-scoped PII.
-    // Note: these tables are company-scoped (shared), included for completeness
-    // as the user is a member of the company. Art. 20 export covers data
-    // processed on the data subject's behalf.
+    // GDPR Art. 15/20: export the requesting user's personal data.
+    // Conversations with userId are filtered per-user (preferred).
+    // Records without userId fall back to companyId scope.
+    // WhatsApp/Lead models remain company-scoped (no userId field).
     const [
+      tasks,
+      pageLayouts,
+      consentLogs,
+      auditLogs,
+      vpnPeers,
       conversations,
       superAgentConversations,
       leadGeneratorConversations,
@@ -67,24 +72,22 @@ export async function GET(request: NextRequest) {
       leads,
       whatsappSessions,
       whatsappContacts,
-      tasks,
-      pageLayouts,
-      consentLogs,
-      auditLogs,
-      vpnPeers,
     ] = await Promise.all([
-      db.agentConversation.findMany({ where: { companyId } }),
-      db.superAgentConversation.findMany({ where: { companyId } }),
-      db.leadGeneratorConversation.findMany({ where: { companyId } }),
-      db.leadSearch.findMany({ where: { companyId } }),
-      db.lead.findMany({ where: { companyId } }),
-      db.whatsAppSession.findMany({ where: { companyId } }),
-      db.whatsAppContact.findMany({ where: { companyId } }),
+      // User-specific data (always filtered by userId)
       db.scheduledTask.findMany({ where: { createdBy: userId } }),
       db.pageLayout.findMany({ where: { userId } }),
       db.consentLog.findMany({ where: { userId } }),
       db.auditLog.findMany({ where: { userId } }),
       db.vpnPeer.findMany({ where: { userId } }),
+      // Conversations: prefer userId filter, fall back to companyId for legacy records
+      db.agentConversation.findMany({ where: { companyId, OR: [{ userId }, { userId: null }] } }),
+      db.superAgentConversation.findMany({ where: { companyId, OR: [{ userId }, { userId: null }] } }),
+      db.leadGeneratorConversation.findMany({ where: { companyId, OR: [{ userId }, { userId: null }] } }),
+      // Company-scoped (no userId field)
+      db.leadSearch.findMany({ where: { companyId } }),
+      db.lead.findMany({ where: { companyId } }),
+      db.whatsAppSession.findMany({ where: { companyId } }),
+      db.whatsAppContact.findMany({ where: { companyId } }),
     ]);
 
     const exportDate = new Date().toISOString();
@@ -95,15 +98,19 @@ export async function GET(request: NextRequest) {
       userId,
       companyId,
       profile,
-      // User-tied personal data (Art. 15/20)
-      pageLayouts,
-      consentLogs,
-      auditLogs,
-      vpnPeers,
-      tasksCreated: tasks,
-      // Company-scoped data the user participated in (included for completeness)
-      sharedCompanyData: {
-        note: 'These records are company-scoped. Contact an admin for full account closure.',
+      // User-specific personal data (Art. 15/20)
+      personalData: {
+        pageLayouts,
+        consentLogs,
+        auditLogs,
+        vpnPeers,
+        tasksCreated: tasks,
+      },
+      // Company-scoped shared data — these models lack a userId column,
+      // so all company records are included. Future migration will add
+      // userId for per-user attribution (GDPR Art. 15 data minimization).
+      companySharedData: {
+        note: 'Questi dati sono condivisi a livello aziendale. I modelli non hanno un campo userId per il filtraggio individuale.',
         conversations,
         superAgentConversations,
         leadGeneratorConversations,

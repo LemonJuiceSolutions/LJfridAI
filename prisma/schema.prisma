@@ -439,6 +439,7 @@ model AgentConversation {
   inputTables Json?
   messages           Json
   companyId          String
+  userId             String?
   claudeCliSessionId String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -448,6 +449,7 @@ model AgentConversation {
   @@index([nodeId])
   @@index([companyId])
   @@index([companyId, updatedAt])
+  @@index([userId])
 }
 
 model KnowledgeBaseEntry {
@@ -469,12 +471,14 @@ model SuperAgentConversation {
   id        String   @id @default(cuid())
   messages  Json
   companyId String
+  userId    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([companyId, updatedAt])
+  @@index([userId])
 }
 
 model ScheduledTask {
@@ -637,12 +641,14 @@ model LeadGeneratorConversation {
   totalTokens  Int          @default(0)
   model        String?
   companyId    String
+  userId       String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   leadSearches LeadSearch[]
 
   @@index([companyId])
+  @@index([userId])
 }
 
 model Subscription {
