@@ -8,6 +8,13 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
     ports:
       - "9002:9002"
     environment:
@@ -65,7 +72,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.python
-    restart: unless-stopped
+    restart: on-failure:5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.5'
+        reservations:
+          memory: 512M
     ports:
       - "5005:5005"
     environment:
@@ -107,6 +121,13 @@ services:
     container_name: rulesage-db
     image: postgres:15-alpine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -136,6 +157,13 @@ services:
       context: .
       dockerfile: scheduler-service/Dockerfile
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
     ports:
       - "127.0.0.1:3001:3001"
     environment:

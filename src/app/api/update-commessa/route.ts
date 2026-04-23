@@ -356,7 +356,10 @@ export async function POST(req: NextRequest) {
 
             const query = buildDirectQuery(operation, table, data, primaryKeys);
             const fullQuery = query + '; IF @@TRANCOUNT > 0 COMMIT';
-            console.log(`[update-commessa] ${operation} ${table} | query: ${fullQuery.substring(0, 500)}`);
+            const safeQuery = process.env.NODE_ENV === 'production'
+                ? `${fullQuery.substring(0, 80)}... [redacted]`
+                : fullQuery.substring(0, 500);
+            console.log(`[update-commessa] ${operation} ${table} | query: ${safeQuery}`);
             const result = await pool.request().query(fullQuery);
 
             const rowsAffected = result.rowsAffected?.[0] || 0;

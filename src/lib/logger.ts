@@ -19,6 +19,24 @@ function formatMessage(level: LogLevel, message: string, context?: Record<string
   return `[${timestamp}] ${level.toUpperCase()}: ${message}${contextStr}`;
 }
 
+/**
+ * Simple structured log function for use in contexts where the full logger
+ * object is not needed. Outputs JSON in production, human-readable in dev.
+ */
+export function log(level: 'info' | 'warn' | 'error', message: string, context?: Record<string, unknown>) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    ...context,
+  };
+  if (process.env.NODE_ENV === 'production') {
+    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](JSON.stringify(entry));
+  } else {
+    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](`[${level.toUpperCase()}] ${message}`, context || '');
+  }
+}
+
 export const logger = {
   debug: (message: string, context?: Record<string, unknown>) => {
     if (shouldLog('debug')) console.debug(formatMessage('debug', message, context));

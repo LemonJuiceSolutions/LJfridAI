@@ -121,14 +121,23 @@ export default async function middleware(req: NextRequest) {
     const nonce = generateNonce();
     const csp = buildCspHeader(nonce, isProd);
 
-    // Clone request headers and attach the nonce so server components can
-    // read it via headers().get('x-nonce') if needed.
+    // ── Correlation ID for request tracing ─────────────────────────────
+    // Reuse an existing x-request-id from upstream proxies, otherwise mint one.
+    const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
+
+    // Clone request headers and attach the nonce + correlation id so server
+    // components can read them via headers().get('x-nonce') / 'x-request-id'.
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set('x-nonce', nonce);
+    requestHeaders.set('x-request-id', requestId);
 
     const response = NextResponse.next({
         request: { headers: requestHeaders },
     });
+
+    // Expose the correlation ID on the response so clients / load-balancers
+    // can correlate logs end-to-end.
+    response.headers.set('x-request-id', requestId);
 
     // Set CSP on the response. In dev use Report-Only so we don't break
     // iframe widgets / sandbox edge cases during development.
@@ -148,12 +157,17 @@ export const config = {
          * - api/health (public health check)
          * - api/internal/query-db, api/internal/mcp-tool (shared-secret internal)
          * - api/update-commessa (handles its own auth + CORS)
-         * - api/lead-generator/tool-call (webhook)
          * - api/whatsapp/webhook (Meta webhook)
          * - api/billing/webhook (Stripe webhook)
          * - api/cron/* (CRON_SECRET-gated)
          * - static assets and auth UI pages
+         *
+         * SECURITY M-07: api/lead-generator/tool-call removed from exclusions.
+         * It uses session cookies (getServerSession) so the middleware auth +
+         * rate-limit checks apply correctly. The route was previously excluded
+         * under the assumption it was a webhook, but it is a session-auth'd
+         * internal endpoint.
          */
-        "/((?!api/auth|api/health|api/internal/query-db|api/internal/mcp-tool|api/update-commessa|api/lead-generator/tool-call|api/whatsapp/webhook|api/billing/webhook|api/cron|_next/static|_next/image|favicon.ico|auth/signin|auth/signup|auth/reset|auth/new-password|logo-custom.png).*)",
+        "/((?!api/auth|api/health|api/internal/query-db|api/internal/mcp-tool|api/update-commessa|api/whatsapp/webhook|api/billing/webhook|api/cron|_next/static|_next/image|favicon.ico|auth/signin|auth/signup|auth/reset|auth/new-password|logo-custom.png).*)",
     ],
 };

@@ -53,6 +53,16 @@ const encryptionEnabled =
     !!process.env.ENCRYPTION_KEY &&
     process.env.PII_ENCRYPTION_ENABLED === 'true';
 
+if (process.env.NODE_ENV === 'production' && !encryptionEnabled) {
+  console.warn(
+    '\n╔══════════════════════════════════════════════════════════════╗\n' +
+    '║  ⚠️  PII ENCRYPTION IS DISABLED IN PRODUCTION              ║\n' +
+    '║  Set ENCRYPTION_KEY and PII_ENCRYPTION_ENABLED=true        ║\n' +
+    '║  NIS2 Art. 21(2)(h) requires encryption policies           ║\n' +
+    '╚══════════════════════════════════════════════════════════════╝\n'
+  );
+}
+
 const piiExtension = encryptionEnabled
     ? baseClient.$extends({
         name: 'pii-encryption',

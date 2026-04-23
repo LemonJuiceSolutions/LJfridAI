@@ -50,6 +50,22 @@ export const authOptions: NextAuthOptions = {
                     throw new Error("Credenziali non valide");
                 }
 
+                // TODO: Implement email verification flow (NIS2 Art. 21(2)(a))
+                // Currently emailVerified is not set during registration.
+                // Until a full verification flow is implemented, block privileged
+                // roles from logging in without a verified email.
+                if (
+                    (user.role === 'admin' || user.role === 'superadmin') &&
+                    !user.emailVerified
+                ) {
+                    console.warn(
+                        `[auth] Login blocked: ${user.email} has role "${user.role}" but emailVerified is null`,
+                    );
+                    throw new Error(
+                        "Il tuo account richiede la verifica dell'email. Contatta l'amministratore.",
+                    );
+                }
+
                 return {
                     id: user.id,
                     email: user.email,

@@ -51,7 +51,10 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        console.log(`[internal/query-db] Executing query (${query.length} chars) with connectorId: ${connectorId}`);
+        const safeQueryLog = process.env.NODE_ENV === 'production'
+            ? `(${query.length} chars) [redacted]`
+            : `(${query.length} chars): ${String(query).substring(0, 200)}`;
+        console.log(`[internal/query-db] Executing query ${safeQueryLog} with connectorId: ${connectorId}`);
 
         // Find the connector — scoped to companyId for tenant isolation
         const connector = await db.connector.findFirst({ where: { id: connectorId, companyId } });

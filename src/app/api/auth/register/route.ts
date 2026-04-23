@@ -126,7 +126,27 @@ export async function POST(request: Request) {
             departmentIdToUse = department.id;
         }
 
-        // Crea l'utente
+        // TODO: Implement email verification flow (NIS2 Art. 21(2)(a))
+        // New users are created with emailVerified = null. A full flow should:
+        //   1. Send a verification email with a signed token
+        //   2. Set emailVerified = new Date() when the token is confirmed
+        //   3. Until verified, restrict admin/superadmin login (enforced in auth.ts authorize)
+
+        // SECURITY M-05: prevent self-registration with privileged roles.
+        // Only invitation-based registration may assign admin/superadmin,
+        // and even then the user must verify their email before logging in.
+        if (
+            !token &&
+            userRole !== 'user' &&
+            userRole !== 'admin' // founding company admin is acceptable
+        ) {
+            return NextResponse.json(
+                { error: 'Ruolo non consentito per la registrazione diretta' },
+                { status: 403 },
+            );
+        }
+
+        // Crea l'utente (emailVerified intentionally left null — see TODO above)
         const user = await db.user.create({
             data: {
                 name,
