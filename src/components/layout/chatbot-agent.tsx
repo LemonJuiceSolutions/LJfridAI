@@ -925,7 +925,10 @@ export function ChatBotAgent() {
                                                     <ConsultedNodesSection nodes={m.consultedNodes} />
                                                 )}
                                                 {m.role === 'assistant' ? (
-                                                    <RichContent content={text} charts={charts} />
+                                                    <>
+                                                        <RichContent content={text} charts={charts} />
+                                                        <span className="block mt-1.5 text-[10px] text-muted-foreground/70 italic select-none">Generato da AI — AI Act Art. 52</span>
+                                                    </>
                                                 ) : (
                                                     safeContent
                                                 )}

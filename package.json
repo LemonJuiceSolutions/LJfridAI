@@ -15,6 +15,7 @@
     "audit:llm": "node scripts/audit-llm-callsites.mjs"
   },
   "dependencies": {
+    "@sentry/nextjs": "^9.0.0",
     "@ai-sdk/openai": "^3.0.35",
     "@ai-sdk/react": "^3.0.105",
     "@auth/prisma-adapter": "^2.11.1",

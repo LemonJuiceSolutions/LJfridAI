@@ -145,15 +145,14 @@ export function redactForLLM(payload: any): any {
     return payload;
 }
 
-// ─── Toggle (env-gated) ─────────────────────────────────────────────────────
+// ─── Toggle ─────────────────────────────────────────────────────────────────
 
-/** Master switch — disable redaction by setting LLM_PII_REDACT=false (default: enabled). */
+/** PII redaction is always enabled (mandatory for GDPR compliance). */
 export function isRedactionEnabled(): boolean {
-    return process.env.LLM_PII_REDACT !== "false";
+    return true;
 }
 
-/** Conditional helper — call this from LLM callsites. */
+/** Redact PII from payload before sending to external LLMs. Always active. */
 export function maybeRedact<T>(payload: T): T {
-    if (!isRedactionEnabled()) return payload;
     return redactForLLM(payload);
 }

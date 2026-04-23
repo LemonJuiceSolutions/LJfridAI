@@ -53,6 +53,18 @@ export const authOptions: NextAuthOptions = {
                 }
 
                 // NIS2 Art. 21(2)(j): Multi-factor authentication
+                // MFA is MANDATORY for admin and superadmin roles.
+                if (
+                    (user.role === 'admin' || user.role === 'superadmin') &&
+                    !user.mfaEnabled
+                ) {
+                    throw new Error(
+                        "L'autenticazione a due fattori (MFA) è obbligatoria per il ruolo " +
+                        user.role +
+                        ". Configura MFA prima di accedere.",
+                    );
+                }
+
                 if (user.mfaEnabled) {
                     const mfaToken = credentials.mfaToken;
                     if (!mfaToken) {

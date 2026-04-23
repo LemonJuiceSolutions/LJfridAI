@@ -4,16 +4,24 @@ import { getPiiFields } from '@/lib/pii-fields'
 
 const globalForPrisma = global as unknown as { prisma: any }
 
-// Connection pooling is managed by Prisma via the DATABASE_URL.
-// For production, append ?connection_limit=20&pool_timeout=10 to DATABASE_URL
-// to control the pool size and timeout. Default pool size is num_cpus * 2 + 1.
+/**
+ * Appends connection pool parameters to the DATABASE_URL if not already present.
+ * Ensures consistent pooling behavior regardless of how the env var is configured.
+ */
+function appendPoolParams(url: string | undefined): string | undefined {
+    if (!url) return url;
+    if (url.includes('connection_limit')) return url;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}connection_limit=20&pool_timeout=10`;
+}
+
 const baseClient =
     globalForPrisma.prisma ||
     new PrismaClient({
         log: process.env.NODE_ENV === 'development'
             ? ['warn', 'error']   // solo warning/errori, NON query
             : ['error'],
-        datasourceUrl: process.env.DATABASE_URL,
+        datasourceUrl: appendPoolParams(process.env.DATABASE_URL),
     })
 
 function transformWriteData(data: any, fields: readonly string[]): any {

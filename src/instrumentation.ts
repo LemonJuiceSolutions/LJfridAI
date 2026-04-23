@@ -17,6 +17,14 @@ if (typeof globalThis.localStorage !== 'undefined' && typeof globalThis.localSto
 
 export async function register() {
     if (process.env.NEXT_RUNTIME === 'nodejs') {
+        // Initialize Sentry for server-side error tracking
+        try {
+            const { initSentry } = await import('./lib/sentry');
+            initSentry();
+        } catch (error) {
+            console.error('[INSTRUMENTATION] Failed to initialize Sentry:', error);
+        }
+
         // Only run scheduler in Node.js runtime (not Edge)
         try {
             // Dynamic import of the Node.js-only file
