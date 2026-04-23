@@ -3,6 +3,8 @@
  * @fileOverview Shared utilities for OpenRouter integration in agents.
  */
 
+import { openRouterCircuit } from '@/lib/circuit-breaker';
+
 export interface OpenRouterTool {
     type: 'function';
     function: {
@@ -92,29 +94,31 @@ export async function runOpenRouterAgentLoop(
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
         // 1. Call API
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'HTTP-Referer': 'https://fridai.ai',
-                'X-Title': 'FridAI Agent',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: model,
-                messages: currentMessages.map(redactMessage),
-                tools: tools.length > 0 ? tools : undefined,
-                temperature: 0.7, // Consistent with Genkit config
-            })
+        const data = await openRouterCircuit.call(async () => {
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'HTTP-Referer': 'https://fridai.ai',
+                    'X-Title': 'FridAI Agent',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: model,
+                    messages: currentMessages.map(redactMessage),
+                    tools: tools.length > 0 ? tools : undefined,
+                    temperature: 0.7, // Consistent with Genkit config
+                })
+            });
+
+            if (!response.ok) {
+                let errorText = '';
+                try { errorText = await response.text(); } catch { }
+                throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
+            }
+
+            return response.json();
         });
-
-        if (!response.ok) {
-            let errorText = '';
-            try { errorText = await response.text(); } catch { }
-            throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
-        }
-
-        const data = await response.json();
 
         if (!data.choices || data.choices.length === 0) {
             throw new Error('OpenRouter API returned no choices.');

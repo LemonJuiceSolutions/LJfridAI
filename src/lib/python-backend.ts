@@ -42,11 +42,20 @@ export async function pythonFetch(
   path: string,
   init: RequestInit = {},
 ): Promise<Response> {
+  const { pythonBackendCircuit } = await import('@/lib/circuit-breaker');
   const url = `${getPythonBackendUrl()}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = new Headers(init.headers);
   if (!headers.has('Content-Type') && init.body) {
     headers.set('Content-Type', 'application/json');
   }
   headers.set('X-Internal-Token', getPythonBackendToken());
-  return fetch(url, { ...init, headers });
+
+  return pythonBackendCircuit.call(async () => {
+    const response = await fetch(url, { ...init, headers });
+    // Treat 5xx as a failure so the circuit breaker can track backend outages
+    if (response.status >= 500) {
+      throw new Error(`Python backend returned ${response.status}: ${response.statusText}`);
+    }
+    return response;
+  });
 }

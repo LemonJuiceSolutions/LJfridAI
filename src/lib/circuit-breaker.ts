@@ -1,4 +1,4 @@
-import { log } from '@/lib/logger';
+import { logger, type AppLogger } from '@/lib/logger';
 
 /**
  * Lightweight circuit breaker for external service calls.
@@ -34,8 +34,7 @@ export class CircuitBreaker {
   private state: CircuitState = 'CLOSED';
   private failureCount = 0;
   private lastFailureTime = 0;
-  private readonly svc: string;
-
+  private readonly cbLog: AppLogger;
   private readonly failureThreshold: number;
   private readonly resetTimeoutMs: number;
   readonly serviceName: string;
@@ -44,7 +43,7 @@ export class CircuitBreaker {
     this.failureThreshold = options.failureThreshold;
     this.resetTimeoutMs = options.resetTimeoutMs;
     this.serviceName = options.name;
-    this.svc = options.name;
+    this.cbLog = logger.child({ component: 'circuit-breaker', service: options.name });
   }
 
   /** Current circuit state — useful for health checks / monitoring. */
@@ -84,7 +83,7 @@ export class CircuitBreaker {
 
   private onSuccess(): void {
     if (this.state === 'HALF_OPEN') {
-      log('info', `[circuit:${this.svc}] probe succeeded, closing circuit`);
+      this.cbLog.info('probe call succeeded, closing circuit');
     }
     this.failureCount = 0;
     if (this.state !== 'CLOSED') {
@@ -95,26 +94,33 @@ export class CircuitBreaker {
   private onFailure(error: unknown): void {
     this.failureCount++;
     this.lastFailureTime = Date.now();
-    const msg = error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
 
     if (this.state === 'HALF_OPEN') {
-      log('warn', `[circuit:${this.svc}] probe failed, re-opening: ${msg}`);
+      this.cbLog.warn('probe call failed, re-opening circuit', { error: errorMessage });
       this.transitionTo('OPEN');
       return;
     }
 
     if (this.failureCount >= this.failureThreshold) {
-      log('error', `[circuit:${this.svc}] threshold ${this.failureThreshold} reached, opening: ${msg}`);
+      this.cbLog.error(
+        `failure threshold (${this.failureThreshold}) reached, opening circuit`,
+        { failureCount: this.failureCount, error: errorMessage },
+      );
       this.transitionTo('OPEN');
     } else {
-      log('warn', `[circuit:${this.svc}] failure ${this.failureCount}/${this.failureThreshold}: ${msg}`);
+      this.cbLog.warn('failure recorded', {
+        failureCount: this.failureCount,
+        threshold: this.failureThreshold,
+        error: errorMessage,
+      });
     }
   }
 
   private transitionTo(newState: CircuitState): void {
     const prev = this.state;
     this.state = newState;
-    log('info', `[circuit:${this.svc}] ${prev} → ${newState}`);
+    this.cbLog.info('circuit state transition', { from: prev, to: newState });
   }
 }
 

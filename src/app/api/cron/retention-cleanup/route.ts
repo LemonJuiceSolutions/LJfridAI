@@ -4,12 +4,12 @@ import { timingSafeEqual } from 'crypto';
 
 // GDPR retention windows — minimize per data minimization principle (Art. 5.1.e)
 const RETENTION = {
-    auditLog: 365,                  // 12 months — security/audit logs
+    auditLog: 730,                  // 2 years — GDPR Art. 5(1)e / security audit logs
     scheduledTaskExecution: 365,    // 12 months — task history
     triggerLog: 365,                // 12 months
-    agentConversation: 90,          // 90 days — may embed PII from prompts
-    superAgentConversation: 90,     // 90 days — same
-    leadGeneratorConversation: 90,  // 90 days
+    agentConversation: 365,         // 1 year — may embed PII from prompts
+    superAgentConversation: 365,    // 1 year — same
+    leadGeneratorConversation: 365, // 1 year — same
     nodePreviewCache: 30,           // 30 days — cached preview data
 };
 
