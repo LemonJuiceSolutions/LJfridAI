@@ -6,11 +6,11 @@
 
 **TRA**
 
-`[RAGIONE SOCIALE DEL TITOLARE DEL TRATTAMENTO]`, con sede legale in `[INDIRIZZO]`, P.IVA `[PARTITA IVA]`, nella persona del legale rappresentante pro tempore, di seguito "**Titolare**"
+[NOME_TITOLARE], con sede legale in `[INDIRIZZO]`, P.IVA `[PARTITA IVA]`, nella persona del legale rappresentante pro tempore, di seguito "**Titolare**"
 
 **E**
 
-`[RAGIONE SOCIALE DEL RESPONSABILE DEL TRATTAMENTO]`, con sede legale in `[INDIRIZZO]`, P.IVA `[PARTITA IVA]`, nella persona del legale rappresentante pro tempore, di seguito "**Responsabile**"
+[NOME_RESPONSABILE], con sede legale in `[INDIRIZZO]`, P.IVA `[PARTITA IVA]`, nella persona del legale rappresentante pro tempore, di seguito "**Responsabile**"
 
 di seguito congiuntamente le "**Parti**"
 
@@ -312,6 +312,44 @@ Il Responsabile coopera pienamente con il Titolare e adotta tutte le misure ragi
 
 ---
 
+## Articolo 9 -- Durata e cessazione
+
+### 9.1 Durata
+
+Il presente Accordo entra in vigore alla data di sottoscrizione ([DATA]) e resta efficace per tutta la durata del contratto di servizio principale tra le Parti. Gli obblighi di riservatezza e le disposizioni relative alla sicurezza dei dati sopravvivono alla cessazione del presente Accordo per tutta la durata della conservazione dei dati personali da parte del Responsabile.
+
+### 9.2 Cessazione anticipata
+
+Il Titolare puo recedere dal presente Accordo in qualsiasi momento in caso di:
+
+a) Violazione sostanziale degli obblighi di protezione dei dati da parte del Responsabile, non sanata entro **30 giorni** dalla notifica scritta.
+
+b) Nomina di un Sub-responsabile a cui il Titolare si sia legittimamente opposto ai sensi dell'Art. 5.2.
+
+c) Istruzione dell'autorita di controllo che renda impossibile il proseguimento del Trattamento.
+
+### 9.3 Effetti della cessazione
+
+Alla cessazione del presente Accordo, per qualsiasi causa, il Responsabile:
+
+a) **Interrompe immediatamente** ogni Trattamento di Dati Personali per conto del Titolare, fatti salvi i trattamenti necessari alla restituzione o cancellazione dei dati.
+
+b) **Su scelta del Titolare**, comunicata per iscritto entro **30 giorni** dalla cessazione:
+   - **Restituzione**: esporta tutti i Dati Personali in formato strutturato, di uso comune e leggibile da dispositivo automatico (JSON o CSV) e li consegna tramite canale sicuro cifrato; oppure
+   - **Cancellazione**: cancella in modo sicuro tutti i Dati Personali dai sistemi di produzione entro 30 giorni, dai backup entro il ciclo di retention ordinario.
+
+c) **Cancella i dati presso i Sub-responsabili**: inoltra richiesta formale di cancellazione a ciascun Sub-responsabile e ne ottiene conferma scritta.
+
+d) **Pseudonimizza i log di audit**: in conformita agli obblighi NIS2 di conservazione, i log di audit vengono pseudonimizzati (sostituzione userId, rimozione IP) anziche eliminati.
+
+e) **Certifica la cancellazione**: fornisce al Titolare certificazione scritta dell'avvenuta cancellazione entro **30 giorni** dal completamento delle operazioni.
+
+### 9.4 Conservazione obbligatoria
+
+Il Responsabile puo conservare i Dati Personali oltre i termini di cui al paragrafo 9.3 esclusivamente nella misura richiesta dal diritto dell'Unione o degli Stati membri. In tal caso, il Responsabile informa il Titolare dei requisiti legali applicabili, garantisce la riservatezza dei dati conservati e li cancella al termine del periodo di conservazione obbligatoria.
+
+---
+
 ## Allegato A -- Dettaglio dei servizi e del trattamento
 
 | Servizio | Descrizione | Dati trattati | Durata conservazione |
@@ -346,18 +384,33 @@ Il presente Accordo e sottoscritto in due copie originali, una per ciascuna Part
 
 | Campo | Valore |
 |---|---|
-| Ragione sociale | `________________________________` |
+| Ragione sociale | [NOME_TITOLARE] |
 | Nome e cognome del firmatario | `________________________________` |
 | Qualifica | `________________________________` |
-| Data | `____/____/________` |
+| Data | [DATA] |
 | Firma | `________________________________` |
 
 **Per il Responsabile del Trattamento:**
 
 | Campo | Valore |
 |---|---|
-| Ragione sociale | `________________________________` |
+| Ragione sociale | [NOME_RESPONSABILE] |
 | Nome e cognome del firmatario | `________________________________` |
 | Qualifica | `________________________________` |
-| Data | `____/____/________` |
+| Data | [DATA] |
 | Firma | `________________________________` |
+
+---
+
+### Storico delle revisioni
+
+| Versione | Data | Autore | Modifiche |
+|----------|------|--------|-----------|
+| 1.0 | [DATA] | _[INSERIRE]_ | Prima emissione |
+| | | | |
+
+---
+
+> **Nota legale**: il presente modello di DPA e redatto sulla base dell'analisi tecnica dell'applicazione FridAI e delle disposizioni dell'Art. 28 GDPR. Prima dell'adozione, si raccomanda la revisione da parte di un consulente legale specializzato in protezione dei dati personali per verificare la conformita alle specifiche esigenze delle Parti e alla normativa nazionale di recepimento.
+
+> **Riferimenti normativi**: Regolamento (UE) 2016/679 (GDPR), Direttiva (UE) 2022/2555 (NIS2), Decisione di Esecuzione (UE) 2021/914 (SCC), D.Lgs. 196/2003 (Codice Privacy) come modificato dal D.Lgs. 101/2018.
