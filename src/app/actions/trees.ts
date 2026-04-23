@@ -18,6 +18,7 @@ import { generateText, Output } from 'ai';
 import { getOpenRouterProvider, DEFAULT_MODEL } from '@/ai/ai-client';
 import { getAuthenticatedUser } from './auth';
 import { serverCache, invalidateServerTreeCache } from '@/lib/server-cache';
+import { cacheGet, cacheSet, cacheDelete } from '@/lib/cache';
 import { callOpenRouterJSON } from './openrouter';
 import { extractFirstJSON, sanitizeJSONString } from '@/lib/json-utils';
 import { findNodeByQuestion, getLastAssistantQuestion, findNodeById, formatVariablesToTable, extractSubTreeRefs, recursiveTreeUpdate, recursiveTreeUpdateById } from '@/lib/tree-utils';
@@ -251,6 +252,7 @@ export async function processDescriptionAction(
         };
 
         const createdTree = await db.tree.create({ data: newTreeData });
+        await cacheDelete(`trees:${companyId}`);
         const data = { ...createdTree, createdAt: createdTree.createdAt.toISOString(), debug: debugInfo };
 
         return { data, error: null };
@@ -295,8 +297,20 @@ export async function getTreesAction(ids?: string[], type?: string, lightweight?
         const user = await getAuthenticatedUser();
         const now = Date.now();
 
-        if (!ids && !type && !lightweight && serverCache.trees && (now - serverCache.treesTimestamp) < serverCache.CACHE_DURATION) {
-            return { data: serverCache.trees, error: null };
+        // For default (non-filtered) queries, try distributed cache first
+        const cacheKey = `trees:${user.companyId}`;
+        if (!ids && !type && !lightweight) {
+            // Check in-process cache
+            if (serverCache.trees && (now - serverCache.treesTimestamp) < serverCache.CACHE_DURATION) {
+                return { data: serverCache.trees, error: null };
+            }
+            // Check distributed cache
+            const cached = await cacheGet<StoredTree[]>(cacheKey);
+            if (cached) {
+                serverCache.trees = cached;
+                serverCache.treesTimestamp = now;
+                return { data: cached, error: null };
+            }
         }
 
         const whereClause: any = { companyId: user.companyId };
@@ -340,6 +354,8 @@ export async function getTreesAction(ids?: string[], type?: string, lightweight?
         if (!ids && !type && !lightweight) {
             serverCache.trees = trees;
             serverCache.treesTimestamp = now;
+            // Store in distributed cache (60s TTL)
+            await cacheSet(cacheKey, trees, { ttlSeconds: 60 });
         }
 
         return { data: trees, error: null };
@@ -432,6 +448,7 @@ export async function updateTreeNodeAction({
                     select: { id: true, name: true, description: true, type: true, createdAt: true, companyId: true, naturalLanguageDecisionTree: true, questionsScript: true, jsonDecisionTree: true }
                 });
                 invalidateServerTreeCache(treeId);
+                await cacheDelete(`trees:${user.companyId}`);
                 const updatedTree: StoredTree = { ...updated, type: (updated as any).type || 'RULE', createdAt: updated.createdAt.toISOString() };
                 return { success: true, error: null, data: updatedTree };
             }
@@ -464,6 +481,7 @@ export async function updateTreeNodeAction({
         });
 
         invalidateServerTreeCache(treeId);
+        await cacheDelete(`trees:${user.companyId}`);
 
         const updatedTree: StoredTree = {
             ...updated,
@@ -706,6 +724,7 @@ export async function executeConsolidationAction(
         serverCache.variables = null;
         serverCache.variablesTimestamp = 0;
         invalidateServerTreeCache(treeId);
+        await cacheDelete(`trees:${user.companyId}`);
 
         const finalTreeResult = await getTreeAction(treeId);
         return { success: true, data: finalTreeResult.data, error: null };
@@ -867,6 +886,7 @@ export async function importTreeFromJsonAction(treeData: Partial<StoredTree>) {
             }
         });
 
+        await cacheDelete(`trees:${user.companyId}`);
         return { success: true, treeId: newTree.id };
     } catch (e) {
         console.error("Errore nell'importazione dell'albero:", e);
@@ -949,6 +969,7 @@ export async function clearPreviewDataAction(treeId: string): Promise<{ success:
         });
 
         invalidateServerTreeCache(treeId);
+        await cacheDelete(`trees:${user.companyId}`);
 
         return { success: true, bytesFreed: originalSize - newSize, error: null };
     } catch (e) {

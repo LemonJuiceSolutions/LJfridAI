@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { generateObject } from 'ai';
 import { getOpenRouterProvider, DEFAULT_MODEL } from '@/ai/ai-client';
+import { logAiDecision, startAiTimer } from '@/lib/ai-audit';
 
 const ExtractVariablesInputSchema = z.string().describe('A descriptive text about a process.');
 export type ExtractVariablesInput = z.infer<typeof ExtractVariablesInputSchema>;
@@ -125,10 +126,26 @@ ${input}
 
     const provider = getOpenRouterProvider();
     const { maybeRedact } = await import('@/lib/pii-redact');
+    const timer = startAiTimer();
     const { object } = await generateObject({
         model: provider(DEFAULT_MODEL),
         prompt: maybeRedact(prompt),
         schema: RawOutputSchema,
     });
+
+    try {
+      logAiDecision({
+        timestamp: new Date().toISOString(),
+        userId: 'unknown',
+        companyId: 'unknown',
+        flowName: 'extract-variables',
+        model: DEFAULT_MODEL,
+        durationMs: timer.durationMs(),
+        inputSummary: input,
+        outputSummary: JSON.stringify(object.variables.map(v => v.name)),
+        action: 'generated',
+      });
+    } catch (_) { /* never break the flow */ }
+
     return object;
 }

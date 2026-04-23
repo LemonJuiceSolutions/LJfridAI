@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
 import type { WidgetConfig, WidgetType } from '@/lib/types';
+import { logAiDecision, startAiTimer } from '@/lib/ai-audit';
 
 // ─── Widget creation helpers (mirrored from save-widget/route.ts) ───────────
 
@@ -671,7 +672,26 @@ OGNI VOLTA che mostri un grafico (recharts) o una tabella con dati estratti da S
     const fullHistory = [systemMessage, ...cleanHistory];
 
     // All models go through OpenRouter API with function calling
+    const lastUserMsg = input.messages.filter(m => m.role === 'user').pop();
+    const userInput = lastUserMsg?.content?.map((c: any) => c.text).filter(Boolean).join(' ') || '';
+    const timer = startAiTimer();
     const responseText = await callOpenRouterWithTools(input, fullHistory, consultedNodes);
+
+    try {
+      logAiDecision({
+        timestamp: new Date().toISOString(),
+        userId: 'unknown',
+        companyId: input.companyId,
+        flowName: 'super-agent',
+        model: input.model || 'openrouter',
+        durationMs: timer.durationMs(),
+        inputSummary: userInput,
+        outputSummary: responseText,
+        action: 'generated',
+        metadata: { consultedNodesCount: consultedNodes.length },
+      });
+    } catch (_) { /* never break the flow */ }
+
     return { message: responseText, consultedNodes: consultedNodes.length > 0 ? consultedNodes : undefined };
 }
 

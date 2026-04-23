@@ -38,6 +38,37 @@ jobs:
       - name: npm audit (high + critical)
         run: npm audit --audit-level=high
 
+      - name: SAST - Security pattern scan
+        run: |
+          echo "=== SAST Security Scan ==="
+          ISSUES=0
+          # Check for eval() usage
+          EVAL_COUNT=$(grep -r "eval(" src/ --include="*.ts" --include="*.tsx" -l 2>/dev/null | wc -l)
+          if [ "$EVAL_COUNT" -gt 0 ]; then
+            echo "::warning::Found eval() usage in $EVAL_COUNT files"
+            grep -r "eval(" src/ --include="*.ts" --include="*.tsx" -l
+            ISSUES=$((ISSUES + 1))
+          fi
+          # Check for dangerouslySetInnerHTML
+          INNER_COUNT=$(grep -r "dangerouslySetInnerHTML" src/ --include="*.tsx" -l 2>/dev/null | wc -l)
+          if [ "$INNER_COUNT" -gt 0 ]; then
+            echo "::warning::Found dangerouslySetInnerHTML in $INNER_COUNT files"
+            ISSUES=$((ISSUES + 1))
+          fi
+          # Check for hardcoded secrets patterns
+          SECRET_COUNT=$(grep -rE "(password|secret|apikey|api_key)\s*[:=]\s*['\"][^'\"]{8,}" src/ --include="*.ts" --include="*.tsx" -il 2>/dev/null | wc -l)
+          if [ "$SECRET_COUNT" -gt 0 ]; then
+            echo "::error::Possible hardcoded secrets in $SECRET_COUNT files"
+            ISSUES=$((ISSUES + 1))
+          fi
+          # Check for $queryRawUnsafe
+          RAW_COUNT=$(grep -r "queryRawUnsafe\|queryRaw\b" src/ --include="*.ts" -l 2>/dev/null | wc -l)
+          if [ "$RAW_COUNT" -gt 0 ]; then
+            echo "::warning::Found raw SQL queries in $RAW_COUNT files"
+            ISSUES=$((ISSUES + 1))
+          fi
+          echo "SAST scan complete: $ISSUES issue categories found"
+
       - name: Check lock file for known CVEs
         run: |
           echo "=== Lock File CVE Check ==="

@@ -3,6 +3,7 @@
 import { db } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/session';
+import { cacheDelete } from '@/lib/cache';
 
 export async function deleteTreeAction(id: string): Promise<{ success: boolean, error: string | null }> {
     try {
@@ -21,6 +22,7 @@ export async function deleteTreeAction(id: string): Promise<{ success: boolean, 
         }
 
         await db.tree.delete({ where: { id } });
+        await cacheDelete(`trees:${user.companyId}`);
 
         // Clean up preview cache (Parquet files + DB entries)
         try {
@@ -138,6 +140,7 @@ export async function deleteAllTreesAction(): Promise<{ success: boolean, error:
         await db.tree.deleteMany({
             where: { companyId: user.companyId }
         });
+        await cacheDelete(`trees:${user.companyId}`);
 
         revalidatePath('/');
         revalidatePath('/pipeline');

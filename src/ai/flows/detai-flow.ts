@@ -11,6 +11,7 @@ import { searchTreesAction } from '@/app/actions';
 import { z } from 'zod';
 import { generateText, tool, stepCountIs } from 'ai';
 import { getOpenRouterProvider, DEFAULT_MODEL } from '@/ai/ai-client';
+import { logAiDecision, startAiTimer } from '@/lib/ai-audit';
 
 
 const DetaiInputSchema = z.object({
@@ -71,6 +72,9 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
     }).filter(m => m.content.length > 0);
 
     const provider = getOpenRouterProvider();
+    const lastUserMsg = input.messages.filter(m => m.role === 'user').pop();
+    const userInput = lastUserMsg?.content?.map(c => c.text).filter(Boolean).join(' ') || '';
+    const timer = startAiTimer();
     const { text } = await generateText({
         model: provider(DEFAULT_MODEL),
         system: systemPrompt,
@@ -86,5 +90,20 @@ REGOLE FONDAMENTALI E OBBLIGATORIE:
         },
         stopWhen: stepCountIs(10),
     });
+
+    try {
+      logAiDecision({
+        timestamp: new Date().toISOString(),
+        userId: 'unknown',
+        companyId: 'unknown',
+        flowName: 'detai',
+        model: DEFAULT_MODEL,
+        durationMs: timer.durationMs(),
+        inputSummary: userInput,
+        outputSummary: text,
+        action: 'generated',
+      });
+    } catch (_) { /* never break the flow */ }
+
     return text;
 }

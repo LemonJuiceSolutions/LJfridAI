@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import { generateObject } from 'ai';
 import { getOpenRouterProvider, DEFAULT_MODEL } from '@/ai/ai-client';
+import { logAiDecision, startAiTimer } from '@/lib/ai-audit';
 
 const GenerateDecisionTreeInputSchema = z.object({
   textDescription: z
@@ -101,6 +102,7 @@ ${input.variablesTable}
     while (attempts < maxAttempts) {
         try {
             const provider = getOpenRouterProvider();
+            const timer = startAiTimer();
             const { object } = await generateObject({
                 model: provider(DEFAULT_MODEL),
                 prompt: redactedPrompt,
@@ -109,6 +111,21 @@ ${input.variablesTable}
 
             // Validate JSON before returning
             JSON.parse(object.jsonDecisionTree);
+
+            try {
+              logAiDecision({
+                timestamp: new Date().toISOString(),
+                userId: 'unknown',
+                companyId: 'unknown',
+                flowName: 'generate-decision-tree',
+                model: DEFAULT_MODEL,
+                durationMs: timer.durationMs(),
+                inputSummary: input.textDescription,
+                outputSummary: object.naturalLanguageDecisionTree,
+                action: 'generated',
+              });
+            } catch (_) { /* never break the flow */ }
+
             return object;
         } catch (e) {
             attempts++;

@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import { generateObject } from 'ai';
 import { getOpenRouterProvider, DEFAULT_MODEL } from '@/ai/ai-client';
+import { logAiDecision, startAiTimer } from '@/lib/ai-audit';
 
 const DiagnoseProblemInputSchema = z.object({
   userProblem: z.string().describe("The user's initial description of the problem."),
@@ -108,11 +109,27 @@ Follow these steps with absolute rigor:
 
     const provider = getOpenRouterProvider();
     const { maybeRedact } = await import('@/lib/pii-redact');
+    const timer = startAiTimer();
     const { object } = await generateObject({
         model: provider(DEFAULT_MODEL),
         prompt: maybeRedact(prompt),
         schema: DiagnoseProblemOutputSchema,
     });
+
+    try {
+      logAiDecision({
+        timestamp: new Date().toISOString(),
+        userId: 'unknown',
+        companyId: 'unknown',
+        flowName: 'diagnose-problem',
+        model: DEFAULT_MODEL,
+        durationMs: timer.durationMs(),
+        inputSummary: input.userProblem,
+        outputSummary: object.question,
+        action: 'generated',
+        metadata: { isFinalDecision: object.isFinalDecision, treeName: object.treeName },
+      });
+    } catch (_) { /* never break the flow */ }
 
     return object;
 }
