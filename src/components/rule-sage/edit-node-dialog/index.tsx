@@ -229,9 +229,9 @@ export default function EditNodeDialog({
   const [pythonChatHistory, setPythonChatHistory] = useState<{ role: 'user' | 'assistant', content: string, timestamp?: number, preview?: { type: 'table' | 'variable' | 'chart' | 'html', data?: any[], columns?: string[], variables?: Record<string, any>, chartBase64?: string, chartHtml?: string, html?: string, rechartsConfig?: any, rechartsData?: any[], plotlyJson?: any } }[]>([]);
   const [pythonPreviewExpanded, setPythonPreviewExpanded] = useState(true);
   const [pythonPreviewFullHeight, setPythonPreviewFullHeight] = useState(false);
-  const [pythonCodeTab, setPythonCodeTab] = useState<'code' | 'debug'>('code');
+  const [pythonCodeTab, setPythonCodeTab] = useState<'agent' | 'code' | 'debug'>('agent');
   const [pythonLastExecLog, setPythonLastExecLog] = useState<{ stdout?: string; debugLogs?: string[]; error?: string; timestamp?: number } | null>(null);
-  const [sqlCodeTab, setSqlCodeTab] = useState<'code' | 'debug'>('code');
+  const [sqlCodeTab, setSqlCodeTab] = useState<'agent' | 'code' | 'debug'>('agent');
   const [sqlLastExecLog, setSqlLastExecLog] = useState<{ error?: string; timestamp?: number; rowCount?: number } | null>(null);
   const [chartStyleEditorOpen, setChartStyleEditorOpen] = useState(false);
   const [chartStyleOverride, setChartStyleOverride] = useState<ChartStyle | undefined>(undefined);
@@ -2042,8 +2042,10 @@ export default function EditNodeDialog({
       if (filesToUpload.length > 0) {
         const uploadPromises = filesToUpload.map(async ({ file, name, type }) => {
           const result = await uploadFile(file, `trees/${treeId}`, `${Date.now()}-${file.name}`);
-          const downloadURL = result?.url || '';
-          return { name: name, type, url: downloadURL, originalFilename: file.name };
+          if (!result?.url) {
+            throw new Error(`Upload fallito per "${file.name}"`);
+          }
+          return { name: name, type, url: result.url, originalFilename: file.name };
         });
         uploadedMedia = await Promise.all(uploadPromises);
       }
@@ -2244,10 +2246,13 @@ export default function EditNodeDialog({
 
     } catch (error) {
       console.error('Error saving node:', error);
+      const description = error instanceof Error && error.message
+        ? error.message
+        : 'Impossibile salvare le modifiche.';
       toast({
         variant: 'destructive',
         title: 'Errore Salvataggio',
-        description: 'Impossibile salvare le modifiche.',
+        description,
       });
     } finally {
       setInternalSaving(false);
@@ -2298,7 +2303,7 @@ export default function EditNodeDialog({
       <div className="flex items-center gap-2 p-1.5 rounded-md bg-background/50 hover:bg-background">
         <div className="w-10 h-10 rounded bg-secondary flex-shrink-0 overflow-hidden relative flex items-center justify-center">
           {item.type === 'image' ? (
-            <Image src={url} alt="Anteprima" layout="fill" objectFit="cover" />
+            <Image src={url} alt="Anteprima" layout="fill" objectFit="cover" unoptimized />
           ) : (
             <Video className="h-5 w-5 text-muted-foreground" />
           )}
@@ -2779,14 +2784,20 @@ export default function EditNodeDialog({
                     </div>
                   )}
 
-                  {/* Two Column Layout: Left = Query/Editor, Right = Chatbot */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {/* LEFT COLUMN: Query Editor & Result Name - fills full height */}
-                    <div className="flex flex-col order-2 lg:order-1 h-full">
-                      {/* SQL Editor with Debug Tab */}
+                  {/* Full-width layout: 3 tabs (Agente / Query / Debug) share the same area */}
+                  <div className="flex flex-col w-full">
+                    <div className="flex flex-col h-full">
+                      {/* SQL Editor with Agent + Debug Tabs */}
                       <div className="flex flex-col gap-2 flex-1">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setSqlCodeTab('agent')}
+                              className={`px-3 py-1 text-xs font-medium rounded-t-md border border-b-0 transition-colors ${sqlCodeTab === 'agent' ? 'bg-white dark:bg-zinc-900 text-foreground border-border' : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground'}`}
+                            >
+                              Agente SQL
+                            </button>
                             <button
                               type="button"
                               onClick={() => setSqlCodeTab('code')}
@@ -2808,7 +2819,7 @@ export default function EditNodeDialog({
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="h-7 text-xs gap-1.5 text-blue-600 border-blue-300 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-700 dark:hover:bg-blue-900/20"
+                            className={`h-7 text-xs gap-1.5 text-blue-600 border-blue-300 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-700 dark:hover:bg-blue-900/20 ${sqlCodeTab === 'code' ? '' : 'invisible pointer-events-none'}`}
                             onClick={() => analyzeAlgorithm('sql')}
                             disabled={algoSchemaDialog.loading || !sqlQuery?.trim()}
                           >
@@ -2816,15 +2827,66 @@ export default function EditNodeDialog({
                             Schema Algoritmo
                           </Button>
                         </div>
-                        {sqlCodeTab === 'code' ? (
+                        {sqlCodeTab === 'agent' ? (
+                          <div className="h-[500px] max-h-[500px] overflow-hidden">
+                            <AgentChat
+                              nodeId={nodePath}
+                              agentType="sql"
+                              script={sqlQuery}
+                              tableSchema={getTableSchema(selectedPipelines, availableInputTables)}
+                              inputTables={getInputTables(selectedPipelines, availableInputTables)}
+                              nodeQueries={getNodeQueries(availableInputTables)}
+                              connectorId={sqlConnectorId || undefined}
+                              treeId={treeId}
+                              onScriptUpdate={(newScript) => {
+                                setSqlQuery(newScript);
+                                toast({ title: "Query Aggiornata", description: "L'editor SQL è stato aggiornato." });
+                              }}
+                              onPreviewReady={() => sqlPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                              onAutoExecutePreview={async (scriptToExecute) => {
+                                try {
+                                  const deps = (availableInputTables || []).filter(t => selectedPipelines.includes(t.name)).map(t => ({
+                                    tableName: t.name,
+                                    nodeName: t.nodeName,
+                                    displayName: (t as any).displayName,
+                                    query: t.sqlQuery,
+                                    isPython: t.isPython,
+                                    pythonCode: t.pythonCode,
+                                    connectorId: t.connectorId,
+                                    pipelineDependencies: t.pipelineDependencies,
+                                    data: (t as any).data || undefined,
+                                  }));
+                                  const res = await executeSqlPreviewAction(scriptToExecute, sqlConnectorId || '', deps);
+                                  setSqlLastExecLog({
+                                    error: res.data ? undefined : (res.error || 'Nessun dato restituito'),
+                                    timestamp: Date.now(),
+                                    rowCount: res.data?.length,
+                                  });
+                                  if (!res.data) setSqlCodeTab('debug');
+                                  if (res.data) {
+                                    setSqlPreviewData(res.data);
+                                    setSqlPreviewTimestamp(Date.now());
+                                    if (onSavePreview && nodePath) {
+                                      onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
+                                    }
+                                    return { success: true };
+                                  }
+                                  return { success: false, error: res.error || 'Errore SQL sconosciuto' };
+                                } catch (e: any) {
+                                  return { success: false, error: e.message };
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : sqlCodeTab === 'code' ? (
                           <Textarea
                             value={sqlQuery}
                             onChange={(e) => setSqlQuery(e.target.value)}
-                            className="font-mono text-sm flex-1 min-h-[200px]"
+                            className="font-mono text-sm flex-1 h-[500px] min-h-[500px]"
                             placeholder="SELECT * FROM ..."
                           />
                         ) : (
-                          <div className="font-mono text-xs flex-1 min-h-[200px] max-h-[400px] overflow-auto border rounded-md p-3 bg-zinc-950 text-zinc-100 dark:bg-zinc-950">
+                          <div className="font-mono text-xs flex-1 h-[500px] min-h-[500px] overflow-auto border rounded-md p-3 bg-zinc-950 text-zinc-100 dark:bg-zinc-950">
                             {sqlLastExecLog ? (
                               <>
                                 <div className="text-zinc-500 mb-2">
@@ -3033,59 +3095,6 @@ export default function EditNodeDialog({
                       </div>
                     </div>
 
-                    {/* RIGHT COLUMN: AI Agent */}
-                    <div className="order-1 lg:order-2 h-[500px]">
-                      <AgentChat
-                        nodeId={nodePath}
-                        agentType="sql"
-                        script={sqlQuery}
-                        tableSchema={getTableSchema(selectedPipelines, availableInputTables)}
-                        inputTables={getInputTables(selectedPipelines, availableInputTables)}
-                        nodeQueries={getNodeQueries(availableInputTables)}
-                        connectorId={sqlConnectorId || undefined}
-                        treeId={treeId}
-                        onScriptUpdate={(newScript) => {
-                          setSqlQuery(newScript);
-                          toast({ title: "Query Aggiornata", description: "L'editor SQL è stato aggiornato." });
-                        }}
-                        onPreviewReady={() => sqlPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                        onAutoExecutePreview={async (scriptToExecute) => {
-                          try {
-                            const deps = (availableInputTables || []).filter(t => selectedPipelines.includes(t.name)).map(t => ({
-                              tableName: t.name,
-                              nodeName: t.nodeName,
-                              displayName: (t as any).displayName,
-                              query: t.sqlQuery,
-                              isPython: t.isPython,
-                              pythonCode: t.pythonCode,
-                              connectorId: t.connectorId,
-                              pipelineDependencies: t.pipelineDependencies,
-                              data: (t as any).data || undefined,
-                            }));
-                            // Pass '' if no connector: executeSqlPreviewAction will inherit from deps or use company fallback
-                            const res = await executeSqlPreviewAction(scriptToExecute, sqlConnectorId || '', deps);
-                            // Save SQL execution log for Debug tab
-                            setSqlLastExecLog({
-                              error: res.data ? undefined : (res.error || 'Nessun dato restituito'),
-                              timestamp: Date.now(),
-                              rowCount: res.data?.length,
-                            });
-                            if (!res.data) setSqlCodeTab('debug');
-                            if (res.data) {
-                              setSqlPreviewData(res.data);
-                              setSqlPreviewTimestamp(Date.now());
-                              if (onSavePreview && nodePath) {
-                                onSavePreview(nodePath, { sqlPreviewData: res.data, sqlPreviewTimestamp: Date.now() });
-                              }
-                              return { success: true };
-                            }
-                            return { success: false, error: res.error || 'Errore SQL sconosciuto' };
-                          } catch (e: any) {
-                            return { success: false, error: e.message };
-                          }
-                        }}
-                      />
-                    </div>
                   </div>
 
                   {/* Preview section BELOW the columns - collapsible like Python */}
@@ -3372,14 +3381,20 @@ export default function EditNodeDialog({
                     </div>
                   )}
 
-                  {/* Two Column Layout: Left = Code/Preview, Right = Chatbot */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {/* LEFT COLUMN: Code Editor & Result Name - fills full height */}
-                    <div className="flex flex-col order-2 lg:order-1 h-full">
-                      {/* Python Code Editor with Debug Tab */}
+                  {/* Full-width layout: 3 tabs (Agente / Codice / Debug) share the same area */}
+                  <div className="flex flex-col w-full">
+                    <div className="flex flex-col h-full">
+                      {/* Python Code Editor with Agent + Debug Tabs */}
                       <div className="flex flex-col gap-2 flex-1">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setPythonCodeTab('agent')}
+                              className={`px-3 py-1 text-xs font-medium rounded-t-md border border-b-0 transition-colors ${pythonCodeTab === 'agent' ? 'bg-white dark:bg-zinc-900 text-foreground border-border' : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground'}`}
+                            >
+                              Agente Python
+                            </button>
                             <button
                               type="button"
                               onClick={() => setPythonCodeTab('code')}
@@ -3397,7 +3412,7 @@ export default function EditNodeDialog({
                               {pythonLastExecLog && !pythonLastExecLog.error && <span className="w-2 h-2 rounded-full bg-green-500" />}
                             </button>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className={`flex items-center gap-2 ${pythonCodeTab === 'code' ? '' : 'invisible pointer-events-none'}`}>
                             <Button
                               type="button"
                               variant="outline"
@@ -3446,15 +3461,93 @@ export default function EditNodeDialog({
                             </Button>
                           </div>
                         </div>
-                        {pythonCodeTab === 'code' ? (
+                        {pythonCodeTab === 'agent' ? (
+                          <div className="h-[500px] max-h-[500px] overflow-hidden">
+                            <AgentChat
+                              nodeId={nodePath}
+                              agentType="python"
+                              script={pythonCode}
+                              tableSchema={getTableSchema(pythonSelectedPipelines, availableInputTables)}
+                              inputTables={getInputTables(pythonSelectedPipelines, availableInputTables)}
+                              nodeQueries={getNodeQueries(availableInputTables)}
+                              connectorId={pythonConnectorId || undefined}
+                              selectedDocuments={selectedDocuments}
+                              treeId={treeId}
+                              onScriptUpdate={(newScript) => {
+                                setPythonCode(newScript);
+                                toast({ title: "Codice Aggiornato", description: "Lo script Python è stato aggiornato." });
+                              }}
+                              onOutputTypeChange={(newType) => {
+                                if (newType !== pythonOutputType) {
+                                  setPythonOutputType(newType);
+                                  console.log('[edit-node-dialog] Auto-switched pythonOutputType to:', newType);
+                                }
+                              }}
+                              onPreviewReady={() => pythonPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                              onAutoExecutePreview={async (scriptToExecute) => {
+                                try {
+                                  const inputData: Record<string, any[]> = {};
+                                  const deps = pythonSelectedPipelines.map(tableName => {
+                                    const depMeta = availableInputTables?.find(t => t.name === tableName);
+                                    if ((depMeta as any)?.data && Array.isArray((depMeta as any).data)) {
+                                      inputData[tableName] = (depMeta as any).data;
+                                    }
+                                    return {
+                                      tableName,
+                                      query: depMeta?.sqlQuery || '',
+                                      isPython: !!depMeta?.isPython,
+                                      pythonCode: depMeta?.pythonCode,
+                                      connectorId: depMeta?.connectorId,
+                                      pipelineDependencies: depMeta?.pipelineDependencies,
+                                    };
+                                  });
+                                  const res = await executePythonPreviewAction(scriptToExecute, pythonOutputType, inputData, deps, pythonConnectorId, undefined, selectedDocuments.length > 0 ? selectedDocuments : undefined);
+                                  setPythonLastExecLog({
+                                    stdout: res.stdout,
+                                    debugLogs: res.debugLogs,
+                                    error: res.success ? undefined : (res.error || 'Errore sconosciuto'),
+                                    timestamp: Date.now(),
+                                  });
+                                  if (!res.success || (!res.data?.length && !res.html)) {
+                                    setPythonCodeTab('debug');
+                                  }
+                                  if (res.success) {
+                                    const effectiveType = (pythonOutputType === 'table' && !res.data && res.html) ? 'html' : pythonOutputType;
+                                    setPythonPreviewResult({
+                                      type: effectiveType,
+                                      data: res.data,
+                                      variables: res.variables,
+                                      chartBase64: res.chartBase64,
+                                      chartHtml: res.chartHtml,
+                                      rechartsConfig: res.rechartsConfig,
+                                      rechartsData: res.rechartsData,
+                                      rechartsStyle: res.rechartsStyle,
+                                      plotlyJson: res.plotlyJson,
+                                      html: res.html,
+                                      stdout: res.stdout,
+                                      debugLogs: res.debugLogs,
+                                      timestamp: Date.now(),
+                                    });
+                                    setPythonPreviewExpanded(true);
+                                    const hasData = (res.data && res.data.length > 0) || (res.html && res.html.length > 200);
+                                    return { success: true, stdout: res.stdout, debugLogs: res.debugLogs, isEmpty: !hasData };
+                                  }
+                                  return { success: false, error: res.error || 'Errore Python sconosciuto', stdout: res.stdout, debugLogs: res.debugLogs };
+                                } catch (e: any) {
+                                  return { success: false, error: e.message };
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : pythonCodeTab === 'code' ? (
                           <Textarea
                             value={pythonCode}
                             onChange={(e) => setPythonCode(e.target.value)}
-                            className="font-mono text-sm flex-1 min-h-[200px]"
+                            className="font-mono text-sm flex-1 h-[500px] min-h-[500px]"
                             placeholder={`# ${pythonOutputType === 'table' ? 'Ritorna un DataFrame Pandas' : pythonOutputType === 'variable' ? 'Ritorna un dizionario di variabili' : 'Ritorna una figura Matplotlib/Plotly'}\n`}
                           />
                         ) : (
-                          <div className="font-mono text-xs flex-1 min-h-[200px] max-h-[400px] overflow-auto border rounded-md p-3 bg-zinc-950 text-zinc-100 dark:bg-zinc-950">
+                          <div className="font-mono text-xs flex-1 h-[500px] min-h-[500px] overflow-auto border rounded-md p-3 bg-zinc-950 text-zinc-100 dark:bg-zinc-950">
                             {pythonLastExecLog ? (
                               <>
                                 <div className="text-zinc-500 mb-2">
@@ -3671,87 +3764,6 @@ export default function EditNodeDialog({
                       </div>
                     </div>
 
-                    {/* RIGHT COLUMN: AI Agent */}
-                    <div className="order-1 lg:order-2 h-[500px]">
-                      <AgentChat
-                        nodeId={nodePath}
-                        agentType="python"
-                        script={pythonCode}
-                        tableSchema={getTableSchema(pythonSelectedPipelines, availableInputTables)}
-                        inputTables={getInputTables(pythonSelectedPipelines, availableInputTables)}
-                        nodeQueries={getNodeQueries(availableInputTables)}
-                        connectorId={pythonConnectorId || undefined}
-                        selectedDocuments={selectedDocuments}
-                        treeId={treeId}
-                        onScriptUpdate={(newScript) => {
-                          setPythonCode(newScript);
-                          toast({ title: "Codice Aggiornato", description: "Lo script Python è stato aggiornato." });
-                        }}
-                        onOutputTypeChange={(newType) => {
-                          if (newType !== pythonOutputType) {
-                            setPythonOutputType(newType);
-                            console.log('[edit-node-dialog] Auto-switched pythonOutputType to:', newType);
-                          }
-                        }}
-                        onPreviewReady={() => pythonPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                        onAutoExecutePreview={async (scriptToExecute) => {
-                          try {
-                            const inputData: Record<string, any[]> = {};
-                            const deps = pythonSelectedPipelines.map(tableName => {
-                              const depMeta = availableInputTables?.find(t => t.name === tableName);
-                              if ((depMeta as any)?.data && Array.isArray((depMeta as any).data)) {
-                                inputData[tableName] = (depMeta as any).data;
-                              }
-                              return {
-                                tableName,
-                                query: depMeta?.sqlQuery || '',
-                                isPython: !!depMeta?.isPython,
-                                pythonCode: depMeta?.pythonCode,
-                                connectorId: depMeta?.connectorId,
-                                pipelineDependencies: depMeta?.pipelineDependencies,
-                              };
-                            });
-                            const res = await executePythonPreviewAction(scriptToExecute, pythonOutputType, inputData, deps, pythonConnectorId, undefined, selectedDocuments.length > 0 ? selectedDocuments : undefined);
-                            // Save execution logs for Debug tab
-                            setPythonLastExecLog({
-                              stdout: res.stdout,
-                              debugLogs: res.debugLogs,
-                              error: res.success ? undefined : (res.error || 'Errore sconosciuto'),
-                              timestamp: Date.now(),
-                            });
-                            if (!res.success || (!res.data?.length && !res.html)) {
-                              setPythonCodeTab('debug');
-                            }
-                            if (res.success) {
-                              // Auto-switch: if outputType was 'table' but backend returned html, treat as html
-                              const effectiveType = (pythonOutputType === 'table' && !res.data && res.html) ? 'html' : pythonOutputType;
-                              setPythonPreviewResult({
-                                type: effectiveType,
-                                data: res.data,
-                                variables: res.variables,
-                                chartBase64: res.chartBase64,
-                                chartHtml: res.chartHtml,
-                                rechartsConfig: res.rechartsConfig,
-                                rechartsData: res.rechartsData,
-                                rechartsStyle: res.rechartsStyle,
-                                plotlyJson: res.plotlyJson,
-                                html: res.html,
-                                stdout: res.stdout,
-                                debugLogs: res.debugLogs,
-                                timestamp: Date.now(),
-                              });
-                              setPythonPreviewExpanded(true);
-                              // Detect empty results
-                              const hasData = (res.data && res.data.length > 0) || (res.html && res.html.length > 200);
-                              return { success: true, stdout: res.stdout, debugLogs: res.debugLogs, isEmpty: !hasData };
-                            }
-                            return { success: false, error: res.error || 'Errore Python sconosciuto', stdout: res.stdout, debugLogs: res.debugLogs };
-                          } catch (e: any) {
-                            return { success: false, error: e.message };
-                          }
-                        }}
-                      />
-                    </div>
                   </div>
 
                   {/* Pipeline Execution Visualization */}
@@ -5953,7 +5965,7 @@ export default function EditNodeDialog({
           </DialogHeader>
           <div className="flex-1 flex items-center justify-center bg-muted/50 rounded-md overflow-hidden">
             {previewingMedia?.type === 'image' && (
-              <Image src={previewingMedia.url} alt="Anteprima" width={1000} height={800} style={{ objectFit: 'contain', width: '100%', height: '100%' }} />
+              <Image src={previewingMedia.url} alt="Anteprima" width={1000} height={800} style={{ objectFit: 'contain', width: '100%', height: '100%' }} unoptimized />
             )}
             {previewingMedia?.type === 'video' && (
               <video src={previewingMedia.url} controls autoPlay className="w-full max-h-full" style={{ objectFit: 'contain' }} />

@@ -17,10 +17,14 @@ export async function uploadFile(file: File, folder: string = 'data_lake', custo
             body: formData,
         });
 
-        if (!res.ok) throw new Error('Upload failed');
+        const data = await res.json().catch(() => null);
 
-        const data = await res.json();
-        if (data.success) {
+        if (!res.ok) {
+            const reason = data?.error || `HTTP ${res.status}`;
+            throw new Error(`Upload failed: ${reason}`);
+        }
+
+        if (data?.success) {
             return { url: data.url, name: data.name };
         }
         return null;

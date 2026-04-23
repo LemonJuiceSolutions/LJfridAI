@@ -152,7 +152,7 @@ export function SidebarNav() {
                                 const IconComponent = (LucideIcons as any)[item.icon] || LucideIcons.HelpCircle;
                                 return (
                                     <Link
-                                        key={item.label}
+                                        key={item.href}
                                         href={item.href}
                                         className={cn(
                                             "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",

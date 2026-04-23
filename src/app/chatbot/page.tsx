@@ -532,6 +532,7 @@ export default function ChatbotPage() {
                                 alt={previewingMedia.name || 'Preview'}
                                 fill
                                 className="object-contain"
+                                unoptimized
                             />
                         </div>
                     )}
