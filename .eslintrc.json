@@ -14,8 +14,37 @@
     "react-hooks/rules-of-hooks": "warn",
     "react/no-unescaped-entities": "off",
     "@next/next/no-img-element": "warn",
-    "prefer-const": "warn"
+    "prefer-const": "warn",
+    "no-restricted-imports": [
+      "warn",
+      {
+        "paths": [
+          {
+            "name": "ai",
+            "message": "Route AI SDK calls through an approved helper. See docs/REMEDIATION_PLAN.md phase 1.3 — LLM requests must pass through the PII redaction gateway so we don't leak customer data to OpenRouter/OpenAI/Google."
+          },
+          {
+            "name": "genkit",
+            "message": "Route Genkit flows through an approved helper with PII redaction. See docs/REMEDIATION_PLAN.md phase 1.3."
+          }
+        ],
+        "patterns": [
+          {
+            "group": ["@ai-sdk/*", "@genkit-ai/*"],
+            "message": "Provider SDKs must be used only from src/ai/** or src/lib/ai/**. Elsewhere, call through an approved helper that applies PII redaction. See docs/REMEDIATION_PLAN.md phase 1.3."
+          }
+        ]
+      }
+    ]
   },
+  "overrides": [
+    {
+      "files": ["src/ai/**/*.{ts,tsx}", "src/lib/ai/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
   "ignorePatterns": [
     "backups/**",
     "backup-trees/**",

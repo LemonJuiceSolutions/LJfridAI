@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { executeSqlPreviewAction } from '@/app/actions';
+import { rateLimit } from '@/lib/rate-limit';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -87,8 +88,15 @@ function resolveCacheRef(ref: any): any[] | null {
 export async function POST(req: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
-        if (!(session?.user as any)?.companyId) {
+        const user = session?.user as { id?: string; companyId?: string } | undefined;
+        if (!user?.companyId) {
             return NextResponse.json({ data: null, error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const uid = user.id || user.companyId;
+        const rl = await rateLimit(`sql-exec:${uid}`, 30, 60_000);
+        if (!rl.allowed) {
+            return NextResponse.json({ data: null, error: 'Rate limit superato. Riprova tra poco.' }, { status: 429 });
         }
 
         // Opportunistic cleanup of old cached files

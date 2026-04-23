@@ -992,35 +992,9 @@ export async function getNodePreviewAction(treeId: string, nodeId: string, maxRo
         const cached = entry.data as any;
         const limit = maxRows || 2000;
 
-        if (cached.sqlPreviewData === '__parquet__') {
-            const { readParquet } = await import('@/lib/parquet-cache');
-            const rows = await readParquet(treeId, `${nodeId}_sql`);
-            if (rows) {
-                cached.sqlPreviewData = rows.length > limit ? rows.slice(0, limit) : rows;
-                cached._sqlTotalRows = rows.length;
-            } else {
-                delete cached.sqlPreviewData;
-            }
-        } else if (Array.isArray(cached.sqlPreviewData) && cached.sqlPreviewData.length > limit) {
-            cached._sqlTotalRows = cached.sqlPreviewData.length;
-            cached.sqlPreviewData = cached.sqlPreviewData.slice(0, limit);
-        }
-
-        if (cached.pythonPreviewResult?.data === '__parquet__') {
-            const { readParquet } = await import('@/lib/parquet-cache');
-            const rows = await readParquet(treeId, `${nodeId}_python`);
-            if (rows) {
-                cached.pythonPreviewResult.data = rows.length > limit ? rows.slice(0, limit) : rows;
-                cached.pythonPreviewResult._totalRows = rows.length;
-            } else {
-                delete cached.pythonPreviewResult.data;
-            }
-        } else if (Array.isArray(cached.pythonPreviewResult?.data) && cached.pythonPreviewResult.data.length > limit) {
-            cached.pythonPreviewResult._totalRows = cached.pythonPreviewResult.data.length;
-            cached.pythonPreviewResult.data = cached.pythonPreviewResult.data.slice(0, limit);
-        }
-
-        return cached;
+        // Resolve DuckDB blobs + legacy parquet markers + row truncation in one pass.
+        const { resolveCacheEntry } = await import('@/lib/preview-cache');
+        return await resolveCacheEntry(treeId, nodeId, cached, limit);
     } catch (err: any) {
         console.warn('[getNodePreviewAction] Error:', err.message);
         return null;

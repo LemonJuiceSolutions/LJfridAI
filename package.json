@@ -11,7 +11,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "audit:llm": "node scripts/audit-llm-callsites.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.35",
@@ -63,7 +64,9 @@
     "date-fns": "^3.6.0",
     "dompurify": "^3.4.0",
     "dotenv": "^16.4.5",
+    "duckdb-async": "^1.4.2",
     "embla-carousel-react": "^8.6.0",
+    "exceljs": "^4.4.0",
     "fast-xml-parser": "^5.3.7",
     "isomorphic-dompurify": "^3.8.0",
     "lodash": "^4.17.21",
@@ -87,12 +90,12 @@
     "recharts": "^2.15.1",
     "rehype-raw": "^7.0.0",
     "resend": "^6.7.0",
+    "server-only": "^0.0.1",
     "sql.js": "^1.14.0",
     "stripe": "^22.0.1",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^13.0.0",
-    "xlsx": "^0.18.5",
     "zod": "^3.24.2"
   },
   "devDependencies": {

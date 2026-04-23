@@ -2,7 +2,7 @@
 
 import sql from 'mssql';
 import { db } from '@/lib/db';
-import { getPythonBackendUrl } from '@/lib/python-backend';
+import { pythonFetch } from '@/lib/python-backend';
 import { getAuthenticatedUser } from './auth';
 import { resolveTheme } from '@/lib/chart-theme';
 
@@ -21,18 +21,45 @@ export async function executeSqlPreviewAction(
     const createdTempTables: string[] = [];
 
     try {
-        let user: any = null;
+        let user: { id: string; companyId: string } | null = null;
 
         if (_bypassAuth) {
+            // SYSTEM CONTEXT (scheduler/worker): companyId MUST be resolvable from the
+            // connector. Never fall back to an undefined/global filter, or a scheduled
+            // run with no connector would read data across every tenant.
             if (connectorId) {
                 const conn = await db.connector.findUnique({ where: { id: connectorId } });
                 if (conn) {
                     user = { id: 'system-scheduler', companyId: conn.companyId };
                 }
             }
-            if (!user) user = { id: 'system-scheduler', companyId: 'system-override' };
+            if (!user) {
+                // Try to resolve from pipeline dependencies
+                const findInheritedConnectorId = (deps: any[]): string | undefined => {
+                    for (const dep of deps) {
+                        if (dep.query && dep.connectorId) return dep.connectorId;
+                        if (dep.pipelineDependencies?.length > 0) {
+                            const nested = findInheritedConnectorId(dep.pipelineDependencies);
+                            if (nested) return nested;
+                        }
+                    }
+                    return undefined;
+                };
+                const inheritedId = findInheritedConnectorId(pipelineDependencies || []);
+                if (inheritedId) {
+                    const conn = await db.connector.findUnique({ where: { id: inheritedId } });
+                    if (conn) user = { id: 'system-scheduler', companyId: conn.companyId };
+                }
+            }
+            if (!user) {
+                return {
+                    data: null,
+                    error: '[Security] Scheduler/worker cannot resolve companyId — no valid connector in node or dependencies. Refusing to run without a tenant scope.',
+                };
+            }
         } else {
             user = await getAuthenticatedUser();
+            if (!user) return { data: null, error: 'Non autorizzato.' };
         }
 
         let connector;
@@ -40,7 +67,7 @@ export async function executeSqlPreviewAction(
             connector = await db.connector.findFirst({
                 where: {
                     id: connectorId,
-                    companyId: user.companyId !== 'system-override' ? user.companyId : undefined,
+                    companyId: user.companyId,
                     type: 'SQL'
                 }
             });
@@ -63,7 +90,7 @@ export async function executeSqlPreviewAction(
                 connector = await db.connector.findFirst({
                     where: {
                         id: inheritedId,
-                        companyId: user.companyId !== 'system-override' ? user.companyId : undefined,
+                        companyId: user.companyId,
                         type: 'SQL'
                     }
                 });
@@ -72,7 +99,7 @@ export async function executeSqlPreviewAction(
             if (!connector) {
                 connector = await db.connector.findFirst({
                     where: {
-                        companyId: user.companyId !== 'system-override' ? user.companyId : undefined,
+                        companyId: user.companyId,
                         type: 'SQL'
                     }
                 });
@@ -401,9 +428,8 @@ export async function executeSqlPreviewAction(
             if (unresolvedNames.length > 0) {
                 console.log(`[PIPELINE] Found unresolved table references: ${unresolvedNames.join(', ')}. Searching all trees...`);
                 try {
-                    const companyId = user.companyId !== 'system-override' ? user.companyId : undefined;
                     const allTreeRecords = await db.tree.findMany({
-                        where: companyId ? { companyId } : undefined,
+                        where: { companyId: user.companyId },
                         select: { jsonDecisionTree: true }
                     });
 
@@ -1079,17 +1105,43 @@ export async function executePythonPreviewAction(
     const tStart = performance.now();
 
     try {
-        let user: any = null;
+        let user: { id: string; companyId: string } | null = null;
         if (_bypassAuth) {
+            // SYSTEM CONTEXT (scheduler/worker): companyId must come from the connector.
+            // If we can't resolve it, refuse to run rather than read every tenant's data.
             if (connectorId && connectorId !== 'none') {
                 const conn = await db.connector.findUnique({ where: { id: connectorId } });
                 if (conn) {
                     user = { id: 'system-scheduler', companyId: conn.companyId };
                 }
             }
-            if (!user) user = { id: 'system-scheduler', companyId: 'system-override' };
+            if (!user && dependencies && dependencies.length > 0) {
+                const findInheritedConnectorId = (deps: any[]): string | undefined => {
+                    for (const dep of deps) {
+                        if (dep.connectorId && dep.connectorId !== 'none') return dep.connectorId;
+                        if (dep.pipelineDependencies?.length > 0) {
+                            const nested = findInheritedConnectorId(dep.pipelineDependencies);
+                            if (nested) return nested;
+                        }
+                    }
+                    return undefined;
+                };
+                const inherited = findInheritedConnectorId(dependencies);
+                if (inherited) {
+                    const conn = await db.connector.findUnique({ where: { id: inherited } });
+                    if (conn) user = { id: 'system-scheduler', companyId: conn.companyId };
+                }
+            }
+            if (!user) {
+                return {
+                    success: false,
+                    error: '[Security] Scheduler/worker cannot resolve companyId for Python execution — no valid connector. Refusing to run without a tenant scope.',
+                    debugLogs,
+                };
+            }
         } else {
             user = await getAuthenticatedUser();
+            if (!user) return { success: false, error: 'Non autorizzato.', debugLogs };
         }
         const envVars: Record<string, string> = {};
 
@@ -1145,7 +1197,7 @@ export async function executePythonPreviewAction(
             }
         }
 
-        if (!envVars['SHAREPOINT_TOKEN'] && user?.companyId && user.companyId !== 'system-override') {
+        if (!envVars['SHAREPOINT_TOKEN'] && user?.companyId) {
             try {
                 const spConnector = await db.connector.findFirst({
                     where: { companyId: user.companyId, type: 'SHAREPOINT' }
@@ -1206,7 +1258,7 @@ export async function executePythonPreviewAction(
             }
         }
         // If still no connector, try to find ANY SQL connector for this company as fallback
-        if ((!effectiveConnectorId || effectiveConnectorId === 'none') && user?.companyId && user.companyId !== 'system-override') {
+        if ((!effectiveConnectorId || effectiveConnectorId === 'none') && user?.companyId) {
             try {
                 const fallbackConnector = await db.connector.findFirst({
                     where: { companyId: user.companyId, type: 'SQL' },
@@ -1367,9 +1419,8 @@ export async function executePythonPreviewAction(
                 if (dfTarget) {
                     console.log(`[executePythonPreviewAction] dfTarget explicitly set to '${dfTarget}'`);
                 }
-                const response = await fetch(`${getPythonBackendUrl()}/execute`, {
+                const response = await pythonFetch('/execute', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         code,
                         outputType,

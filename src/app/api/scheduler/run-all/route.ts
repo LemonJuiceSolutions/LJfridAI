@@ -195,33 +195,38 @@ export async function POST(request: NextRequest) {
 // ── Sequential executor ──
 
 async function executeAllSequentially(run: RunAllState, tasks: any[]) {
-  // Breathing room between task invocations. Each task is a heavy pipeline
-  // (SQL → Python → email render/send) that pins CPU; without an explicit
-  // yield + sleep, Next.js cannot schedule page render / API handlers for
-  // the user and the UI appears frozen. Tuneable via env.
-  const DELAY_MS = Math.max(0, Number(process.env.SCHEDULER_RUNALL_DELAY_MS) || 1000);
+  // Two tuning knobs:
+  //  - DELAY_MS: breathing room between tasks so Next.js can serve UI
+  //    while a local scheduler pins CPU. With the standalone
+  //    scheduler-service the heavy work is in another process, so the
+  //    delay is pure idle time — default 0 when remote.
+  //  - CONCURRENCY: how many tasks to execute at once. In-process = 1 to
+  //    avoid choking the Next.js event loop. Remote service can safely
+  //    handle 2-4 parallel tasks (bottleneck becomes the source MSSQL).
+  const useRemote = !!process.env.SCHEDULER_SERVICE_URL;
+  const DELAY_MS = Math.max(
+    0,
+    Number(process.env.SCHEDULER_RUNALL_DELAY_MS) || (useRemote ? 0 : 1000),
+  );
+  const CONCURRENCY = Math.max(
+    1,
+    Number(process.env.SCHEDULER_RUNALL_CONCURRENCY) || (useRemote ? 3 : 1),
+  );
 
-  for (let i = 0; i < run.tasks.length; i++) {
-    // Check abort
-    if (run.status === 'aborted') break;
+  const total = run.tasks.length;
+  let cursor = 0;
 
+  const runOne = async (i: number) => {
+    if ((run.status as string) === 'aborted') return;
     const taskStatus = run.tasks[i];
-    run.currentIndex = i;
+    // currentIndex = highest index reached so UI progress monotonically advances
+    run.currentIndex = Math.max(run.currentIndex, i);
     taskStatus.status = 'running';
     taskStatus.startedAt = new Date().toISOString();
 
     const taskStart = Date.now();
-
     try {
-      // Yield to the event loop BEFORE heavy work so pending HTTP handlers
-      // get a chance to run between tasks.
       await new Promise(r => setImmediate(r));
-
-      // BUG fix: do NOT force-clear concurrency lock — was: (schedulerService as any)
-      // .runningTasks?.delete(...) — risked double-execution of legitimately
-      // running tasks. Now: respect lock; executeTask returns "skipped" if busy.
-      // BUG fix: pass maxRetriesOverride per-call instead of mutating DB
-      // (process crash between set 0 and restore would permanently disable retries).
       // Route through the client abstraction: when SCHEDULER_SERVICE_URL is
       // set, this hits the standalone scheduler-service over HTTP and the
       // heavy Python/SQL/email work runs in THAT process, leaving Next.js
@@ -229,7 +234,6 @@ async function executeAllSequentially(run: RunAllState, tasks: any[]) {
       const result = await getSchedulerClient().executeTask(taskStatus.taskId, { maxRetriesOverride: 0 });
 
       taskStatus.durationMs = Date.now() - taskStart;
-
       if (result.success) {
         taskStatus.status = 'success';
         taskStatus.message = result.message || result.data?.message || `OK (${taskStatus.durationMs}ms)`;
@@ -242,17 +246,26 @@ async function executeAllSequentially(run: RunAllState, tasks: any[]) {
       taskStatus.error = err.message;
       taskStatus.durationMs = Date.now() - taskStart;
     }
+  };
 
-    // Abort check after task completes
-    if ((run.status as string) === 'aborted') break;
-
-    // Sleep between tasks — gives Node's event loop time to serve
-    // other requests (page nav, auth session, widget polling) that were
-    // stuck behind the previous task's SQL/Python/email work.
-    if (DELAY_MS > 0 && i < run.tasks.length - 1) {
-      await new Promise(r => setTimeout(r, DELAY_MS));
+  // Worker-pool pattern: N workers drain a shared cursor. Each worker picks
+  // the next task, runs it, sleeps DELAY_MS, repeats until cursor exhausted
+  // or run is aborted. Bounded concurrency = predictable MSSQL pool load.
+  const worker = async () => {
+    while (true) {
+      if ((run.status as string) === 'aborted') return;
+      const i = cursor++;
+      if (i >= total) return;
+      await runOne(i);
+      if (DELAY_MS > 0 && cursor < total) {
+        await new Promise(r => setTimeout(r, DELAY_MS));
+      }
     }
-  }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, total) }, () => worker()),
+  );
 
   if ((run.status as string) !== 'aborted') {
     run.status = 'completed';

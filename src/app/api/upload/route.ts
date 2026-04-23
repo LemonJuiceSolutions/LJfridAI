@@ -67,8 +67,14 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: `Tipo file non consentito: ${file.type || 'unknown'}` }, { status: 415 });
         }
 
-        // SECURITY: validate folder against whitelist (no arbitrary subdir creation)
-        if (folder.includes('..') || folder.includes('/') || folder.includes('\\')) {
+        // SECURITY: allow nested subfolders but block traversal, backslash, absolute paths
+        const folderSegments = folder.split('/');
+        const folderInvalid =
+            folder.includes('\\') ||
+            folder.startsWith('/') ||
+            folder.endsWith('/') ||
+            folderSegments.some(s => s === '' || s === '..' || s === '.' || !/^[a-zA-Z0-9._-]+$/.test(s));
+        if (folderInvalid) {
             return NextResponse.json({ success: false, error: 'Invalid folder' }, { status: 400 });
         }
 

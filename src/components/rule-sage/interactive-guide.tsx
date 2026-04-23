@@ -2624,7 +2624,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                     {icon}
                                     <div className="flex-shrink-0 w-6 h-6 rounded bg-secondary overflow-hidden relative flex items-center justify-center">
                                         {type === 'media' && item.type === 'image' && (
-                                            <Image src={item.url} alt={name} layout="fill" objectFit="cover" />
+                                            <Image src={item.url} alt={name} layout="fill" objectFit="cover" unoptimized />
                                         )}
                                         {type === 'media' && item.type === 'video' && (
                                             <Video className="h-4 w-4 text-muted-foreground" />
@@ -3210,7 +3210,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                     </DialogHeader>
                     <div className="flex-1 flex items-center justify-center bg-muted/50 rounded-md overflow-hidden">
                         {previewingMedia?.type === 'image' && (
-                            <Image src={previewingMedia.url} alt={previewingMedia.name || 'Anteprima'} width={1000} height={800} style={{ objectFit: 'contain', width: '100%', height: '100%' }} />
+                            <Image src={previewingMedia.url} alt={previewingMedia.name || 'Anteprima'} width={1000} height={800} style={{ objectFit: 'contain', width: '100%', height: '100%' }} unoptimized />
                         )}
                         {previewingMedia?.type === 'video' && (
                             <video src={previewingMedia.url} controls autoPlay className="w-full max-h-full" style={{ objectFit: 'contain' }} />

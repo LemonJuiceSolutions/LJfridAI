@@ -44,10 +44,21 @@ export function injectIframeFetchPolyfill(html: string, opts?: { connectorId?: s
     `if(CID&&!b.connectorId){b.connectorId=CID;changed=true}` +
     `if(changed)o.body=JSON.stringify(b)}catch(e){}}` +
     `return F.call(this,u,o).then(function(r){if(o.method&&o.method.toUpperCase()==='POST'){` +
-    `r.clone().json().then(function(j){if(j.success){` +
-    `console.log('[polyfill] POST success, notifying parent...');` +
-    `try{window.parent.dispatchEvent(new CustomEvent('iframe-db-write-success',{detail:{success:true,rowsAffected:j.rowsAffected}}))}catch(e){console.warn('[polyfill] dispatchEvent failed, trying postMessage',e)}` +
-    `_origPM({type:'iframe-db-write-success'},'*')}}).catch(function(){})}return r})};` +
+    `r.clone().json().then(function(j){` +
+    // Only notify parent to re-run the pipeline when the write is BOTH
+    // reported success AND verified on the server (read-back matches).
+    // `verified !== false` preserves back-compat with endpoints that don't
+    // emit the flag (non-update-commessa POSTs still notify on success).
+    `if(j.success&&j.verified!==false){` +
+    `console.log('[polyfill] POST verified, notifying parent...');` +
+    `try{window.parent.dispatchEvent(new CustomEvent('iframe-db-write-success',{detail:{success:true,verified:true,rowsAffected:j.rowsAffected,actual:j.actual}}))}catch(e){console.warn('[polyfill] dispatchEvent failed, trying postMessage',e)}` +
+    `_origPM({type:'iframe-db-write-success'},'*')}` +
+    `else if(j.verified===false){` +
+    `console.error('[polyfill] POST NOT verified:',j.mismatches||j.message);` +
+    `var errEl=document.getElementById('statusMessage');` +
+    `if(errEl){errEl.textContent='Salvataggio NON verificato: '+(j.message||'valore non persistito');` +
+    `errEl.className='status-message error';errEl.style.display='block'}}` +
+    `}).catch(function(){})}return r})};` +
     // --- Helper: strip internal UI-only fields ('_isNew', '_rowId', etc.) before sending ---
     `function clean(d){var o={};for(var k in d){if(d.hasOwnProperty(k)&&k.charAt(0)!=='_')o[k]=d[k]}return o}` +
     // --- Helper: build structured payload; omit connectorId when empty

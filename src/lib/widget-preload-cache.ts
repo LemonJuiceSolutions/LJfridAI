@@ -96,11 +96,15 @@ export async function preloadWidgetData(items: Array<{ id: string }>): Promise<v
 
     const batch = (async () => {
         try {
-            const res = await fetch('/api/internal/widget-data-batch', {
+            // Retry transparently on transient "Load failed" — Next.js dev
+            // auto-restarts at 80% heap and kills in-flight sockets, and
+            // dashboards fire batch loads right around those moments.
+            const { fetchWithRetry } = await import('@/lib/client-fetch-retry');
+            const res = await fetchWithRetry('/api/internal/widget-data-batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ widgets: unique }),
-            });
+            }, { retries: 2, baseDelayMs: 1000 });
             if (!res.ok) return;
 
             const data = await res.json();

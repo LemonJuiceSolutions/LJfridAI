@@ -3,8 +3,9 @@
   "configurations": [
     {
       "name": "nextjs-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev", "--turbopack", "-p", "9002"],
+      "env": { "NODE_OPTIONS": "--max-old-space-size=6144", "FORCE_COLOR": "0" },
       "port": 9002,
       "autoPort": false
     },

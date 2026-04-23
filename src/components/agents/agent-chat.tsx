@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { fetchWithRetry } from '@/lib/client-fetch-retry';
 import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { AgentChatMessage, AgentResponse } from '@/lib/types';
@@ -591,10 +592,25 @@ export function AgentChat({
   const modelRef = useRef(model);
   modelRef.current = model;
 
-  // Create transport with stable identity — all dynamic values read from refs at send time
+  // Create transport with stable identity — all dynamic values read from refs at send time.
+  // Custom fetch retries transient network errors (Safari "Load failed", HMR drops,
+  // momentary proxy hiccups) before the stream starts. Once the stream is reading
+  // a response, fetchWithRetry is no-op — an in-flight stream break bubbles up
+  // normally (retrying mid-stream would duplicate assistant output).
   const streamTransport = useMemo(() => new DefaultChatTransport({
     api: '/api/agents/chat-stream',
     body: { nodeId, agentType, treeId },
+    fetch: (input, init) => fetchWithRetry(
+      input as RequestInfo | URL,
+      init as RequestInit,
+      {
+        retries: 2,
+        baseDelayMs: 800,
+        onRetry: (attempt, err) => {
+          console.warn(`[agent-chat] network retry ${attempt}/2:`, err);
+        },
+      },
+    ),
     prepareSendMessagesRequest: ({ body, messages, ...rest }) => ({
       ...rest,
       body: {
@@ -609,7 +625,7 @@ export function AgentChat({
         model: modelRef.current,
       },
     }),
-  }), [nodeId, agentType]);
+  }), [nodeId, agentType, treeId]);
 
   // useChat hook for streaming mode (v6 API)
   const {

@@ -75,10 +75,14 @@ export function SidebarNav() {
         const fetchMissedCount = async () => {
             try {
                 const res = await fetch('/api/scheduler/missed-tasks');
-                if (res.ok) {
-                    const data = await res.json();
-                    setMissedTasksCount(data.length || 0);
-                }
+                if (!res.ok) return;
+                // Defensive: only parse when the server actually sent JSON.
+                // A 307 redirect to /api/auth/signin (session expired) returns
+                // HTML, and `res.json()` then throws SyntaxError.
+                const ct = res.headers.get('content-type') || '';
+                if (!ct.toLowerCase().includes('application/json')) return;
+                const data = await res.json();
+                setMissedTasksCount(Array.isArray(data) ? data.length : 0);
             } catch (err) {
                 console.error('Failed to fetch missed tasks count:', err);
             }
@@ -148,7 +152,7 @@ export function SidebarNav() {
                                 const IconComponent = (LucideIcons as any)[item.icon] || LucideIcons.HelpCircle;
                                 return (
                                     <Link
-                                        key={item.label}
+                                        key={item.href}
                                         href={item.href}
                                         className={cn(
                                             "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",

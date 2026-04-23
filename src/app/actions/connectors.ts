@@ -12,7 +12,7 @@ import { resolveTheme } from '@/lib/chart-theme';
 import { testSharePointConnectionAction } from './sharepoint';
 import type { HtmlStyleOverrides } from '@/lib/html-style-utils';
 import { generateHtmlStyleCss, applyHtmlStyleOverrides } from '@/lib/html-style-utils';
-import { getPythonBackendUrl } from '@/lib/python-backend';
+import { pythonFetch } from '@/lib/python-backend';
 
 /**
  * Convert JavaScript-dependent HTML to static HTML for email embedding.
@@ -1333,9 +1333,8 @@ result = base64.b64encode(img_bytes).decode("utf-8")
 print(f"PNG generated: {len(result)} chars base64")
 `.trim();
 
-                    const renderRes = await fetch(`${getPythonBackendUrl()}/execute`, {
+                    const renderRes = await pythonFetch('/execute', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             code: renderScript,
                             outputType: 'variable',   // camelCase to match Python backend's data.get('outputType')
@@ -1548,7 +1547,7 @@ print(f"PNG generated: {len(result)} chars base64")
                 }
             }
         }
-        const XLSX = await import('xlsx');
+        const ExcelJS = (await import('exceljs')).default;
         const MAX_EXCEL_ROWS = 5000; // Limit Excel to 5K rows to keep file size reasonable
 
         console.log(`[EMAIL DEBUG] Inline chart attachments: ${inlineAttachments.length}`);
@@ -1558,12 +1557,15 @@ print(f"PNG generated: {len(result)} chars base64")
             if (tr.asExcel && tr.data.length > 0) {
                 console.log(`[EMAIL DEBUG] Creating Excel for ${tr.name} (${tr.data.length} total rows, limiting to ${MAX_EXCEL_ROWS})...`);
 
-                // Limit Excel data to prevent huge files
                 const excelData = tr.data.slice(0, MAX_EXCEL_ROWS);
-                const ws = XLSX.utils.json_to_sheet(excelData);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, tr.name.substring(0, 31)); // Excel sheet name max 31 chars
-                const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true });
+                const wb = new ExcelJS.Workbook();
+                const ws = wb.addWorksheet(tr.name.substring(0, 31));
+                if (excelData.length > 0) {
+                    const headers = Object.keys(excelData[0] as Record<string, unknown>);
+                    ws.columns = headers.map(h => ({ header: h, key: h }));
+                    ws.addRows(excelData as Record<string, unknown>[]);
+                }
+                const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
                 console.log(`[EMAIL DEBUG] Excel file ${tr.name}.xlsx size: ${(buffer.length / 1024).toFixed(2)} KB`);
 
@@ -1643,12 +1645,17 @@ print(f"PNG generated: {len(result)} chars base64")
                     }
                 } else if (pyResult.type === 'table' && pyResult.data && pyResult.data.length > 0) {
                     // Attach table as Excel
+                    const ExcelJS = (await import('exceljs')).default;
                     const MAX_EXCEL_ROWS = 5000;
                     const excelData = pyResult.data.slice(0, MAX_EXCEL_ROWS);
-                    const ws = XLSX.utils.json_to_sheet(excelData);
-                    const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, ws, pyResult.name.substring(0, 31));
-                    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true });
+                    const wb = new ExcelJS.Workbook();
+                    const ws = wb.addWorksheet(pyResult.name.substring(0, 31));
+                    if (excelData.length > 0) {
+                        const headers = Object.keys(excelData[0] as Record<string, unknown>);
+                        ws.columns = headers.map(h => ({ header: h, key: h }));
+                        ws.addRows(excelData as Record<string, unknown>[]);
+                    }
+                    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
                     console.log(`[EMAIL DEBUG] Python Excel file ${pyResult.name}.xlsx size: ${(buffer.length / 1024).toFixed(2)} KB`);
 

@@ -1,7 +1,7 @@
 {
   "nextHeapMb": 6144,
-  "schedulerHeapMb": 4096,
+  "schedulerHeapMb": 1024,
   "updatedAt": null,
   "updatedBy": null,
-  "_comment": "RAM budget per process (MB). Edited via Settings → Risorse Sistema. Restart required after change: ctrl+c dev then npm run dev."
+  "_comment": "RAM budget per process (MB). Edited via Settings → Risorse Sistema. Restart required after change: ctrl+c dev then npm run dev. schedulerHeapMb=1024 is plenty for cron + SQL/Python orchestration; raise only if you see OOM under load."
 }

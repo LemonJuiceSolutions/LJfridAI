@@ -13,7 +13,7 @@ describe('env validation', () => {
 
   it('exports env without throwing when required vars are set', async () => {
     process.env.DATABASE_URL = 'postgresql://localhost:5432/test';
-    process.env.NEXTAUTH_SECRET = 'a-secret-that-is-long-enough';
+    process.env.NEXTAUTH_SECRET = 'a-secret-that-is-at-least-32-chars-long';
     (process.env as any).NODE_ENV = 'test';
 
     const mod = await import('@/lib/env');
@@ -32,7 +32,7 @@ describe('env validation', () => {
 
   it('applies default values for optional fields', async () => {
     process.env.DATABASE_URL = 'postgresql://localhost:5432/test';
-    process.env.NEXTAUTH_SECRET = 'a-secret-that-is-long-enough';
+    process.env.NEXTAUTH_SECRET = 'a-secret-that-is-at-least-32-chars-long';
     delete process.env.PYTHON_BACKEND_URL;
     delete process.env.DATA_LAKE_PATH;
     (process.env as any).NODE_ENV = 'test';

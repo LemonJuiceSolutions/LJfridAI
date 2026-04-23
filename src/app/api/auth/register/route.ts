@@ -1,9 +1,21 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import bcrypt from 'bcryptjs';
+import { rateLimit, getClientIp } from '@/lib/rate-limit';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
     try {
+        const ip = getClientIp(request);
+        const rl = await rateLimit(`register:${ip}`, 5, 60 * 60 * 1000);
+        if (!rl.allowed) {
+            return NextResponse.json(
+                { error: 'Troppi tentativi di registrazione. Riprova più tardi.' },
+                { status: 429 }
+            );
+        }
+
         const body = await request.json();
         const { name, email, password, companyName, departmentName, token } = body;
 
@@ -11,6 +23,20 @@ export async function POST(request: Request) {
         if (!name || !email || !password) {
             return NextResponse.json(
                 { error: 'Nome, email e password sono obbligatori' },
+                { status: 400 }
+            );
+        }
+
+        if (typeof email !== 'string' || !EMAIL_RE.test(email) || email.length > 254) {
+            return NextResponse.json(
+                { error: 'Email non valida' },
+                { status: 400 }
+            );
+        }
+
+        if (typeof name !== 'string' || name.length > 100 || name.length < 1) {
+            return NextResponse.json(
+                { error: 'Nome non valido (1-100 caratteri)' },
                 { status: 400 }
             );
         }

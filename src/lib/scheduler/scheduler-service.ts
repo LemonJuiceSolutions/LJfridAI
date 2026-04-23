@@ -907,7 +907,17 @@ export class SchedulerService {
       const hasLogic = (tableDef.isPython && tableDef.pythonCode) || (!tableDef.isPython && tableDef.sqlQuery) || (tableDef.type === 'email') || (tableDef.type === 'sharepoint') || (tableDef.type === 'hubspot');
       if (!hasLogic) continue;
 
-      logger.log(`[AncestorChain] Executing ancestor: ${originalName} (${tableDef.type || (tableDef.isPython ? 'Python' : 'SQL')})`);
+      const _ancestorKind = tableDef.type || (tableDef.isPython ? 'Python' : 'SQL');
+      logger.log(`[AncestorChain] Executing ancestor: ${originalName} (${_ancestorKind})`);
+
+      // PERF instrumentation — reports per-ancestor wall time so slow
+      // schedulers can be diagnosed from the logs without extra tooling.
+      const _ancestorStart = Date.now();
+      const _logDone = (rowCount?: number) => {
+        const dur = Date.now() - _ancestorStart;
+        const rows = typeof rowCount === 'number' ? ` rows=${rowCount}` : '';
+        logger.log(`[AncestorChain] ⏱ ${originalName} (${_ancestorKind}) took ${dur}ms${rows}`);
+      };
 
       try {
         let resultData: any = null;
@@ -952,6 +962,18 @@ export class SchedulerService {
           for (const [normKey, val] of Object.entries(resultsNormalized)) {
             if (explicitDepNames.has(normKey)) continue; // Already added as explicit dep
             const origName = nodeNameMap.get(normKey) || normKey;
+            
+            // OPTIMIZATION: Only pass implicitly discovered deps if they are referenced in the Python code
+            // This prevents passing megabytes of unrelated data to the Python sandbox
+            if (tableDef.pythonCode) {
+              const allNames = tableDef.allNames || [origName];
+              const isReferenced = allNames.some((name: string) => {
+                const regex = new RegExp(`\\b${escapeRegExp(name)}\\b`, 'i');
+                return regex.test(tableDef.pythonCode);
+              });
+              if (!isReferenced) continue;
+            }
+
             const extracted = extractData(val);
             if (extracted !== undefined) {
               inputData[origName] = extracted;
@@ -1107,6 +1129,7 @@ export class SchedulerService {
             effectiveQuery,
             tableDef.connectorId,
             deps,
+            companyId, // tenant scope so nodes without explicit connectorId still resolve
           );
           if (res.error) {
             logger.error(`[AncestorChain] Error executing SQL node ${originalName}: ${res.error}`);
@@ -1289,9 +1312,23 @@ export class SchedulerService {
           }
         }
 
+        // PERF: emit per-ancestor timing once everything above has finished.
+        // Pull row count from the two shapes we produce:
+        //  - SQL:   resultData = array
+        //  - Python: resultData = { data: array, chartBase64, ... }
+        {
+          const rowsArr = Array.isArray(resultData)
+            ? resultData
+            : (resultData && typeof resultData === 'object' && Array.isArray((resultData as any).data))
+              ? (resultData as any).data
+              : null;
+          _logDone(rowsArr ? rowsArr.length : undefined);
+        }
+
       } catch (e: any) {
         logger.error(`[AncestorChain] Exception executing ${originalName}: ${e.message}`);
         pipelineReport.push({ name: originalName, type: tableDef.isPython ? 'Python' : 'SQL', status: 'error', error: e.message, timestamp: new Date().toISOString(), nodePath: tableDef.nodePath || tableDef.nodeId });
+        _logDone();
       }
     }
 
@@ -1971,7 +2008,7 @@ export class SchedulerService {
         ...config,
         pythonCode: targetNode.pythonCode,
         pythonOutputType: targetNode.pythonOutputType || 'table',
-        pythonResultName: targetNode.pythonResultName || targetNode.sqlResultName,
+        pythonResultName: targetNode.pythonResultName || targetNode.sqlResultName || targetNode.name,
         connectorId: targetNode.pythonConnectorId || targetNode.connectorId,
         contextTables,
         selectedPipelines: targetNode.pythonSelectedPipelines || targetNode.selectedPipelines || [],
@@ -2021,7 +2058,7 @@ export class SchedulerService {
       const enrichedConfig: ScheduledTaskConfig = {
         ...config,
         query: targetNode.sqlQuery,
-        sqlResultName: targetNode.sqlResultName,
+        sqlResultName: targetNode.sqlResultName || targetNode.name,
         connectorIdSql: targetNode.sqlConnectorId || targetNode.connectorId,
         contextTables,
         selectedPipelines: targetNode.selectedPipelines || [],
@@ -2083,8 +2120,15 @@ export class SchedulerService {
     logger.log(`[SqlNode] Built ${dependencies.length} data-only deps from ancestor results: ${dependencies.map(d => `${d.tableName}(${d.data.length} rows)`).join(', ')}`);
 
     // 3. Execute Query with pre-calculated data deps
-    const result = await executeSqlPreview(query, connectorIdSql, dependencies);
-    if (result.error) throw new Error(result.error);
+    let result;
+    const cachedData = sqlResultName ? ancestorResults[sqlResultName] : undefined;
+    if (cachedData !== undefined) {
+      logger.log(`[SqlNode] Result already computed in ancestor chain. Skipping redundant execution.`);
+      result = { data: cachedData };
+    } else {
+      result = await executeSqlPreview(query, connectorIdSql, dependencies, sqlCompanyId);
+      if (result.error) throw new Error(result.error);
+    }
 
     const data = result.data; // Array of rows
 
@@ -2177,18 +2221,36 @@ export class SchedulerService {
       }
     }
 
-    const result = await executePythonPreview(
-      pythonCode,
-      runType,
-      inputData, // Pre-calculated data from ancestor chain
-      [], // No recursive deps needed — data already in inputData
-      resolvedCid || pythonConnectorId,
-      selectedDocuments?.length > 0 ? selectedDocuments : undefined,
-      undefined, // dfTarget
-      companyId, // pass companyId for SharePoint token resolution
-    );
-
-    if (!result.success) throw new Error(result.error);
+    let result;
+    const cachedResult = pythonResultName ? ancestorResults[pythonResultName] : undefined;
+    if (cachedResult !== undefined) {
+      logger.log(`[PythonNode] Result already computed in ancestor chain. Skipping redundant execution.`);
+      // Extract the raw data out of the Python wrapper if needed
+      result = {
+        success: true,
+        data: cachedResult.data || cachedResult,
+        chartBase64: cachedResult.chartBase64,
+        chartHtml: cachedResult.chartHtml,
+        rechartsConfig: cachedResult.rechartsConfig,
+        rechartsData: cachedResult.rechartsData,
+        plotlyJson: cachedResult.plotlyJson,
+        html: cachedResult.html,
+        variables: cachedResult.variables,
+        stdout: cachedResult.stdout
+      };
+    } else {
+      result = await executePythonPreview(
+        pythonCode,
+        runType,
+        inputData, // Pre-calculated data from ancestor chain
+        [], // No recursive deps needed — data already in inputData
+        resolvedCid || pythonConnectorId,
+        selectedDocuments?.length > 0 ? selectedDocuments : undefined,
+        undefined, // dfTarget
+        companyId, // pass companyId for SharePoint token resolution
+      );
+      if (!result.success) throw new Error(result.error);
+    }
 
     // 3. Save Preview to NodePreviewCache (preserve existing style overrides)
     if (treeId && nodeId) {
