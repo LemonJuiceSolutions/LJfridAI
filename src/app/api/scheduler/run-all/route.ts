@@ -30,6 +30,17 @@ export interface RunAllTaskStatus {
   message?: string;
   durationMs?: number;
   startedAt?: string;
+  // Per-task pipeline report (ancestor chain + target step). Populated when
+  // the scheduler returns it. Lets the run-all dialog show the same expand
+  // view that single-task trigger and node Anteprima already render.
+  pipelineReport?: Array<{
+    name: string;
+    type: string;
+    status: 'success' | 'error' | 'skipped';
+    error?: string;
+    timestamp: string;
+    nodePath?: string;
+  }>;
 }
 
 interface RunAllState {
@@ -245,21 +256,29 @@ export async function POST(request: NextRequest) {
     startedBy: session.user.email,
     tasks: tasks.map((t: any) => {
       const cfg = (t.config as any) || {};
-      // Extract leaf node name from nodePath (e.g. root.options['A'].options['Mail'] -> 'Mail')
-      let nodeName: string | null = null;
-      if (cfg.nodePath) {
+      // Prefer the user-defined result name (the label typed in the editor) over
+      // the parent option key, which is just the path bucket of the node.
+      let nodeName: string | null =
+        cfg.sqlResultName || cfg.pythonResultName || null;
+      if (!nodeName && cfg.nodePath) {
         const matches = cfg.nodePath.match(/\['([^']+)'\]/g);
         if (matches && matches.length > 0) {
           nodeName = matches[matches.length - 1].replace(/\['|'\]/g, '');
         }
       }
-      // Detail: email subject for EMAIL_SEND, or sqlResultName/pythonResultName for DB tasks
+      // Detail: email subject for EMAIL_SEND, or fallback to nodePath leaf for
+      // DB tasks (so the second line still shows the path bucket as context).
       let detail: string | null = null;
       if (t.type === 'EMAIL_SEND' || t.type === 'email_send') {
         detail = cfg.subject || cfg.emailSubject || null;
-      } else {
-        detail = cfg.sqlResultName || cfg.pythonResultName || cfg.name || null;
+      } else if (cfg.nodePath) {
+        const matches = cfg.nodePath.match(/\['([^']+)'\]/g);
+        if (matches && matches.length > 0) {
+          const leaf = matches[matches.length - 1].replace(/\['|'\]/g, '');
+          if (leaf !== nodeName) detail = leaf;
+        }
       }
+      if (!detail) detail = cfg.name || null;
       return {
         taskId: t.id,
         taskName: t.name,
@@ -314,14 +333,16 @@ async function executeAllSequentially(run: RunAllState, tasks: any[], companyId:
   //  - CONCURRENCY: how many tasks to execute at once. In-process = 1 to
   //    avoid choking the Next.js event loop. Remote service can safely
   //    handle 2-4 parallel tasks (bottleneck becomes the source MSSQL).
-  const useRemote = !!process.env.SCHEDULER_SERVICE_URL;
+  // Run-all defaults: serial (1 task at a time), 1s breathing room between
+  // tasks. Reduces MSSQL pool pressure and Python backend memory spikes.
+  // Override via SCHEDULER_RUNALL_DELAY_MS / SCHEDULER_RUNALL_CONCURRENCY.
   const DELAY_MS = Math.max(
     0,
-    Number(process.env.SCHEDULER_RUNALL_DELAY_MS) || (useRemote ? 0 : 1000),
+    Number(process.env.SCHEDULER_RUNALL_DELAY_MS) || 1000,
   );
   const CONCURRENCY = Math.max(
     1,
-    Number(process.env.SCHEDULER_RUNALL_CONCURRENCY) || (useRemote ? 3 : 1),
+    Number(process.env.SCHEDULER_RUNALL_CONCURRENCY) || 1,
   );
 
   const total = run.tasks.length;
@@ -345,6 +366,11 @@ async function executeAllSequentially(run: RunAllState, tasks: any[], companyId:
       const result = await getSchedulerClient().executeTask(taskStatus.taskId, { maxRetriesOverride: 0 });
 
       taskStatus.durationMs = Date.now() - taskStart;
+      // Forward the pipeline report so the dialog can show ancestor steps + target.
+      const pipelineReport = (result.data as any)?.pipelineReport;
+      if (Array.isArray(pipelineReport)) {
+        taskStatus.pipelineReport = pipelineReport;
+      }
       if (result.success) {
         taskStatus.status = 'success';
         taskStatus.message = result.message || result.data?.message || `OK (${taskStatus.durationMs}ms)`;

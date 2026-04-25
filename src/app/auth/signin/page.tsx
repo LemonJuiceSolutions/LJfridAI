@@ -18,6 +18,8 @@ export default function SignInPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [mfaToken, setMfaToken] = useState('');
+    const [mfaRequired, setMfaRequired] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -27,9 +29,48 @@ export default function SignInPage() {
         const resolvedEmail = email.includes('@') ? email : email + domain;
 
         try {
+            // Step 1: check if MFA needed
+            if (!mfaRequired) {
+                const res = await fetch('/api/auth/mfa/precheck', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: resolvedEmail, password }),
+                });
+                const data = await res.json();
+                if (data.mfaRequired) {
+                    setMfaRequired(true);
+                    setIsLoading(false);
+                    return;
+                }
+                if (data.needsSetup) {
+                    // Admin without MFA — login and redirect to setup
+                    const result = await signIn('credentials', {
+                        email: resolvedEmail,
+                        password,
+                        skipMfa: 'true',
+                        redirect: false,
+                    });
+                    if (result?.error) {
+                        toast({ variant: 'destructive', title: 'Errore', description: 'Credenziali non valide' });
+                    } else {
+                        router.push('/auth/mfa-setup');
+                        router.refresh();
+                    }
+                    setIsLoading(false);
+                    return;
+                }
+            }
+
+            // Step 2: if MFA required but no code, wait
+            if (mfaRequired && !mfaToken) {
+                setIsLoading(false);
+                return;
+            }
+
             const result = await signIn('credentials', {
                 email: resolvedEmail,
                 password,
+                mfaToken: mfaToken || undefined,
                 redirect: false,
             });
 
@@ -37,7 +78,9 @@ export default function SignInPage() {
                 toast({
                     variant: 'destructive',
                     title: 'Errore di Autenticazione',
-                    description: result.error,
+                    description: result.error === 'CredentialsSignin'
+                        ? (mfaRequired ? 'Codice MFA non valido' : 'Credenziali non valide')
+                        : result.error,
                 });
             } else {
                 router.push('/');
@@ -100,6 +143,26 @@ export default function SignInPage() {
                                 Password dimenticata?
                             </Link>
                         </div>
+                        {mfaRequired && (
+                            <div className="space-y-2">
+                                <Label htmlFor="mfaToken">Codice MFA</Label>
+                                <Input
+                                    id="mfaToken"
+                                    type="text"
+                                    inputMode="numeric"
+                                    autoComplete="one-time-code"
+                                    placeholder="123456"
+                                    maxLength={6}
+                                    value={mfaToken}
+                                    onChange={(e) => setMfaToken(e.target.value.replace(/\D/g, ''))}
+                                    disabled={isLoading}
+                                    autoFocus
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Inserisci il codice a 6 cifre dalla tua app di autenticazione
+                                </p>
+                            </div>
+                        )}
                         <Button
                             type="submit"
                             className="w-full"

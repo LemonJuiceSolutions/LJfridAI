@@ -75,13 +75,14 @@ function parseNodePath(nodePath: string): string[] {
 function getTaskNodeName(task: { name: string; config?: any; treeName?: string | null }): string {
   const config = task.config as any;
   if (!config) return task.name;
+  // Prefer user-defined result name over parent option key.
+  if (config.sqlResultName) return config.sqlResultName;
+  if (config.pythonResultName) return config.pythonResultName;
+  if (config.subject) return config.subject;
   if (config.nodePath) {
     const parts = parseNodePath(config.nodePath);
     if (parts.length > 0) return parts[parts.length - 1];
   }
-  if (config.subject) return config.subject;
-  if (config.sqlResultName) return config.sqlResultName;
-  if (config.pythonResultName) return config.pythonResultName;
   // Handle implicit nodes: Node-xxx-yyy (Implicit) or Node-xxx-yyy (TYPE)
   if (task.name.startsWith('Node-') && task.treeName) {
     return task.treeName;
@@ -139,6 +140,7 @@ export default function SchedulerPage() {
 
   // Run-all state
   const [runAllOpen, setRunAllOpen] = useState(false);
+  const [expandedRunAllRows, setExpandedRunAllRows] = useState<Set<string>>(new Set());
   const [runAllData, setRunAllData] = useState<{
     active: boolean;
     run?: {
@@ -159,6 +161,14 @@ export default function SchedulerPage() {
         error?: string;
         message?: string;
         durationMs?: number;
+        pipelineReport?: Array<{
+          name: string;
+          type: string;
+          status: 'success' | 'error' | 'skipped';
+          error?: string;
+          timestamp: string;
+          nodePath?: string;
+        }>;
       }>;
     };
   } | null>(null);
@@ -662,50 +672,48 @@ export default function SchedulerPage() {
       </div>
 
       <Tabs defaultValue="tasks" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="tasks">
-            <List className="w-4 h-4 mr-2" />
-            Schedulazioni
-          </TabsTrigger>
-          <TabsTrigger value="executions">
-            <FileText className="w-4 h-4 mr-2" />
-            Registro Invii
-          </TabsTrigger>
-          <TabsTrigger value="missed">
-            <AlertCircle className="w-4 h-4 mr-2" />
-            Task Persi
-          </TabsTrigger>
-          <TabsTrigger value="upcoming">
-            <CalendarClock className="w-4 h-4 mr-2" />
-            Prossimi Invii
-          </TabsTrigger>
-          <TabsTrigger value="optimize">
-            <Sparkles className="w-4 h-4 mr-2" />
-            Ottimizzazione
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <TabsList>
+            <TabsTrigger value="tasks">
+              <List className="w-4 h-4 mr-2" />
+              Schedulazioni
+            </TabsTrigger>
+            <TabsTrigger value="executions">
+              <FileText className="w-4 h-4 mr-2" />
+              Registro Invii
+            </TabsTrigger>
+            <TabsTrigger value="missed">
+              <AlertCircle className="w-4 h-4 mr-2" />
+              Task Persi
+            </TabsTrigger>
+            <TabsTrigger value="upcoming">
+              <CalendarClock className="w-4 h-4 mr-2" />
+              Prossimi Invii
+            </TabsTrigger>
+            <TabsTrigger value="optimize">
+              <Sparkles className="w-4 h-4 mr-2" />
+              Ottimizzazione
+            </TabsTrigger>
+          </TabsList>
+          <div className="relative w-64">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Cerca..."
+              className="w-full pl-8 pr-3 py-1.5 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+        </div>
 
         <TabsContent value="tasks">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <CardTitle>Task Pianificati</CardTitle>
-                  <CardDescription>
-                    Gestisci e monitora tutti i task pianificati
-                  </CardDescription>
-                </div>
-                <div className="relative w-64">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="Cerca task..."
-                    className="w-full pl-8 pr-3 py-1.5 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                </div>
-              </div>
+              <CardTitle>Task Pianificati</CardTitle>
+              <CardDescription>
+                Gestisci e monitora tutti i task pianificati
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {loading ? (
@@ -821,13 +829,15 @@ export default function SchedulerPage() {
                         <TableCell className="whitespace-nowrap">
                           <div className="flex items-center gap-1">
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
                               onClick={() => handleTriggerTask(task)}
-                              title="Esegui ora"
-                              className="h-7 w-7 p-0"
+                              title="Esegui ora questo singolo task"
+                              className="h-7 px-2 text-xs gap-1 border-violet-300 text-violet-700 hover:bg-violet-50 hover:border-violet-400 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-950"
+                              disabled={isRunning}
                             >
-                              <Play className="w-3.5 h-3.5" />
+                              <Play className="w-3 h-3" />
+                              Esegui
                             </Button>
                             <Button
                               variant="ghost"
@@ -875,19 +885,19 @@ export default function SchedulerPage() {
         </TabsContent>
 
         <TabsContent value="executions">
-          <SchedulerExecutionLog />
+          <SchedulerExecutionLog search={search} />
         </TabsContent>
 
         <TabsContent value="missed">
-          <MissedTasksPanel />
+          <MissedTasksPanel search={search} />
         </TabsContent>
 
         <TabsContent value="upcoming">
-          <SchedulerUpcoming />
+          <SchedulerUpcoming search={search} />
         </TabsContent>
 
         <TabsContent value="optimize">
-          <SchedulerOptimize />
+          <SchedulerOptimize search={search} />
         </TabsContent>
       </Tabs>
 
@@ -1056,9 +1066,12 @@ export default function SchedulerPage() {
 
               {/* Task list */}
               <div className="flex-1 overflow-y-auto space-y-0.5 min-h-0">
-                {runAllData.run.tasks.map((t, i) => (
+                {runAllData.run.tasks.map((t, i) => {
+                  const hasReport = Array.isArray(t.pipelineReport) && t.pipelineReport.length > 0;
+                  const expanded = expandedRunAllRows.has(t.taskId);
+                  return (
+                  <div key={t.taskId}>
                   <div
-                    key={t.taskId}
                     className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md transition-colors ${
                       t.status === 'running'
                         ? 'bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800'
@@ -1069,6 +1082,25 @@ export default function SchedulerPage() {
                             : ''
                     }`}
                   >
+                    {/* Expand toggle */}
+                    <button
+                      type="button"
+                      className={`shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-muted ${hasReport ? 'cursor-pointer' : 'cursor-default opacity-30'}`}
+                      onClick={() => {
+                        if (!hasReport) return;
+                        setExpandedRunAllRows(prev => {
+                          const next = new Set(prev);
+                          if (next.has(t.taskId)) next.delete(t.taskId);
+                          else next.add(t.taskId);
+                          return next;
+                        });
+                      }}
+                      title={hasReport ? (expanded ? 'Nascondi pipeline' : 'Mostra pipeline') : 'Pipeline non disponibile'}
+                      disabled={!hasReport}
+                    >
+                      <ChevronRight className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                    </button>
+
                     {/* Status icon */}
                     <div className="shrink-0 w-4">
                       {t.status === 'pending' && <span className="block w-2 h-2 rounded-full bg-muted-foreground/30 mx-auto" />}
@@ -1115,7 +1147,30 @@ export default function SchedulerPage() {
                       )}
                     </div>
                   </div>
-                ))}
+                  {hasReport && expanded && (
+                    <div className="ml-12 mt-1 mb-2 pl-3 border-l-2 border-violet-200 dark:border-violet-800 space-y-0.5">
+                      {t.pipelineReport!.map((step, si) => (
+                        <div key={si} className="flex items-center gap-2 text-[11px] py-0.5">
+                          <span className="shrink-0">
+                            {step.status === 'success' && <CheckCircle className="w-3 h-3 text-green-500" />}
+                            {step.status === 'error' && <XCircle className="w-3 h-3 text-red-500" />}
+                            {step.status === 'skipped' && <AlertCircle className="w-3 h-3 text-yellow-500" />}
+                          </span>
+                          <span className="font-mono text-muted-foreground tabular-nums w-5">{si + 1}.</span>
+                          <span className="flex-1 truncate">{step.name}</span>
+                          <Badge variant="outline" className="text-[9px] px-1 py-0">{step.type}</Badge>
+                          {step.error && (
+                            <span className="text-red-600 dark:text-red-400 text-[10px] truncate max-w-[200px]" title={step.error}>
+                              {step.error}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  </div>
+                  );
+                })}
               </div>
 
               {/* Error details (show last failure) */}

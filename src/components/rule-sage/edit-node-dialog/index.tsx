@@ -40,7 +40,8 @@ import type { DecisionLeaf, DecisionNode, MediaItem, LinkItem, TriggerItem, Emai
 import { Input } from '@/components/ui/input';
 import cloneDeep from 'lodash/cloneDeep';
 import { useToast } from '@/hooks/use-toast';
-import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, fetchTableSchemaAction, generatePythonAction, executePythonPreviewAction, exportTableToSqlAction, fetchTableDataAction, executeEmailAction, getAuthenticatedUser, processDescriptionAction, rephraseQuestionAction, updateTreeNodeAction, fetchOpenRouterModelsAction } from '@/app/actions';
+import { executeTriggerAction, generateSqlAction, executeSqlPreviewAction, fetchTableSchemaAction, generatePythonAction, exportTableToSqlAction, fetchTableDataAction, executeEmailAction, getAuthenticatedUser, processDescriptionAction, rephraseQuestionAction, updateTreeNodeAction, fetchOpenRouterModelsAction } from '@/app/actions';
+import { executePythonPreviewClient } from '@/lib/execute-python-preview-client';
 import { sendEmailWithConnectorAction, sendTestEmailWithDataAction } from '@/app/actions/connectors';
 import { executeAncestorChainAction, findAncestorsAction } from '@/app/actions/ancestors';
 import { uploadFile } from '@/lib/storage-client';
@@ -702,6 +703,38 @@ export default function EditNodeDialog({
     }
   }, [isOpen, initialNode, nodeType, availableInputTables]);
 
+  // Hydrate from NodePreviewCache when the dialog opens. The scheduler and
+  // pipeline runs persist results into NodePreviewCache with DuckDB blobs;
+  // the tree JSON copy can be stale if the user hasn't re-saved manually.
+  // Reading the cache here keeps the dialog and the widget renderer in sync.
+  useEffect(() => {
+    if (!isOpen || !treeId) return;
+    const nodeId = (initialNode as any)?.id;
+    if (!nodeId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getNodePreviewAction } = await import('@/app/actions');
+        const cached = await getNodePreviewAction(treeId, nodeId);
+        if (cancelled || !cached) return;
+        if (cached.pythonPreviewResult) {
+          setPythonPreviewResult(prev => ({ ...(prev || {}), ...cached.pythonPreviewResult }));
+          setPythonPreviewExpanded(true);
+          if (cached.pythonPreviewResult.type === 'chart' || cached.pythonPreviewResult.type === 'html') {
+            setPythonPreviewFullHeight(true);
+          }
+        }
+        if (Array.isArray(cached.sqlPreviewData)) {
+          setSqlPreviewData(cached.sqlPreviewData);
+          if (cached.sqlPreviewTimestamp) setSqlPreviewTimestamp(cached.sqlPreviewTimestamp);
+        }
+      } catch (e: any) {
+        console.warn('[edit-node-dialog] cache hydration failed:', e?.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, treeId, initialNode]);
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files) return;
@@ -963,7 +996,7 @@ export default function EditNodeDialog({
         if (response.code) {
           setPipelineAgentStatus(retryCount > 0 ? `Correzione in corso (Tentativo ${retryCount}/3)...` : "Esecuzione Anteprima Automatica...");
 
-          const previewRes = await executePythonPreviewAction(
+          const previewRes = await executePythonPreviewClient(
             response.code,
             pythonOutputType,
             {},
@@ -987,7 +1020,6 @@ export default function EditNodeDialog({
               };
             }),
             pythonConnectorId,
-            undefined,
             selectedDocuments.length > 0 ? selectedDocuments : undefined
           );
 
@@ -1248,7 +1280,104 @@ export default function EditNodeDialog({
     window.print();
   }, []);
 
-  // --- REUSABLE PIPELINE EXECUTION LOGIC ---
+  // ── UNIFIED PIPELINE EXECUTION (server-side via /api/internal/execute-pipeline) ──
+  // Same path used by widget refresh and scheduler so the three flows produce
+  // identical results. Streams NDJSON progress, updates executionPipeline UI,
+  // then re-hydrates the local preview from NodePreviewCache.
+  const runUnifiedPreview = async (): Promise<boolean> => {
+    if (!treeId || !currentNodeId) return false;
+    if (isExecutingRef.current) return false;
+    setIsPipelineExecuting(true);
+    isExecutingRef.current = true;
+    setPipelineAgentStatus('Esecuzione pipeline server-side...');
+    setPipelineProgressStep(1);
+    setExecutionPipeline([]);
+
+    const stepLabels = new Map<number, string>();
+    const stepTypes = new Map<number, string>();
+
+    try {
+      const res = await fetch('/api/internal/execute-pipeline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ treeId, nodeId: currentNodeId }),
+      });
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || 'Pipeline fallita');
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let pipelineSuccess = true;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const ev = JSON.parse(line);
+            if (ev.type === 'step-start') {
+              setExecutionPipeline(prev => {
+                const next = [...prev];
+                next[ev.index] = { name: stepLabels.get(ev.index) || `Step ${ev.index + 1}`, type: (stepTypes.get(ev.index) as any) || 'sql', status: 'running' };
+                return next;
+              });
+            } else if (ev.type === 'step-done') {
+              setExecutionPipeline(prev => {
+                const next = [...prev];
+                next[ev.index] = {
+                  name: stepLabels.get(ev.index) || `Step ${ev.index + 1}`,
+                  type: (stepTypes.get(ev.index) as any) || 'sql',
+                  status: ev.success ? 'success' : 'error',
+                  message: ev.error || ev.message,
+                  executionTime: ev.executionTime,
+                };
+                return next;
+              });
+            } else if (ev.type === 'done') {
+              pipelineSuccess = !!ev.success;
+            }
+          } catch { /* malformed line, skip */ }
+        }
+      }
+
+      // Re-hydrate preview from cache (server saved it there).
+      try {
+        const { getNodePreviewAction } = await import('@/app/actions');
+        const cached = await getNodePreviewAction(treeId, currentNodeId);
+        if (cached?.pythonPreviewResult) {
+          setPythonPreviewResult(prev => ({ ...(prev || {}), ...cached.pythonPreviewResult }));
+          setPythonPreviewExpanded(true);
+          if (cached.pythonPreviewResult.type === 'chart' || cached.pythonPreviewResult.type === 'html') {
+            setPythonPreviewFullHeight(true);
+          }
+          if (onSavePreview && nodePath) {
+            onSavePreview(nodePath, { ...cached.pythonPreviewResult, timestamp: Date.now() });
+          }
+        }
+      } catch (e: any) {
+        console.warn('[runUnifiedPreview] cache hydration failed:', e?.message);
+      }
+
+      setPipelineAgentStatus(pipelineSuccess ? null : 'Pipeline con errori — vedi dettagli');
+      setPipelineProgressStep(0);
+      return pipelineSuccess;
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Errore pipeline', description: e?.message || 'Esecuzione fallita' });
+      setPipelineAgentStatus(null);
+      setPipelineProgressStep(0);
+      return false;
+    } finally {
+      setIsPipelineExecuting(false);
+      isExecutingRef.current = false;
+    }
+  };
+
+  // --- REUSABLE PIPELINE EXECUTION LOGIC (legacy — kept for export/email modes) ---
   const executeFullPipeline = async (
     targetAction: 'preview' | 'export' | 'email',
     onSuccess?: (pipelineResults?: Record<string, any>, report?: any[]) => Promise<void>,
@@ -1473,7 +1602,7 @@ export default function EditNodeDialog({
               })();
               console.log(`[BUTTON DEBUG] Final inputData for ${ancestor.name}: [${inputKeys.join(', ')}] (dfTarget -> ${dfTarget || 'none'}, last key -> ${inputKeys[inputKeys.length - 1] || 'none'})`);
 
-              const res = await executePythonPreviewAction(
+              const res = await executePythonPreviewClient(
                 ancestor.pythonCode,
                 ancestor.pythonOutputType || 'table',
                 inputData, // Pass accumulated ancestor data
@@ -1489,7 +1618,6 @@ export default function EditNodeDialog({
                   selectedDocuments: (d as any).selectedDocuments
                 })),
                 ancestor.connectorId,
-                undefined,
                 ancestor.selectedDocuments?.length > 0 ? ancestor.selectedDocuments : undefined,
                 dfTarget // Explicit df mapping: direct parent
               );
@@ -3501,7 +3629,7 @@ export default function EditNodeDialog({
                                       pipelineDependencies: depMeta?.pipelineDependencies,
                                     };
                                   });
-                                  const res = await executePythonPreviewAction(scriptToExecute, pythonOutputType, inputData, deps, pythonConnectorId, undefined, selectedDocuments.length > 0 ? selectedDocuments : undefined);
+                                  const res = await executePythonPreviewClient(scriptToExecute, pythonOutputType, inputData, deps, pythonConnectorId, selectedDocuments.length > 0 ? selectedDocuments : undefined);
                                   setPythonLastExecLog({
                                     stdout: res.stdout,
                                     debugLogs: res.debugLogs,
@@ -3597,12 +3725,19 @@ export default function EditNodeDialog({
                           <Button
                             ref={pythonPreviewBtnRef}
                             className="bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-500/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-600 transition-all duration-200 shadow-sm"
-                            onClick={() => {
+                            onClick={async () => {
                               if (!pythonCode) {
                                 toast({ variant: 'destructive', title: "Errore", description: "Inserisci uno script Python prima di eseguire l'anteprima." });
                                 return;
                               }
-                              // Execute full pipeline logic (Ancestors -> This Node)
+                              // UNIFIED PATH: same server-side runner used by widget refresh + scheduler.
+                              // Falls back to legacy in-dialog orchestration only if treeId/nodeId missing
+                              // (e.g. unsaved new node).
+                              if (treeId && currentNodeId) {
+                                await runUnifiedPreview();
+                                return;
+                              }
+                              // Legacy fallback (kept for nodes that don't yet have a stable id).
                               executeFullPipeline('preview', async (ancestorResults) => {
                                 console.log('[PYTHON EXEC] Pipeline finished. Results:', Object.keys(ancestorResults || {}));
 
@@ -3668,7 +3803,7 @@ export default function EditNodeDialog({
                                   }
                                 }
 
-                                const res = await executePythonPreviewAction(pythonCode, pythonOutputType, inputData, deps, pythonConnectorId, undefined, selectedDocuments.length > 0 ? selectedDocuments : undefined);
+                                const res = await executePythonPreviewClient(pythonCode, pythonOutputType, inputData, deps, pythonConnectorId, selectedDocuments.length > 0 ? selectedDocuments : undefined);
 
                                 // Always save execution logs for Debug tab
                                 setPythonLastExecLog({
@@ -4331,7 +4466,7 @@ export default function EditNodeDialog({
                                       pipelineDependencies: table.pipelineDependencies,
                                       selectedDocuments: table.selectedDocuments
                                     })) || [];
-                                  const res = await executePythonPreviewAction(pythonCode, 'table', {}, pipelineDeps, pythonConnectorId, undefined, selectedDocuments.length > 0 ? selectedDocuments : undefined);
+                                  const res = await executePythonPreviewClient(pythonCode, 'table', {}, pipelineDeps, pythonConnectorId, selectedDocuments.length > 0 ? selectedDocuments : undefined);
                                   if (res.success && Array.isArray(res.data)) {
                                     sourceData = res.data;
                                     break;
@@ -4346,8 +4481,8 @@ export default function EditNodeDialog({
                                   // Python Ancestor
                                   if (ancestorTable.isPython && ancestorTable.pythonCode) {
                                     toast({ title: "Elaborazione Python...", description: `Esecuzione script per ${tableName}...` });
-                                    // Use executePythonPreviewAction to fetch data
-                                    const res = await executePythonPreviewAction(
+                                    // Use executePythonPreviewClient to fetch data (bypasses Server Action 10MB cap)
+                                    const res = await executePythonPreviewClient(
                                       ancestorTable.pythonCode,
                                       'table',
                                       {},
@@ -4361,7 +4496,6 @@ export default function EditNodeDialog({
                                         selectedDocuments: (d as any).selectedDocuments
                                       })),
                                       ancestorTable.connectorId,
-                                      undefined,
                                       (ancestorTable.selectedDocuments?.length ?? 0) > 0 ? ancestorTable.selectedDocuments : undefined
                                     );
                                     if (res.success && Array.isArray(res.data)) {

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { code, outputType, inputData, dependencies, connectorId, selectedDocuments } = body;
+        const { code, outputType, inputData, dependencies, connectorId, selectedDocuments, dfTarget } = body;
 
         if (!code) {
             return NextResponse.json({ success: false, error: 'Missing code' }, { status: 400 });
@@ -42,7 +42,8 @@ export async function POST(req: NextRequest) {
             dependencies,
             connectorId,
             undefined,
-            selectedDocuments
+            selectedDocuments,
+            dfTarget
         );
 
         return NextResponse.json(result);

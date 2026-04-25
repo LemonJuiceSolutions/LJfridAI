@@ -1019,6 +1019,41 @@ export async function getTreePreviewMetadataAction(treeId: string): Promise<
     }
 }
 
+/**
+ * Persist preview data into NodePreviewCache (heavy fields offloaded to
+ * DuckDB). Used after a manual Anteprima from the node editor so the
+ * widget renderer (which reads NodePreviewCache first) immediately sees
+ * the same data shown in the dialog. Without this the cache row from a
+ * prior scheduler run would shadow the fresh manual preview.
+ */
+export async function saveNodePreviewAction(
+    treeId: string,
+    nodeId: string,
+    cacheData: any,
+): Promise<{ success: boolean; error: string | null }> {
+    try {
+        const user = await getAuthenticatedUser();
+        if (!treeId || !nodeId) {
+            return { success: false, error: "treeId/nodeId mancanti" };
+        }
+        // Scope by company — never let a session write into another tenant's cache.
+        const tree = await db.tree.findFirst({
+            where: { id: treeId, companyId: user.companyId },
+            select: { id: true },
+        });
+        if (!tree) {
+            return { success: false, error: "Albero non trovato" };
+        }
+        const { saveNodePreview } = await import('@/lib/preview-cache');
+        await saveNodePreview(treeId, nodeId, cacheData);
+        return { success: true, error: null };
+    } catch (e) {
+        const error = e instanceof Error ? e.message : "Errore salvataggio cache anteprima";
+        console.error("Error in saveNodePreviewAction:", e);
+        return { success: false, error };
+    }
+}
+
 export async function getNodePreviewAction(treeId: string, nodeId: string, maxRows?: number): Promise<any | null> {
     try {
         const { db } = await import('@/lib/db');

@@ -1082,15 +1082,16 @@ export class SchedulerService {
           let effectiveQuery = tableDef.sqlQuery;
           const addedDepNames = new Set<string>();
 
-          // Helper for precise replacement (to avoid partial matches like PROD vs PRODFIL)
+          // Helper for precise replacement (to avoid partial matches like PROD vs PRODFIL).
+          // Strips 0, 1 or 2 leading qualifiers ([db].[schema].table or schema.table)
+          // because temp tables (##xxx) cannot be referenced with database/schema prefix.
           const replaceRef = (sql: string, oldName: string, newName: string) => {
             const escaped = escapeRegExp(oldName);
-            // Match FROM/JOIN followed by optional schema and the table name
-            const pattern = `\\b(FROM|JOIN)\\s+((?:\\[[^\\]]+\\]|\\w+)\\.)?\\[?${escaped}\\]?\\b`;
+            const part = `(?:\\[[^\\]]+\\]|\\w+)`;
+            // FROM/JOIN [db].[schema].[name] | [schema].[name] | [name]
+            const pattern = `\\b(FROM|JOIN)\\s+(?:${part}\\.){0,2}\\[?${escaped}\\]?\\b`;
             const regex = new RegExp(pattern, 'gi');
-            return sql.replace(regex, (match, keyword, schema) => {
-              return `${keyword} ${schema || ''}${newName}`;
-            });
+            return sql.replace(regex, (_m, keyword) => `${keyword} ${newName}`);
           };
 
           for (const [key, val] of Object.entries(results)) {
@@ -2071,6 +2072,74 @@ export class SchedulerService {
   }
 
   private async executeSqlNode(config: ScheduledTaskConfig): Promise<TaskExecutionResult> {
+    const { query, sqlResultName, treeId, nodeId, sqlExportConfig } = config;
+    if (!query) return { success: false, error: "Missing Query" };
+    if (!treeId || !nodeId) return { success: false, error: "Missing treeId/nodeId" };
+
+    // ── UNIFIED PIPELINE EXECUTION ──
+    // Same path used by node Anteprima and widget refresh.
+    logger.log(`[SqlNode] Delegating to unified pipeline-runner (tree=${treeId}, node=${nodeId})`);
+    const { runPipelineForNode } = await import('@/lib/pipeline-runner');
+    const run = await runPipelineForNode(treeId, nodeId, {
+      emit: (e) => {
+        if (e.type === 'step-done' && e.success === false) {
+          logger.warn(`[SqlNode] Step ${e.index} failed: ${e.error}`);
+        }
+      },
+    });
+
+    if (!run.success) {
+      const firstErr = run.pipelineReport.find(s => s.status === 'error');
+      return {
+        success: false,
+        error: firstErr?.error || 'Pipeline execution failed',
+        data: { pipelineReport: run.pipelineReport },
+      };
+    }
+
+    const lookupKey = sqlResultName
+      || (run.pipelineReport[run.pipelineReport.length - 1]?.name);
+    const finalRes = lookupKey ? run.results.get(lookupKey) : undefined;
+    const data = (finalRes as any)?.data;
+
+    if (sqlExportConfig?.targetConnectorId && sqlExportConfig.targetTableName) {
+      if (!Array.isArray(data) || data.length === 0) {
+        return {
+          success: true,
+          message: 'Pipeline eseguita, nessun dato da esportare',
+          data: { pipelineReport: run.pipelineReport },
+        };
+      }
+      const exportRes = await exportTableToSql(
+        sqlExportConfig.targetConnectorId,
+        sqlExportConfig.targetTableName,
+        data,
+        true,
+        true,
+      );
+      if (!exportRes.success) {
+        return {
+          success: false,
+          error: `Export failed: ${exportRes.error}`,
+          data: { pipelineReport: run.pipelineReport },
+        };
+      }
+      return {
+        success: true,
+        message: `Pipeline eseguita & esportata a ${sqlExportConfig.targetTableName}`,
+        data: { pipelineReport: run.pipelineReport },
+      };
+    }
+
+    return {
+      success: true,
+      message: `Pipeline eseguita (${run.pipelineReport.length} step, ${data?.length || 0} righe)`,
+      data: { pipelineReport: run.pipelineReport },
+    };
+  }
+
+  // Legacy: kept for reference. The actual implementation now ends here.
+  private async _executeSqlNode_legacy(config: ScheduledTaskConfig): Promise<TaskExecutionResult> {
     // 1. Prepare Inputs
     const {
       query,
@@ -2104,7 +2173,7 @@ export class SchedulerService {
     // EXECUTE ANCESTORS (Full Pipeline Refresh)
     // Execute all context tables to ensure they are up to date and exported if needed
     logger.log(`[SqlNode] Starting ancestor chain execution.`);
-    const { results: ancestorResults } = await this.executeAncestorChain(allContext, undefined, true, treeId, sqlCompanyId);
+    const { results: ancestorResults, pipelineReport } = await this.executeAncestorChain(allContext, undefined, true, treeId, sqlCompanyId);
 
     // Build data-only dependencies from ancestor results (NOT original query definitions).
     // Passing original deps with query/pipelineDependencies would cause executeSqlPreviewAction
@@ -2126,8 +2195,22 @@ export class SchedulerService {
       logger.log(`[SqlNode] Result already computed in ancestor chain. Skipping redundant execution.`);
       result = { data: cachedData };
     } else {
-      result = await executeSqlPreview(query, connectorIdSql, dependencies, sqlCompanyId);
-      if (result.error) throw new Error(result.error);
+      try {
+        result = await executeSqlPreview(query, connectorIdSql, dependencies, sqlCompanyId);
+      } catch (e: any) {
+        result = { error: e?.message || String(e), data: undefined };
+      }
+      if (result.error) {
+        pipelineReport.push({
+          name: sqlResultName || nodeId || 'Target',
+          type: 'SQL',
+          status: 'error',
+          error: result.error,
+          timestamp: new Date().toISOString(),
+          nodePath: nodePath || nodeId,
+        });
+        return { success: false, error: result.error, data: { pipelineReport } };
+      }
     }
 
     const data = result.data; // Array of rows
@@ -2153,25 +2236,110 @@ export class SchedulerService {
       }
     }
 
+    // Append the final target node so the pipeline report shows the whole chain.
+    pipelineReport.push({
+      name: sqlResultName || nodeId || 'Target',
+      type: 'SQL',
+      status: 'success',
+      timestamp: new Date().toISOString(),
+      nodePath: nodePath || nodeId,
+    });
+
     // 5. Export if configured
     if (sqlExportConfig && sqlExportConfig.targetConnectorId && sqlExportConfig.targetTableName) {
-      // Perform Export — must pass isSystem=true so it skips getServerSession/headers()
-      // which would fail outside a Next.js request context (scheduler background)
       const exportRes = await exportTableToSql(
         sqlExportConfig.targetConnectorId,
         sqlExportConfig.targetTableName,
         data as any[],
-        true,  // createTableIfNotExists
-        true,  // truncate
+        true,
+        true,
       );
       if (!exportRes.success) throw new Error(`Export failed: ${exportRes.error}`);
-      return { success: true, message: `Executed & Exported to ${sqlExportConfig.targetTableName}` };
+      return { success: true, message: `Executed & Exported to ${sqlExportConfig.targetTableName}`, data: { pipelineReport } };
     }
 
-    return { success: true, message: `Executed. returned ${data?.length || 0} rows.` };
+    return { success: true, message: `Executed. returned ${data?.length || 0} rows.`, data: { pipelineReport } };
   }
 
   private async executePythonNode(config: ScheduledTaskConfig): Promise<TaskExecutionResult> {
+    const {
+      pythonCode,
+      pythonResultName,
+      treeId, nodeId,
+      sqlExportConfig,
+    } = config;
+
+    if (!pythonCode) return { success: false, error: "Missing Python Code" };
+    if (!treeId || !nodeId) return { success: false, error: "Missing treeId/nodeId" };
+
+    // ── UNIFIED PIPELINE EXECUTION ──
+    // Delegate to the shared pipeline-runner so node Anteprima, widget refresh
+    // and scheduler all run the EXACT same code path. The runner handles tree
+    // load, ancestor flatten, topological exec, and preview persistence.
+    logger.log(`[PythonNode] Delegating to unified pipeline-runner (tree=${treeId}, node=${nodeId})`);
+    const { runPipelineForNode } = await import('@/lib/pipeline-runner');
+    const run = await runPipelineForNode(treeId, nodeId, {
+      emit: (e) => {
+        if (e.type === 'step-done' && e.success === false) {
+          logger.warn(`[PythonNode] Step ${e.index} failed: ${e.error}`);
+        }
+      },
+    });
+
+    if (!run.success) {
+      const firstErr = run.pipelineReport.find(s => s.status === 'error');
+      return {
+        success: false,
+        error: firstErr?.error || 'Pipeline execution failed',
+        data: { pipelineReport: run.pipelineReport },
+      };
+    }
+
+    // Resolve final result for optional export. Try the configured result name,
+    // otherwise fall back to the last entry (target node).
+    const lookupKey = pythonResultName
+      || (run.pipelineReport[run.pipelineReport.length - 1]?.name);
+    const finalRes = lookupKey ? run.results.get(lookupKey) : undefined;
+
+    if (sqlExportConfig?.targetConnectorId && sqlExportConfig.targetTableName) {
+      const data = (finalRes as any)?.data;
+      if (Array.isArray(data) && data.length > 0) {
+        const exportRes = await exportTableToSql(
+          sqlExportConfig.targetConnectorId,
+          sqlExportConfig.targetTableName,
+          data,
+          true,
+          true,
+        );
+        if (!exportRes.success) {
+          return {
+            success: false,
+            error: `Export failed: ${exportRes.error}`,
+            data: { pipelineReport: run.pipelineReport },
+          };
+        }
+        return {
+          success: true,
+          message: `Pipeline eseguita & esportata a ${sqlExportConfig.targetTableName}`,
+          data: { pipelineReport: run.pipelineReport },
+        };
+      }
+      return {
+        success: true,
+        message: 'Pipeline eseguita, nessun dato da esportare',
+        data: { pipelineReport: run.pipelineReport },
+      };
+    }
+
+    return {
+      success: true,
+      message: `Pipeline eseguita (${run.pipelineReport.length} step)`,
+      data: { pipelineReport: run.pipelineReport },
+    };
+  }
+
+  // Legacy: kept for reference. The actual implementation now ends here.
+  private async _executePythonNode_legacy(config: ScheduledTaskConfig): Promise<TaskExecutionResult> {
     const {
       pythonCode,
       pythonOutputType, // table, chart, etc
@@ -2192,17 +2360,164 @@ export class SchedulerService {
 
     // EXECUTE ANCESTORS (Full Pipeline Refresh)
     logger.log(`[PythonNode] Starting ancestor chain execution.`);
-    const { results: ancestorResults } = await this.executeAncestorChain(allContext, undefined, true, treeId, companyId);
+    const { results: ancestorResults, pipelineReport } = await this.executeAncestorChain(allContext, undefined, true, treeId, companyId);
 
-    // Build inputData from ancestor results (NOT re-executing queries).
-    // Passing original deps with query/pythonCode would cause executePythonPreviewAction
-    // to re-execute them recursively, which fails for the same reason as SQL nodes.
+    // Build inputData from ancestor results.
     const inputData: Record<string, any[]> = {};
+    const extractArr = (v: any): any[] | null => {
+      if (Array.isArray(v)) return v;
+      if (v && typeof v === 'object' && 'data' in v && Array.isArray((v as any).data)) return (v as any).data;
+      return null;
+    };
     for (const [key, val] of Object.entries(ancestorResults)) {
-      const dataArr = Array.isArray(val) ? val :
-        (val && typeof val === 'object' && 'data' in val && Array.isArray((val as any).data)) ? (val as any).data : null;
-      if (dataArr) {
-        inputData[key] = dataArr;
+      const arr = extractArr(val);
+      if (arr) inputData[key] = arr;
+    }
+
+    // STRICT DEPENDENCY VALIDATION: every name in pythonSelectedPipelines MUST be
+    // resolvable. If executeAncestorChain failed to produce a dependency (e.g. its
+    // SQL temp tables got dropped between connections), retry it once via in-memory
+    // injection. If it still fails — or if any upstream step errored — abort the
+    // task with the original error. We don't paper over failures: better to surface
+    // a clear error than silently render a chart with missing data.
+    const wanted = (pythonSelectedPipelines as string[]) || [];
+    const missing = wanted.filter((n) => !(n in inputData));
+
+    // Collect upstream errors from the ancestor chain so we can surface them.
+    // executeAncestorChain populates pipelineReport but we only get `results` back
+    // here. Re-derive errors by checking each context table the script needs.
+    const upstreamErrors: string[] = [];
+
+    if (missing.length > 0) {
+      logger.log(`[PythonNode] ${missing.length} selected pipelines missing from ancestor results: [${missing.join(', ')}] — attempting recovery via in-memory injection`);
+
+      // Topological order: for each missing dep, resolve its parents first.
+      const ctxByName = new Map<string, any>();
+      for (const c of allContext) {
+        if (c?.name) ctxByName.set(c.name, c);
+      }
+
+      const resolved = new Set(Object.keys(inputData));
+      const toResolve: string[] = [];
+      const seen = new Set<string>();
+      const dfs = (name: string, stack: Set<string>) => {
+        if (resolved.has(name) || seen.has(name)) return;
+        if (stack.has(name)) return;
+        const ctx = ctxByName.get(name);
+        if (!ctx) return;
+        stack.add(name);
+        const deps = (ctx.pipelineDependencies || []).map((d: any) => d.tableName).filter(Boolean) as string[];
+        for (const d of deps) dfs(d, stack);
+        stack.delete(name);
+        if (!seen.has(name)) {
+          seen.add(name);
+          toResolve.push(name);
+        }
+      };
+      for (const m of missing) dfs(m, new Set());
+
+      let fallbackCid: string = pythonConnectorId || '';
+      if (!fallbackCid) {
+        for (const c of allContext) {
+          const cid = c?.connectorId || c?.sqlConnectorId || c?.pythonConnectorId;
+          if (cid) { fallbackCid = cid; break; }
+        }
+      }
+
+      for (const name of toResolve) {
+        const ctx = ctxByName.get(name);
+        if (!ctx) {
+          upstreamErrors.push(`Dipendenza "${name}" non configurata nel nodo (manca da contextTables).`);
+          continue;
+        }
+        try {
+          const deps = Object.entries(inputData)
+            .filter(([k]) => k !== name)
+            .map(([k, v]) => ({ tableName: k, data: v }));
+          if (ctx.sqlQuery || ctx.query) {
+            const cid = ctx.connectorId || ctx.sqlConnectorId || fallbackCid;
+            if (!cid) {
+              upstreamErrors.push(`"${name}": connector SQL non configurato.`);
+              continue;
+            }
+            const r = await executeSqlPreview(ctx.sqlQuery || ctx.query, cid, deps, companyId);
+            if (r.error) {
+              upstreamErrors.push(`"${name}" (SQL): ${r.error}`);
+              continue;
+            }
+            if (!Array.isArray(r.data)) {
+              upstreamErrors.push(`"${name}" (SQL): risultato non è una tabella (${typeof r.data}).`);
+              continue;
+            }
+            inputData[name] = r.data;
+            resolved.add(name);
+            logger.log(`[PythonNode] Recovered "${name}" via in-memory SQL re-exec (${r.data.length} rows)`);
+          } else if (ctx.pythonCode) {
+            const cid = ctx.pythonConnectorId || ctx.connectorId || fallbackCid;
+            const r = await executePythonPreview(
+              ctx.pythonCode,
+              ctx.pythonOutputType || 'table',
+              inputData,
+              [],
+              cid,
+              ctx.selectedDocuments?.length > 0 ? ctx.selectedDocuments : undefined,
+              undefined,
+              companyId,
+            );
+            if (!r.success) {
+              upstreamErrors.push(`"${name}" (Python): ${r.error || 'unknown error'}`);
+              continue;
+            }
+            if (!Array.isArray(r.data)) {
+              upstreamErrors.push(`"${name}" (Python): output non tabulare.`);
+              continue;
+            }
+            inputData[name] = r.data;
+            resolved.add(name);
+            logger.log(`[PythonNode] Recovered "${name}" via in-memory Python re-exec (${r.data.length} rows)`);
+          } else {
+            upstreamErrors.push(`"${name}": nodo senza sqlQuery né pythonCode.`);
+          }
+        } catch (e: any) {
+          upstreamErrors.push(`"${name}": ${e?.message || e}`);
+        }
+      }
+    }
+
+    // Hard fail: if any selected pipeline is still missing OR if upstream errors
+    // accumulated during recovery, abort instead of running the script with
+    // missing/silent data. The task's lastError will show every failed step.
+    const stillMissing = wanted.filter((n) => !(n in inputData));
+    if (upstreamErrors.length > 0 || stillMissing.length > 0) {
+      const parts: string[] = [];
+      if (stillMissing.length > 0) {
+        parts.push(`Dipendenze irrisolte: ${stillMissing.map(n => `"${n}"`).join(', ')}`);
+      }
+      if (upstreamErrors.length > 0) {
+        parts.push(`Errori a monte:\n  - ${upstreamErrors.join('\n  - ')}`);
+      }
+      const fullMsg = `Pipeline interrotta: lo script "${pythonResultName || nodeId}" richiede ${wanted.length} tabelle ma alcuni step a monte sono falliti.\n${parts.join('\n')}`;
+      logger.error(`[PythonNode] ${fullMsg.replace(/\n/g, ' | ')}`);
+      // Mark target as error in pipelineReport so the dialog shows the chain.
+      pipelineReport.push({
+        name: pythonResultName || nodeId || 'Target',
+        type: 'Python',
+        status: 'error',
+        error: fullMsg,
+        timestamp: new Date().toISOString(),
+        nodePath: nodePath || nodeId,
+      });
+      return { success: false, error: fullMsg, data: { pipelineReport } };
+    }
+
+    // Soft warning: any selected pipeline that resolved to 0 rows is suspicious
+    // (typically a DDL-only SQL node missing its trailing SELECT). Log loud so
+    // the operator sees it without failing the task — partial-data charts are
+    // sometimes intentional.
+    for (const name of wanted) {
+      const arr = inputData[name];
+      if (Array.isArray(arr) && arr.length === 0) {
+        logger.warn(`[PythonNode] WARNING: dependency "${name}" resolved to 0 rows — chart will render with empty input.`);
       }
     }
 
@@ -2239,17 +2554,31 @@ export class SchedulerService {
         stdout: cachedResult.stdout
       };
     } else {
-      result = await executePythonPreview(
-        pythonCode,
-        runType,
-        inputData, // Pre-calculated data from ancestor chain
-        [], // No recursive deps needed — data already in inputData
-        resolvedCid || pythonConnectorId,
-        selectedDocuments?.length > 0 ? selectedDocuments : undefined,
-        undefined, // dfTarget
-        companyId, // pass companyId for SharePoint token resolution
-      );
-      if (!result.success) throw new Error(result.error);
+      try {
+        result = await executePythonPreview(
+          pythonCode,
+          runType,
+          inputData,
+          [],
+          resolvedCid || pythonConnectorId,
+          selectedDocuments?.length > 0 ? selectedDocuments : undefined,
+          undefined,
+          companyId,
+        );
+      } catch (e: any) {
+        result = { success: false, error: e?.message || String(e) };
+      }
+      if (!result.success) {
+        pipelineReport.push({
+          name: pythonResultName || nodeId || 'Target',
+          type: 'Python',
+          status: 'error',
+          error: result.error,
+          timestamp: new Date().toISOString(),
+          nodePath: nodePath || nodeId,
+        });
+        return { success: false, error: result.error, data: { pipelineReport } };
+      }
     }
 
     // 3. Save Preview to NodePreviewCache (preserve existing style overrides)
@@ -2309,10 +2638,20 @@ export class SchedulerService {
     }
 
     // 4. Export if configured (only if table data available)
+    // Append the final target node to the pipeline report so the dialog shows
+    // the WHOLE pipeline (ancestors + this node) like the in-node Anteprima.
+    pipelineReport.push({
+      name: pythonResultName || nodeId || 'Target',
+      type: 'Python',
+      status: 'success',
+      timestamp: new Date().toISOString(),
+      nodePath: nodePath || nodeId,
+    });
+
     if (sqlExportConfig && sqlExportConfig.targetConnectorId && sqlExportConfig.targetTableName) {
       const dataToExport = result.data;
       if (!Array.isArray(dataToExport) || dataToExport.length === 0) {
-        return { success: true, message: "Executed, but no data to export." };
+        return { success: true, message: "Executed, but no data to export.", data: { pipelineReport } };
       }
 
       const exportRes = await exportTableToSql(
@@ -2323,10 +2662,10 @@ export class SchedulerService {
         true,  // truncate
       );
       if (!exportRes.success) throw new Error(`Export failed: ${exportRes.error}`);
-      return { success: true, message: `Executed & Exported to ${sqlExportConfig.targetTableName}` };
+      return { success: true, message: `Executed & Exported to ${sqlExportConfig.targetTableName}`, data: { pipelineReport } };
     }
 
-    return { success: true, message: "Python executed successfully" };
+    return { success: true, message: "Python executed successfully", data: { pipelineReport } };
   }
 
   private async saveNodePreviewData(treeId: string, nodePath: string, updateData: any) {

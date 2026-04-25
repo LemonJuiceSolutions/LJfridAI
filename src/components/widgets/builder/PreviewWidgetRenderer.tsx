@@ -93,10 +93,11 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                 console.warn(`[PreviewWidget] Cache load failed for ${nodeId}:`, cacheErr.message);
             }
 
-            // Connector ID resolution — deferred (lazy load tree only on first user action,
-            // not on initial render). The full tree is expensive to load just for one field.
-            if (node && !node.pythonConnectorId) {
-                // Schedule a background tree load after the widget is already rendering
+            // Background tree load: resolves nodePath (always needed for the
+            // "open node" link) and connectorId (only when the cache doesn't
+            // already carry it). getCachedTree is memoized, so calling it on
+            // every render is cheap after the first hit.
+            if (node) {
                 getCachedTree(treeId, false).then(treeResult => {
                     if (!treeResult?.data) return;
                     try {
@@ -105,13 +106,15 @@ export function PreviewWidgetRenderer({ treeId, nodeId, previewType, resultName 
                         const p = findPathById(jsonTree, nodeId);
                         if (p) {
                             setNodePath(p);
-                            const lodashPath = p.replace(/^root\.?/, '');
-                            const treeNode = lodashPath ? get(jsonTree, lodashPath) : jsonTree;
-                            const cid = treeNode?.pythonConnectorId || treeNode?.connectorId || treeNode?.sqlConnectorId;
-                            if (cid) {
-                                // The iframe polyfill reads `connectorId` (not `pythonConnectorId`).
-                                // Set both so saveToDb targets the right DB.
-                                setPreviewData((prev: any) => prev ? { ...prev, connectorId: cid, pythonConnectorId: cid } : prev);
+                            if (!node.pythonConnectorId) {
+                                const lodashPath = p.replace(/^root\.?/, '');
+                                const treeNode = lodashPath ? get(jsonTree, lodashPath) : jsonTree;
+                                const cid = treeNode?.pythonConnectorId || treeNode?.connectorId || treeNode?.sqlConnectorId;
+                                if (cid) {
+                                    // The iframe polyfill reads `connectorId` (not `pythonConnectorId`).
+                                    // Set both so saveToDb targets the right DB.
+                                    setPreviewData((prev: any) => prev ? { ...prev, connectorId: cid, pythonConnectorId: cid } : prev);
+                                }
                             }
                         }
                     } catch { /* best-effort */ }

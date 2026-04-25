@@ -14,9 +14,9 @@ import {
     resolveDependencyChainAction,
     resolveAncestorResourcesAction,
     executeSqlPreviewAction,
-    executePythonPreviewAction,
     exportTableToSqlAction
 } from '@/app/actions';
+import { executePythonPreviewClient } from '@/lib/execute-python-preview-client';
 import { sendTestEmailWithDataAction } from '@/app/actions/connectors';
 import { useToast } from '@/hooks/use-toast';
 import { useConnectors } from '@/hooks/use-connectors';
@@ -228,7 +228,7 @@ function useFlowExecution() {
                         if (dep.isPython && dep.pythonCode) {
                             // Pass FULL dependencies list (not just depsBefore) so Python can access ALL parent data
                             // The currentData already contains fetched results, and dependencies provides metadata
-                            const res = await executePythonPreviewAction(
+                            const res = await executePythonPreviewClient(
                                 dep.pythonCode,
                                 'table',
                                 currentData, // Already accumulated data from previous steps
@@ -270,7 +270,7 @@ function useFlowExecution() {
         setCurrentStepIndex(finalIdx);
 
         try {
-            const res = await executePythonPreviewAction(
+            const res = await executePythonPreviewClient(
                 mainCode,
                 mainOutputType,
                 currentData, // All dependency data already fetched
@@ -1300,7 +1300,7 @@ function SqlExportBox({
             // This will use/populate the global cache
             if (mainSourceDep.isPython && mainSourceDep.pythonCode) {
                 console.log(`[SqlExportBox] 🐍 Executing Python: ${mainSourceDep.tableName}`);
-                const res = await executePythonPreviewAction(
+                const res = await executePythonPreviewClient(
                     mainSourceDep.pythonCode,
                     mainSourceDep.pythonOutputType || 'table',
                     {}, // Pre-seeded data handled by deps
@@ -2216,7 +2216,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                         // Execute Python dependency
                                         console.log(`[InteractiveGuide] 🐍 Fetching Python data for ${tableName}`);
                                         const pythonDeps = deps.filter(d => d.tableName !== tableName);
-                                        const res = await executePythonPreviewAction(
+                                        const res = await executePythonPreviewClient(
                                             dep.pythonCode,
                                             (dep.pythonOutputType as "table" | "variable" | "chart") || 'table',
                                             {},
@@ -2254,7 +2254,7 @@ export default function InteractiveGuide({ jsonTree, treeId }: InteractiveGuideP
                                     }
                                 }
                                 if ((leaf as any).pythonResultName === tableName && (leaf as any).pythonCode) {
-                                    const res = await executePythonPreviewAction(
+                                    const res = await executePythonPreviewClient(
                                         (leaf as any).pythonCode,
                                         (leaf as any).pythonOutputType || 'table',
                                         {},

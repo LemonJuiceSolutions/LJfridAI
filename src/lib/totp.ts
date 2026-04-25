@@ -22,6 +22,23 @@ export function generateSecret(email: string): { secret: string; uri: string } {
 }
 
 /**
+ * Rebuilds the otpauth:// URI for an existing base32 secret. Used when
+ * we need to re-render the QR code (e.g. emailing it) without rotating
+ * the stored secret.
+ */
+export function buildUriFromSecret(secret: string, email: string): string {
+    const totp = new OTPAuth.TOTP({
+        issuer: ISSUER,
+        label: email,
+        algorithm: "SHA1",
+        digits: 6,
+        period: 30,
+        secret: OTPAuth.Secret.fromBase32(secret),
+    });
+    return totp.toString();
+}
+
+/**
  * Verifies a 6-digit TOTP code against the stored base32 secret.
  * Allows a 1-step window (previous + current + next period) to
  * accommodate clock drift.

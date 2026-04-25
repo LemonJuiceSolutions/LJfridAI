@@ -192,3 +192,103 @@ export const sendPasswordResetEmail = async (
         return { success: false, error: error.message || "Failed to send email" };
     }
 };
+
+/**
+ * Send the MFA setup QR code (and manual secret) to a user via email.
+ * Used so users who can't scan the on-screen QR (e.g. on the same device
+ * as the authenticator app) can open the email on their phone instead.
+ *
+ * Priority: Resend (RESEND_API_KEY) → SMTP env vars. Connector SMTP
+ * is not consulted because this path runs before MFA is active and
+ * we don't want to depend on per-tenant config for a security flow.
+ */
+export const sendMfaSetupEmail = async (
+    email: string,
+    otpauthUri: string,
+    secret: string,
+): Promise<{ success: boolean; error?: string }> => {
+    const subject = "FridAI — Configurazione Autenticazione a Due Fattori";
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(otpauthUri)}`;
+    const plainText =
+        `Configurazione MFA per FridAI.\n\n` +
+        `1. Apri la tua app di autenticazione (Google Authenticator, Authy, 1Password, ...).\n` +
+        `2. Scansiona il QR code allegato (link: ${qrImageUrl}) oppure inserisci manualmente questo codice:\n\n` +
+        `   ${secret}\n\n` +
+        `3. Torna su FridAI e inserisci il codice a 6 cifre per completare l'attivazione.\n\n` +
+        `Se non hai richiesto questa configurazione, contatta immediatamente l'amministratore.`;
+    const htmlBody = `
+        <div style="font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111;">
+            <h2 style="color: #4f46e5;">Configurazione Autenticazione a Due Fattori</h2>
+            <p>Per completare la configurazione MFA del tuo account FridAI:</p>
+            <ol>
+                <li>Apri la tua app di autenticazione (Google Authenticator, Authy, 1Password, ecc.).</li>
+                <li>Scansiona il QR code qui sotto.</li>
+                <li>Torna su FridAI e inserisci il codice a 6 cifre per attivare MFA.</li>
+            </ol>
+            <p style="text-align: center;">
+                <img src="${qrImageUrl}" alt="QR code MFA" width="300" height="300" style="border: 1px solid #e5e7eb; border-radius: 8px;" />
+            </p>
+            <p>Se non riesci a scansionare il QR, inserisci manualmente questo codice nell'app:</p>
+            <p style="background: #f3f4f6; padding: 12px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all;">
+                ${secret}
+            </p>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+            <p style="font-size: 12px; color: #6b7280;">
+                Se non hai richiesto questa configurazione, contatta immediatamente l'amministratore. Non condividere questo codice con nessuno.
+            </p>
+        </div>
+    `;
+
+    const emailDomainOnly = email.split('@')[1] || 'unknown';
+    const maskedEmail = `*@${emailDomainOnly}`;
+
+    try {
+        if (process.env.RESEND_API_KEY) {
+            const resend = new Resend(process.env.RESEND_API_KEY);
+            const fromAddress = process.env.RESEND_FROM || "onboarding@resend.dev";
+            const data = await resend.emails.send({
+                from: fromAddress,
+                to: email,
+                subject,
+                html: htmlBody,
+                text: plainText,
+            });
+            if (data.error) {
+                console.error("[MAIL] Resend MFA email error:", data.error);
+                return { success: false, error: data.error.message };
+            }
+            console.log(`[MAIL] MFA setup email sent via Resend to ${maskedEmail} (id: ${data.data?.id})`);
+            return { success: true };
+        }
+
+        if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
+            const transporter = nodemailer.createTransport({
+                host: process.env.SMTP_HOST,
+                port: parseInt(process.env.SMTP_PORT || "587"),
+                secure: parseInt(process.env.SMTP_PORT || "587") === 465,
+                auth: {
+                    user: process.env.SMTP_USER,
+                    pass: process.env.SMTP_PASSWORD,
+                },
+                tls: {
+                    rejectUnauthorized: process.env.NODE_ENV === 'production',
+                },
+            });
+            const info = await transporter.sendMail({
+                from: process.env.SMTP_FROM || process.env.SMTP_USER,
+                to: email,
+                subject,
+                text: plainText,
+                html: htmlBody,
+            });
+            console.log(`[MAIL] MFA setup email sent via SMTP to ${maskedEmail} (id: ${info.messageId})`);
+            return { success: true };
+        }
+
+        console.warn("[MAIL] No mail transport configured — set RESEND_API_KEY or SMTP_* env vars.");
+        return { success: false, error: "Nessun trasporto email configurato. Imposta RESEND_API_KEY o le variabili SMTP_*." };
+    } catch (error: any) {
+        console.error("[MAIL] Error sending MFA setup email:", error);
+        return { success: false, error: error.message || "Failed to send email" };
+    }
+};

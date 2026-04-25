@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Clock, RefreshCw, Mail, Database, Code, Zap, ExternalLink, ChevronRight } from 'lucide-react';
+import { Clock, RefreshCw, Mail, Database, Code, Zap, ExternalLink, ChevronRight, Play, Loader2 } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -113,13 +114,15 @@ function parseNodePath(nodePath: string): string[] {
 function getTaskNodeName(task: { name: string; config?: any; treeName?: string | null }): string {
   const config = task.config as any;
   if (!config) return task.name;
+  // Prefer the user-defined result name (the label they typed in the editor)
+  // over the parent option key, which is just the path bucket of the node.
+  if (config.sqlResultName) return config.sqlResultName;
+  if (config.pythonResultName) return config.pythonResultName;
+  if (config.subject) return config.subject;
   if (config.nodePath) {
     const parts = parseNodePath(config.nodePath);
     if (parts.length > 0) return parts[parts.length - 1];
   }
-  if (config.subject) return config.subject;
-  if (config.sqlResultName) return config.sqlResultName;
-  if (config.pythonResultName) return config.pythonResultName;
   if (task.name.startsWith('Node-') && task.treeName) {
     return task.treeName;
   }
@@ -133,9 +136,31 @@ function getTaskPathParts(task: { name: string; config?: any }): string[] | null
   return parts.length > 1 ? parts : null;
 }
 
-export function SchedulerUpcoming() {
+export function SchedulerUpcoming({ search = '' }: { search?: string }) {
   const [tasks, setTasks] = useState<UpcomingTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [triggering, setTriggering] = useState<Set<string>>(new Set());
+
+  const handleTrigger = async (task: UpcomingTask) => {
+    setTriggering(prev => new Set(prev).add(task.id));
+    try {
+      const res = await fetch(`/api/scheduler/tasks/${task.id}/trigger`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast({ variant: 'destructive', title: 'Errore', description: data.error || `HTTP ${res.status}` });
+        return;
+      }
+      toast({ title: 'Task avviato', description: `"${task.name}" in esecuzione. Vedi Registro Invii per il risultato.` });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Errore di rete', description: e?.message || 'Trigger fallito' });
+    } finally {
+      setTriggering(prev => {
+        const next = new Set(prev);
+        next.delete(task.id);
+        return next;
+      });
+    }
+  };
 
   useEffect(() => {
     fetchUpcoming();
@@ -221,12 +246,27 @@ export function SchedulerUpcoming() {
               <RefreshCw className="w-8 h-8 mx-auto animate-spin text-muted-foreground" />
               <p className="mt-4 text-muted-foreground">Caricamento...</p>
             </div>
-          ) : tasks.length === 0 ? (
-            <div className="text-center py-12">
-              <Clock className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">Nessun invio programmato</p>
-            </div>
-          ) : (
+          ) : (() => {
+            const q = search.trim().toLowerCase();
+            const filtered = q
+              ? tasks.filter((t) => {
+                  const nodeName = getTaskNodeName(t).toLowerCase();
+                  const treeName = (t.treeName || '').toLowerCase();
+                  const taskName = (t.name || '').toLowerCase();
+                  const type = (t.type || '').toLowerCase();
+                  const recipient = (getRecipient(t) || '').toLowerCase();
+                  return nodeName.includes(q) || treeName.includes(q) || taskName.includes(q) || type.includes(q) || recipient.includes(q);
+                })
+              : tasks;
+            if (filtered.length === 0) {
+              return (
+                <div className="text-center py-12">
+                  <Clock className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">{q ? `Nessun risultato per "${search}"` : 'Nessun invio programmato'}</p>
+                </div>
+              );
+            }
+            return (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -234,12 +274,14 @@ export function SchedulerUpcoming() {
                   <TableHead className="text-xs">Tipo</TableHead>
                   <TableHead className="text-xs">Programmazione</TableHead>
                   <TableHead className="text-xs">Prossima Esecuzione</TableHead>
+
                   <TableHead className="text-xs">Destinatario</TableHead>
                   <TableHead className="text-xs">Statistiche</TableHead>
+                  <TableHead className="text-xs w-[110px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tasks.map((task) => {
+                {filtered.map((task) => {
                   const recipient = getRecipient(task);
                   return (
                     <TableRow key={task.id}>
@@ -300,12 +342,28 @@ export function SchedulerUpcoming() {
                           <span className="text-red-600">{task.failureCount}</span>
                         </div>
                       </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleTrigger(task)}
+                          disabled={triggering.has(task.id)}
+                          title="Esegui ora questo task"
+                          className="h-7 px-2 text-xs gap-1 border-violet-300 text-violet-700 hover:bg-violet-50 hover:border-violet-400 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-950"
+                        >
+                          {triggering.has(task.id)
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Play className="w-3 h-3" />}
+                          Esegui
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
-          )}
+            );
+          })()}
         </CardContent>
       </Card>
 

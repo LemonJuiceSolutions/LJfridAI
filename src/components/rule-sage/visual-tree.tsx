@@ -18,7 +18,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import { ToastAction } from '@/components/ui/toast';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { updateVariableAction, updateTreeNodeAction, getTreeAction, hydrateTreePreviewsAction } from '@/app/actions';
+import { updateVariableAction, updateTreeNodeAction, getTreeAction, hydrateTreePreviewsAction, saveNodePreviewAction } from '@/app/actions';
 import { invalidateAndNotifyWidgets } from '@/lib/tree-cache';
 import { getTreeSchedulesAction } from '@/app/actions/scheduler';
 import { useTrees } from '@/hooks/use-trees';
@@ -793,6 +793,29 @@ export default function VisualTree({ treeData, onDataRefresh, isSaving: parentIs
             }
 
             console.log('[DEBUG] Anteprima salvata con successo nel nodo:', path);
+
+            // Mirror to NodePreviewCache so widget renderers (which read the
+            // cache first, see PreviewWidgetRenderer) pick up the manual
+            // preview instead of stale scheduler data. Best-effort: failure
+            // here doesn't roll back the tree JSON write.
+            const nodeId = (currentNode as any)?.id;
+            if (nodeId) {
+                try {
+                    const cacheRes = await saveNodePreviewAction(
+                        treeData.id,
+                        nodeId,
+                        previewData.sqlPreviewData
+                            ? { sqlPreviewData: previewData.sqlPreviewData, sqlPreviewTimestamp: previewData.sqlPreviewTimestamp || Date.now() }
+                            : { pythonPreviewResult: updatedNodeData.pythonPreviewResult },
+                    );
+                    if (!cacheRes.success) {
+                        console.warn('[handleSavePreview] cache write failed:', cacheRes.error);
+                    }
+                } catch (e: any) {
+                    console.warn('[handleSavePreview] cache write threw:', e?.message);
+                }
+            }
+
             invalidateAndNotifyWidgets(treeData.id);
             // Aggiorna lo stato locale dell'albero per riflettere immediatamente i cambiamenti
             // Usa functional update (prev =>) per evitare race conditions quando più anteprime

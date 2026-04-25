@@ -131,7 +131,7 @@ function riskColor(risk: string): string {
     return 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300';
 }
 
-export function SchedulerOptimize() {
+export function SchedulerOptimize({ search = '' }: { search?: string }) {
     const [tasks, setTasks] = useState<TaskRow[]>([]);
     const [loadingList, setLoadingList] = useState(true);
     const [analyzing, setAnalyzing] = useState<string | null>(null);
@@ -469,7 +469,18 @@ export function SchedulerOptimize() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {tasks.map(t => (
+                                {(() => {
+                                    const q = search.trim().toLowerCase();
+                                    return q
+                                        ? tasks.filter(t => {
+                                              const nm = (t.name || '').toLowerCase();
+                                              const tn = (t.treeName || '').toLowerCase();
+                                              const np = (t.nodePath || '').toLowerCase();
+                                              const tp = (t.type || '').toLowerCase();
+                                              return nm.includes(q) || tn.includes(q) || np.includes(q) || tp.includes(q);
+                                          })
+                                        : tasks;
+                                })().map(t => (
                                     <TableRow key={t.id}>
                                         <TableCell className="font-medium">
                                             {t.name.length > 50 ? t.name.slice(0, 50) + '...' : t.name}

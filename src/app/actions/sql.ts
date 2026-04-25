@@ -174,21 +174,29 @@ export async function executeSqlPreviewAction(
                 return clean.length <= 5;
             };
 
-            const bracketPattern = `((?:\\[[^\\]]+\\]|\\w+)\\.)?\\[${escaped}\\]`;
+            // Allow up to 2 leading qualifiers ([db].[schema].[name]) — temp
+            // tables can't be referenced cross-database, so we strip the prefix.
+            const bracketPattern = `((?:(?:\\[[^\\]]+\\]|\\w+)\\.){0,2})\\[${escaped}\\]`;
             const bracketRegex = new RegExp(bracketPattern, 'gi');
 
-            const unbracketedPattern = `((?:\\[[^\\]]+\\]|\\w+)\\.)?\\b${escaped}\\b`;
+            const unbracketedPattern = `((?:(?:\\[[^\\]]+\\]|\\w+)\\.){0,2})\\b${escaped}\\b`;
             const unbracketedRegex = new RegExp(unbracketedPattern, 'gi');
+
+            const innerPrefix = (prefix: string | undefined): string | undefined => {
+                if (!prefix) return undefined;
+                const segs = prefix.split('.').filter(Boolean);
+                return segs[segs.length - 1];
+            };
 
             let newText = sqlText;
 
             newText = newText.replace(bracketRegex, (match, prefix) => {
-                if (isTableAliasPrefix(prefix)) return match;
+                if (isTableAliasPrefix(innerPrefix(prefix))) return match;
                 return tempName;
             });
 
             newText = newText.replace(unbracketedRegex, (match, prefix) => {
-                if (isTableAliasPrefix(prefix)) return match;
+                if (isTableAliasPrefix(innerPrefix(prefix))) return match;
                 return tempName;
             });
 

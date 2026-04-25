@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from flask_compress import Compress
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -99,6 +100,15 @@ def _safe_log(msg: str):
 app = Flask(__name__)
 app.json.sort_keys = False
 CORS(app, origins=[os.environ.get('ALLOWED_ORIGIN', 'http://localhost:9002')])
+
+# Auto-gzip responses >500 bytes. Plotly JSON (chartHtml + plotlyJson) for
+# large charts (Gantt vs Capacity) easily exceeds 10MB uncompressed and was
+# triggering "Unterminated string in JSON" on the Node side. gzip cuts JSON
+# payloads ~80-90% so the wire body stays under any practical proxy cap.
+app.config['COMPRESS_MIMETYPES'] = ['application/json', 'text/html', 'text/plain']
+app.config['COMPRESS_LEVEL'] = 6
+app.config['COMPRESS_MIN_SIZE'] = 500
+Compress(app)
 
 VERSION = "1.0.6"  # Fix: auto-unwrap if __name__=="__main__" + file write capture
 

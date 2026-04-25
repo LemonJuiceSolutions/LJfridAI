@@ -180,8 +180,22 @@ export async function executeSqlPreview(
     const replaceTableRef = (sqlText: string, origName: string, tempName: string): string => {
       const esc = escapeRe(origName);
       let out = sqlText;
-      out = out.replace(new RegExp(`((?:\\[[^\\]]+\\]|\\w+)\\.)?\\[${esc}\\]`, 'gi'), (m, p) => isAliasPrefix(p) ? m : tempName);
-      out = out.replace(new RegExp(`((?:\\[[^\\]]+\\]|\\w+)\\.)?\\b${esc}\\b`, 'gi'), (m, p) => isAliasPrefix(p) ? m : tempName);
+      // Match 0/1/2 leading qualifiers ([db].[schema].[name] | [schema].[name] | [name])
+      // Temp tables (##xxx) cannot be referenced with db/schema prefix, so we
+      // strip the qualifiers entirely.
+      out = out.replace(new RegExp(`((?:(?:\\[[^\\]]+\\]|\\w+)\\.){0,2})\\[${esc}\\]`, 'gi'), (m, prefix) => {
+        // Re-check alias on innermost prefix (last segment before the bracketed name).
+        const segs = (prefix as string).split('.').filter(Boolean);
+        const inner = segs[segs.length - 1];
+        if (isAliasPrefix(inner)) return m;
+        return tempName;
+      });
+      out = out.replace(new RegExp(`((?:(?:\\[[^\\]]+\\]|\\w+)\\.){0,2})\\b${esc}\\b`, 'gi'), (m, prefix) => {
+        const segs = (prefix as string).split('.').filter(Boolean);
+        const inner = segs[segs.length - 1];
+        if (isAliasPrefix(inner)) return m;
+        return tempName;
+      });
       return out;
     };
 

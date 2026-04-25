@@ -41,13 +41,14 @@ function parseNodePath(nodePath: string): string[] {
 
 function getTaskDisplayName(task: MissedTask): string {
   const config = task.config;
+  // Prefer user-defined result name over parent option key.
+  if (config?.sqlResultName) return config.sqlResultName;
+  if (config?.pythonResultName) return config.pythonResultName;
+  if (config?.subject) return config.subject;
   if (config?.nodePath) {
     const parts = parseNodePath(config.nodePath);
     if (parts.length > 0) return parts[parts.length - 1];
   }
-  if (config?.subject) return config.subject;
-  if (config?.sqlResultName) return config.sqlResultName;
-  if (config?.pythonResultName) return config.pythonResultName;
   if (task.name.startsWith('Node-') && task.treeName) {
     return task.treeName;
   }
@@ -85,7 +86,7 @@ const TYPE_COLORS: Record<string, string> = {
   CUSTOM: 'bg-pink-500',
 };
 
-export function MissedTasksPanel() {
+export function MissedTasksPanel({ search = '' }: { search?: string }) {
   const [tasks, setTasks] = useState<MissedTask[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -305,7 +306,19 @@ export function MissedTasksPanel() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tasks.map(task => (
+                {(() => {
+                  const q = search.trim().toLowerCase();
+                  return q
+                    ? tasks.filter(t => {
+                        const dn = getTaskDisplayName(t).toLowerCase();
+                        const bc = (getTaskBreadcrumb(t) || '').toLowerCase();
+                        const nm = (t.name || '').toLowerCase();
+                        const tp = (t.type || '').toLowerCase();
+                        const desc = (t.description || '').toLowerCase();
+                        return dn.includes(q) || bc.includes(q) || nm.includes(q) || tp.includes(q) || desc.includes(q);
+                      })
+                    : tasks;
+                })().map(task => (
                   <TableRow key={task.id} className="cursor-pointer hover:bg-muted/50" onClick={() => toggleTask(task.id)}>
                     <TableCell>
                       <Checkbox

@@ -37,8 +37,18 @@ const nextConfig: NextConfig = {
   },
   serverExternalPackages: ['mssql', 'duckdb', 'duckdb-async'],
   experimental: {
+    // Next 15 default 10MB request body cap on Route Handlers (and middleware).
+    // Anteprima pipeline POSTs accumulated ancestor data (PRODFIL, PRODFIL2,
+    // HR2, EstrazioneSharePoint) to /api/internal/execute-python — total JSON
+    // can exceed 10MB → truncation → "Unexpected end of JSON input". 50mb
+    // matches the Server Action limit below.
+    middlewareClientMaxBodySize: '50mb',
     serverActions: {
-      bodySizeLimit: '10mb',
+      // Bumped to 50mb so Anteprima saves of nodes with large Plotly figs
+      // (Gantt, multi-trace charts) can persist via updateTreeNodeAction
+      // without hitting "Load failed" / RSC body cap. Flask responses are
+      // gzipped so wire weight stays small even with 50mb cap.
+      bodySizeLimit: '50mb',
     },
   },
   async headers() {

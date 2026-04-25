@@ -58,13 +58,14 @@ function parseNodePath(nodePath: string): string[] {
 function getTaskNodeName(task: { name: string; config?: any; treeName?: string | null }): string {
   const config = task.config as any;
   if (!config) return task.name;
+  // Prefer user-defined result name over parent option key.
+  if (config.sqlResultName) return config.sqlResultName;
+  if (config.pythonResultName) return config.pythonResultName;
+  if (config.subject) return config.subject;
   if (config.nodePath) {
     const parts = parseNodePath(config.nodePath);
     if (parts.length > 0) return parts[parts.length - 1];
   }
-  if (config.subject) return config.subject;
-  if (config.sqlResultName) return config.sqlResultName;
-  if (config.pythonResultName) return config.pythonResultName;
   if (task.name.startsWith('Node-') && task.treeName) {
     return task.treeName;
   }
@@ -78,7 +79,7 @@ function getTaskPathParts(task: { name: string; config?: any }): string[] | null
   return parts.length > 1 ? parts : null;
 }
 
-export function SchedulerExecutionLog() {
+export function SchedulerExecutionLog({ search = '' }: { search?: string }) {
   const [executions, setExecutions] = useState<ExecutionWithTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -234,12 +235,27 @@ export function SchedulerExecutionLog() {
               <RefreshCw className="w-8 h-8 mx-auto animate-spin text-muted-foreground" />
               <p className="mt-4 text-muted-foreground">Caricamento registro...</p>
             </div>
-          ) : executions.length === 0 ? (
-            <div className="text-center py-12">
-              <Clock className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">Nessuna esecuzione trovata</p>
-            </div>
-          ) : (
+          ) : (() => {
+            const q = search.trim().toLowerCase();
+            const filtered = q
+              ? executions.filter((e) => {
+                  const nodeName = getTaskNodeName(e.task).toLowerCase();
+                  const treeName = (e.task.treeName || '').toLowerCase();
+                  const taskName = (e.task.name || '').toLowerCase();
+                  const type = (e.task.type || '').toLowerCase();
+                  const subject = ((e.task.config as any)?.subject || '').toLowerCase();
+                  return nodeName.includes(q) || treeName.includes(q) || taskName.includes(q) || type.includes(q) || subject.includes(q);
+                })
+              : executions;
+            if (filtered.length === 0) {
+              return (
+                <div className="text-center py-12">
+                  <Clock className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">{q ? `Nessun risultato per "${search}"` : 'Nessuna esecuzione trovata'}</p>
+                </div>
+              );
+            }
+            return (
             <>
               <Table>
                 <TableHeader>
@@ -254,7 +270,7 @@ export function SchedulerExecutionLog() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {executions.map((execution) => (
+                  {filtered.map((execution) => (
                     <TableRow key={execution.id}>
                       <TableCell className="whitespace-nowrap">
                         {execution.task ? (
@@ -362,7 +378,8 @@ export function SchedulerExecutionLog() {
                 </div>
               )}
             </>
-          )}
+            );
+          })()}
         </CardContent>
       </Card>
 

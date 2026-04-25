@@ -168,6 +168,6 @@ export const config = {
          * under the assumption it was a webhook, but it is a session-auth'd
          * internal endpoint.
          */
-        "/((?!api/auth|api/health|api/internal/query-db|api/internal/mcp-tool|api/update-commessa|api/whatsapp/webhook|api/billing/webhook|api/cron|_next/static|_next/image|favicon.ico|auth/signin|auth/signup|auth/reset|auth/new-password|logo-custom.png).*)",
+        "/((?!api/auth|api/health|api/internal/query-db|api/internal/mcp-tool|api/update-commessa|api/whatsapp/webhook|api/billing/webhook|api/cron|_next/static|_next/image|favicon.ico|auth/signin|auth/signup|auth/reset|auth/new-password|auth/mfa-setup|logo-custom.png|mfa-setup-qr.png).*)",
     ],
 };
