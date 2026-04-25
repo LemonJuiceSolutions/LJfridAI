@@ -82,6 +82,21 @@ export async function POST(req: NextRequest) {
                 } catch { /* stream closed */ }
             };
 
+            // Emit the full step list up-front so the client can render every
+            // node (label + type) in the "pending" state immediately, then flip
+            // to running/success/error as `step-start` / `step-done` events arrive.
+            send({
+                type: 'pipeline-init',
+                steps: steps.map((s, i) => ({
+                    index: i,
+                    label: s.label,
+                    type: s.pipelineType,
+                    nodeId: s.nodeId,
+                    isWrite: s.type === 'write',
+                    isFinal: s.type === 'final',
+                })),
+            });
+
             const { results, nodeIdResults } = await runPipelineSteps(steps, send);
 
             try {

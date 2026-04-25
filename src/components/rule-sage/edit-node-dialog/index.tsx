@@ -1310,6 +1310,15 @@ export default function EditNodeDialog({
       const decoder = new TextDecoder();
       let buffer = '';
       let pipelineSuccess = true;
+      const mapType = (t: string | undefined): 'python' | 'sql' | 'ai' | 'agent' | 'export' => {
+        switch (t) {
+          case 'python': case 'sql': case 'ai': case 'agent': case 'export':
+            return t;
+          case 'sharepoint': case 'email': case 'hubspot':
+            return 'export';
+          default: return 'sql';
+        }
+      };
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -1320,18 +1329,36 @@ export default function EditNodeDialog({
           if (!line.trim()) continue;
           try {
             const ev = JSON.parse(line);
-            if (ev.type === 'step-start') {
+            if (ev.type === 'pipeline-init' && Array.isArray(ev.steps)) {
+              // Render every step up-front (pending) so the user sees the full
+              // pipeline immediately. Status flips as step-start / step-done arrive.
+              for (const s of ev.steps) {
+                stepLabels.set(s.index, s.label);
+                stepTypes.set(s.index, s.type);
+              }
+              setExecutionPipeline(
+                ev.steps.map((s: any) => ({
+                  name: s.label,
+                  type: mapType(s.type),
+                  status: 'pending',
+                })),
+              );
+            } else if (ev.type === 'step-start') {
               setExecutionPipeline(prev => {
                 const next = [...prev];
-                next[ev.index] = { name: stepLabels.get(ev.index) || `Step ${ev.index + 1}`, type: (stepTypes.get(ev.index) as any) || 'sql', status: 'running' };
+                next[ev.index] = {
+                  name: stepLabels.get(ev.index) || next[ev.index]?.name || `Step ${ev.index + 1}`,
+                  type: mapType(stepTypes.get(ev.index)),
+                  status: 'running',
+                };
                 return next;
               });
             } else if (ev.type === 'step-done') {
               setExecutionPipeline(prev => {
                 const next = [...prev];
                 next[ev.index] = {
-                  name: stepLabels.get(ev.index) || `Step ${ev.index + 1}`,
-                  type: (stepTypes.get(ev.index) as any) || 'sql',
+                  name: stepLabels.get(ev.index) || next[ev.index]?.name || `Step ${ev.index + 1}`,
+                  type: mapType(stepTypes.get(ev.index)),
                   status: ev.success ? 'success' : 'error',
                   message: ev.error || ev.message,
                   executionTime: ev.executionTime,
