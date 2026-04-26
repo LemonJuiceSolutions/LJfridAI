@@ -2,20 +2,32 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Bot, BrainCircuit, Loader2, Send, User, MessageSquareText, Search, Cog, Link as LinkIcon } from 'lucide-react';
+import { ArrowLeft, Bot, BrainCircuit, Loader2, Send, User, MessageSquareText, Search, Cog, Link as LinkIcon, ChevronsUpDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { detaiAction } from '../actions';
+import { detaiAction, fetchOpenRouterModelsAction } from '../actions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import type { DetaiInput } from '@/ai/flows/detai-flow';
 import { Badge } from '@/components/ui/badge';
 import { useOpenRouterSettings } from '@/hooks/use-openrouter';
-import { getAiProviderAction } from '@/actions/ai-settings';
+import { getAiProviderAction, saveAiProviderAction } from '@/actions/ai-settings';
+import { getOpenRouterAgentModelAction, saveOpenRouterAgentModelAction } from '@/actions/openrouter';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import DOMPurify from 'isomorphic-dompurify';
+
+const CLAUDE_CLI_MODELS = [
+    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+    { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+    { id: 'sonnet', name: 'sonnet (latest)' },
+    { id: 'opus', name: 'opus (latest)' },
+    { id: 'haiku', name: 'haiku (latest)' },
+];
 
 
 type Message = {
@@ -64,15 +76,78 @@ export default function DetaiPage() {
     const { apiKey: dbApiKey, model: dbModel } = useOpenRouterSettings();
     const [aiProvider, setAiProvider] = useState<'openrouter' | 'claude-cli'>('openrouter');
     const [claudeCliModel, setClaudeCliModel] = useState('claude-sonnet-4-6');
+    const [model, setModel] = useState('google/gemini-2.0-flash-001');
+    const [availableModels, setAvailableModels] = useState<{ id: string; name: string; pricing?: { prompt: string } }[]>([]);
+    const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+    const [isSavingModel, setIsSavingModel] = useState(false);
 
-    useEffect(() => {
+    const loadProviderSettings = useCallback(() => {
+        const validCliIds = CLAUDE_CLI_MODELS.map(m => m.id);
         getAiProviderAction().then(res => {
-            if (!res.error) {
-                setAiProvider(res.provider);
-                if (res.claudeCliModel) setClaudeCliModel(res.claudeCliModel);
+            if (res.error) return;
+            setAiProvider(res.provider);
+            if (res.provider === 'claude-cli') {
+                const m = res.claudeCliModel || 'claude-sonnet-4-6';
+                setClaudeCliModel(m);
+                setModel(m);
+                setAvailableModels(CLAUDE_CLI_MODELS);
+            } else {
+                fetchOpenRouterModelsAction().then(result => {
+                    if (result.data) setAvailableModels(result.data);
+                });
+                getOpenRouterAgentModelAction().then(result => {
+                    if (result.model && !validCliIds.includes(result.model)) {
+                        setModel(result.model);
+                    } else {
+                        setModel(dbModel || 'google/gemini-2.0-flash-001');
+                    }
+                });
             }
         });
-    }, []);
+    }, [dbModel]);
+
+    useEffect(() => {
+        loadProviderSettings();
+        const onSync = () => loadProviderSettings();
+        window.addEventListener('focus', onSync);
+        window.addEventListener('ai-provider-changed', onSync);
+        return () => {
+            window.removeEventListener('focus', onSync);
+            window.removeEventListener('ai-provider-changed', onSync);
+        };
+    }, [loadProviderSettings]);
+
+    const handleModelChange = async (newModel: string) => {
+        setModel(newModel);
+        setModelSelectorOpen(false);
+        setIsSavingModel(true);
+        try {
+            if (aiProvider === 'claude-cli') {
+                setClaudeCliModel(newModel);
+                await saveAiProviderAction('claude-cli', newModel);
+            } else {
+                await saveOpenRouterAgentModelAction(newModel);
+            }
+        } catch { /* ignore */ }
+        setIsSavingModel(false);
+    };
+
+    const handleProviderToggle = async () => {
+        const newProvider: 'openrouter' | 'claude-cli' = aiProvider === 'openrouter' ? 'claude-cli' : 'openrouter';
+        setAiProvider(newProvider);
+        if (newProvider === 'claude-cli') {
+            setModel('claude-sonnet-4-6');
+            setClaudeCliModel('claude-sonnet-4-6');
+            setAvailableModels(CLAUDE_CLI_MODELS);
+            await saveAiProviderAction('claude-cli', 'claude-sonnet-4-6');
+        } else {
+            setModel(dbModel || 'google/gemini-2.0-flash-001');
+            await saveAiProviderAction('openrouter');
+            fetchOpenRouterModelsAction().then(result => {
+                if (result.data) setAvailableModels(result.data);
+            });
+        }
+    };
 
     const scrollToBottom = () => {
         if (scrollAreaRef.current) {
@@ -88,9 +163,9 @@ export default function DetaiPage() {
         setIsLoading(true);
 
         try {
-            const openRouterConfig = (aiProvider === 'openrouter' && dbApiKey) ? { apiKey: dbApiKey, model: dbModel || 'google/gemini-2.0-flash-001' } : undefined;
+            const openRouterConfig = (aiProvider === 'openrouter' && dbApiKey) ? { apiKey: dbApiKey, model: model || dbModel || 'google/gemini-2.0-flash-001' } : undefined;
             // If claude-cli is selected OR if openrouter has no API key, fall back to Claude CLI
-            const claudeCliConfig = (aiProvider === 'claude-cli' || !openRouterConfig) ? { model: claudeCliModel } : undefined;
+            const claudeCliConfig = (aiProvider === 'claude-cli' || !openRouterConfig) ? { model: aiProvider === 'claude-cli' ? model : claudeCliModel } : undefined;
 
             // Map local message state to the format expected by the AI flow
             const history: DetaiInput['messages'] = currentMessages
@@ -337,13 +412,66 @@ export default function DetaiPage() {
     return (
         <div className="flex flex-col h-[calc(100vh-2rem)] bg-background">
             <main className="flex-1 overflow-hidden">
-                <div className="container mx-auto h-full p-4 md:p-6">
-                    <Card className="h-full flex flex-col overflow-hidden">
+                <div className="container mx-auto h-full p-4 pb-[82px] md:p-6 md:pb-[98px] flex flex-col">
+                    <Card className="flex-1 min-h-0 flex flex-col overflow-hidden">
                         <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <MessageSquareText className="h-6 w-6 text-primary" />
-                                detAI
-                            </CardTitle>
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <CardTitle className="flex items-center gap-2">
+                                        <MessageSquareText className="h-6 w-6 text-primary" />
+                                        detAI
+                                    </CardTitle>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={handleProviderToggle}
+                                            className="px-1.5 py-0.5 rounded text-[10px] font-medium border hover:bg-muted transition-colors cursor-pointer"
+                                            title="Cambia provider AI"
+                                        >
+                                            {aiProvider === 'claude-cli' ? '🤖 CLI' : '🌐 OR'}
+                                        </button>
+                                        <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen} modal={false}>
+                                            <PopoverTrigger asChild>
+                                                <button type="button" className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer border rounded px-2 py-0.5">
+                                                    <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                                                    <span className="truncate max-w-[200px]">
+                                                        {isSavingModel ? 'Salvando...' : (availableModels.find(m => m.id === model)?.name || model.split('/').pop() || model)}
+                                                    </span>
+                                                    <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+                                                </button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-[400px] p-0 z-[100]" align="start" sideOffset={8} onOpenAutoFocus={(e) => e.preventDefault()}>
+                                                <Command>
+                                                    <CommandInput placeholder="Cerca modello..." />
+                                                    <CommandList className="max-h-[300px]">
+                                                        <CommandEmpty>Nessun modello trovato.</CommandEmpty>
+                                                        <CommandGroup heading={aiProvider === 'claude-cli' ? 'Modelli Claude' : 'Modelli OpenRouter'}>
+                                                            {availableModels.map(m => (
+                                                                <CommandItem
+                                                                    key={m.id}
+                                                                    value={`${m.id} ${m.name}`}
+                                                                    onSelect={() => handleModelChange(m.id)}
+                                                                    className="flex items-center justify-between text-xs"
+                                                                >
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        <Check className={cn('h-3 w-3 shrink-0', model === m.id ? 'opacity-100' : 'opacity-0')} />
+                                                                        <span className="truncate">{m.name}</span>
+                                                                    </div>
+                                                                    {m.pricing && (
+                                                                        <span className="text-[10px] text-muted-foreground shrink-0 ml-2">
+                                                                            ${(parseFloat(m.pricing.prompt) * 1_000_000).toFixed(2)}/M
+                                                                        </span>
+                                                                    )}
+                                                                </CommandItem>
+                                                            ))}
+                                                        </CommandGroup>
+                                                    </CommandList>
+                                                </Command>
+                                            </PopoverContent>
+                                        </Popover>
+                                    </div>
+                                </div>
+                            </div>
                             <CardDescription>
                                 Chiedimi qualsiasi cosa. Risponderò come un LLM, cercando informazioni nei tuoi alberi decisionali quando necessario.
                             </CardDescription>

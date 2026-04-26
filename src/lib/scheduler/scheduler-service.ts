@@ -1922,9 +1922,20 @@ export class SchedulerService {
       throw new Error(result?.error || 'Email send failed');
     }
 
+    // Append the email step to the report so the run-all dialog can show
+    // the whole chain (ancestors + email send) like the other task types.
+    pipelineReport.push({
+      name: emailConfig.subject || 'Email send',
+      type: 'email',
+      status: 'success',
+      timestamp: new Date().toISOString(),
+      nodePath: nodePath || undefined,
+    });
+
     return {
       success: true,
-      message: `Email inviata a ${emailConfig.to} con ${selectedTables.length} SQL (${selectedTables.map(t => t.name).join(', ')}) e ${selectedPythonOutputs.length} Python (${selectedPythonOutputs.map(t => t.name).join(', ')})`
+      message: `Email inviata a ${emailConfig.to} con ${selectedTables.length} SQL (${selectedTables.map(t => t.name).join(', ')}) e ${selectedPythonOutputs.length} Python (${selectedPythonOutputs.map(t => t.name).join(', ')})`,
+      data: { pipelineReport },
     };
   }
 
@@ -2086,6 +2097,7 @@ export class SchedulerService {
           logger.warn(`[SqlNode] Step ${e.index} failed: ${e.error}`);
         }
       },
+      bypassAuth: true,
     });
 
     if (!run.success) {
@@ -2284,6 +2296,7 @@ export class SchedulerService {
           logger.warn(`[PythonNode] Step ${e.index} failed: ${e.error}`);
         }
       },
+      bypassAuth: true,
     });
 
     if (!run.success) {

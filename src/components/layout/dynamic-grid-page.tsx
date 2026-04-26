@@ -32,7 +32,7 @@ import { PreviewWidgetRenderer } from '../widgets/builder/PreviewWidgetRenderer'
 import { NodeWidgetRenderer } from '../widgets/builder/NodeWidgetRenderer';
 import { useSession } from 'next-auth/react';
 import { useToast } from '@/hooks/use-toast';
-import { useDashboardLayout } from '@/hooks/use-dashboard-data';
+import { useDashboardLayout, clearLayoutCacheForPage } from '@/hooks/use-dashboard-data';
 import { preloadWidgetData } from '@/lib/widget-preload-cache';
 
 // Remove WidthProvider
@@ -283,18 +283,27 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
         }
     }, [pageId]);
 
-    const saveDashboardState = useCallback((newLayouts: any, newItems: any) => {
+    const saveDashboardState = useCallback((newLayouts: any, newItems: any, immediate = false) => {
         if (!session?.user || isLayoutLoading) return;
 
-        // Debounce saves: wait 800ms of inactivity before persisting
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(async () => {
+
+        const doSave = async () => {
             const cleanedLayouts = removeUndefinedFields(newLayouts);
             const result = await savePageLayout(pageId, cleanedLayouts, newItems);
-            if (!result.success && result.error === "Unauthorized") {
+            if (result.success) {
+                clearLayoutCacheForPage(pageId);
+            } else if (result.error === "Unauthorized") {
                 toast({ variant: "destructive", title: "Error", description: "Session expired. Please refresh." });
             }
-        }, 800);
+        };
+
+        if (immediate) {
+            void doSave();
+        } else {
+            // Debounce saves: wait 800ms of inactivity before persisting
+            saveTimerRef.current = setTimeout(doSave, 800);
+        }
     }, [session, isLayoutLoading, pageId, toast]);
 
     // Cleanup debounce timer on unmount
@@ -325,7 +334,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
 
         const newLayouts = generateLayouts(newItems, layouts);
         setLayouts(newLayouts);
-        saveDashboardState(newLayouts, newItems);
+        saveDashboardState(newLayouts, newItems, true);
     };
 
     const addWidget = (widgetId: string) => {
@@ -342,7 +351,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
 
         const newLayouts = generateLayouts(newItems, layouts);
         setLayouts(newLayouts);
-        saveDashboardState(newLayouts, newItems);
+        saveDashboardState(newLayouts, newItems, true);
     }
 
     const removeWidget = (itemId: string) => {
@@ -354,7 +363,7 @@ export function DynamicGridPage({ pageId, defaultLayouts, defaultItems }: Dynami
             newLayouts[breakpoint] = newLayouts[breakpoint].filter((l: any) => l.i !== itemId);
         });
         setLayouts(newLayouts);
-        saveDashboardState(newLayouts, newItems);
+        saveDashboardState(newLayouts, newItems, true);
     };
 
     const handleTextChange = (id: string, content: string) => {

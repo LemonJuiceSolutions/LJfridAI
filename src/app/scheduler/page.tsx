@@ -1082,12 +1082,12 @@ export default function SchedulerPage() {
                             : ''
                     }`}
                   >
-                    {/* Expand toggle */}
+                    {/* Expand toggle — always interactive. Shows pipelineReport
+                        when available, otherwise just status / message / error. */}
                     <button
                       type="button"
-                      className={`shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-muted ${hasReport ? 'cursor-pointer' : 'cursor-default opacity-30'}`}
+                      className="shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
                       onClick={() => {
-                        if (!hasReport) return;
                         setExpandedRunAllRows(prev => {
                           const next = new Set(prev);
                           if (next.has(t.taskId)) next.delete(t.taskId);
@@ -1095,8 +1095,7 @@ export default function SchedulerPage() {
                           return next;
                         });
                       }}
-                      title={hasReport ? (expanded ? 'Nascondi pipeline' : 'Mostra pipeline') : 'Pipeline non disponibile'}
-                      disabled={!hasReport}
+                      title={expanded ? 'Nascondi dettagli' : 'Mostra dettagli'}
                     >
                       <ChevronRight className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} />
                     </button>
@@ -1147,25 +1146,51 @@ export default function SchedulerPage() {
                       )}
                     </div>
                   </div>
-                  {hasReport && expanded && (
+                  {expanded && (
                     <div className="ml-12 mt-1 mb-2 pl-3 border-l-2 border-violet-200 dark:border-violet-800 space-y-0.5">
-                      {t.pipelineReport!.map((step, si) => (
-                        <div key={si} className="flex items-center gap-2 text-[11px] py-0.5">
-                          <span className="shrink-0">
-                            {step.status === 'success' && <CheckCircle className="w-3 h-3 text-green-500" />}
-                            {step.status === 'error' && <XCircle className="w-3 h-3 text-red-500" />}
-                            {step.status === 'skipped' && <AlertCircle className="w-3 h-3 text-yellow-500" />}
-                          </span>
-                          <span className="font-mono text-muted-foreground tabular-nums w-5">{si + 1}.</span>
-                          <span className="flex-1 truncate">{step.name}</span>
-                          <Badge variant="outline" className="text-[9px] px-1 py-0">{step.type}</Badge>
-                          {step.error && (
-                            <span className="text-red-600 dark:text-red-400 text-[10px] truncate max-w-[200px]" title={step.error}>
-                              {step.error}
+                      {hasReport ? (
+                        t.pipelineReport!.map((step, si) => (
+                          <div key={si} className="flex items-center gap-2 text-[11px] py-0.5">
+                            <span className="shrink-0">
+                              {step.status === 'success' && <CheckCircle className="w-3 h-3 text-green-500" />}
+                              {step.status === 'error' && <XCircle className="w-3 h-3 text-red-500" />}
+                              {step.status === 'skipped' && <AlertCircle className="w-3 h-3 text-yellow-500" />}
                             </span>
+                            <span className="font-mono text-muted-foreground tabular-nums w-5">{si + 1}.</span>
+                            <span className="flex-1 truncate">{step.name}</span>
+                            <Badge variant="outline" className="text-[9px] px-1 py-0">{step.type}</Badge>
+                            {step.error && (
+                              <span className="text-red-600 dark:text-red-400 text-[10px] truncate max-w-[200px]" title={step.error}>
+                                {step.error}
+                              </span>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        // Fallback for tasks without a pipelineReport (older types
+                        // or in-progress runs) — show whatever we know.
+                        <div className="text-[11px] py-1 space-y-0.5">
+                          <div className="text-muted-foreground">
+                            <span className="font-medium">Stato:</span> {t.status}
+                            {t.durationMs != null && (
+                              <span className="ml-2 tabular-nums">
+                                ({t.durationMs < 1000 ? `${t.durationMs}ms` : `${(t.durationMs / 1000).toFixed(1)}s`})
+                              </span>
+                            )}
+                          </div>
+                          {t.message && <div className="text-foreground/80">{t.message}</div>}
+                          {t.error && (
+                            <div className="text-red-600 dark:text-red-400 break-words" title={t.error}>
+                              {t.error}
+                            </div>
+                          )}
+                          {!t.message && !t.error && (
+                            <div className="italic text-muted-foreground">
+                              Pipeline dettagliata non disponibile per questo task.
+                            </div>
                           )}
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
                   </div>

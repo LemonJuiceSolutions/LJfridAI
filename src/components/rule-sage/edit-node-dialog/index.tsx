@@ -1284,12 +1284,19 @@ export default function EditNodeDialog({
   // Same path used by widget refresh and scheduler so the three flows produce
   // identical results. Streams NDJSON progress, updates executionPipeline UI,
   // then re-hydrates the local preview from NodePreviewCache.
-  const runUnifiedPreview = async (): Promise<boolean> => {
-    if (!treeId || !currentNodeId) return false;
-    if (isExecutingRef.current) return false;
+  // Lower-level helper: runs the pipeline, streams events into the
+  // PIPELINE DI ESECUZIONE list, hydrates preview from cache. Called by both
+  // the manual "Esegui Anteprima" button and the chat auto-execute.
+  const runPipelineStream = async (opts?: {
+    overrideTargetScript?: string;
+    overrideTargetOutputType?: string;
+    statusLabel?: string;
+  }): Promise<{ success: boolean; error?: string; isEmpty?: boolean }> => {
+    if (!treeId || !currentNodeId) return { success: false, error: 'Salva il nodo prima di eseguire l\'anteprima.' };
+    if (isExecutingRef.current) return { success: false, error: 'Esecuzione già in corso.' };
     setIsPipelineExecuting(true);
     isExecutingRef.current = true;
-    setPipelineAgentStatus('Esecuzione pipeline server-side...');
+    setPipelineAgentStatus(opts?.statusLabel || 'Esecuzione pipeline...');
     setPipelineProgressStep(1);
     setExecutionPipeline([]);
 
@@ -1300,7 +1307,12 @@ export default function EditNodeDialog({
       const res = await fetch('/api/internal/execute-pipeline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ treeId, nodeId: currentNodeId }),
+        body: JSON.stringify({
+          treeId,
+          nodeId: currentNodeId,
+          ...(opts?.overrideTargetScript ? { overrideTargetScript: opts.overrideTargetScript } : {}),
+          ...(opts?.overrideTargetOutputType ? { overrideTargetOutputType: opts.overrideTargetOutputType } : {}),
+        }),
       });
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -1392,16 +1404,34 @@ export default function EditNodeDialog({
 
       setPipelineAgentStatus(pipelineSuccess ? null : 'Pipeline con errori — vedi dettagli');
       setPipelineProgressStep(0);
-      return pipelineSuccess;
+
+      // Determine isEmpty from cached preview
+      let isEmpty = true;
+      try {
+        const { getNodePreviewAction } = await import('@/app/actions');
+        const c = await getNodePreviewAction(treeId, currentNodeId);
+        const r = c?.pythonPreviewResult;
+        if (r) {
+          isEmpty = !((Array.isArray(r.data) && r.data.length > 0) || (r.html && r.html.length > 200) || !!r.chartHtml || !!r.plotlyJson);
+        }
+      } catch { /* */ }
+
+      return { success: pipelineSuccess, isEmpty };
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Errore pipeline', description: e?.message || 'Esecuzione fallita' });
       setPipelineAgentStatus(null);
       setPipelineProgressStep(0);
-      return false;
+      return { success: false, error: e?.message };
     } finally {
       setIsPipelineExecuting(false);
       isExecutingRef.current = false;
     }
+  };
+
+  // Manual button handler — no override.
+  const runUnifiedPreview = async (): Promise<boolean> => {
+    const r = await runPipelineStream({ statusLabel: 'Esecuzione pipeline server-side...' });
+    return r.success;
   };
 
   // --- REUSABLE PIPELINE EXECUTION LOGIC (legacy — kept for export/email modes) ---
@@ -3640,57 +3670,18 @@ export default function EditNodeDialog({
                               }}
                               onPreviewReady={() => pythonPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                               onAutoExecutePreview={async (scriptToExecute) => {
-                                try {
-                                  const inputData: Record<string, any[]> = {};
-                                  const deps = pythonSelectedPipelines.map(tableName => {
-                                    const depMeta = availableInputTables?.find(t => t.name === tableName);
-                                    if ((depMeta as any)?.data && Array.isArray((depMeta as any).data)) {
-                                      inputData[tableName] = (depMeta as any).data;
-                                    }
-                                    return {
-                                      tableName,
-                                      query: depMeta?.sqlQuery || '',
-                                      isPython: !!depMeta?.isPython,
-                                      pythonCode: depMeta?.pythonCode,
-                                      connectorId: depMeta?.connectorId,
-                                      pipelineDependencies: depMeta?.pipelineDependencies,
-                                    };
-                                  });
-                                  const res = await executePythonPreviewClient(scriptToExecute, pythonOutputType, inputData, deps, pythonConnectorId, selectedDocuments.length > 0 ? selectedDocuments : undefined);
-                                  setPythonLastExecLog({
-                                    stdout: res.stdout,
-                                    debugLogs: res.debugLogs,
-                                    error: res.success ? undefined : (res.error || 'Errore sconosciuto'),
-                                    timestamp: Date.now(),
-                                  });
-                                  if (!res.success || (!res.data?.length && !res.html)) {
-                                    setPythonCodeTab('debug');
-                                  }
-                                  if (res.success) {
-                                    const effectiveType = (pythonOutputType === 'table' && !res.data && res.html) ? 'html' : pythonOutputType;
-                                    setPythonPreviewResult({
-                                      type: effectiveType,
-                                      data: res.data,
-                                      variables: res.variables,
-                                      chartBase64: res.chartBase64,
-                                      chartHtml: res.chartHtml,
-                                      rechartsConfig: res.rechartsConfig,
-                                      rechartsData: res.rechartsData,
-                                      rechartsStyle: res.rechartsStyle,
-                                      plotlyJson: res.plotlyJson,
-                                      html: res.html,
-                                      stdout: res.stdout,
-                                      debugLogs: res.debugLogs,
-                                      timestamp: Date.now(),
-                                    });
-                                    setPythonPreviewExpanded(true);
-                                    const hasData = (res.data && res.data.length > 0) || (res.html && res.html.length > 200);
-                                    return { success: true, stdout: res.stdout, debugLogs: res.debugLogs, isEmpty: !hasData };
-                                  }
-                                  return { success: false, error: res.error || 'Errore Python sconosciuto', stdout: res.stdout, debugLogs: res.debugLogs };
-                                } catch (e: any) {
-                                  return { success: false, error: e.message };
-                                }
+                                // Same path as "Esegui Anteprima" — chat draft script
+                                // is sent as overrideTargetScript, server runs saved
+                                // ancestor chain + draft target. Streams events into
+                                // the same PIPELINE DI ESECUZIONE list so the user
+                                // sees identical UI on both flows.
+                                const r = await runPipelineStream({
+                                  overrideTargetScript: scriptToExecute,
+                                  overrideTargetOutputType: pythonOutputType,
+                                  statusLabel: 'Esecuzione anteprima da agente...',
+                                });
+                                if (!r.success) setPythonCodeTab('debug');
+                                return r;
                               }}
                             />
                           </div>
@@ -4085,13 +4076,15 @@ export default function EditNodeDialog({
                       {pythonPreviewExpanded && (
                         <div className="transition-all duration-300">
                           {pythonPreviewResult.type === 'table' && pythonPreviewResult.data && (
-                            <DataTable data={pythonPreviewResult.data} columns={pythonPreviewResult.columns} />
+                            <div className="max-h-[200px] overflow-auto">
+                              <DataTable data={pythonPreviewResult.data} columns={pythonPreviewResult.columns} />
+                            </div>
                           )}
                           {pythonPreviewResult.type === 'variable' && pythonPreviewResult.variables && (
-                            <pre className="p-3 text-xs">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
+                            <pre className="p-3 text-xs max-h-[200px] overflow-auto">{JSON.stringify(pythonPreviewResult.variables, null, 2)}</pre>
                           )}
                           {pythonPreviewResult.type === 'html' && pythonPreviewResult.html && (
-                            <div className={`bg-white dark:bg-zinc-950 relative ${pythonPreviewFullHeight ? 'min-h-[500px]' : 'max-h-[400px] overflow-auto'}`}>
+                            <div className="bg-white dark:bg-zinc-950 relative">
                               {/* HTML style editor button */}
                               <button
                                 onClick={() => setHtmlStyleEditorOpen(true)}
@@ -4119,7 +4112,32 @@ export default function EditNodeDialog({
                                     baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
                                   });
                                 })()}
-                                className="w-full border-none min-h-[400px]"
+                                className="w-full border-none"
+                                style={{ height: '300px' }}
+                                onLoad={(e) => {
+                                  // Auto-size to content height. Same-origin srcDoc lets us
+                                  // read scrollHeight directly. Re-measure on resize.
+                                  const ifr = e.currentTarget;
+                                  const measure = () => {
+                                    try {
+                                      const doc = ifr.contentDocument;
+                                      if (!doc) return;
+                                      const h = Math.max(
+                                        doc.documentElement.scrollHeight,
+                                        doc.body?.scrollHeight || 0,
+                                      );
+                                      if (h > 0) ifr.style.height = `${h + 16}px`;
+                                    } catch { /* cross-origin fallback */ }
+                                  };
+                                  measure();
+                                  // Some HTML renders charts/images async — re-measure shortly.
+                                  setTimeout(measure, 200);
+                                  setTimeout(measure, 800);
+                                  try {
+                                    const ro = new ResizeObserver(measure);
+                                    if (ifr.contentDocument?.body) ro.observe(ifr.contentDocument.body);
+                                  } catch { /* */ }
+                                }}
                                 sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                                 title="HTML Preview"
                               />
@@ -4153,7 +4171,7 @@ export default function EditNodeDialog({
                             </div>
                           )}
                           {pythonPreviewResult.type === 'chart' && (
-                            <div key={pythonPreviewFullHeight ? 'full' : 'mini'} className={`bg-white dark:bg-zinc-950 relative ${pythonPreviewFullHeight ? 'min-h-[500px]' : 'overflow-y-auto custom-scrollbar'}`} style={{ height: pythonPreviewFullHeight ? 'auto' : '400px' }}>
+                            <div className="bg-white dark:bg-zinc-950 relative" style={{ height: 'auto' }}>
                               {/* PRIORITY 1: Plotly JSON available → always render with Plotly + style editor */}
                               {pythonPreviewResult.plotlyJson ? (
                                 <>
@@ -4241,7 +4259,7 @@ export default function EditNodeDialog({
                                 />
                               ) : pythonPreviewResult.rechartsConfig && pythonPreviewResult.rechartsData ? (
                                 /* PRIORITY 3: Recharts fallback (old data without plotlyJson/chartHtml) */
-                                <div className="w-full p-4" style={{ height: pythonPreviewFullHeight ? '650px' : '100%' }}>
+                                <div className="w-full p-4" style={{ height: '650px' }}>
                                   <SmartWidgetRenderer
                                     data={pythonPreviewResult.rechartsData}
                                     config={{

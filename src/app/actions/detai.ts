@@ -78,7 +78,8 @@ Diagnostica il prossimo passo.`;
 
         // SECURITY: resolve masked/missing apiKey from DB server-side
         const { resolveOpenRouterConfig } = await import('@/lib/openrouter-credentials');
-        const effectiveOrConfig = await resolveOpenRouterConfig(openRouterConfig);
+        // Respect explicit Claude CLI selection: skip OpenRouter resolution.
+        const effectiveOrConfig = claudeCliConfig ? null : await resolveOpenRouterConfig(openRouterConfig);
 
         if (effectiveOrConfig) {
             const result = await callOpenRouterJSON(
@@ -184,16 +185,10 @@ export async function detaiAction(
                 .filter(Boolean)
                 .join('\n');
 
-            const systemPrompt = `Sei detAI, un assistente IA esperto e proattivo. Rispondi in italiano. Basa le tue risposte sulla conoscenza contenuta negli alberi decisionali dell'azienda.
-
-REGOLE:
-1. Se l'utente menziona un termine specifico, una procedura o un concetto, CERCA prima nel database usando lo strumento searchDecisionTrees.
-2. Se trovi informazioni, attribuisci la fonte con [Fonte: ID] ... [Fine Fonte].
-3. Usa il grassetto (**testo**) per le informazioni trovate.
-4. Se non trovi nulla, dillo onestamente.`;
-
             const treesResult = await getTreesAction();
             let contextPrompt = '';
+            const nameToId = new Map<string, string>();
+            const validIds = new Set<string>();
             if (treesResult.data && treesResult.data.length > 0) {
                 const queryLower = userText.toLowerCase();
                 const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
@@ -207,13 +202,38 @@ REGOLE:
                     .sort((a, b) => b.matchCount - a.matchCount)
                     .slice(0, 5);
 
+                matchedTrees.forEach(t => {
+                    nameToId.set(t.name.toLowerCase().trim(), t.id);
+                    validIds.add(t.id);
+                });
+
                 if (matchedTrees.length > 0) {
                     const treeSummaries = matchedTrees.map(t =>
-                        `[Albero: ${t.name} (ID: ${t.id})]\n${(t.naturalLanguageDecisionTree || t.description || '').slice(0, 2000)}`
+                        `ID_FONTE="${t.id}" NOME="${t.name}"\n${(t.naturalLanguageDecisionTree || t.description || '').slice(0, 2000)}`
                     ).join('\n\n---\n\n');
-                    contextPrompt = `<context>\nAlberi decisionali pertinenti trovati:\n\n${treeSummaries}\n</context>\n\n`;
+                    contextPrompt = `<context>\nAlberi decisionali disponibili:\n\n${treeSummaries}\n</context>\n\n`;
                 }
             }
+
+            const idExample = validIds.size > 0 ? Array.from(validIds)[0] : 'esempio-uuid';
+            const systemPrompt = `Sei detAI, un assistente IA esperto e proattivo. Rispondi in italiano. Basa le tue risposte sulla conoscenza contenuta negli alberi decisionali dell'azienda.
+
+REGOLE:
+1. Se nel <context> sono presenti alberi pertinenti, USALI per rispondere — anche per fare la prima domanda diagnostica.
+2. **ATTRIBUZIONE FONTE — OBBLIGATORIA SEMPRE che usi info dal <context>**:
+   - Avvolgi OGNI parte di risposta basata sul context nel formato esatto:
+     [Fonte: <ID_FONTE>]testo della risposta...[Fine Fonte]
+   - <ID_FONTE> DEVE essere il valore esatto del campo ID_FONTE mostrato (es. ${idExample}).
+   - NON usare il NOME dell'albero come ID. NON inventare ID. Solo ID_FONTE letterali presi dal context.
+   - Anche se la risposta è una sola domanda diagnostica, AVVOLGILA in [Fonte: ...][Fine Fonte].
+3. Usa il grassetto (**testo**) per le informazioni chiave.
+4. Solo se nel <context> NON c'è nulla di pertinente, rispondi onestamente senza attribuzione.
+
+ESEMPIO RISPOSTA CORRETTA:
+[Fonte: ${idExample}]**La macchina segnala un codice di errore?**
+
+- **Sì** → posso guidarti
+- **No** → diagnostica standard[Fine Fonte]`;
 
             const fullPrompt = `<system>\n${systemPrompt}\n</system>\n\n${contextPrompt}${historyText ? `Conversazione precedente:\n${historyText}\n\n` : ''}Rispondi all'utente: ${userText}`;
 
@@ -224,7 +244,18 @@ REGOLE:
                     `${claudePath} --model ${claudeCliConfig.model} -p ${JSON.stringify(fullPrompt)}`,
                     { timeout: 60000, maxBuffer: 1024 * 1024, env: { ...process.env, PATH: fullPath2 } }
                 );
-                return { data: { text: stdout.trim() }, error: null };
+
+                // Fallback name→id: if model emitted [Fonte: <name>] instead of UUID,
+                // remap to the real id when name matches one of the matched trees.
+                let text = stdout.trim();
+                text = text.replace(/\[Fonte:\s*([^\]]+)\]/g, (_match: string, raw: string) => {
+                    const trimmed = raw.trim();
+                    if (validIds.has(trimmed)) return `[Fonte: ${trimmed}]`;
+                    const mapped = nameToId.get(trimmed.toLowerCase());
+                    return mapped ? `[Fonte: ${mapped}]` : `[Fonte: ${trimmed}]`;
+                });
+
+                return { data: { text }, error: null };
             } catch (cliError: any) {
                 console.error('Claude CLI error:', cliError);
                 return { data: null, error: `Claude CLI errore: ${cliError.message}` };

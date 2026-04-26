@@ -758,7 +758,8 @@ export async function searchTreesAction(query: string, openRouterConfig?: { apiK
     }));
 
     const { resolveOpenRouterConfig: resolveCfgSearch } = await import('@/lib/openrouter-credentials');
-    const effectiveConfig = await resolveCfgSearch(openRouterConfig);
+    // Respect explicit Claude CLI selection: skip OpenRouter resolution.
+    const effectiveConfig = claudeCliConfig ? null : await resolveCfgSearch(openRouterConfig);
 
     if (effectiveConfig) {
         const systemPrompt = `Sei un assistente di ricerca intelligente.

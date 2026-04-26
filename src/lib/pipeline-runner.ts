@@ -153,6 +153,7 @@ async function executeStep(
     allSteps: PipelineStep[],
     emit: (e: PipelineEvent) => void,
     pipelineReport: PipelineReportEntry[],
+    bypassAuth: boolean = false,
 ): Promise<void> {
     const nType = step.pipelineType;
     const reportName = step.resultName || step.label || step.nodeId || `step-${index}`;
@@ -183,7 +184,7 @@ async function executeStep(
             inputData,
             step.dependencies || [],
             pyConnectorId,
-            undefined,
+            bypassAuth,
             step.selectedDocuments as string[] | undefined,
         );
 
@@ -306,7 +307,7 @@ async function executeStep(
     });
 
     const sqlResult = await executeSqlPreviewAction(
-        step.sqlQuery || '', step.connectorId || '', deps,
+        step.sqlQuery || '', step.connectorId || '', deps, bypassAuth,
     );
 
     const elapsed = Date.now() - startTime;
@@ -404,6 +405,7 @@ async function executeWriteStep(
 export async function runPipelineSteps(
     steps: PipelineStep[],
     emit: (event: PipelineEvent) => void,
+    bypassAuth: boolean = false,
 ): Promise<PipelineRunResult> {
     const results = new Map<string, any>();
     const nodeIdResults = new Map<string, any>();
@@ -417,7 +419,7 @@ export async function runPipelineSteps(
 
         try {
             if (step.type === 'execution' || step.type === 'final') {
-                await executeStep(step, i, startTime, results, nodeIdResults, steps, emit, pipelineReport);
+                await executeStep(step, i, startTime, results, nodeIdResults, steps, emit, pipelineReport, bypassAuth);
             } else if (step.type === 'write') {
                 await executeWriteStep(step, i, startTime, results, emit, pipelineReport);
             }
@@ -783,6 +785,7 @@ export async function runPipelineForNode(
     options?: {
         emit?: (event: PipelineEvent) => void;
         skipPreviewSave?: boolean;
+        bypassAuth?: boolean;
     },
 ): Promise<PipelineRunResult> {
     const { db } = await import('@/lib/db');
@@ -807,7 +810,7 @@ export async function runPipelineForNode(
 
     const steps = buildPipelineStepsForNode(rootJson, nodeId, parsedAllTrees);
     const emit = options?.emit ?? (() => {});
-    const result = await runPipelineSteps(steps, emit);
+    const result = await runPipelineSteps(steps, emit, options?.bypassAuth ?? false);
 
     if (!options?.skipPreviewSave) {
         try {

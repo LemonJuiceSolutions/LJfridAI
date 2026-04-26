@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { BotMessageSquare, Loader2, Sparkles, Mic, MicOff, AlertCircle, RefreshCw, FileSpreadsheet, Upload, Database, Check, ChevronsUpDown } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -45,6 +45,14 @@ const processExamples = [
 export default function CreatePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<StoredTree | null>(null);
+  const onDataRefreshStable = useCallback(async () => {
+    if (analysisResult?.id) {
+      const refreshed = await getTreeAction(analysisResult.id);
+      if (refreshed.data) {
+        setAnalysisResult(refreshed.data);
+      }
+    }
+  }, [analysisResult?.id]);
   const [textDescription, setTextDescription] = useState('');
   const { toast } = useToast();
   const [currentModel, setCurrentModel] = useState<string>('google/gemini-2.0-flash-001');
@@ -650,14 +658,7 @@ export default function CreatePage() {
             {analysisResult && !isLoading && (
               <ResultsDisplay
                 result={analysisResult}
-                onDataRefresh={async () => {
-                  if (analysisResult.id) {
-                    const refreshed = await getTreeAction(analysisResult.id);
-                    if (refreshed.data) {
-                      setAnalysisResult(refreshed.data);
-                    }
-                  }
-                }}
+                onDataRefresh={onDataRefreshStable}
               />
             )}
 

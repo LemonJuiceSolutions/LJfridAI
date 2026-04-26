@@ -916,7 +916,7 @@ export function ChatBotAgent() {
                                         <div className={cn(
                                             "max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm break-all overflow-hidden",
                                             m.role === 'user'
-                                                ? "bg-primary text-primary-foreground rounded-tr-none"
+                                                ? "bg-primary text-primary-foreground rounded-tr-none selection:bg-white selection:text-primary"
                                                 : "bg-muted/50 border rounded-tl-none"
                                         )}>
                                             <div className="min-w-0">

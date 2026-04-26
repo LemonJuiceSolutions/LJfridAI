@@ -35,10 +35,22 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { treeId, nodeId, steps: incomingSteps } = body as {
+    const {
+        treeId,
+        nodeId,
+        steps: incomingSteps,
+        overrideTargetScript,
+        overrideTargetOutputType,
+    } = body as {
         treeId: string;
         nodeId?: string;
         steps?: PipelineStep[];
+        // Run the saved tree pipeline but swap the target node's pythonCode
+        // with this string. Used by the in-node Anteprima auto-execute so the
+        // chat-modified script runs through the SAME ancestor chain as the
+        // saved version, without persisting changes first.
+        overrideTargetScript?: string;
+        overrideTargetOutputType?: string;
     };
 
     if (!treeId) {
@@ -68,6 +80,24 @@ export async function POST(req: NextRequest) {
             steps = buildPipelineStepsForNode(rootJson, nodeId, parsedAll);
         } catch (e: any) {
             return Response.json({ error: e?.message || 'Failed to build pipeline' }, { status: 400 });
+        }
+        // Override the target step's script/outputType in-memory so the
+        // unsaved chat draft runs through the same ancestor chain.
+        if (overrideTargetScript || overrideTargetOutputType) {
+            for (let i = steps.length - 1; i >= 0; i--) {
+                if (steps[i].type === 'final') {
+                    if (overrideTargetScript) steps[i].pythonCode = overrideTargetScript;
+                    if (overrideTargetOutputType) {
+                        steps[i].pythonOutputType = overrideTargetOutputType;
+                        if (overrideTargetOutputType !== 'sql' && overrideTargetOutputType !== 'ai') {
+                            steps[i].pipelineType = 'python';
+                            steps[i].isPython = true;
+                            steps[i].sqlQuery = undefined;
+                        }
+                    }
+                    break;
+                }
+            }
         }
     } else {
         steps = incomingSteps as PipelineStep[];

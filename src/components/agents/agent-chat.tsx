@@ -1906,7 +1906,7 @@ export function AgentChat({
                   <div className={cn(
                     "max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm break-all whitespace-pre-wrap",
                     m.role === 'user'
-                      ? "bg-primary text-primary-foreground rounded-tr-none"
+                      ? "bg-primary text-primary-foreground rounded-tr-none selection:bg-white selection:text-primary"
                       : "bg-muted/50 border rounded-tl-none"
                   )}>
                     <div className="min-w-0">
@@ -2030,25 +2030,50 @@ export function AgentChat({
                           Correggi
                         </Button>
                       )}
-                      {/* Riversa nel box: applies scriptSnapshot to the node box + auto-execute */}
-                      {m.scriptSnapshot && onScriptUpdate && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-50 gap-1 font-medium"
-                          onClick={() => {
-                            onScriptUpdate(m.scriptSnapshot!);
-                            if (onAutoExecutePreview) {
-                              setTimeout(() => {
-                                triggerAutoExecute(m.scriptSnapshot!, 0);
-                              }, 300);
+                      {/* Riversa nel box: applies scriptSnapshot OR extracted
+                          code block to the node box + auto-execute. Falls back
+                          to a code block parsed from the message body when the
+                          assistant didn't attach a snapshot (older flows / text
+                          edits without a tool call). */}
+                      {(() => {
+                        let codeToUse = m.scriptSnapshot && m.scriptSnapshot.trim().length > 0
+                          ? m.scriptSnapshot
+                          : null;
+                        if (!codeToUse) {
+                          // Look for a non-json fenced block in the message text.
+                          const re = /```(\w*)\s*([\s\S]*?)```/g;
+                          let mt: RegExpExecArray | null;
+                          while ((mt = re.exec(m.content)) !== null) {
+                            const lang = mt[1].toLowerCase().trim();
+                            const content = mt[2].trim();
+                            const looksLikeJson = content.startsWith('{') && content.endsWith('}');
+                            if (lang !== 'json' && !looksLikeJson && content.length > 5) {
+                              codeToUse = content;
+                              break;
                             }
-                          }}
-                        >
-                          <CornerDownLeft className="h-3 w-3" />
-                          Riversa nel box
-                        </Button>
-                      )}
+                          }
+                        }
+                        if (!codeToUse || !onScriptUpdate) return null;
+                        const finalCode = codeToUse;
+                        return (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-50 gap-1 font-medium"
+                            onClick={() => {
+                              onScriptUpdate(finalCode);
+                              if (onAutoExecutePreview) {
+                                setTimeout(() => {
+                                  triggerAutoExecute(finalCode, 0);
+                                }, 300);
+                              }
+                            }}
+                          >
+                            <CornerDownLeft className="h-3 w-3" />
+                            Riversa nel box
+                          </Button>
+                        );
+                      })()}
                       {/* Ricarica da DB: fetches the latest script directly from DB (works even if scriptSnapshot is stale) */}
                       {nodeId && onScriptUpdate && (
                         <Button
