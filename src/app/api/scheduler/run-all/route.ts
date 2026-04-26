@@ -212,6 +212,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ aborted: false, reason: 'No active run' });
   }
 
+  if (
+    process.env.NODE_ENV === 'production'
+    && !process.env.SCHEDULER_SERVICE_URL
+    && process.env.SCHEDULER_ALLOW_LOCAL_FALLBACK !== 'true'
+  ) {
+    return NextResponse.json(
+      { error: 'Scheduler service is required for run-all in production.' },
+      { status: 503 },
+    );
+  }
+
   // Already running for this company?
   if (currentRun?.status === 'running') {
     return NextResponse.json(

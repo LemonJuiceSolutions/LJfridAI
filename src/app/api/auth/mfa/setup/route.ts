@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateSecret } from "@/lib/totp";
+import { rateLimit } from "@/lib/rate-limit";
 
 /**
  * POST /api/auth/mfa/setup
@@ -23,6 +24,15 @@ export async function POST() {
         }
 
         const userId = (session.user as any).id as string;
+
+        const rl = await rateLimit(`mfa-setup:${userId}`, 5, 10 * 60 * 1000);
+        if (!rl.allowed) {
+            const mins = Math.ceil((rl.retryAfterMs || 0) / 60000);
+            return NextResponse.json(
+                { error: `Troppe richieste MFA. Riprova tra ${mins} minuti.` },
+                { status: 429 },
+            );
+        }
 
         const { secret, uri } = generateSecret(session.user.email);
 

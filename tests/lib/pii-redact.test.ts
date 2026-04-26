@@ -62,12 +62,12 @@ describe('redactForLLM (recursive)', () => {
     });
 });
 
-describe('maybeRedact env toggle', () => {
-    it('respects LLM_PII_REDACT=false', () => {
+describe('maybeRedact mandatory redaction', () => {
+    it('redacts even if legacy LLM_PII_REDACT=false is set', () => {
         const original = process.env.LLM_PII_REDACT;
         try {
             process.env.LLM_PII_REDACT = 'false';
-            expect(maybeRedact('mario@example.com')).toBe('mario@example.com');
+            expect(maybeRedact('mario@example.com')).toContain('<redacted:email>');
         } finally {
             process.env.LLM_PII_REDACT = original;
         }

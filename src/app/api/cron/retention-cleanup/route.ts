@@ -22,7 +22,7 @@ function safeEqual(a: string, b: string): boolean {
     } catch { return false; }
 }
 
-export async function POST(req: NextRequest) {
+async function handleCron(req: NextRequest) {
     const cronSecret = process.env.CRON_SECRET;
     if (!cronSecret) {
         return NextResponse.json(
@@ -86,4 +86,12 @@ export async function POST(req: NextRequest) {
         console.error('[retention-cleanup] Cleanup failed:', error);
         return NextResponse.json({ error: 'Cleanup failed' }, { status: 500 });
     }
+}
+
+export async function GET(req: NextRequest) {
+    return handleCron(req);
+}
+
+export async function POST(req: NextRequest) {
+    return handleCron(req);
 }

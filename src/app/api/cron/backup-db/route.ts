@@ -26,7 +26,7 @@ function formatTimestamp(date: Date): string {
     );
 }
 
-export async function POST(req: NextRequest) {
+async function handleCron(req: NextRequest) {
     const cronSecret = process.env.CRON_SECRET;
     if (!cronSecret) {
         return NextResponse.json(
@@ -90,4 +90,12 @@ export async function POST(req: NextRequest) {
             { status: 500 }
         );
     }
+}
+
+export async function GET(req: NextRequest) {
+    return handleCron(req);
+}
+
+export async function POST(req: NextRequest) {
+    return handleCron(req);
 }

@@ -116,6 +116,20 @@ export default async function middleware(req: NextRequest) {
         return NextResponse.redirect(signInUrl);
     }
 
+    // Admin/superadmin users without MFA complete a credentials login with
+    // mfaPending=true only so they can reach the MFA setup flow. Do not let
+    // that transitional session access the application or protected APIs.
+    if ((token as any).mfaPending) {
+        if (path.startsWith('/api/')) {
+            return NextResponse.json(
+                { error: 'MFA setup required' },
+                { status: 403 },
+            );
+        }
+        const setupUrl = new URL('/auth/mfa-setup', req.url);
+        return NextResponse.redirect(setupUrl);
+    }
+
     // ── Nonce-based CSP ──────────────────────────────────────────────────
     const isProd = process.env.NODE_ENV === 'production';
     const nonce = generateNonce();

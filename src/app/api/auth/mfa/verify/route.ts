@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { verifyToken } from "@/lib/totp";
+import { rateLimit } from "@/lib/rate-limit";
 
 /**
  * POST /api/auth/mfa/verify
@@ -34,6 +35,15 @@ export async function POST(request: Request) {
         }
 
         const userId = (session.user as any).id as string;
+
+        const rl = await rateLimit(`mfa-verify:${userId}`, 5, 10 * 60 * 1000);
+        if (!rl.allowed) {
+            const mins = Math.ceil((rl.retryAfterMs || 0) / 60000);
+            return NextResponse.json(
+                { error: `Troppi tentativi MFA. Riprova tra ${mins} minuti.` },
+                { status: 429 },
+            );
+        }
 
         const user = await db.user.findUnique({
             where: { id: userId },

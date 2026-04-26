@@ -5,9 +5,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 const CRITICAL_PROD_VARS = [
     'ENCRYPTION_KEY',
+    'PII_ENCRYPTION_ENABLED',
     'CRON_SECRET',
     'INTERNAL_QUERY_TOKEN',
     'MCP_INTERNAL_SECRET',
+    'PYTHON_BACKEND_TOKEN',
 ];
 
 describe('env validation contract (documentation)', () => {
@@ -15,9 +17,11 @@ describe('env validation contract (documentation)', () => {
         // This list should stay in sync with src/lib/env.ts prodOnlySchema.
         // If someone adds a new required secret, add it here too.
         expect(CRITICAL_PROD_VARS).toContain('ENCRYPTION_KEY');
+        expect(CRITICAL_PROD_VARS).toContain('PII_ENCRYPTION_ENABLED');
         expect(CRITICAL_PROD_VARS).toContain('CRON_SECRET');
         expect(CRITICAL_PROD_VARS).toContain('INTERNAL_QUERY_TOKEN');
         expect(CRITICAL_PROD_VARS).toContain('MCP_INTERNAL_SECRET');
+        expect(CRITICAL_PROD_VARS).toContain('PYTHON_BACKEND_TOKEN');
     });
 
     it('NEXTAUTH_SECRET must be >=32 chars', () => {

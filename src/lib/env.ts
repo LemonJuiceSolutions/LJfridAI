@@ -14,6 +14,9 @@ const coreSchema = z.object({
 // Required in production only
 const prodOnlySchema = z.object({
   ENCRYPTION_KEY: z.string().min(1, 'ENCRYPTION_KEY required in production'),
+  PII_ENCRYPTION_ENABLED: z.literal('true', {
+    errorMap: () => ({ message: 'PII_ENCRYPTION_ENABLED must be "true" in production' }),
+  }),
   CRON_SECRET: z.string().min(32, 'CRON_SECRET must be at least 32 characters in production'),
   INTERNAL_QUERY_TOKEN: z.string().min(32, 'INTERNAL_QUERY_TOKEN must be at least 32 characters in production'),
   MCP_INTERNAL_SECRET: z.string().min(32, 'MCP_INTERNAL_SECRET must be at least 32 characters in production'),

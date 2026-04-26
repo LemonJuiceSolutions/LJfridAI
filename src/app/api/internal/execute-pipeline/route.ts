@@ -30,7 +30,8 @@ export const maxDuration = 300; // 5 minutes
 
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const companyId = (session?.user as any)?.companyId as string | undefined;
+    if (!session?.user || !companyId) {
         return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
     // ── Resolve steps (server-side flatten when only nodeId provided) ──
     let steps: PipelineStep[];
     if (nodeId) {
-        const tree = await db.tree.findUnique({ where: { id: treeId } });
+        const tree = await db.tree.findFirst({ where: { id: treeId, companyId } });
         if (!tree) return Response.json({ error: 'Tree not found' }, { status: 404 });
         const rootJson = typeof tree.jsonDecisionTree === 'string'
             ? JSON.parse(tree.jsonDecisionTree) : tree.jsonDecisionTree;

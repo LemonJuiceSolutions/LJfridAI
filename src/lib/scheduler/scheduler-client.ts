@@ -93,6 +93,11 @@ class RemoteSchedulerClient implements ISchedulerClient {
       || '';
   }
 
+  private canUseLocalFallback(): boolean {
+    return process.env.NODE_ENV !== 'production'
+      || process.env.SCHEDULER_ALLOW_LOCAL_FALLBACK === 'true';
+  }
+
   /**
    * Quick health-probe with 1s timeout. Cached for 5s to avoid hammering
    * /health on every call. If the service is unreachable we fall back to
@@ -118,12 +123,20 @@ class RemoteSchedulerClient implements ISchedulerClient {
 
   private async callOrFallback<T>(method: string, path: string, body: any, localFn: () => Promise<T>): Promise<T> {
     if (!(await this.isReachable())) {
+      if (!this.canUseLocalFallback()) {
+        throw new Error(
+          `Scheduler service ${this.baseUrl} is unreachable and local fallback is disabled in production.`,
+        );
+      }
       console.warn(`[scheduler-client] Remote ${this.baseUrl} unreachable — falling back to in-process scheduler. Start scheduler-service (port 3001) or unset SCHEDULER_SERVICE_URL to silence.`);
       return localFn();
     }
     try {
       return await this.call(method, path, body) as T;
     } catch (err: any) {
+      if (!this.canUseLocalFallback()) {
+        throw err;
+      }
       console.warn(`[scheduler-client] Remote call ${method} ${path} failed: ${err.message} — falling back to local`);
       this.reachable = false; // force recheck next time
       return localFn();
@@ -198,6 +211,11 @@ class RemoteSchedulerClient implements ISchedulerClient {
 
   async waitForAutoRecovery() {
     if (!(await this.isReachable())) {
+      if (!this.canUseLocalFallback()) {
+        throw new Error(
+          `Scheduler service ${this.baseUrl} is unreachable and local fallback is disabled in production.`,
+        );
+      }
       await this.local().waitForAutoRecovery();
       return;
     }

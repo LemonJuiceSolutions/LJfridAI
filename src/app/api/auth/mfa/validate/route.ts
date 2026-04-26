@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyToken } from "@/lib/totp";
+import { getClientIp, rateLimit } from "@/lib/rate-limit";
 
 /**
  * POST /api/auth/mfa/validate
@@ -12,6 +13,7 @@ import { verifyToken } from "@/lib/totp";
  */
 export async function POST(request: Request) {
     try {
+        const ip = getClientIp(request);
         const body = await request.json();
         const { email, token } = body;
 
@@ -26,6 +28,18 @@ export async function POST(request: Request) {
             return NextResponse.json(
                 { error: "Token MFA obbligatorio" },
                 { status: 400 },
+            );
+        }
+
+        const keyEmail = email.toLowerCase().trim();
+        const [ipLimit, emailLimit] = await Promise.all([
+            rateLimit(`mfa-validate:ip:${ip}`, 20, 60 * 1000),
+            rateLimit(`mfa-validate:email:${keyEmail}`, 5, 15 * 60 * 1000),
+        ]);
+        if (!ipLimit.allowed || !emailLimit.allowed) {
+            return NextResponse.json(
+                { error: "Troppi tentativi MFA. Riprova più tardi." },
+                { status: 429 },
             );
         }
 
