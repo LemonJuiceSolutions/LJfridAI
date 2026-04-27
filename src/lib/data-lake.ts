@@ -1,4 +1,4 @@
-import { join, isAbsolute } from 'path';
+import { basename, dirname, isAbsolute, join } from 'path';
 
 /**
  * Returns the absolute path to the data lake directory.
@@ -7,6 +7,8 @@ import { join, isAbsolute } from 'path';
  */
 export function getDataLakePath(...segments: string[]): string {
     const configured = process.env.DATA_LAKE_PATH || 'public/documents';
-    const base = isAbsolute(configured) ? configured : join(process.cwd(), configured);
+    const cwd = process.cwd();
+    const projectRoot = basename(cwd) === 'scheduler-service' ? dirname(cwd) : cwd;
+    const base = isAbsolute(configured) ? configured : join(projectRoot, configured);
     return segments.length > 0 ? join(base, ...segments) : base;
 }

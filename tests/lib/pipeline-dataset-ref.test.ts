@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('pipeline dataset refs', () => {
   const originalEnv = { ...process.env };
+  const originalCwd = process.cwd();
   let tempDir: string;
 
   beforeEach(() => {
@@ -15,6 +16,7 @@ describe('pipeline dataset refs', () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    process.chdir(originalCwd);
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -78,5 +80,18 @@ describe('pipeline dataset refs', () => {
     await expect(cleanupPipelineDatasetRefs(24)).resolves.toBe(1);
     expect(fs.existsSync(stale)).toBe(false);
     expect(fs.existsSync(fresh)).toBe(true);
+  });
+
+  it('resolves relative data lake paths from the repo root when cwd is scheduler-service', async () => {
+    const schedulerDir = path.join(originalCwd, 'scheduler-service');
+    if (!fs.existsSync(schedulerDir)) return;
+
+    delete process.env.DATA_LAKE_PATH;
+    process.chdir(schedulerDir);
+    vi.resetModules();
+
+    const { getDataLakePath } = await import('@/lib/data-lake');
+
+    expect(getDataLakePath()).toBe(path.join(originalCwd, 'public/documents'));
   });
 });
