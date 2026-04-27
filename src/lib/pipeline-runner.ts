@@ -368,6 +368,7 @@ async function executeWriteStep(
     results: Map<string, any>,
     emit: (e: PipelineEvent) => void,
     pipelineReport: PipelineReportEntry[],
+    bypassAuth: boolean = false,
 ): Promise<void> {
     const reportName = step.label || `Write ${step.sqlExportTargetTableName || 'output'}`;
     const sourceData = await resolveDatasetRef(results.get(step.sourceAncestorName || '')?.data);
@@ -387,7 +388,7 @@ async function executeWriteStep(
 
     if (targetConnectorId && targetTableName) {
         const writeRes = await exportTableToSqlAction(
-            targetConnectorId, targetTableName, sourceData, true,
+            targetConnectorId, targetTableName, sourceData, true, true, bypassAuth,
         );
         const elapsed = Date.now() - startTime;
         emit({
@@ -441,7 +442,7 @@ export async function runPipelineSteps(
             if (step.type === 'execution' || step.type === 'final') {
                 await executeStep(step, i, startTime, results, nodeIdResults, steps, emit, pipelineReport, executionId, bypassAuth);
             } else if (step.type === 'write') {
-                await executeWriteStep(step, i, startTime, results, emit, pipelineReport);
+                await executeWriteStep(step, i, startTime, results, emit, pipelineReport, bypassAuth);
             }
         } catch (e: any) {
             const elapsed = Date.now() - startTime;
