@@ -16,7 +16,23 @@
  */
 
 import express, { Request, Response, NextFunction } from 'express';
-import { SchedulerService } from '../src/lib/scheduler/scheduler-service';
+
+type SchedulerApi = {
+  autoRecoveryDone: boolean;
+  reload(): Promise<void>;
+  rescheduleTask(taskId: string): Promise<void>;
+  triggerTask(taskId: string): Promise<any>;
+  executeTask(taskId: string, opts?: { maxRetriesOverride?: number }): Promise<any>;
+  deleteTask(taskId: string): Promise<void>;
+  waitForAutoRecovery(): Promise<void>;
+  getMissedTasks(companyId?: string): Promise<any[]>;
+  processMissedTasks(
+    executeIds: string[],
+    skipIds: string[],
+    executeAll?: boolean,
+    missedCounts?: Map<string, number>,
+  ): Promise<any>;
+};
 
 // SECURITY: fail-closed on missing secret in production. In dev, allow a
 // deterministic dev-only value (never accept the literal placeholder silently).
@@ -41,7 +57,7 @@ function authMiddleware(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-export async function startServer(scheduler: SchedulerService, port: number): Promise<void> {
+export async function startServer(scheduler: SchedulerApi, port: number): Promise<void> {
   const app = express();
   app.use(express.json({ limit: '10mb' }));
   app.use(authMiddleware);

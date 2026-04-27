@@ -38,6 +38,16 @@ jobs:
       - name: npm audit (high + critical)
         run: npm audit --audit-level=high
 
+      - name: Generate SBOM (CycloneDX)
+        run: npm run sbom
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          retention-days: 30
+
       - name: SAST - Security pattern scan
         run: |
           echo "=== SAST Security Scan ==="

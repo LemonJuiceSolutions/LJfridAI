@@ -73,6 +73,13 @@ services:
       context: .
       dockerfile: Dockerfile.python
     restart: on-failure:5
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
     deploy:
       resources:
         limits:
@@ -97,6 +104,7 @@ services:
       # Internal auth: must match the value sent by Next.js as X-Internal-Token.
       # Required in production; dev falls back to a known local-only token.
       - PYTHON_BACKEND_TOKEN=${PYTHON_BACKEND_TOKEN:-}
+      - PYTHON_EXEC_TIMEOUT_SECONDS=${PYTHON_EXEC_TIMEOUT_SECONDS:-300}
     # In dev: use Flask dev server with hot reload instead of Gunicorn
     # Uncomment the next line for development:
     # command: ["python", "app.py"]

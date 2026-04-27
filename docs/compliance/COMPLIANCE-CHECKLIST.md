@@ -39,10 +39,11 @@
 - [x] Error monitoring (Sentry) — `src/instrumentation.ts`, `src/lib/sentry.ts`
 - [x] SAST security scanning in CI — `.github/workflows/ci.yml`
 - [x] npm audit strict (fail on HIGH/CRITICAL) — `.github/workflows/ci.yml`
+- [x] SBOM CycloneDX generato in CI — `npm run sbom`, artifact `sbom-cyclonedx`
+- [x] Dependabot settimanale per npm root, scheduler-service e pip — `.github/dependabot.yml`
 - [x] Risk assessment NIS2 — `docs/compliance/NIS2-RISK-ASSESSMENT.md`
 - [x] Piano formazione cybersecurity — `docs/compliance/NIS2-PIANO-FORMAZIONE.md`
 - [ ] Pen-test periodico (esterno)
-- [ ] SBOM generato
 
 ## AI Act (Reg. UE 2024/1689)
 
@@ -80,6 +81,7 @@
 - [x] Database backup giornaliero 02:00 UTC — cron `/api/cron/backup-db`
 - [x] Retention cleanup settimanale dom 03:00 UTC — cron `/api/cron/retention-cleanup`
 - [x] Docker Compose con resource limits — `docker-compose.yml`
+- [x] Hardening container Python: `no-new-privileges`, `cap_drop: ALL`, `pids_limit`, tmpfs `/tmp` noexec — `docker-compose.yml`
 - [x] Production deploy docs — `docs/PRODUCTION_DEPLOY.md`
 - [x] CI/CD con security checks — `.github/workflows/ci.yml` (audit + SAST + bundle)
 - [x] Health check endpoint — `/api/health` + Docker healthcheck

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "NODE_OPTIONS=\"--max-old-space-size=$(node -e \"try{console.log(require('../config/system-budget.json').schedulerHeapMb||4096)}catch{console.log(4096)}\")\" tsx index.ts",
     "dev": "NODE_OPTIONS=\"--max-old-space-size=$(node -e \"try{console.log(require('../config/system-budget.json').schedulerHeapMb||4096)}catch{console.log(4096)}\")\" tsx watch index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit --target ES2022 --module commonjs --moduleResolution node --esModuleInterop --allowSyntheticDefaultImports --skipLibCheck --types node server.ts shims/*.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

@@ -265,10 +265,10 @@ Valutazione del rischio residuo dopo l'applicazione dei controlli implementati.
 |----|----------|-------------------|---------------------|-----------------|---------------|
 | T-01 | Data breach | **Critico** | Auth su tutti gli endpoint (C-05 risolto), RBAC, middleware, isolamento tenant | **Medio** | Accettabile con monitoraggio |
 | T-02 | SQL injection via AI | **Critico** | SQL guard (fase 3), validazione query, parametrizzazione | **Basso** | Accettabile |
-| T-03 | Esecuzione codice arbitrario Python | **Critico** | Token auth backend Python, limiti risorse Docker (2GB RAM, 1.5 CPU), timeout Gunicorn 600s | **Medio** | Accettabile con sandboxing aggiuntivo |
+| T-03 | Esecuzione codice arbitrario Python | **Critico** | Token auth backend Python, limiti risorse Docker (2GB RAM, 1.5 CPU), timeout Gunicorn 600s, policy AST, timeout applicativo `PYTHON_EXEC_TIMEOUT_SECONDS`, container hardening (`no-new-privileges`, `cap_drop: ALL`, `pids_limit`, tmpfs `/tmp` noexec) | **Medio-Basso** | Accettabile; valutare nsjail/Firecracker per isolamento multi-tenant ad alto rischio |
 | T-04 | Cross-tenant leakage | **Critico** | Filtro companyId, rimozione system-override (in corso), access control (fase 3) | **Medio** | Accettabile a condizione di completare remediation 1.1 |
 | T-05 | Prompt injection / AI manipulation | **Alto** | PII redaction middleware, validazione input | **Medio** | Accettabile — monitorare evoluzione minaccia |
-| T-06 | Supply chain compromise | **Alto** | npm audit in CI, lockfile, build riproducibili | **Medio** | Accettabile — attivare Dependabot |
+| T-06 | Supply chain compromise | **Alto** | npm audit in CI, lockfile, build riproducibili, SBOM CycloneDX, Dependabot settimanale | **Basso** | Accettabile con monitoraggio CVE continuo |
 | T-07 | Furto credenziali API | **Alto** | Variabili d'ambiente (non in codice), token interno Python backend | **Medio** | Ridurre a Basso con cifratura DB (C-03) |
 | T-08 | Ransomware | **Alto** | Backup giornalieri cifrati, WAL continuo, RPO 1h, cross-region replica | **Basso** | Accettabile |
 | T-09 | DDoS | **Medio** | Rate limiting (in corso), Vercel auto-scaling, Cloudflare DNS | **Basso** | Accettabile |
@@ -311,9 +311,9 @@ Valutazione del rischio residuo dopo l'applicazione dei controlli implementati.
 | PT-06 | Riabilitare TLS verification (`rejectUnauthorized: true`) in tutti i punti (H-04) | T-13 | Engineering Team | 2026-06-15 | Aperto |
 | PT-07 | Completare gateway AI centralizzato con PII redaction automatico | T-12 | Engineering Team | 2026-06-30 | In corso |
 | PT-08 | Rimuovere PII dai log applicativi (M-01, L-01) | T-12 | Engineering Team | 2026-06-15 | Aperto |
-| PT-09 | Attivare Dependabot/Renovate per monitoraggio CVE dipendenze | T-06 | DevOps | 2026-05-30 | Aperto |
+| PT-09 | Attivare Dependabot/Renovate per monitoraggio CVE dipendenze | T-06 | DevOps | 2026-05-30 | Completato |
 | PT-10 | Integrare `pip audit` nella pipeline CI per dipendenze Python | T-06 | DevOps | 2026-05-30 | Aperto |
-| PT-11 | Implementare sandboxing aggiuntivo per esecuzione codice Python (container isolato, nsjail) | T-03 | DevOps | 2026-07-15 | Aperto |
+| PT-11 | Implementare sandboxing aggiuntivo per esecuzione codice Python (container isolato, nsjail) | T-03 | DevOps | 2026-07-15 | Parzialmente completato: hardening Docker + timeout + policy AST; nsjail/Firecracker da valutare |
 | PT-12 | Formalizzare DPA (Data Processing Agreement) con provider AI | T-05, T-12 | Legal / DPO | 2026-07-15 | Aperto |
 
 ### 7.3 Azioni a medio termine (entro 180 giorni — ottobre 2026)
