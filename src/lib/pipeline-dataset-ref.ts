@@ -66,6 +66,34 @@ export async function resolveDatasetRef(value: unknown): Promise<any> {
   return JSON.parse(raw);
 }
 
+export async function cleanupPipelineDatasetRefs(maxAgeHours = 24): Promise<number> {
+  const root = path.resolve(getDataLakePath("pipeline-datasets"));
+  const cutoff = Date.now() - maxAgeHours * 60 * 60 * 1000;
+  let deleted = 0;
+
+  let entries: string[];
+  try {
+    entries = await fs.promises.readdir(root);
+  } catch {
+    return 0;
+  }
+
+  await Promise.all(entries.map(async (entry) => {
+    const fullPath = path.join(root, entry);
+    try {
+      const stat = await fs.promises.stat(fullPath);
+      if (stat.mtimeMs < cutoff) {
+        await fs.promises.rm(fullPath, { recursive: true, force: true });
+        deleted += 1;
+      }
+    } catch {
+      // Best-effort cleanup: a concurrent pipeline may remove the same dir.
+    }
+  }));
+
+  return deleted;
+}
+
 export function datasetRowCount(value: unknown): number | undefined {
   if (isPipelineDatasetRef(value)) return value.rowCount;
   if (Array.isArray(value)) return value.length;

@@ -24,6 +24,7 @@ import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
 import { runClaudeCliSync } from '@/ai/providers/claude-cli-provider';
 import {
     datasetRowCount,
+    isPipelineDatasetRef,
     maybePersistDatasetRef,
     resolveDatasetRef,
 } from '@/lib/pipeline-dataset-ref';
@@ -833,7 +834,7 @@ export async function runPipelineForNode(
 
     if (!options?.skipPreviewSave) {
         try {
-            const batch = buildPreviewBatch(steps, result.results, result.nodeIdResults);
+            const batch = await buildPreviewBatch(steps, result.results, result.nodeIdResults);
             if (batch.length > 0) {
                 const { saveAncestorPreviewsBatchAction } = await import('@/app/actions/scheduler');
                 await saveAncestorPreviewsBatchAction(treeId, batch);
@@ -850,11 +851,11 @@ export async function runPipelineForNode(
  * Helper to build the preview-batch payload from a completed pipeline run,
  * matching the shape consumed by `saveAncestorPreviewsBatchAction`.
  */
-export function buildPreviewBatch(
+export async function buildPreviewBatch(
     steps: PipelineStep[],
     results: Map<string, any>,
     nodeIdResults: Map<string, any>,
-): any[] {
+): Promise<any[]> {
     const batch: any[] = [];
     for (const step of steps) {
         if (step.type === 'write' || !step.nodeId) continue;
@@ -865,7 +866,27 @@ export function buildPreviewBatch(
         if (!res) continue;
 
         let previewRes = res;
-        if (res?.data && Array.isArray(res.data)) {
+        if (isPipelineDatasetRef(res?.data)) {
+            try {
+                const rows = await resolveDatasetRef(res.data);
+                previewRes = {
+                    ...res,
+                    data: Array.isArray(rows) ? rows.slice(0, 1000) : rows,
+                    __truncatedForPreview: Array.isArray(rows) && rows.length > 1000,
+                    __datasetRefPreview: {
+                        rowCount: res.data.rowCount,
+                        sizeBytes: res.data.sizeBytes,
+                        columns: res.data.columns,
+                    },
+                };
+            } catch {
+                previewRes = {
+                    ...res,
+                    data: [],
+                    __datasetRefPreviewError: true,
+                };
+            }
+        } else if (res?.data && Array.isArray(res.data)) {
             try {
                 const size = JSON.stringify(res.data).length;
                 if (size > 5_000_000) {

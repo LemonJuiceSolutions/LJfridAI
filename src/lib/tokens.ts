@@ -1,6 +1,6 @@
 
-import { v4 as uuidv4 } from "uuid";
 import { db } from "@/lib/db";
+import { randomUUID } from "crypto";
 
 export const getPasswordResetTokenByToken = async (token: string) => {
     try {
@@ -27,7 +27,7 @@ export const getPasswordResetTokenByEmail = async (email: string) => {
 }
 
 export const generatePasswordResetToken = async (email: string) => {
-    const token = uuidv4();
+    const token = randomUUID();
     const expires = new Date(new Date().getTime() + 3600 * 1000); // 1 hour
 
     const existingToken = await getPasswordResetTokenByEmail(email);

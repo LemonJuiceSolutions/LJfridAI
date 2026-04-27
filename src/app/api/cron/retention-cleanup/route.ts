@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { timingSafeEqual } from 'crypto';
+import { cleanupPipelineDatasetRefs } from '@/lib/pipeline-dataset-ref';
 
 // GDPR retention windows — minimize per data minimization principle (Art. 5.1.e)
 const RETENTION = {
@@ -11,6 +12,7 @@ const RETENTION = {
     superAgentConversation: 365,    // 1 year — same
     leadGeneratorConversation: 365, // 1 year — same
     nodePreviewCache: 30,           // 30 days — cached preview data
+    pipelineDatasetRefsHours: 24,   // transient node-to-node payload files
 };
 
 function safeEqual(a: string, b: string): boolean {
@@ -50,6 +52,7 @@ async function handleCron(req: NextRequest) {
             executions, triggerLogs, agentConv, auditLogs,
             superAgentConv, leadGenConv, previewCache,
             sessions, verificationTokens, passwordResetTokens,
+            pipelineDatasetRefs,
         ] = await Promise.all([
             safe(db.scheduledTaskExecution.deleteMany({ where: { startedAt: { lt: cutoff(RETENTION.scheduledTaskExecution) } } })),
             safe(db.triggerLog.deleteMany({ where: { createdAt: { lt: cutoff(RETENTION.triggerLog) } } })),
@@ -62,6 +65,9 @@ async function handleCron(req: NextRequest) {
             safe((db as any).session?.deleteMany({ where: { expires: { lt: new Date(now) } } })),
             safe((db as any).verificationToken?.deleteMany({ where: { expires: { lt: new Date(now) } } })),
             safe((db as any).passwordResetToken?.deleteMany({ where: { expires: { lt: new Date(now) } } })),
+            cleanupPipelineDatasetRefs(RETENTION.pipelineDatasetRefsHours)
+                .then((count) => ({ count }))
+                .catch((e: any) => { console.warn('[retention-cleanup]', e?.message); return null; }),
         ]);
 
         const result = {
@@ -77,6 +83,7 @@ async function handleCron(req: NextRequest) {
                 expiredSessions: sessions?.count ?? 0,
                 expiredVerificationTokens: verificationTokens?.count ?? 0,
                 expiredPasswordResetTokens: passwordResetTokens?.count ?? 0,
+                pipelineDatasetRefDirs: pipelineDatasetRefs?.count ?? 0,
             },
         };
 

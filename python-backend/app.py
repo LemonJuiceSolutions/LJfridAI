@@ -19,6 +19,7 @@ import json
 import re
 import hmac
 import ast
+import time
 from chart_to_recharts_converter import matplotlib_to_recharts, plotly_to_recharts, infer_chart_type
 import socket
 import ipaddress
@@ -207,6 +208,12 @@ BLOCKED_OS_FROM_IMPORTS = {
     'system', 'popen', 'spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
     'spawnv', 'spawnve', 'spawnvp', 'spawnvpe', 'fork', 'forkpty',
 }
+EXEC_TIMEOUT_SECONDS = int(os.environ.get('PYTHON_EXEC_TIMEOUT_SECONDS', '300'))
+USER_CODE_FILENAME = '<fridai-user-code>'
+
+
+class UserCodeTimeout(TimeoutError):
+    pass
 
 
 def _attr_call_root_and_name(node):
@@ -252,6 +259,17 @@ def validate_user_code(code):
                 return f"Chiamata non consentita: {attr_call[0]}.{attr_call[1]}()"
 
     return None
+
+
+def _make_user_code_timeout_trace(deadline):
+    def trace(frame, event, arg):
+        if frame.f_code.co_filename == USER_CODE_FILENAME and event in ('line', 'call'):
+            if time.monotonic() > deadline:
+                raise UserCodeTimeout(
+                    f'Python execution timed out after {EXEC_TIMEOUT_SECONDS} seconds'
+                )
+        return trace
+    return trace
 
 # --- Premium Emerald Theme for Plotly ---
 emerald_template = go.layout.Template(
@@ -940,7 +958,13 @@ def execute_python():
             with redirect_stdout(raw_stdout), redirect_stderr(raw_stderr):
                 # Patch os.environ for the duration of execution
                 with patch.dict(os.environ, env_vars):
-                    exec(safe_code, ns, ns) # Use ns for both globals and locals
+                    compiled_code = compile(safe_code, USER_CODE_FILENAME, 'exec')
+                    previous_trace = sys.gettrace()
+                    sys.settrace(_make_user_code_timeout_trace(time.monotonic() + EXEC_TIMEOUT_SECONDS))
+                    try:
+                        exec(compiled_code, ns, ns) # Use ns for both globals and locals
+                    finally:
+                        sys.settrace(previous_trace)
             _safe_log(f"🐍 [v{VERSION}] exec() completed OK")
 
             # If we captured HTML file writes, inject into namespace for html output detection
@@ -955,6 +979,13 @@ def execute_python():
             if _captured_html_writes and 'html_result' not in ns:
                 ns['html_result'] = _captured_html_writes[-1]
                 _safe_log(f"📄 [EXECUTE] Injected captured HTML after SystemExit ({len(_captured_html_writes[-1])} chars)")
+        except UserCodeTimeout as e:
+            _safe_log(f"⏱️ [EXECUTE] {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e),
+                'stdout': raw_stdout.getvalue(),
+            }), 408
         except Exception as e:
             import traceback as _tb
             error_details = _tb.format_exc()

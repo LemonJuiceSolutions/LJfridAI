@@ -10,6 +10,14 @@ export async function registerNode() {
         return;
     }
 
+    if (
+        process.env.NODE_ENV === 'production'
+        && process.env.SCHEDULER_ALLOW_IN_PROCESS !== 'true'
+    ) {
+        console.warn('[INSTRUMENTATION] In-process scheduler disabled in production. Configure SCHEDULER_SERVICE_URL or set SCHEDULER_ALLOW_IN_PROCESS=true explicitly.');
+        return;
+    }
+
     // Fire-and-forget scheduler init so request handlers (pages, APIs) do NOT
     // wait on task loading, cron registration, and auto-recovery — these can
     // take tens of seconds with many tasks. registerNode() must return fast,

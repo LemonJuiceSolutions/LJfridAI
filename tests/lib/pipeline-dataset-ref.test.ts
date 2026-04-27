@@ -61,4 +61,22 @@ describe('pipeline dataset refs', () => {
       columns: ['id'],
     })).rejects.toThrow('outside data lake');
   });
+
+  it('cleans up stale pipeline dataset reference directories', async () => {
+    const { cleanupPipelineDatasetRefs } = await import('@/lib/pipeline-dataset-ref');
+
+    const stale = path.join(tempDir, 'pipeline-datasets', 'old-run');
+    const fresh = path.join(tempDir, 'pipeline-datasets', 'fresh-run');
+    fs.mkdirSync(stale, { recursive: true });
+    fs.mkdirSync(fresh, { recursive: true });
+    fs.writeFileSync(path.join(stale, 'data.json'), '[]');
+    fs.writeFileSync(path.join(fresh, 'data.json'), '[]');
+
+    const oldDate = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    fs.utimesSync(stale, oldDate, oldDate);
+
+    await expect(cleanupPipelineDatasetRefs(24)).resolves.toBe(1);
+    expect(fs.existsSync(stale)).toBe(false);
+    expect(fs.existsSync(fresh)).toBe(true);
+  });
 });

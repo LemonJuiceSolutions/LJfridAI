@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
             const { results, nodeIdResults } = await runPipelineSteps(steps, send);
 
             try {
-                const previewBatch = buildPreviewBatch(steps, results, nodeIdResults);
+                const previewBatch = await buildPreviewBatch(steps, results, nodeIdResults);
                 if (previewBatch.length > 0) {
                     await saveAncestorPreviewsBatchAction(treeId, previewBatch);
                 }
