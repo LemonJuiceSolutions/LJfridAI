@@ -18,6 +18,7 @@ import os
 import json
 import re
 import hmac
+import ast
 from chart_to_recharts_converter import matplotlib_to_recharts, plotly_to_recharts, infer_chart_type
 import socket
 import ipaddress
@@ -161,6 +162,96 @@ DATA_LAKE_PATH = _DATA_LAKE_CONFIGURED if os.path.isabs(_DATA_LAKE_CONFIGURED) \
     else os.path.join(_PROJECT_ROOT, _DATA_LAKE_CONFIGURED)
 os.makedirs(DATA_LAKE_PATH, exist_ok=True)
 print(f"✅ [INIT] Data lake path: {DATA_LAKE_PATH}")
+
+
+def _load_dataset_ref(ref):
+    """Load a pipeline dataset reference from the shared data lake only."""
+    if not isinstance(ref, dict) or not ref.get('__datasetRef'):
+        return None
+    if ref.get('format') != 'json':
+        raise ValueError('Unsupported datasetRef format')
+
+    file_path = os.path.abspath(str(ref.get('path', '')))
+    data_lake_root = os.path.abspath(DATA_LAKE_PATH)
+    if not (file_path == data_lake_root or file_path.startswith(data_lake_root + os.sep)):
+        raise ValueError('datasetRef path outside data lake')
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+BLOCKED_IMPORT_ROOTS = {
+    'subprocess', 'socket', 'multiprocessing', 'ctypes', 'pty', 'resource',
+}
+BLOCKED_CALLS = {'eval', 'exec', 'compile', '__import__', 'input'}
+BLOCKED_ATTR_CALLS = {
+    ('os', 'system'),
+    ('os', 'popen'),
+    ('os', 'spawnl'),
+    ('os', 'spawnle'),
+    ('os', 'spawnlp'),
+    ('os', 'spawnlpe'),
+    ('os', 'spawnv'),
+    ('os', 'spawnve'),
+    ('os', 'spawnvp'),
+    ('os', 'spawnvpe'),
+    ('os', 'fork'),
+    ('os', 'forkpty'),
+    ('subprocess', 'run'),
+    ('subprocess', 'call'),
+    ('subprocess', 'check_call'),
+    ('subprocess', 'check_output'),
+    ('subprocess', 'Popen'),
+}
+BLOCKED_OS_FROM_IMPORTS = {
+    'system', 'popen', 'spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
+    'spawnv', 'spawnve', 'spawnvp', 'spawnvpe', 'fork', 'forkpty',
+}
+
+
+def _attr_call_root_and_name(node):
+    if not isinstance(node, ast.Attribute):
+        return None
+    attr = node.attr
+    current = node.value
+    while isinstance(current, ast.Attribute):
+        current = current.value
+    if isinstance(current, ast.Name):
+        return (current.id, attr)
+    return None
+
+
+def validate_user_code(code):
+    """Static guardrail for clearly dangerous Python snippets before exec()."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return None
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split('.')[0]
+                if root in BLOCKED_IMPORT_ROOTS:
+                    return f"Import non consentito: {root}"
+
+        if isinstance(node, ast.ImportFrom):
+            root = (node.module or '').split('.')[0]
+            if root in BLOCKED_IMPORT_ROOTS:
+                return f"Import non consentito: {root}"
+            if root == 'os':
+                for alias in node.names:
+                    if alias.name in BLOCKED_OS_FROM_IMPORTS:
+                        return f"Funzione os non consentita: {alias.name}"
+
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in BLOCKED_CALLS:
+                return f"Chiamata non consentita: {node.func.id}()"
+            attr_call = _attr_call_root_and_name(node.func)
+            if attr_call in BLOCKED_ATTR_CALLS:
+                return f"Chiamata non consentita: {attr_call[0]}.{attr_call[1]}()"
+
+    return None
 
 # --- Premium Emerald Theme for Plotly ---
 emerald_template = go.layout.Template(
@@ -479,6 +570,13 @@ def execute_python():
 
         if not code:
             return jsonify({'success': False, 'error': 'No code provided'}), 400
+
+        policy_error = validate_user_code(code)
+        if policy_error:
+            return jsonify({
+                'success': False,
+                'error': f'Codice Python bloccato dalla policy di sicurezza: {policy_error}',
+            }), 400
         
         # Prepare execution namespace
         ns = {
@@ -505,6 +603,8 @@ def execute_python():
         last_df_table = None
         explicit_df = False
         for table_name, table_data in input_data.items():
+            if isinstance(table_data, dict) and table_data.get('__datasetRef'):
+                table_data = _load_dataset_ref(table_data)
             if isinstance(table_data, list):
                 df_table = pd.DataFrame(table_data)
                 ns[table_name] = df_table

@@ -17,10 +17,16 @@
 import { executeSqlPreviewAction, executePythonPreviewAction } from '@/app/actions';
 import { exportTableToSqlAction } from '@/app/actions/sql';
 import { generateText } from 'ai';
+import { randomUUID } from 'crypto';
 import { getOpenRouterSettingsAction } from '@/actions/openrouter';
 import { getAiProviderAction, type AiProvider } from '@/actions/ai-settings';
 import { getOpenRouterModel } from '@/ai/providers/openrouter-provider';
 import { runClaudeCliSync } from '@/ai/providers/claude-cli-provider';
+import {
+    datasetRowCount,
+    maybePersistDatasetRef,
+    resolveDatasetRef,
+} from '@/lib/pipeline-dataset-ref';
 
 export interface PipelineStep {
     id: string;
@@ -153,6 +159,7 @@ async function executeStep(
     allSteps: PipelineStep[],
     emit: (e: PipelineEvent) => void,
     pipelineReport: PipelineReportEntry[],
+    executionId: string,
     bypassAuth: boolean = false,
 ): Promise<void> {
     const nType = step.pipelineType;
@@ -160,10 +167,14 @@ async function executeStep(
 
     // ── Python ──
     if (nType === 'python' && step.pythonCode) {
-        const inputData: Record<string, any[]> = {};
+        const inputData: Record<string, any> = {};
         for (const [key, val] of results.entries()) {
             const data = val?.data ?? val;
-            if (Array.isArray(data)) inputData[key] = data;
+            if (Array.isArray(data)) {
+                inputData[key] = await maybePersistDatasetRef(key, data, executionId);
+            } else if (data && typeof data === 'object' && (data as any).__datasetRef) {
+                inputData[key] = data;
+            }
         }
 
         let pyConnectorId = step.connectorId || '';
@@ -201,14 +212,20 @@ async function executeStep(
             return;
         }
 
-        results.set(step.resultName, pyResult);
-        if (step.nodeId) nodeIdResults.set(`${step.nodeId}_py`, pyResult);
+        const pyStored = pyResult.data && Array.isArray(pyResult.data)
+            ? {
+                ...pyResult,
+                data: await maybePersistDatasetRef(step.resultName, pyResult.data, executionId),
+            }
+            : pyResult;
+        results.set(step.resultName, pyStored);
+        if (step.nodeId) nodeIdResults.set(`${step.nodeId}_py`, pyStored);
 
         const msg = (pyResult as any)._warning
             || (pyResult.data?.length === 0 ? 'Script completato, 0 righe' : undefined);
         emit({
             type: 'step-done', index, success: true,
-            executionTime: elapsed, message: msg, rowCount: pyResult.data?.length,
+            executionTime: elapsed, message: msg, rowCount: datasetRowCount(pyStored.data),
         });
         pipelineReport.push({
             name: reportName, type: 'Python', status: 'success',
@@ -323,8 +340,9 @@ async function executeStep(
         return;
     }
 
-    results.set(step.resultName, { data: sqlResult.data });
-    if (step.nodeId) nodeIdResults.set(`${step.nodeId}_sql`, { data: sqlResult.data });
+    const storedSqlData = await maybePersistDatasetRef(step.resultName, sqlResult.data, executionId);
+    results.set(step.resultName, { data: storedSqlData });
+    if (step.nodeId) nodeIdResults.set(`${step.nodeId}_sql`, { data: storedSqlData });
 
     const depWarnings = (sqlResult as any)?._depWarnings;
     const msg = depWarnings?.length
@@ -334,7 +352,7 @@ async function executeStep(
     emit({
         type: 'step-done', index, success: true,
         executionTime: elapsed, message: msg,
-        rowCount: Array.isArray(sqlResult.data) ? sqlResult.data.length : undefined,
+        rowCount: datasetRowCount(storedSqlData),
     });
     pipelineReport.push({
         name: reportName, type: 'SQL', status: 'success',
@@ -351,7 +369,7 @@ async function executeWriteStep(
     pipelineReport: PipelineReportEntry[],
 ): Promise<void> {
     const reportName = step.label || `Write ${step.sqlExportTargetTableName || 'output'}`;
-    const sourceData = results.get(step.sourceAncestorName || '')?.data;
+    const sourceData = await resolveDatasetRef(results.get(step.sourceAncestorName || '')?.data);
     const elapsed0 = () => Date.now() - startTime;
 
     if (!sourceData) {
@@ -410,6 +428,7 @@ export async function runPipelineSteps(
     const results = new Map<string, any>();
     const nodeIdResults = new Map<string, any>();
     const pipelineReport: PipelineReportEntry[] = [];
+    const executionId = `pipeline-${Date.now()}-${randomUUID()}`;
     let pipelineSuccess = true;
 
     for (let i = 0; i < steps.length; i++) {
@@ -419,7 +438,7 @@ export async function runPipelineSteps(
 
         try {
             if (step.type === 'execution' || step.type === 'final') {
-                await executeStep(step, i, startTime, results, nodeIdResults, steps, emit, pipelineReport, bypassAuth);
+                await executeStep(step, i, startTime, results, nodeIdResults, steps, emit, pipelineReport, executionId, bypassAuth);
             } else if (step.type === 'write') {
                 await executeWriteStep(step, i, startTime, results, emit, pipelineReport);
             }

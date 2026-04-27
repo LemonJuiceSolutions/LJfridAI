@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import { pythonFetch } from '@/lib/python-backend';
 import { getAuthenticatedUser } from './auth';
 import { resolveTheme } from '@/lib/chart-theme';
+import { datasetRowCount, resolveDatasetRef } from '@/lib/pipeline-dataset-ref';
 
 // ---------------------------------------------------------------------------
 // executeSqlPreviewAction
@@ -13,7 +14,7 @@ import { resolveTheme } from '@/lib/chart-theme';
 export async function executeSqlPreviewAction(
     query: string,
     connectorId: string,
-    pipelineDependencies: { tableName: string, query?: string, isPython?: boolean, pythonCode?: string, connectorId?: string, pipelineDependencies?: any[], data?: any[] }[] = [],
+    pipelineDependencies: { tableName: string, query?: string, isPython?: boolean, pythonCode?: string, connectorId?: string, pipelineDependencies?: any[], data?: any }[] = [],
     _bypassAuth?: boolean
 ): Promise<{ data: any[] | null; error: string | null }> {
     let pool: sql.ConnectionPool | null = null;
@@ -249,11 +250,12 @@ export async function executeSqlPreviewAction(
                     let rowsToInsert: any[] = [];
                     let columns: string[] = [];
 
-                    console.log(`[PIPELINE SERVER] Processing dep "${dep.tableName}": data=${!!dep.data} (type=${typeof dep.data}, isArray=${Array.isArray(dep.data)}, len=${Array.isArray(dep.data) ? dep.data.length : 'N/A'}), query=${!!dep.query}, isPy=${!!dep.isPython}, pyCode=${!!dep.pythonCode}`);
+                    const depData = dep.data ? await resolveDatasetRef(dep.data) : dep.data;
+                    console.log(`[PIPELINE SERVER] Processing dep "${dep.tableName}": data=${!!dep.data} (type=${typeof dep.data}, isArray=${Array.isArray(depData)}, len=${Array.isArray(depData) ? depData.length : 'N/A'}), query=${!!dep.query}, isPy=${!!dep.isPython}, pyCode=${!!dep.pythonCode}`);
 
-                    if (dep.data && Array.isArray(dep.data)) {
+                    if (depData && Array.isArray(depData)) {
                         console.log(`[PIPELINE] >>> USING PRE-CALCULATED DATA for ${dep.tableName}`);
-                        rowsToInsert = dep.data;
+                        rowsToInsert = depData;
                         if (rowsToInsert.length > 0) {
                             columns = Object.keys(rowsToInsert[0]);
                         } else if (dep.columns && Array.isArray(dep.columns) && dep.columns.length > 0) {
@@ -1102,7 +1104,7 @@ STRICT RULES:
 export async function executePythonPreviewAction(
     code: string,
     outputType: 'table' | 'variable' | 'chart' | 'html',
-    inputData: Record<string, any[]> = {},
+    inputData: Record<string, any> = {},
     dependencies?: { tableName: string; query?: string; isPython?: boolean; pythonCode?: string; connectorId?: string; pipelineDependencies?: any[]; selectedDocuments?: string[] }[],
     connectorId?: string,
     _bypassAuth?: boolean,
@@ -1420,7 +1422,7 @@ export async function executePythonPreviewAction(
 
             try {
                 const inputDataKeys = Object.keys(inputData);
-                const inputDataSizes = inputDataKeys.map(k => `${k}:${inputData[k]?.length ?? 0}`).join(', ');
+                const inputDataSizes = inputDataKeys.map(k => `${k}:${datasetRowCount(inputData[k]) ?? 0}`).join(', ');
                 console.log(`[executePythonPreviewAction] Calling Python backend (attempt ${attempt + 1}/${MAX_RETRIES + 1}), outputType=${outputType}, connectorId=${connectorId || 'NONE'}, inputData=[${inputDataSizes}], envKeys=[${Object.keys(envVars).join(',')}]`);
                 debugLogs.push(`[${new Date().toLocaleTimeString()}] Sending data to Python backend${attempt > 0 ? ` (retry ${attempt})` : ''} — outputType=${outputType}, inputs=[${inputDataSizes}]`);
 
