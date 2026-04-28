@@ -36,6 +36,7 @@ import {
     BookOpen,
     UserSearch,
     Palette,
+    FlaskConical,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -47,13 +48,13 @@ import { Badge } from '@/components/ui/badge';
 
 // Original FridAI nav items (Static)
 const fridaiNavItems = [
-    { name: 'Regole', href: '/', icon: LayoutDashboard },
+    { name: 'Pipeline', href: '/', icon: LayoutDashboard },
     { name: 'detAI', href: '/detai', icon: BrainCircuit },
     { name: 'Chatbot Diagnostico', href: '/chatbot', icon: Bot },
     { name: 'Variabili', href: '/variables', icon: Database },
     { name: 'Knowledge Base', href: '/knowledge-base', icon: BookOpen },
-    { name: 'Lead Generator', href: '/lead-generator', icon: UserSearch },
     { name: 'Schedulazioni', href: '/scheduler', icon: Calendar },
+    { name: 'Farmaceutico', href: '/farmaceutico', icon: FlaskConical },
 ] as const;
 
 import * as LucideIcons from 'lucide-react';

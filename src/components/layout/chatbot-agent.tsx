@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { fetchOpenRouterModelsAction } from '@/app/actions';
@@ -292,6 +293,7 @@ function InlineChart({ config }: { config: any }) {
 import { useChatbot } from '@/components/providers/layout-provider';
 
 export function ChatBotAgent() {
+    const router = useRouter();
     const { toast } = useToast();
     const { isChatbotOpen, toggleChatbot, setChatbotOpen } = useChatbot();
     const [messages, setMessages] = useState<Message[]>([]);
@@ -714,9 +716,13 @@ export function ChatBotAgent() {
         setIsSavingWidget(true);
         try {
             const chart = saveWidgetDialog.charts[saveWidgetDialog.selectedChartIndex];
-            const toolCalls = saveWidgetDialog.message.toolCalls ?? [];
-            const sqlCall = toolCalls.find(t => t.toolName === 'executeSqlQuery');
-            const pythonCall = toolCalls.find(t => t.toolName === 'executePythonCode');
+            // Search toolCalls in current message AND all previous messages (tool calls
+            // may be in an earlier message than the one showing the results table)
+            const msgIndex = messages.indexOf(saveWidgetDialog.message);
+            const relevantMessages = msgIndex >= 0 ? messages.slice(0, msgIndex + 1) : [saveWidgetDialog.message];
+            const allToolCalls = relevantMessages.flatMap(m => m.toolCalls ?? []);
+            const sqlCall = allToolCalls.findLast(t => t.toolName === 'executeSqlQuery' || t.toolName === 'superExecuteSql');
+            const pythonCall = allToolCalls.findLast(t => t.toolName === 'executePythonCode');
 
             // Priority: embedded metadata from chart > dialog-level meta > toolCalls fallback
             const chartSql = chart?._sql;
@@ -727,7 +733,8 @@ export function ChatBotAgent() {
             const finalConnectorId = chartSql?.connectorId || dialogMeta?._sql?.connectorId || sqlCall?.args?.connectorId;
             const finalPythonCode = chartPython?.code || dialogMeta?._python?.code || pythonCall?.args?.code;
 
-            console.log('[SaveWidget] Source: embedded=', !!(chartSql || dialogMeta?._sql), 'toolCalls=', !!sqlCall);
+            console.log('[SaveWidget] Source: embedded=', !!(chartSql || dialogMeta?._sql), 'toolCalls=', !!sqlCall, 'allToolCalls=', allToolCalls.length, 'toolNames=', allToolCalls.map(t => t.toolName));
+            console.log('[SaveWidget] sqlCall args:', sqlCall?.args);
             console.log('[SaveWidget] sqlQuery:', finalSqlQuery?.substring(0, 100));
             console.log('[SaveWidget] connectorId:', finalConnectorId);
             console.log('[SaveWidget] pythonCode:', !!finalPythonCode);
@@ -758,6 +765,7 @@ export function ChatBotAgent() {
             });
             setSaveWidgetDialog({ open: false, message: null, charts: [], selectedChartIndex: 0, embeddedMeta: null });
             setWidgetName('');
+            router.refresh();
         } catch (error: any) {
             toast({
                 title: 'Errore',
@@ -980,6 +988,23 @@ export function ChatBotAgent() {
                                                         Salva come Widget
                                                     </Button>
                                                 )}
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary gap-1"
+                                                    onClick={() => {
+                                                        if (isStreamLoading) return;
+                                                        const name = prompt('Nome del widget:');
+                                                        if (name?.trim()) {
+                                                            const msg = `Crea un widget chiamato "${name.trim()}" che riproduce esattamente questa ultima analisi. IMPORTANTE: prima riesegui la query SQL con executeSqlQuery (stessa query e stesso connettore di prima), poi usa il tool createWidget per creare l'albero PIPELINE.`;
+                                                            setMessages(prev => [...prev, { role: 'user', content: msg, timestamp: Date.now() }]);
+                                                            streamSendMessage({ text: msg });
+                                                        }
+                                                    }}
+                                                >
+                                                    <BarChart3 className="h-3 w-3" />
+                                                    Crea Widget
+                                                </Button>
                                             </div>
                                         )}
                                     </div>
